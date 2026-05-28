@@ -59,6 +59,8 @@ class Notifier:
             return bool(cfg.get("email_enabled", False))
         if name == "discord":
             return bool(cfg.get("discord_webhook_url", ""))
+        if name == "telegram":
+            return bool(cfg.get("telegram_bot_token", "") and cfg.get("telegram_chat_id", ""))
         # Unknown channel: trust that registering it was intentional.
         return True
 

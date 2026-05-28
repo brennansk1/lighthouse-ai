@@ -345,9 +345,24 @@ def test_notifier_fans_out_to_multiple_channels():
 
 def test_notifier_unknown_channel_enabled_by_default():
     custom = _RecordingChannel()
-    notifier = Notifier(_config(), [("telegram", custom)])
+    notifier = Notifier(_config(), [("custom_plugin", custom)])
     result = notifier.notify("draft_ready", "T", "B")[0]
     assert result.attempted is True
+
+
+def test_notifier_telegram_enabled_when_credentials_present():
+    custom = _RecordingChannel()
+    cfg = _config(telegram_bot_token="tok", telegram_chat_id="123")
+    notifier = Notifier(cfg, [("telegram", custom)])
+    result = notifier.notify("draft_ready", "T", "B")[0]
+    assert result.attempted is True
+
+
+def test_notifier_telegram_disabled_when_credentials_missing():
+    custom = _RecordingChannel()
+    notifier = Notifier(_config(), [("telegram", custom)])
+    result = notifier.notify("draft_ready", "T", "B")[0]
+    assert result.attempted is False
 
 
 def test_notifier_empty_events_blocks_everything():

@@ -62,9 +62,15 @@ def _notify_event(event: str, title: str, body: str) -> None:
         if not cfg:
             return
         from .notify import DesktopChannel, DiscordChannel, Notifier
+        from .notify.telegram import TelegramChannel
         channels = [("desktop", DesktopChannel())]
         if cfg.get("discord_webhook_url"):
             channels.append(("discord", DiscordChannel(cfg["discord_webhook_url"])))
+        if cfg.get("telegram_bot_token") and cfg.get("telegram_chat_id"):
+            channels.append(("telegram", TelegramChannel(
+                bot_token=cfg["telegram_bot_token"],
+                chat_id=cfg["telegram_chat_id"],
+            )))
         Notifier(cfg, channels).notify(event, title, body)
     except Exception:
         pass
@@ -357,6 +363,26 @@ def doctor() -> None:
         console.print("  [yellow]-[/yellow] qdrant not reachable "
                       "(boot via scripts/lh-stack.docker-compose.yml)")
 
+    # Section: notifications
+    console.rule("[bold]notifications[/bold]")
+    cfg_notif: dict = {}
+    if paths.config_file.exists():
+        try:
+            import tomllib
+        except ImportError:  # pragma: no cover
+            import tomli as tomllib  # type: ignore
+        with paths.config_file.open("rb") as fh:
+            cfg_notif = tomllib.load(fh).get("notifications", {})
+    if cfg_notif.get("telegram_bot_token") and cfg_notif.get("telegram_chat_id"):
+        from .notify.telegram import TelegramChannel
+        tc = TelegramChannel(bot_token=cfg_notif["telegram_bot_token"], chat_id=cfg_notif["telegram_chat_id"])
+        if tc.available():
+            console.print("  [green]✓[/green] telegram bot configured")
+        else:
+            console.print("  [yellow]-[/yellow] telegram token/chat_id missing")
+    else:
+        console.print("  [yellow]-[/yellow] telegram not configured (optional)")
+
     # Section: audit chain integrity
     console.rule("[bold]audit chain[/bold]")
     if paths.audit_db.exists():
@@ -643,10 +669,32 @@ def eval_retrieval(
 @app.command()
 def export(
     draft_id: str = typer.Argument(..., help="Draft id to export."),
-    logseq: Path = typer.Option(..., "--logseq", help="Logseq graph directory."),
+    logseq: Path = typer.Option(None, "--logseq", help="Logseq graph directory. Falls back to config.toml [logseq] graph_dir."),
 ) -> None:
     """Export a staged/published draft to a Logseq graph (filesystem markdown)."""
     paths = _paths_from_env()
+
+    # Resolve graph_dir: CLI flag takes priority, then config.toml [logseq] section.
+    graph_dir: Path | None = logseq
+    if graph_dir is None:
+        try:
+            try:
+                import tomllib
+            except ImportError:  # pragma: no cover
+                import tomli as tomllib  # type: ignore
+            if paths.config_file.exists():
+                with paths.config_file.open("rb") as fh:
+                    _cfg = tomllib.load(fh)
+                _gd = _cfg.get("logseq", {}).get("graph_dir")
+                if _gd:
+                    graph_dir = Path(_gd).expanduser()
+        except Exception:
+            pass
+
+    if graph_dir is None:
+        err_console.print("[red]no Logseq graph dir: pass --logseq <dir> or set [logseq] graph_dir in config.toml[/red]")
+        raise typer.Exit(1)
+
     conn = open_db(paths.state_db)
     try:
         rows = conn.execute(
@@ -659,9 +707,10 @@ def export(
         raise typer.Exit(1)
     _id, topic, title, body_html, wep_phrase, source_count = rows[0]
     from .targets.logseq import export_draft
-    page = export_draft(logseq, draft_id=_id, title=title, body_html=body_html,
+    page = export_draft(graph_dir, draft_id=_id, title=title, body_html=body_html,
                         topic=topic, wep_phrase=wep_phrase,
                         source_count=source_count or 0)
+    console.print(f"[green]exported to Logseq[/green]")
     console.print(f"[green]wrote Logseq page →[/green] {page.path}")
 
 

@@ -38,3 +38,13 @@ allow_drift_with_flag = true
 desktop_enabled = true
 email_enabled = false
 events = ["draft_ready", "monitor_alert_high", "budget_warn", "budget_trip"]
+
+# Telegram Bot notifications (optional)
+# telegram_bot_token = ""   # your bot token from @BotFather
+# telegram_chat_id = ""     # your chat/group id
+
+[logseq]
+# Set to your Logseq graph's pages directory to enable automatic page export
+# when drafts are approved.
+# graph_dir = "~/Documents/logseq/pages"
+enabled = false

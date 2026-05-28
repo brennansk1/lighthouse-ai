@@ -226,6 +226,40 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
                 "WHERE id = (SELECT job_id FROM drafts WHERE id=?)", (draft_id,))
         finally:
             conn.close()
+        # Auto-export to Logseq if configured
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore
+        try:
+            if paths.config_file.exists():
+                with paths.config_file.open("rb") as fh:
+                    _cfg = tomllib.load(fh)
+                logseq_cfg = _cfg.get("logseq", {})
+                if logseq_cfg.get("enabled") and logseq_cfg.get("graph_dir"):
+                    from pathlib import Path as _Path
+                    from ..targets.logseq import export_draft as _logseq_export
+                    _conn = open_db(paths.state_db)
+                    try:
+                        row = _conn.execute(
+                            "SELECT body_html, title, topic, wep_phrase, source_count "
+                            "FROM drafts WHERE id=?", (draft_id,)
+                        ).fetchone()
+                    finally:
+                        _conn.close()
+                    if row:
+                        _graph_dir = _Path(logseq_cfg["graph_dir"]).expanduser()
+                        _logseq_export(
+                            _graph_dir,
+                            draft_id=draft_id,
+                            title=row[1] or draft_id,
+                            body_html=row[0] or "",
+                            topic=row[2] or "",
+                            wep_phrase=row[3],
+                            source_count=row[4] or 0,
+                        )
+        except Exception:
+            pass  # Logseq export is best-effort; never fail the approval
         bus.publish("draft.approved", {"id": draft_id})
         return {"id": draft_id, "status": "published"}
 
@@ -463,6 +497,22 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         from ..secrets import SecretStore
         backend = SecretStore(paths.data_dir).put(body.key, body.value)
         return {"key": body.key, "backend": backend}
+
+    @app.get("/api/settings/logseq", tags=["settings"])
+    def logseq_status() -> dict[str, Any]:
+        """Return Logseq integration status."""
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore
+        if not paths.config_file.exists():
+            return {"enabled": False, "graph_dir": None}
+        with paths.config_file.open("rb") as fh:
+            cfg = tomllib.load(fh).get("logseq", {})
+        return {
+            "enabled": cfg.get("enabled", False),
+            "graph_dir": cfg.get("graph_dir"),
+        }
 
     # ========================= INTELLIGENCE (§3) ===================
 
