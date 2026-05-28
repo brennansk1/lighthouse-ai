@@ -31,8 +31,10 @@ sandbox) and the README backfill for older modules.
 - **§3 dashboard Intelligence page** (8th page) + `reflections_act` endpoint —
   backend, store, and job-spawn seam are done and tested; the React page and its
   browser QA are not.
-- **§2 persistence** — the `entity_hotness` table + dossier materialisation gate
-  (the pure formula + Monitor salience scorer are done).
+- **§2 persistence** — `EntityHotnessStore` (`compounding/hotness_store.py`) ships the
+  `entity_hotness` side-table + lazy-recompute counter + the `should_materialise`/`hot_entities`
+  dossier gate. Remaining: recording entity mentions during ingest, and generating the dossier
+  page itself once the gate fires.
 - **§1 follow-ups** — gate the Monitor sync loop and `pipeline._auto_fetch`
   embedding pass (Deep-Dive + resolver are gated).
 - **§5/§6 wiring** — compaction on the Deep-Dive evidence-prompt path; tool-policy

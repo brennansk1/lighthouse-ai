@@ -19,10 +19,12 @@ from .hotness import (
     hotness_breakdown,
     recency_decay,
 )
+from .hotness_store import EntityHotnessStore
 
 __all__ = [
     "TOPIC_CREATION_THRESHOLD",
     "ArchiveOutcome",
+    "EntityHotnessStore",
     "EntityStats",
     "HotnessBreakdown",
     "archive_conversation",
