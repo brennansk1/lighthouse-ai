@@ -46,8 +46,8 @@ def _paths_from_env() -> Paths:
     return paths_from_env()
 
 
-def _load_notify_cfg() -> dict:
-    """Load the [notifications] section from config.toml, or empty dict."""
+def _load_config_section(section: str) -> dict:
+    """Load one top-level section from config.toml, or empty dict. Best-effort."""
     try:
         paths = _paths_from_env()
         if not paths.config_file.exists():
@@ -57,9 +57,14 @@ def _load_notify_cfg() -> dict:
         except ImportError:  # pragma: no cover
             import tomli as tomllib  # type: ignore
         with paths.config_file.open("rb") as fh:
-            return tomllib.load(fh).get("notifications", {})
+            return tomllib.load(fh).get(section, {})
     except Exception:
         return {}
+
+
+def _load_notify_cfg() -> dict:
+    """Load the [notifications] section from config.toml, or empty dict."""
+    return _load_config_section("notifications")
 
 
 def _notify_event(event: str, title: str, body: str, **data: object) -> None:
@@ -564,8 +569,12 @@ def research(
     console.print(f"[bold]Researching:[/bold] {question}")
     if offline:
         console.print("[yellow]offline mode[/yellow] — stub backends, no model load.")
+    _lrn = _load_config_section("learning")
     pipe = ResearchPipeline(paths, config=PipelineConfig(
-        offline=offline, mode=mode, max_rounds=rounds))
+        offline=offline, mode=mode, max_rounds=rounds,
+        learning_enabled=bool(_lrn.get("enabled", True)),
+        learning_distill_min_coverage=float(_lrn.get("distill_min_coverage", 0.75)),
+        learning_max_skills=int(_lrn.get("max_skills_injected", 3))))
     console.print(f"  backends: embedder={pipe.backends['embedder']} · "
                   f"store={pipe.backends['vector_store']} · "
                   f"gateway={pipe.backends['gateway']}")
@@ -1710,6 +1719,106 @@ def telegram_bot_serve(
         _tg_serve(bot_token, chat_id, paths)
     except KeyboardInterrupt:
         console.print("\n[yellow]Bot stopped.[/yellow]")
+
+
+# ------------------------------------------------------- skills (learning) ----
+
+skills_app = typer.Typer(name="skills", no_args_is_help=True,
+                         help="Self-learning research skills the agent distilled.")
+app.add_typer(skills_app, name="skills")
+
+
+@skills_app.command("list")
+def skills_list(
+    all_: bool = typer.Option(False, "--all", help="Include archived/disabled skills."),
+) -> None:
+    """List learned research strategies, best first."""
+    from .verification.skills import list_skills
+    paths = _paths_from_env()
+    skills = list_skills(paths.state_db, status=None if all_ else "active")
+    if not skills:
+        console.print("[dim]No skills learned yet. Run some research and the agent "
+                      "will distil strategies from successful runs.[/dim]")
+        return
+    table = Table(title="Learned skills", show_lines=False)
+    table.add_column("ID", justify="right", style="dim")
+    table.add_column("Type")
+    table.add_column("Score", justify="right")
+    table.add_column("Applied", justify="right")
+    table.add_column("Win%", justify="right")
+    table.add_column("Status")
+    table.add_column("Name")
+    for s in skills:
+        winpct = f"{100 * s.win_rate:.0f}%" if s.applied_count else "—"
+        table.add_row(str(s.id), s.question_type or "—", f"{s.score:.2f}",
+                      str(s.applied_count), winpct, s.status, s.name)
+    console.print(table)
+
+
+@skills_app.command("show")
+def skills_show(skill_id: int = typer.Argument(..., help="Skill id (see `skills list`).")) -> None:
+    """Show a learned skill's strategy and effectiveness."""
+    from .verification.skills import get_skill
+    paths = _paths_from_env()
+    s = get_skill(paths.state_db, skill_id)
+    if s is None:
+        err_console.print(f"[red]no skill {skill_id}[/red]")
+        raise typer.Exit(1)
+    console.rule(f"[bold]{s.name}[/bold]")
+    console.print(f"  type: {s.question_type or '—'}   status: {s.status}   "
+                  f"score: {s.score:.3f}")
+    console.print(f"  applied: {s.applied_count}   wins: {s.win_count}   "
+                  f"avg coverage: {s.avg_coverage:.0%}")
+    if s.description:
+        console.print(f"\n  [italic]{s.description}[/italic]")
+    if s.decomposition:
+        console.print("\n  [bold]Decomposition that worked:[/bold]")
+        for q in s.decomposition:
+            console.print(f"    • {q}")
+    kws = s.trigger_keywords
+    if kws:
+        console.print(f"\n  triggers: {', '.join(kws)}")
+
+
+@skills_app.command("disable")
+def skills_disable(skill_id: int = typer.Argument(...)) -> None:
+    """Disable a skill so it's no longer applied (reversible)."""
+    from .verification.skills import get_skill, set_skill_status
+    paths = _paths_from_env()
+    if get_skill(paths.state_db, skill_id) is None:
+        err_console.print(f"[red]no skill {skill_id}[/red]")
+        raise typer.Exit(1)
+    set_skill_status(paths.state_db, skill_id, "disabled")
+    console.print(f"[green]skill {skill_id} disabled[/green] (won't be applied)")
+
+
+@skills_app.command("enable")
+def skills_enable(skill_id: int = typer.Argument(...)) -> None:
+    """Re-activate a disabled/archived skill."""
+    from .verification.skills import get_skill, set_skill_status
+    paths = _paths_from_env()
+    if get_skill(paths.state_db, skill_id) is None:
+        err_console.print(f"[red]no skill {skill_id}[/red]")
+        raise typer.Exit(1)
+    set_skill_status(paths.state_db, skill_id, "active")
+    console.print(f"[green]skill {skill_id} re-activated[/green]")
+
+
+@skills_app.command("prune")
+def skills_prune() -> None:
+    """Archive underperforming skills (per [learning] thresholds in config)."""
+    from .verification.skills import prune_skills
+    paths = _paths_from_env()
+    cfg = _load_config_section("learning")
+    archived = prune_skills(
+        paths.state_db,
+        min_trials=int(cfg.get("prune_min_trials", 5)),
+        min_winrate=float(cfg.get("prune_min_winrate", 0.3)))
+    if archived:
+        console.print(f"[yellow]archived {len(archived)} underperforming skill(s):[/yellow] "
+                      f"{', '.join(str(i) for i in archived)}")
+    else:
+        console.print("[green]no skills needed pruning[/green]")
 
 
 if __name__ == "__main__":  # pragma: no cover

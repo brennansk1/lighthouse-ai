@@ -34,7 +34,7 @@ from .governor.scheduler_gate import SchedulerGate, SchedulerGateConfig
 from .paths import Paths, make_paths
 from .persistence import open_db
 from .schema import kinds_for, migrate_all
-from .subconscious import SubconsciousEngine, stale_position_escalations, ReflectionStore
+from .subconscious import ReflectionStore, SubconsciousEngine, stale_position_escalations
 
 log = structlog.get_logger(__name__)
 
@@ -85,6 +85,21 @@ def _configure_logging(paths: Paths) -> None:
     )
 
 
+def _load_learning_cfg(config_file: Path) -> dict:
+    """Read the [learning] section from config.toml, or defaults. Best-effort."""
+    try:
+        if not config_file.exists():
+            return {}
+        try:
+            import tomllib
+        except ImportError:  # pragma: no cover
+            import tomli as tomllib  # type: ignore
+        with config_file.open("rb") as fh:
+            return tomllib.load(fh).get("learning", {})
+    except Exception:
+        return {}
+
+
 def _start_subconscious_loop(paths: Paths, *, interval_s: float = 60.0) -> threading.Thread:
     """Start a daemon thread that calls SubconsciousEngine.tick() every interval_s seconds."""
     store = ReflectionStore(paths.reflections_db)
@@ -96,9 +111,16 @@ def _start_subconscious_loop(paths: Paths, *, interval_s: float = 60.0) -> threa
         escalation_producers=(lambda: stale_position_escalations(paths.positions_db),),
     )
 
+    # Skill-library maintenance cadence: archive underperformers roughly hourly
+    # (pure SQLite, no LLM — runs outside the gate). Read thresholds once.
+    prune_every = max(1, int(3600.0 / interval_s)) if interval_s > 0 else 60
+    _lcfg = _load_learning_cfg(paths.config_file)
+
     def _loop() -> None:
+        ticks = 0
         while True:
             time.sleep(interval_s)
+            ticks += 1
             try:
                 outcome = engine.tick()
                 log.info(
@@ -109,6 +131,17 @@ def _start_subconscious_loop(paths: Paths, *, interval_s: float = 60.0) -> threa
                 )
             except Exception as exc:
                 log.warning("subconscious.tick.error", exc=str(exc))
+            if _lcfg.get("enabled", True) and ticks % prune_every == 0:
+                try:
+                    from .verification.skills import prune_skills
+                    archived = prune_skills(
+                        paths.state_db,
+                        min_trials=int(_lcfg.get("prune_min_trials", 5)),
+                        min_winrate=float(_lcfg.get("prune_min_winrate", 0.3)))
+                    if archived:
+                        log.info("learning.pruned", count=len(archived), ids=archived)
+                except Exception as exc:
+                    log.warning("learning.prune.error", exc=str(exc))
 
     thread = threading.Thread(target=_loop, daemon=True, name="subconscious-loop")
     thread.start()

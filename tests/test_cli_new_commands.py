@@ -247,3 +247,48 @@ def test_audit_egress_surfaces_recorded_fetch(initted_env):
     assert "arxiv.org" in r.stdout
     # Must NOT falsely claim airplane-mode when a fetch is on record.
     assert "No external network calls" not in r.stdout
+
+
+# --- skills (self-learning) ---
+
+def test_skills_list_empty(initted_env):
+    runner = CliRunner()
+    r = runner.invoke(app, ["skills", "list"])
+    assert r.exit_code == 0, r.stdout
+    assert "No skills" in r.stdout
+
+
+def test_skills_list_show_disable_prune(initted_env):
+    from lighthouse_ai.learning import distill_skill
+    from lighthouse_ai.paths import paths_from_env
+    paths = paths_from_env()
+    distill_skill(paths.state_db, question="A vs B on outcome X?",
+                  question_type="comparative",
+                  sub_questions=["What does A show?", "What does B show?", "Compare?"],
+                  coverage=0.9, wep_phrase="likely", source_count=10)
+    runner = CliRunner()
+    r = runner.invoke(app, ["skills", "list"])
+    assert r.exit_code == 0, r.stdout
+    assert "comparative" in r.stdout
+
+    r = runner.invoke(app, ["skills", "show", "1"])
+    assert r.exit_code == 0, r.stdout
+    assert "Decomposition that worked" in r.stdout
+
+    r = runner.invoke(app, ["skills", "disable", "1"])
+    assert r.exit_code == 0 and "disabled" in r.stdout
+    # Disabled skill drops out of the default (active-only) list.
+    r = runner.invoke(app, ["skills", "list"])
+    assert "comparative" not in r.stdout
+    # ...but is visible with --all.
+    r = runner.invoke(app, ["skills", "list", "--all"])
+    assert "comparative" in r.stdout
+
+    r = runner.invoke(app, ["skills", "prune"])
+    assert r.exit_code == 0
+
+
+def test_skills_show_missing_id_errors(initted_env):
+    runner = CliRunner()
+    r = runner.invoke(app, ["skills", "show", "999"])
+    assert r.exit_code == 1

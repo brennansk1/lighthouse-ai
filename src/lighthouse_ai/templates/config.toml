@@ -71,3 +71,14 @@ sync_interval_hours = 24   # hours between automatic syncs; 0 = sync once on sta
 # Run via: make stack-up  (see docker-compose in scripts/)
 # searxng_url = "http://localhost:8888"
 crag_enabled = true    # set false to disable mid-loop web fetch
+
+[learning]
+# Self-learning skill library: Lighthouse distils reusable research strategies
+# from its own successful runs and applies them to future questions to get more
+# efficient. Skills only shape planning prompts (read-only) — they never act.
+# Browse/manage with: lighthouse skills list | show <id> | disable <id> | prune
+enabled = true
+distill_min_coverage = 0.75   # only learn from runs with >= this citation coverage
+max_skills_injected = 3       # learned strategies fed to the planner per run
+prune_min_trials = 5          # archive a skill after this many uses if it underperforms
+prune_min_winrate = 0.3       # ...below this win-rate (passing, well-sourced runs)
