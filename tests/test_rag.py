@@ -273,3 +273,39 @@ def test_hybrid_search_rerank_candidates_cap():
     )
     # Final output is still capped to top_k.
     assert len(res) <= 2
+
+
+# --- Contextual retrieval (Sprint 30) ---
+
+def test_prepend_context_uses_preamble_fn():
+    from lighthouse_ai.rag.chunker import Chunk
+    from lighthouse_ai.rag.contextual import prepend_context
+    c = Chunk(id="d:0", document_id="d", text="quantum", position=0,
+              metadata={"source": "arxiv"})
+    out = prepend_context([c])
+    assert out[0].text.startswith("[Source: arxiv]")
+    assert "quantum" in out[0].text
+
+
+def test_llm_preamble_fn_falls_back_on_error():
+    from unittest.mock import MagicMock
+
+    from lighthouse_ai.rag.chunker import Chunk
+    from lighthouse_ai.rag.contextual import llm_preamble_fn
+    gw = MagicMock()
+    gw.complete.side_effect = RuntimeError("gateway down")
+    fn = llm_preamble_fn(gw, document_text="some text")
+    c = Chunk(id="d:0", document_id="d", text="hello", position=0,
+              metadata={"source": "arxiv"})
+    result = fn(c)
+    # Should fall back to default_preamble output
+    assert "arxiv" in result or result == ""
+
+
+def test_ingest_text_uses_contextual_retrieval(migrated_paths):
+    """ingest_text always prepends contextual preamble via default_preamble."""
+    from lighthouse_ai.pipeline import PipelineConfig, ResearchPipeline
+    pipe = ResearchPipeline(migrated_paths, config=PipelineConfig(offline=True))
+    n = pipe.ingest_text("d1", "The treatment improved outcomes. Published 2023.",
+                          metadata={"source": "pubmed", "grade": "A"})
+    assert n >= 1

@@ -179,3 +179,19 @@ def test_openalex_search_reconstructs_abstract():
     assert len(docs) == 1
     assert "Topological qubits resist errors" in docs[0].text
     assert docs[0].metadata["cited_by"] == 42
+
+
+# --- entailment gate (Sprint 30) ---
+
+def test_discipline_report_has_entailment_fields():
+    rep = check("The sky is blue [1]. Grass is green [2].")
+    assert hasattr(rep, "entailment_coverage")
+    assert hasattr(rep, "entailment_checked")
+    assert rep.entailment_checked is False  # minicheck not installed in CI
+
+
+def test_discipline_check_accepts_evidence_chunks_kwarg():
+    """check() must accept evidence_chunks without error even if empty."""
+    rep = check("The result is positive [1].", evidence_chunks=[])
+    assert rep is not None
+    assert rep.entailment_checked is False

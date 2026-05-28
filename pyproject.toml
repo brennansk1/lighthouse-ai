@@ -42,6 +42,11 @@ gpu-nvidia = ["pynvml>=11.5"]
 # Heavy cross-encoder reranker (pulls torch). Lazy-imported; absent → graceful
 # fallback to the score-passthrough reranker. Install to activate real reranking.
 reranker = ["FlagEmbedding>=1.3"]
+# Entailment-based faithfulness gate (Sprint 30). Lazy-imported; absent →
+# discipline gate falls back to regex-only citation coverage check.
+# MiniCheck (lytang/MiniCheck-Flan-T5-Large) must be installed separately
+# from source if not yet on PyPI: pip install git+https://github.com/Liyan06/MiniCheck
+faithfulness = ["sentence-transformers>=2.0"]
 
 [project.scripts]
 lighthouse = "lighthouse_ai.cli:app"

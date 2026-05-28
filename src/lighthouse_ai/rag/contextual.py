@@ -50,3 +50,29 @@ def prepend_context(chunks: Iterable[Chunk], *,
             continue
         out.append(replace(c, text=preamble + c.text))
     return out
+
+
+def llm_preamble_fn(gateway: object, *, document_text: str = "") -> PreambleFn:
+    """Return a PreambleFn that generates context using the aux_context LLM role.
+
+    Falls back to default_preamble if the gateway call fails.
+    The generated preamble is a 1-sentence context locator per Anthropic's
+    Contextual Retrieval technique (anthropic.com/news/contextual-retrieval).
+    """
+    def _fn(chunk: Chunk) -> str:
+        try:
+            prompt = (
+                f"Document excerpt:\n"
+                f"{document_text[:2000] if document_text else chunk.text[:500]}\n\n"
+                f"Chunk to contextualize:\n{chunk.text[:400]}\n\n"
+                "In one sentence, describe what this chunk is about and how it fits "
+                "within the larger document. Be specific about names, dates, and claims."
+            )
+            resp = gateway.complete("aux_context", prompt)  # type: ignore[union-attr]
+            preamble = resp.text.strip()[:200]
+            if preamble:
+                return f"[Context: {preamble}] "
+        except Exception:
+            pass
+        return default_preamble(chunk)
+    return _fn

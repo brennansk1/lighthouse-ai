@@ -27,6 +27,12 @@ from ..framing import FramedQuestion, run_framing
 from ..gateway import Gateway
 from ..rag.hybrid import HybridResult, HybridSearch
 
+# Imported at module level so tests can patch lighthouse_ai.modes.deepdive.run_debate
+try:
+    from .debate import run_debate
+except Exception:  # pragma: no cover
+    run_debate = None  # type: ignore[assignment]
+
 
 @dataclass(frozen=True)
 class Section:
@@ -74,6 +80,7 @@ def _research_section(
     job_id: str | None,
     top_k: int = 5,
     rerank_candidates: int | None = None,
+    working_context: CompactedContext | None = None,
 ) -> tuple[Section, list[HybridResult]]:
     """Fetch evidence + draft a section body. Falls back to a deterministic
     stub when the gateway is absent so the orchestrator runs in tests."""
@@ -88,12 +95,30 @@ def _research_section(
             f"- {e.chunk.text[:200]}…" for e in evidence
         )
     else:
-        prompt = (
-            f"Sub-question: {section.sub_question}\n\n"
-            f"Evidence:\n" + "\n".join(f"[{i+1}] {e.chunk.text[:300]}"
-                                       for i, e in enumerate(evidence))
-            + "\n\nDraft a 2-paragraph answer with [N] citations."
-        )
+        evidence_lines = "\n".join(f"[{i+1}] {e.chunk.text[:300]}"
+                                   for i, e in enumerate(evidence))
+        if working_context is not None:
+            open_qs = ", ".join(working_context.open_questions[:5])
+            facts = "; ".join(
+                f[0][:80] for f in working_context.established_facts[:5]
+            )
+            ruled_out = ", ".join(working_context.ruled_out[:3])
+            prompt = (
+                f"Prior research context:\n"
+                f"- Open questions: {open_qs}\n"
+                f"- Established facts: {facts}\n"
+                f"- Ruled out: {ruled_out}\n\n"
+                f"Sub-question: {section.sub_question}\n\n"
+                f"Evidence:\n{evidence_lines}"
+                f"\n\nDraft a 2-paragraph answer with [N] citations."
+                f" Build on the established facts above."
+            )
+        else:
+            prompt = (
+                f"Sub-question: {section.sub_question}\n\n"
+                f"Evidence:\n" + evidence_lines
+                + "\n\nDraft a 2-paragraph answer with [N] citations."
+            )
         resp = gateway.complete("researcher", prompt, job_id=job_id)
         body = resp.text
     from dataclasses import replace
@@ -182,6 +207,43 @@ def _denoise(
             for s in revised]
 
 
+def _extract_debate_subquestions(
+    sections: list[Section],
+    gateway: Gateway | None,
+    job_id: str | None,
+) -> list[str]:
+    """Run Debate on load-bearing sections with [CONTRADICTION] markers.
+
+    Returns a list of dispute crux strings to add as new sub-questions.
+    Empty list when gateway is None or no contradictions found.
+    """
+    if gateway is None:
+        return []
+    new_subs: list[str] = []
+    for sec in sections:
+        if not sec.is_load_bearing:
+            continue
+        if "[CONTRADICTION]" not in sec.body:
+            continue
+        try:
+            if run_debate is None:
+                continue
+            result = run_debate(
+                claim=sec.sub_question,
+                draft=sec.body,
+                gateway=gateway,
+                job_id=job_id,
+            )
+            # The first unresolved dispute becomes a new sub-question
+            if result.disputes:
+                crux = result.disputes[0][:120].strip()
+                if crux and crux not in [s.sub_question for s in sections]:
+                    new_subs.append(crux)
+        except Exception:
+            pass  # never let debate failures break the loop
+    return new_subs[:2]  # cap at 2 new sub-questions per round to control runaway loops
+
+
 def run_deepdive(
     question: str,
     *,
@@ -193,6 +255,7 @@ def run_deepdive(
     rerank_candidates: int | None = None,
     job_id: str | None = None,
     on_round: Callable[[int, list[Section]], None] | None = None,
+    min_entailment_for_early_stop: float = 0.0,
 ) -> DraftReport:
     framed = run_framing(question)
     sections = _skeleton(framed)
@@ -200,27 +263,56 @@ def run_deepdive(
 
     rounds_used = 0
     prev_open_count: int | None = None
+    working_context: CompactedContext | None = None
     for round_idx in range(1, max_rounds + 1):
         round_evidence: list[HybridResult] = []
         new_sections: list[Section] = []
         for sec in sections:
-            sec2, evid = _research_section(sec, hybrid, gateway, job_id=job_id,
-                                           top_k=top_k,
-                                           rerank_candidates=rerank_candidates)
+            sec2, evid = _research_section(
+                sec, hybrid, gateway, job_id=job_id,
+                top_k=top_k,
+                rerank_candidates=rerank_candidates,
+                working_context=working_context,
+            )
             new_sections.append(sec2)
             round_evidence.extend(evid)
         sections = _denoise(new_sections, gateway=gateway, job_id=job_id)
+
+        # Debate auto-wiring: trigger on load-bearing sections with contradictions
+        if gateway is not None and round_idx < max_rounds:
+            new_subs = _extract_debate_subquestions(sections, gateway, job_id)
+            if new_subs:
+                for sq in new_subs:
+                    sections.append(Section(
+                        title=f"Section {len(sections)+1}: {sq[:60]}",
+                        sub_question=sq, body="", is_load_bearing=True,
+                    ))
+
         evidence_rounds.append(round_evidence)
         rounds_used = round_idx
+
+        # Build compacted context for next round
+        provisional = DraftReport(
+            question=question, framing=framed, sections=sections,
+            open_questions=[s.sub_question for s in sections if not s.body.strip()],
+            rounds_used=round_idx, evidence_chunks=round_evidence,
+        )
+        working_context = compact(provisional)
+
         if on_round:
             on_round(round_idx, sections)
+
         # Terminate when the discovery curve has flattened AND no new open
         # questions were resolved/created since the prior round (§Sprint 28).
         open_count = sum(1 for s in sections if not s.body.strip())
         progress = _discovery_progress(evidence_rounds)
         stuck = progress < progress_threshold
         open_unchanged = prev_open_count is not None and open_count == prev_open_count
-        if stuck and open_unchanged and round_idx > 1:
+        # Entailment gate (seam for pipeline.py to pass a threshold later)
+        entailment_ok = True
+        if min_entailment_for_early_stop > 0.0:
+            entailment_ok = True  # conservative default; pipeline fills this in
+        if stuck and open_unchanged and entailment_ok and round_idx > 1:
             break
         prev_open_count = open_count
 

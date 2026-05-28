@@ -172,7 +172,7 @@ class ResearchPipeline:
         # installed; otherwise a score-passthrough that preserves fusion order.
         # `available()` probes via find_spec, so this never imports torch or
         # downloads a model on its own (§Sprint 28 step 1).
-        self.reranker = make_reranker(prefer_real=not self.config.offline)
+        self.reranker = make_reranker(prefer_real=True)
         self.hybrid = HybridSearch(self.store, self.embedder, BM25Index(),
                                    reranker=self.reranker)
         self.gateway = gateway or make_gateway(
@@ -195,9 +195,24 @@ class ResearchPipeline:
         — injected instructions must never reach the LLM's context silently.
         Blocked chunks are counted (surfaced in the result) so the user can see
         a source was partially withheld.
+
+        Each chunk is enriched with a contextual preamble before indexing
+        (Anthropic Contextual Retrieval, §14.3). When the gateway is live and
+        not in offline mode, an LLM-generated 1-sentence context locator is
+        used; otherwise the deterministic metadata-based preamble is used.
         """
+        from .rag.contextual import default_preamble, llm_preamble_fn, prepend_context
+
         doc = Document(id=doc_id, text=text, metadata=metadata or {})
         chunks = chunk_document(doc)
+
+        # --- contextual preamble ---
+        if self.gateway is not None and not self.config.offline:
+            preamble_fn = llm_preamble_fn(self.gateway, document_text=text)
+        else:
+            preamble_fn = default_preamble
+        chunks = prepend_context(chunks, preamble_fn=preamble_fn)
+
         safe = []
         for c in chunks:
             verdict = self._injection_gate.score(c.text)

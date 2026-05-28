@@ -44,6 +44,8 @@ class DisciplineReport:
     passed: bool                      # meets the configured floor
     notes: list[str] = field(default_factory=list)
     distinct_sources: int = 0
+    entailment_coverage: float = 0.0  # fraction of sourced claims entailed by grounding
+    entailment_checked: bool = False   # True iff MiniCheck/HHEM was available
 
 
 def extract_claims(text: str) -> list[Claim]:
@@ -68,12 +70,17 @@ def extract_claims(text: str) -> list[Claim]:
 
 
 def check(text: str, *, min_coverage: float = 0.6,
-          high_stakes: bool = False) -> DisciplineReport:
+          high_stakes: bool = False,
+          evidence_chunks: list | None = None) -> DisciplineReport:
     """Run the discipline gate over a synthesis block.
 
     ``min_coverage`` — required fraction of claims carrying >=1 citation.
     ``high_stakes`` — when True, claims should satisfy the two-source rule.
+    ``evidence_chunks`` — optional list of HybridResult or Chunk objects used
+        to score entailment faithfulness via MiniCheck / HHEM when available.
     """
+    from . import entailment as _entailment
+
     claims = extract_claims(text)
     if not claims:
         return DisciplineReport(claims=[], sourced=0, unsourced=0, two_sourced=0,
@@ -91,9 +98,49 @@ def check(text: str, *, min_coverage: float = 0.6,
         notes.append(f"two-source rule: only {two}/{sourced} sourced claims "
                      f"have >=2 independent citations")
         passed = passed and (two >= sourced)
+
+    # --- entailment gate (MiniCheck / HHEM when available) ---
+    entailment_coverage = 0.0
+    entailment_checked = False
+    if evidence_chunks is not None and _entailment.available():
+        sourced_claims = [c for c in claims if c.is_sourced]
+        if sourced_claims:
+            # Build a lookup: citation_id → chunk text (best-effort)
+            chunk_by_id: dict[int, str] = {}
+            for idx, r in enumerate(evidence_chunks, start=1):
+                chunk = getattr(r, "chunk", r)
+                chunk_text = getattr(chunk, "text", "")
+                chunk_by_id[idx] = chunk_text
+
+            entailed = 0
+            for claim in sourced_claims:
+                # Use the first available citation to find the grounding chunk.
+                grounding = ""
+                for cid in claim.citation_ids:
+                    if cid in chunk_by_id:
+                        grounding = chunk_by_id[cid]
+                        break
+                if not grounding and chunk_by_id:
+                    # Fall back to the first chunk if no id matches.
+                    grounding = next(iter(chunk_by_id.values()))
+                score = _entailment.score_claim(claim.text, grounding)
+                if score >= _entailment.MINICHECK_THRESHOLD:
+                    entailed += 1
+            entailment_coverage = entailed / len(sourced_claims)
+            entailment_checked = True
+
+            if high_stakes and entailment_coverage < 0.85:
+                notes.append(
+                    f"high-stakes entailment floor not met: "
+                    f"{entailment_coverage:.0%} < 85%"
+                )
+                passed = False
+
     return DisciplineReport(claims=claims, sourced=sourced, unsourced=unsourced,
                             two_sourced=two, citation_coverage=round(coverage, 3),
-                            passed=passed, notes=notes)
+                            passed=passed, notes=notes,
+                            entailment_coverage=round(entailment_coverage, 3),
+                            entailment_checked=entailment_checked)
 
 
 def check_source_diversity(evidence_chunks) -> int:

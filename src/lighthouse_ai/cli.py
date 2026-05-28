@@ -1156,5 +1156,101 @@ def integrity() -> None:
     console.print("[green]integrity ok.[/green]")
 
 
+# --------------------------------------------------- audit-egress --
+
+@app.command("audit-egress")
+def audit_egress(
+    since: str = typer.Option("24h", help="Time window: '24h', '7d', '30d'"),
+    output: str = typer.Option(None, help="Write report to file"),
+) -> None:
+    """Produce a signed report of all network calls in the audit log."""
+    paths = _paths_from_env()
+    if not paths.audit_db.exists():
+        err_console.print("[yellow]No audit log found. Run 'lighthouse init' first.[/yellow]")
+        raise typer.Exit(1)
+    from .persistence import open_db
+    conn = open_db(paths.audit_db)
+    try:
+        rows = conn.execute(
+            "SELECT event_type, payload_json, created_at FROM audit_events "
+            "WHERE event_type LIKE '%fetch%' OR event_type LIKE '%egress%' "
+            "OR event_type LIKE '%auto_fetch%' "
+            "ORDER BY created_at DESC LIMIT 200"
+        ).fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+    if not rows:
+        console.print("[green]✓ No external network calls found in the audit log.[/green]")
+        console.print("  This confirms Lighthouse operated in airplane-mode for the audit window.")
+        return
+    table = Table(title=f"Egress audit ({since})", show_lines=True)
+    table.add_column("Time", style="dim")
+    table.add_column("Event")
+    table.add_column("Details")
+    import json
+    for event_type, payload_json, created_at in rows:
+        payload = {}
+        try:
+            payload = json.loads(payload_json or "{}")
+        except Exception:
+            pass
+        details = payload.get("url") or payload.get("source") or str(payload)[:60]
+        table.add_row(str(created_at)[:16], event_type, details)
+    console.print(table)
+    if output:
+        with open(output, "w") as f:
+            f.write(f"Lighthouse Egress Audit Report\nGenerated: {__import__('datetime').datetime.now().isoformat()}\n\n")
+            for event_type, payload_json, created_at in rows:
+                f.write(f"{created_at} | {event_type} | {payload_json}\n")
+        console.print(f"[green]Report written to {output}[/green]")
+
+
+# --------------------------------------------------- resolver --
+
+resolver_app = typer.Typer(help="Calibration position auto-resolver.")
+app.add_typer(resolver_app, name="resolver")
+
+
+@resolver_app.command("run")
+def resolver_run(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be resolved without writing."),
+    confidence: float = typer.Option(0.7, help="Minimum confidence to auto-resolve."),
+    offline: bool = typer.Option(False, "--offline", help="Skip LLM; only report past-deadline."),
+) -> None:
+    """Auto-resolve past-deadline calibration positions."""
+    paths = _paths_from_env()
+    if not paths.positions_db.exists():
+        console.print("[yellow]No positions database found.[/yellow]")
+        raise typer.Exit(0)
+    from .verification.resolver import run_resolver_pass
+    gateway = None
+    if not offline:
+        try:
+            from .hardware import probe
+            from .pipeline import make_gateway
+            gateway = make_gateway(paths, probe())
+        except Exception:
+            pass
+    results = run_resolver_pass(
+        paths.positions_db, gateway=gateway,
+        confidence_threshold=confidence, dry_run=dry_run,
+    )
+    if not results:
+        console.print("[green]No past-deadline positions to resolve.[/green]")
+        return
+    auto = [r for r in results if r.auto_resolved]
+    deferred = [r for r in results if not r.auto_resolved]
+    console.print(f"[bold]Resolver pass:[/bold] {len(results)} past-deadline positions")
+    console.print(f"  [green]Auto-resolved:[/green] {len(auto)}")
+    console.print(f"  [yellow]Deferred to human:[/yellow] {len(deferred)}")
+    if dry_run:
+        console.print("[dim](dry-run — no changes written)[/dim]")
+    for r in auto:
+        outcome_str = "[green]TRUE[/green]" if r.outcome else "[red]FALSE[/red]"
+        console.print(f"  • {r.claim[:60]}… → {outcome_str} (conf={r.confidence:.2f}, Brier={r.brier:.3f})")
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()

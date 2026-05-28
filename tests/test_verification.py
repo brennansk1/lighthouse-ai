@@ -212,3 +212,79 @@ def test_skill_upsert_on_same_name(migrated_paths):
     assert a == b
     skills = list_skills(migrated_paths.state_db)
     assert skills[0].body == {"a": 2}
+
+
+# --- Resolver (Sprint 32) ---
+
+def test_is_past_deadline_with_past_date():
+    from lighthouse_ai.verification.resolver import is_past_deadline
+    assert is_past_deadline("2020-01-01T00:00:00") is True
+
+def test_is_past_deadline_with_future_date():
+    from lighthouse_ai.verification.resolver import is_past_deadline
+    assert is_past_deadline("2099-01-01T00:00:00") is False
+
+def test_is_past_deadline_with_none():
+    from lighthouse_ai.verification.resolver import is_past_deadline
+    assert is_past_deadline(None) is False
+
+def test_classify_machine_resolvable():
+    from lighthouse_ai.verification.resolver import classify_resolution_kind
+    assert classify_resolution_kind("Will drug X be FDA-approved by 2025?") == "machine"
+
+def test_classify_human_only():
+    from lighthouse_ai.verification.resolver import classify_resolution_kind
+    assert classify_resolution_kind("Should we prioritize economic growth?") == "human"
+
+def test_attempt_auto_resolve_without_gateway():
+    from lighthouse_ai.verification.resolver import attempt_auto_resolve
+    result = attempt_auto_resolve(1, "Will X happen?", 0.7, gateway=None)
+    assert result.auto_resolved is False
+    assert result.outcome is None
+
+def test_attempt_auto_resolve_human_claim():
+    from unittest.mock import MagicMock
+
+    from lighthouse_ai.verification.resolver import attempt_auto_resolve
+    gw = MagicMock()
+    result = attempt_auto_resolve(1, "Should we invest in nuclear energy?", 0.6,
+                                  gateway=gw)
+    assert result.auto_resolved is False
+    gw.complete.assert_not_called()
+
+def test_attempt_auto_resolve_success():
+    from unittest.mock import MagicMock
+
+    from lighthouse_ai.verification.resolver import attempt_auto_resolve
+    gw = MagicMock()
+    gw.complete.return_value = MagicMock(
+        text="TRUE: 0.85 — Drug X received FDA approval in Q2 2024."
+    )
+    result = attempt_auto_resolve(1, "Will drug X be approved by 2024?", 0.8, gateway=gw)
+    assert result.auto_resolved is True
+    assert result.outcome is True
+    assert abs(result.confidence - 0.85) < 0.01
+    assert result.brier is not None
+
+def test_parse_resolution_true():
+    from lighthouse_ai.verification.resolver import _parse_resolution
+    outcome, conf, rationale = _parse_resolution("TRUE: 0.9 — Evidence confirmed.")
+    assert outcome is True
+    assert abs(conf - 0.9) < 0.01
+    assert "confirmed" in rationale
+
+def test_parse_resolution_false():
+    from lighthouse_ai.verification.resolver import _parse_resolution
+    outcome, conf, rationale = _parse_resolution("FALSE: 0.75 — Studies refuted it.")
+    assert outcome is False
+
+def test_parse_resolution_uncertain():
+    from lighthouse_ai.verification.resolver import _parse_resolution
+    outcome, conf, rationale = _parse_resolution("UNCERTAIN: — Not enough data.")
+    assert outcome is None
+
+def test_run_resolver_pass_no_past_deadline(migrated_paths):
+    """No positions → empty results."""
+    from lighthouse_ai.verification.resolver import run_resolver_pass
+    results = run_resolver_pass(migrated_paths.positions_db, gateway=None)
+    assert results == []

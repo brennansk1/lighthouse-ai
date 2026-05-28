@@ -460,6 +460,37 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         backend = SecretStore(paths.data_dir).put(body.key, body.value)
         return {"key": body.key, "backend": backend}
 
+    # ========================= RESEARCH PLAN =======================
+
+    @app.post("/api/research/plan", tags=["research"])
+    def preview_plan(body: dict) -> dict[str, Any]:
+        from ..framing.pipeline import run_framing
+        question = str(body.get("question", "")).strip()
+        if not question:
+            raise HTTPException(status_code=422, detail="question is required")
+        try:
+            fq = run_framing(question)
+            return {
+                "question_type": fq.question_type.value,
+                "critique": {
+                    "well_formed": fq.critique.well_formed,
+                    "is_compound": fq.critique.is_compound,
+                    "has_presupposition": fq.critique.has_presupposition,
+                    "is_underspecified": fq.critique.is_underspecified,
+                    "implicit_utility": fq.critique.implicit_utility,
+                    "notes": fq.critique.notes,
+                },
+                "framings": [
+                    {"label": f.label, "statement": f.statement, "rationale": f.rationale}
+                    for f in fq.framings
+                ],
+                "chosen_label": fq.chosen.label,
+                "sub_questions": fq.sub_questions,
+                "load_bearing": fq.load_bearing,
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
 
 # ---- health payload -------------------------------------------------------
 

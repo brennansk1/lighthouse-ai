@@ -1149,21 +1149,278 @@
     );
   }
 
+  // ── Research Plan Preview (inside NewJobModal) ───────────────────────────
+
+  function QuestionTypeChip({ type }) {
+    const COLOR_MAP = {
+      comparative:       { bg: '#e3f2fd', color: '#1565c0' },
+      causal_explanation:{ bg: '#fce4ec', color: '#880e4f' },
+      predictive:        { bg: '#e8f5e9', color: '#2e7d32' },
+      evaluative:        { bg: '#fff8e1', color: '#795548' },
+      descriptive:       { bg: '#f3e5f5', color: '#6a1b9a' },
+      normative:         { bg: '#fbe9e7', color: '#bf360c' },
+    };
+    const s = COLOR_MAP[type] || { bg: 'var(--rule-soft)', color: 'var(--muted)' };
+    return (
+      <span style={{
+        display: 'inline-block', padding: '2px 10px', borderRadius: 99,
+        fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
+        background: s.bg, color: s.color, textTransform: 'uppercase',
+      }}>{(type || 'unknown').replace(/_/g, ' ')}</span>
+    );
+  }
+
+  function PlanPreview({ plan, onUpdate }) {
+    // plan: { question_type, critique, framings, chosen_label, sub_questions, load_bearing }
+    const [subQs, setSubQs] = useState(plan.sub_questions || []);
+    const [editIdx, setEditIdx] = useState(null);
+    const [editVal, setEditVal] = useState('');
+    const [chosenLabel, setChosenLabel] = useState(plan.chosen_label);
+    const [collapsed, setCollapsed] = useState(false);
+
+    const loadBearing = new Set(plan.load_bearing || []);
+    const critiqueNotes = (plan.critique && plan.critique.notes) || [];
+
+    // Derive warnings from critique flags
+    const warnings = [];
+    if (plan.critique) {
+      if (plan.critique.is_compound) warnings.push('Compound question — consider splitting into sub-questions.');
+      if (plan.critique.has_presupposition) warnings.push('Contains a presupposition that may need examination.');
+      if (plan.critique.is_underspecified) warnings.push('Underspecified — clarifying details may improve results.');
+      if (plan.critique.implicit_utility) warnings.push('Implicit value judgment detected.');
+    }
+    critiqueNotes.forEach((n) => { if (!warnings.includes(n)) warnings.push(n); });
+
+    function startEdit(i) {
+      setEditIdx(i);
+      setEditVal(subQs[i]);
+    }
+
+    function commitEdit(i) {
+      const next = subQs.slice();
+      next[i] = editVal.trim() || subQs[i];
+      setSubQs(next);
+      setEditIdx(null);
+      onUpdate({ sub_questions: next, chosen_label: chosenLabel });
+    }
+
+    function removeQ(i) {
+      const next = subQs.filter((_, j) => j !== i);
+      setSubQs(next);
+      onUpdate({ sub_questions: next, chosen_label: chosenLabel });
+    }
+
+    function addQ() {
+      const next = [...subQs, ''];
+      setSubQs(next);
+      setEditIdx(next.length - 1);
+      setEditVal('');
+    }
+
+    function chooseFraming(label) {
+      setChosenLabel(label);
+      onUpdate({ sub_questions: subQs, chosen_label: label });
+    }
+
+    const chosenFraming = plan.framings.find((f) => f.label === chosenLabel) || plan.framings[0];
+    const altFramings = plan.framings.filter((f) => f.label !== chosenLabel);
+
+    return (
+      <div style={{
+        marginTop: 14, border: '1px solid var(--sky)', borderRadius: 'var(--radius-sm)',
+        background: 'var(--sky-soft)', overflow: 'hidden',
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '10px 14px', borderBottom: '1px solid var(--rule-soft)',
+          background: 'var(--card)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>&#10003; Research Plan</span>
+            <QuestionTypeChip type={plan.question_type} />
+          </div>
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-expanded={!collapsed}
+            style={{
+              border: 'none', background: 'none', cursor: 'pointer',
+              fontSize: 11, color: 'var(--muted)', fontWeight: 600,
+              fontFamily: 'var(--sans)', padding: '2px 6px',
+            }}
+          >{collapsed ? 'Show plan' : 'Hide plan'}</button>
+        </div>
+
+        {!collapsed && (
+          <div style={{ padding: '12px 14px' }}>
+            {/* Critique warnings */}
+            {warnings.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
+                {warnings.map((w, i) => (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 6,
+                    padding: '5px 10px', borderRadius: 'var(--radius-sm)',
+                    background: '#fff8e1', border: '1px solid var(--sand)',
+                    fontSize: 11.5, color: '#795548', lineHeight: 1.4,
+                  }}>
+                    <span style={{ flexShrink: 0, fontWeight: 700 }}>&#9888;</span>
+                    <span>{w}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Sub-questions */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{
+                fontSize: 10, fontWeight: 700, color: 'var(--muted)',
+                textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6,
+              }}>Sub-questions</div>
+              {subQs.map((q, i) => {
+                const isLB = loadBearing.has(q);
+                return (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '5px 0',
+                    borderBottom: i < subQs.length - 1 ? '1px solid var(--rule-soft)' : 'none',
+                  }}>
+                    <span style={{ flexShrink: 0, fontSize: 12 }} title="Load-bearing question">
+                      {isLB ? '🎯' : '  '}
+                    </span>
+                    {editIdx === i ? (
+                      <input
+                        autoFocus
+                        value={editVal}
+                        onChange={(e) => setEditVal(e.target.value)}
+                        onBlur={() => commitEdit(i)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); commitEdit(i); }
+                          if (e.key === 'Escape') { setEditIdx(null); }
+                        }}
+                        style={{ ...inputStyle, flex: 1, fontSize: 12, padding: '3px 6px' }}
+                        aria-label={`Edit sub-question ${i + 1}`}
+                      />
+                    ) : (
+                      <span style={{ flex: 1, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.4 }}>{q || '​'}</span>
+                    )}
+                    <button
+                      type="button"
+                      title="Edit"
+                      onClick={() => startEdit(i)}
+                      style={{
+                        border: 'none', background: 'none', cursor: 'pointer',
+                        fontSize: 11, color: 'var(--muted)', padding: '1px 4px',
+                        borderRadius: 3, flexShrink: 0,
+                      }}
+                      aria-label={`Edit sub-question ${i + 1}`}
+                    >&#9998;</button>
+                    <button
+                      type="button"
+                      title="Remove"
+                      onClick={() => removeQ(i)}
+                      style={{
+                        border: 'none', background: 'none', cursor: 'pointer',
+                        fontSize: 13, color: 'var(--muted)', padding: '1px 4px',
+                        borderRadius: 3, flexShrink: 0,
+                      }}
+                      aria-label={`Remove sub-question ${i + 1}`}
+                    >&times;</button>
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={addQ}
+                style={{
+                  marginTop: 6, border: '1px dashed var(--rule)', borderRadius: 'var(--radius-sm)',
+                  background: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--primary)',
+                  padding: '4px 10px', fontFamily: 'var(--sans)', width: '100%', textAlign: 'left',
+                }}
+                aria-label="Add sub-question"
+              >+ Add sub-question</button>
+            </div>
+
+            {/* Chosen framing */}
+            {chosenFraming && (
+              <div>
+                <div style={{
+                  fontSize: 10, fontWeight: 700, color: 'var(--muted)',
+                  textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6,
+                }}>Frame</div>
+                <div style={{
+                  padding: '8px 12px', borderRadius: 'var(--radius-sm)',
+                  background: 'var(--card)', border: '1px solid var(--primary)',
+                  fontSize: 12.5, color: 'var(--ink)', marginBottom: 8, lineHeight: 1.4,
+                }}>
+                  <span style={{ fontWeight: 700, color: 'var(--primary)', marginRight: 4 }}>{chosenFraming.label} —</span>
+                  {chosenFraming.statement}
+                  {chosenFraming.rationale && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, fontStyle: 'italic' }}>
+                      {chosenFraming.rationale}
+                    </div>
+                  )}
+                </div>
+                {altFramings.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {altFramings.map((f) => (
+                      <button
+                        key={f.label}
+                        type="button"
+                        onClick={() => chooseFraming(f.label)}
+                        title={f.statement}
+                        style={{
+                          border: '1px solid var(--rule)', borderRadius: 99,
+                          background: 'var(--card)', cursor: 'pointer',
+                          fontSize: 11, color: 'var(--ink-2)', padding: '3px 10px',
+                          fontFamily: 'var(--sans)', transition: 'border-color .1s',
+                        }}
+                        aria-label={`Switch to framing ${f.label}: ${f.statement}`}
+                      >{f.label} — {f.statement.length > 40 ? f.statement.slice(0, 40) + '…' : f.statement}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function NewJobModal({ onClose, onCreated, toast }) {
     const [mode, setMode] = useState('Deep-Dive');
     const [topic, setTopic] = useState('');
     const [depth, setDepth] = useState('Standard');
     const [sources, setSources] = useState(10);
     const [busy, setBusy] = useState(false);
+    const [planBusy, setPlanBusy] = useState(false);
+    const [plan, setPlan] = useState(null);
+    const [planMods, setPlanMods] = useState(null); // user edits to the plan
     const textRef = useRef(null);
     useEffect(() => { if (textRef.current) textRef.current.focus(); }, []);
+
+    async function previewPlan() {
+      if (!topic.trim()) { toast.show('Enter a topic first.', 'info'); return; }
+      setPlanBusy(true);
+      try {
+        const result = await apiPost('/api/research/plan', { question: topic.trim() });
+        setPlan(result);
+        setPlanMods({ sub_questions: result.sub_questions, chosen_label: result.chosen_label });
+      } catch (err) {
+        toast.show(`Plan preview failed: ${err.message}`, 'error');
+      } finally {
+        setPlanBusy(false);
+      }
+    }
 
     async function submit(e) {
       if (e) e.preventDefault();
       if (!topic.trim()) { toast.show('Enter a topic first.', 'info'); return; }
       setBusy(true);
       try {
-        await apiPost('/api/jobs', { mode, topic: topic.trim(), depth, sources });
+        const metadata = planMods ? { research_plan: planMods } : undefined;
+        await apiPost('/api/jobs', { mode, topic: topic.trim(), depth, sources, ...(metadata ? { metadata } : {}) });
         onCreated();
       } catch (err) {
         toast.show(err.message, 'error');
@@ -1180,14 +1437,42 @@
               ref={textRef}
               rows={3}
               value={topic}
-              onChange={(e) => setTopic(e.target.value)}
+              onChange={(e) => { setTopic(e.target.value); setPlan(null); setPlanMods(null); }}
               placeholder="What should Lighthouse research?"
               style={{ ...inputStyle, resize: 'vertical', minHeight: 72 }}
               aria-label="Research topic"
             />
           </LocalField>
 
-          <LocalField label="Mode">
+          {/* Preview Plan button — shown when there is a topic but no plan yet */}
+          {!plan && (
+            <div style={{ marginBottom: 14 }}>
+              <button
+                type="button"
+                disabled={planBusy || !topic.trim()}
+                onClick={previewPlan}
+                aria-label="Preview research plan"
+                style={{
+                  border: `1px solid var(--primary)`, borderRadius: 'var(--radius-sm)',
+                  background: planBusy ? 'var(--sky-soft)' : 'var(--card)',
+                  color: 'var(--primary)', cursor: planBusy || !topic.trim() ? 'not-allowed' : 'pointer',
+                  fontSize: 12, fontWeight: 600, padding: '6px 14px',
+                  fontFamily: 'var(--sans)', opacity: !topic.trim() ? 0.5 : 1,
+                  transition: 'background .12s',
+                }}
+              >{planBusy ? 'Analysing…' : 'Preview Plan →'}</button>
+            </div>
+          )}
+
+          {/* Plan preview panel */}
+          {plan && (
+            <PlanPreview
+              plan={plan}
+              onUpdate={(mods) => setPlanMods(mods)}
+            />
+          )}
+
+          <LocalField label="Mode" style={{ marginTop: plan ? 14 : 0 }}>
             <ModeRadio value={mode} onChange={setMode} />
           </LocalField>
 
@@ -1510,6 +1795,164 @@
     );
   }
 
+  // ── Evidence Table (inside DraftReader) ────────────────────────────────
+
+  function EntailmentBadge({ score }) {
+    if (score == null) {
+      return (
+        <span style={{
+          fontSize: 11, background: 'var(--rule-soft)', color: 'var(--muted)',
+          padding: '2px 7px', borderRadius: 99, fontWeight: 600,
+        }}>?</span>
+      );
+    }
+    const supported = score >= 0.5;
+    return (
+      <span style={{
+        fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 99,
+        background: supported ? '#e8f5e9' : '#fff8e1',
+        color: supported ? 'var(--green-dark)' : '#795548',
+      }}>{supported ? '✓ supported' : '✗ uncertain'}</span>
+    );
+  }
+
+  function EvidenceTable({ draft }) {
+    // Parse [N] citation markers from body_html
+    const citations = Array.isArray(draft.citations) ? draft.citations : [];
+    const sourceCount = draft.source_count != null ? draft.source_count : 0;
+
+    // Build rows from citations array if available; otherwise use a placeholder
+    const hasCitationData = citations.length > 0;
+
+    function buildCSV(rows) {
+      const header = 'Source,Excerpt,Grade,Entailment\n';
+      const body = rows.map((r) => {
+        const esc = (v) => `"${String(v || '').replace(/"/g, '""')}"`;
+        return [esc(r.source), esc(r.excerpt), esc(r.grade), esc(r.entailment)].join(',');
+      }).join('\n');
+      return header + body;
+    }
+
+    function downloadCSV(rows) {
+      const csv = buildCSV(rows);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `evidence-${draft.id || 'draft'}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // Build table rows from citations metadata
+    const rows = citations.map((c, i) => ({
+      source: c.source || c.url || `[${i + 1}]`,
+      excerpt: c.text ? c.text.slice(0, 80) + (c.text.length > 80 ? '…' : '') : '—',
+      grade: c.grade || '—',
+      entailment_score: c.entailment_score != null ? c.entailment_score : null,
+      entailment: c.entailment_score != null
+        ? (c.entailment_score >= 0.5 ? '✓ supported' : '✗ uncertain')
+        : '?',
+    }));
+
+    return (
+      <div style={{ marginTop: 28 }}>
+        {/* Section header */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          marginBottom: 10,
+        }}>
+          <div style={{
+            fontSize: 10, fontWeight: 700, color: 'var(--muted)',
+            textTransform: 'uppercase', letterSpacing: '0.08em',
+          }}>Evidence table</div>
+          {rows.length > 0 && (
+            <button
+              type="button"
+              onClick={() => downloadCSV(rows)}
+              style={{
+                border: '1px solid var(--rule)', borderRadius: 'var(--radius-sm)',
+                background: 'var(--card)', cursor: 'pointer', fontSize: 11,
+                color: 'var(--ink-2)', padding: '3px 10px', fontFamily: 'var(--sans)',
+                fontWeight: 600,
+              }}
+              aria-label="Export evidence table as CSV"
+            >Export CSV</button>
+          )}
+        </div>
+
+        <div style={{
+          border: '1px solid var(--rule)', borderRadius: 'var(--radius-sm)',
+          overflow: 'hidden', background: 'var(--card)',
+        }}>
+          {/* Table header */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '100px 1fr 60px 120px',
+            gap: 8, padding: '7px 12px',
+            background: 'var(--paper)', borderBottom: '1px solid var(--rule)',
+          }}>
+            {['Source', 'Excerpt', 'Grade', 'Entailment'].map((h) => (
+              <div key={h} style={{
+                fontSize: 10, fontWeight: 700, color: 'var(--muted)',
+                textTransform: 'uppercase', letterSpacing: '0.07em',
+              }}>{h}</div>
+            ))}
+          </div>
+
+          {/* Placeholder when no chunk data available yet */}
+          {!hasCitationData && sourceCount > 0 && (
+            <div style={{
+              padding: '16px 14px', fontSize: 12.5, color: 'var(--muted)',
+              fontStyle: 'italic', textAlign: 'center',
+            }}>
+              Citation analysis available after re-research
+            </div>
+          )}
+
+          {/* No sources at all */}
+          {!hasCitationData && sourceCount === 0 && (
+            <div style={{
+              padding: '16px 14px', fontSize: 12.5, color: 'var(--muted)',
+              fontStyle: 'italic', textAlign: 'center',
+            }}>
+              No citations in this draft.
+            </div>
+          )}
+
+          {/* Populated rows */}
+          {rows.map((r, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'grid', gridTemplateColumns: '100px 1fr 60px 120px',
+                gap: 8, padding: '8px 12px', alignItems: 'start',
+                borderTop: '1px solid var(--rule-soft)',
+                background: i % 2 === 1 ? 'var(--paper)' : 'var(--card)',
+              }}
+            >
+              <div style={{
+                fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }} title={r.source}>{r.source}</div>
+              <div style={{
+                fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.4,
+                fontStyle: 'italic',
+              }}>{r.excerpt}</div>
+              <div style={{
+                fontSize: 12, fontWeight: 700, color: 'var(--ink)',
+                fontFamily: 'var(--mono)',
+              }}>{r.grade}</div>
+              <div><EntailmentBadge score={r.entailment_score} /></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   function DraftReader({ draft }) {
     const sources = draft.source_count != null ? draft.source_count
       : Array.isArray(draft.sources) ? draft.sources.length : null;
@@ -1567,6 +2010,11 @@
           <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>
             This draft has no body content yet.
           </div>
+        )}
+
+        {/* Evidence table — shown when there is body content or sources */}
+        {(draft.body_html || sources > 0) && (
+          <EvidenceTable draft={draft} />
         )}
 
         {/* Rejection note */}
