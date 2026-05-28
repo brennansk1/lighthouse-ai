@@ -66,6 +66,11 @@ class ActBody(BaseModel):
     pass  # no payload required; act_on_reflection uses the stored reflection
 
 
+class NotifyEventsBody(BaseModel):
+    events: list[str]
+    telegram_events: list[str] | None = None
+
+
 # ---- helpers --------------------------------------------------------------
 
 def _rows(conn, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
@@ -77,6 +82,50 @@ def _rows(conn, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
 def _json_field(d: dict[str, Any], key: str) -> dict[str, Any]:
     raw = d.pop(key, None)
     return json.loads(raw) if raw else {}
+
+
+def _fire_notify(paths: "Paths", event: str, title: str, body: str, **data: Any) -> None:
+    """Best-effort notification dispatch from the web API.
+
+    Loads the [notifications] config, builds channels, applies per-channel
+    Telegram template rendering, and dispatches.  Never raises.
+    """
+    try:
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore
+        cfg: dict[str, Any] = {}
+        if paths.config_file.exists():
+            with paths.config_file.open("rb") as fh:
+                cfg = tomllib.load(fh).get("notifications", {})
+        if not cfg:
+            return
+        from .notify import DesktopChannel, DiscordChannel, Notifier
+        from .notify.telegram import TelegramChannel
+        from .notify.telegram_templates import render as _tg_render
+
+        tg_events: list[str] = cfg.get(
+            "telegram_events", cfg.get("events", [])
+        )
+        channels: list[tuple[str, Any]] = [("desktop", DesktopChannel())]
+        if cfg.get("discord_webhook_url"):
+            channels.append(("discord", DiscordChannel(cfg["discord_webhook_url"])))
+        if cfg.get("telegram_bot_token") and cfg.get("telegram_chat_id"):
+            if not tg_events or event in tg_events:
+                channels.append(("telegram", TelegramChannel(
+                    bot_token=cfg["telegram_bot_token"],
+                    chat_id=cfg["telegram_chat_id"],
+                )))
+        plain_chs = [(n, c) for n, c in channels if n != "telegram"]
+        tg_chs = [(n, c) for n, c in channels if n == "telegram"]
+        if plain_chs:
+            Notifier(cfg, plain_chs).notify(event, title, body)
+        if tg_chs:
+            tg_title, tg_body = _tg_render(event, title, body, **data)
+            Notifier(cfg, tg_chs).notify(event, tg_title, tg_body)
+    except Exception:
+        pass
 
 
 # ---- registration ---------------------------------------------------------
@@ -264,6 +313,10 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
                 "logseq.export_failed", draft_id=draft_id, error=str(_exc)
             )  # Logseq export is best-effort; never fail the approval
         bus.publish("draft.approved", {"id": draft_id})
+        # Fire Telegram/desktop notification for draft approval (best-effort)
+        _fire_notify(paths, "draft_approved", "Draft approved",
+                     f"Draft approved: {draft_id}",
+                     draft_id=draft_id)
         return {"id": draft_id, "status": "published"}
 
     @app.post("/api/drafts/{draft_id}/reject", tags=["drafts"])
@@ -525,6 +578,78 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
             "sync_interval_hours": cfg.get("sync_interval_hours", 24),
             "pending_sync": pending,
         }
+
+    # ========================= NOTIFICATIONS =======================
+
+    _NOTIFY_ALL_EVENTS = [
+        "draft_ready", "draft_approved", "job_started", "job_completed",
+        "job_failed", "monitor_alert_high", "monitor_alert_medium",
+        "budget_warn", "budget_trip", "logseq_synced",
+        "escalation_raised", "position_resolved",
+    ]
+
+    @app.get("/api/settings/notifications", tags=["settings"])
+    def notifications_status() -> dict[str, Any]:
+        """Return notification channel configuration and event subscriptions."""
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore
+        cfg: dict[str, Any] = {}
+        if paths.config_file.exists():
+            with paths.config_file.open("rb") as fh:
+                cfg = tomllib.load(fh).get("notifications", {})
+        tg_token = cfg.get("telegram_bot_token", "")
+        tg_chat = cfg.get("telegram_chat_id", "")
+        tg_events = cfg.get("telegram_events", cfg.get("events", _NOTIFY_ALL_EVENTS))
+        return {
+            "channels": {
+                "desktop": {"enabled": cfg.get("desktop_enabled", True)},
+                "discord": {"enabled": bool(cfg.get("discord_webhook_url"))},
+                "telegram": {
+                    "enabled": bool(tg_token and tg_chat),
+                    "configured": bool(tg_token and tg_chat),
+                    "events": tg_events,
+                },
+            },
+            "events": cfg.get("events", _NOTIFY_ALL_EVENTS),
+            "all_events": _NOTIFY_ALL_EVENTS,
+        }
+
+    @app.patch("/api/settings/notifications", tags=["settings"])
+    def update_notify_events(body: NotifyEventsBody) -> dict[str, Any]:
+        """Update which events are routed to notification channels.
+
+        Writes directly to config.toml. Only events in the known list are accepted.
+        """
+        unknown = [e for e in body.events if e not in _NOTIFY_ALL_EVENTS]
+        if unknown:
+            raise HTTPException(400, f"unknown events: {unknown}")
+        if body.telegram_events is not None:
+            bad = [e for e in body.telegram_events if e not in _NOTIFY_ALL_EVENTS]
+            if bad:
+                raise HTTPException(400, f"unknown telegram_events: {bad}")
+
+        if not paths.config_file.exists():
+            raise HTTPException(404, "config.toml not found — run `lighthouse init` first")
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore
+        try:
+            import tomli_w
+        except ImportError:
+            raise HTTPException(500, "tomli-w not installed; edit config.toml manually") from None
+
+        with paths.config_file.open("rb") as fh:
+            cfg_all = tomllib.load(fh)
+        notif = cfg_all.setdefault("notifications", {})
+        notif["events"] = body.events
+        if body.telegram_events is not None:
+            notif["telegram_events"] = body.telegram_events
+        with paths.config_file.open("wb") as fh:
+            tomli_w.dump(cfg_all, fh)
+        return {"events": body.events, "telegram_events": body.telegram_events}
 
     # ========================= INTELLIGENCE (§3) ===================
 

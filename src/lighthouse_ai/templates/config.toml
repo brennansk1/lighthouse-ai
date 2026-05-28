@@ -37,11 +37,21 @@ allow_drift_with_flag = true
 [notifications]
 desktop_enabled = true
 email_enabled = false
-events = ["draft_ready", "monitor_alert_high", "budget_warn", "budget_trip"]
 
-# Telegram Bot notifications (optional)
-# telegram_bot_token = ""   # your bot token from @BotFather
-# telegram_chat_id = ""     # your chat/group id
+# Events routed to ALL configured channels (desktop, discord, telegram).
+# Available events: draft_ready, draft_approved, job_started, job_completed,
+#   job_failed, monitor_alert_high, monitor_alert_medium, budget_warn, budget_trip,
+#   logseq_synced, escalation_raised, position_resolved
+events = ["draft_ready", "draft_approved", "monitor_alert_high", "budget_warn", "budget_trip"]
+
+# Telegram Bot notifications (optional — set bot_token + chat_id to enable).
+# Get a token from @BotFather; get your chat_id by messaging @userinfobot.
+# telegram_bot_token = ""   # e.g. "123456:ABC-DEF..."
+# telegram_chat_id = ""     # e.g. "123456789"
+
+# Override which events reach Telegram (defaults to [notifications] events above).
+# Useful to keep Telegram quiet for low-priority events.
+# telegram_events = ["draft_approved", "monitor_alert_high", "budget_trip", "escalation_raised"]
 
 [logseq]
 # Set graph_dir to your Logseq graph's root directory (not the pages/ subdirectory).

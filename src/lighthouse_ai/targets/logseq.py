@@ -8,7 +8,9 @@ Page format follows Logseq's standard conventions:
 - Page properties block at top (key:: value)
 - Each research section becomes a top-level bullet block
 - Topic and linked entities use [[Page Link]] syntax for graph connectivity
-- Sources listed as numbered reference blocks at the bottom
+- Sources listed as reference blocks with bidirectional [[links]] and url:: property
+- Namespace tags: lighthouse/draft, lighthouse/topic/<slug>
+- related:: property for cross-referencing linked entities
 """
 
 from __future__ import annotations
@@ -104,6 +106,17 @@ def _html_to_md(html: str) -> str:
     return text.strip()
 
 
+def _source_title(s: dict) -> str:
+    """Return a display title for a source dict, falling back to a truncated URL."""
+    t = (s.get("title") or "").strip()
+    if t:
+        return t
+    url = s.get("url", "")
+    # Strip scheme + common prefixes for a readable slug
+    clean = re.sub(r"^https?://(www\.)?", "", url)
+    return clean[:60] or "Source"
+
+
 def export_draft(
     graph_dir: Path,
     *,
@@ -114,13 +127,21 @@ def export_draft(
     wep_phrase: str | None = None,
     source_count: int = 0,
     tags: list[str] | None = None,
+    sources: list[dict] | None = None,
+    mode: str = "",
+    keywords: list[str] | None = None,
 ) -> LogseqPage:
     """Write/overwrite a Logseq page for the draft.
 
     Page structure:
-    - Page properties (title, id, type, topic, confidence, date, tags)
+    - Page properties (title, id, type, topic, confidence, date, tags, related)
     - One top-level block per research section, with content nested inside
-    - Sources summary block at the bottom
+    - References block at the bottom with [[linked]] source pages and url:: sub-properties
+
+    Extra parameters:
+    - sources: list of {"url": str, "title": str | None} dicts for source reference blocks
+    - mode: research mode string ("deepdive", "monitor", etc.) added as research-mode property
+    - keywords: entity/topic names added as related:: [[links]] for graph connectivity
     """
     from datetime import date as _date
 
@@ -130,8 +151,6 @@ def export_draft(
     block_uuid = _block_uuid(draft_id)
 
     # ── Page properties block ──────────────────────────────────────────────
-    # All properties use Logseq's key:: value format so they appear in
-    # queries and the property panel.
     props = [
         f"title:: {title}",
         f"id:: {block_uuid}",
@@ -140,44 +159,46 @@ def export_draft(
         f"date:: [[{_date.today().isoformat()}]]",
     ]
     if topic:
-        # [[Topic]] creates a bidirectional link in the graph view.
         props.append(f"topic:: [[{topic}]]")
+    if mode:
+        props.append(f"research-mode:: {mode}")
     if wep_phrase:
         props.append(f"confidence:: {wep_phrase}")
     if source_count:
         props.append(f"source-count:: {source_count}")
+    if keywords:
+        linked = ", ".join(f"[[{kw}]]" for kw in keywords if kw.strip())
+        if linked:
+            props.append(f"related:: {linked}")
 
-    # tags:: uses Logseq's native tag system (shown as chips in the sidebar)
+    # tags:: uses Logseq's native tag system (shown as chips in the sidebar).
+    # Add namespace tags: lighthouse/draft and lighthouse/topic/<slug> for graph queries.
     tag_list = list(tags) if tags else []
-    tag_list = ["lighthouse", "lighthouse/draft"] + [t for t in tag_list if t not in ("lighthouse",)]
+    base_tags = ["lighthouse", "lighthouse/draft"]
+    if topic:
+        base_tags.append(f"lighthouse/topic/{_slugify(topic)}")
+    tag_list = base_tags + [t for t in tag_list if t not in ("lighthouse",)]
     props.append(f"tags:: {', '.join(tag_list)}")
 
     # ── Body ──────────────────────────────────────────────────────────────
-    # Convert HTML to clean Markdown, then split into section blocks.
     md_body = _html_to_md(body_html)
 
-    # Split on ## headings to create top-level Logseq blocks per section
     blocks: list[str] = []
     if md_body:
-        # Split on level-2 headings (research sections)
         section_parts = re.split(r"(?m)^(## .+)$", md_body)
         if len(section_parts) <= 1:
-            # No h2 sections — wrap as a single block
             for line in md_body.splitlines():
                 if line.strip():
                     blocks.append(f"- {line}")
         else:
-            # First part is preamble (before first ##)
             preamble = section_parts[0].strip()
             if preamble:
                 for line in preamble.splitlines():
                     if line.strip():
                         blocks.append(f"- {line}")
-            # Remaining parts are (heading, content) pairs
             for i in range(1, len(section_parts), 2):
-                heading = section_parts[i].strip()  # e.g. "## Methodology"
+                heading = section_parts[i].strip()
                 content = section_parts[i + 1].strip() if i + 1 < len(section_parts) else ""
-                # Top-level block for the section heading
                 section_heading = heading.lstrip("# ").strip()
                 block_lines = [f"- ## {section_heading}"]
                 for line in content.splitlines():
@@ -186,8 +207,20 @@ def export_draft(
                         block_lines.append(f"  - {stripped}")
                 blocks.append("\n".join(block_lines))
 
-    # ── Sources footer block ───────────────────────────────────────────────
-    if source_count:
+    # ── References block ───────────────────────────────────────────────────
+    # Use rich source references when available, otherwise fall back to count.
+    if sources:
+        ref_lines = ["- ## References"]
+        for s in sources:
+            st = _source_title(s)
+            url = s.get("url", "")
+            # Each source gets a linked page name + url:: sub-property.
+            # [[Source Title]] creates a bidirectional graph link.
+            ref_lines.append(f"  - [[{st}]]")
+            if url:
+                ref_lines.append(f"    url:: {url}")
+        blocks.append("\n".join(ref_lines))
+    elif source_count:
         blocks.append(f"- **Sources reviewed:** {source_count} independent sources")
 
     # ── Assemble ──────────────────────────────────────────────────────────

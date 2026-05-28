@@ -419,3 +419,76 @@ def test_confirmation_empty_then_zero_timeout_aborts():
         )
         is False
     )
+
+
+# ---------------------------------------------------------------------------
+# Telegram templates
+# ---------------------------------------------------------------------------
+
+
+from lighthouse_ai.notify.telegram_templates import render, _fmt
+
+
+class TestTelegramTemplates:
+    def test_render_draft_ready_includes_question(self):
+        title, body = render("draft_ready", "fallback", "", question="Is AI safe?", draft_id="d1")
+        assert "Is AI safe?" in body
+        assert "<b>" in body
+
+    def test_render_draft_approved_includes_draft_title(self):
+        title, body = render("draft_approved", "t", "", title="AI Safety Report", draft_id="d2")
+        assert "AI Safety Report" in body
+
+    def test_render_job_started_shows_mode(self):
+        title, body = render("job_started", "t", "", question="Q?", mode="deepdive")
+        assert "Deepdive" in body
+
+    def test_render_job_failed_shows_error(self):
+        title, body = render("job_failed", "t", "", error="timeout")
+        assert "timeout" in body
+
+    def test_render_monitor_alert_high_shows_topic(self):
+        title, body = render("monitor_alert_high", "t", "", topic="Climate", summary="Rising temps")
+        assert "Climate" in body
+        assert "Rising temps" in body
+
+    def test_render_budget_warn_shows_percent(self):
+        title, body = render("budget_warn", "t", "", used_pct=85.0, budget_usd=10.0)
+        assert "85%" in body
+        assert "$10.00" in body
+
+    def test_render_budget_trip_shows_paused(self):
+        title, body = render("budget_trip", "t", "", used_pct=100.0)
+        assert "paused" in body.lower() or "Paused" in body
+
+    def test_render_logseq_synced_shows_count(self):
+        title, body = render("logseq_synced", "t", "", synced=5, failed=0)
+        assert "5" in body
+
+    def test_render_escalation_raised_shows_kind(self):
+        title, body = render("escalation_raised", "t", "", kind="stale_position",
+                             body="Some issue", priority="high")
+        assert "Stale Position" in body or "stale" in body.lower()
+        assert "high" in body.lower() or "High" in body
+
+    def test_render_position_resolved_shows_outcome(self):
+        title, body = render("position_resolved", "t", "",
+                             statement="AI is transformative", outcome="confirmed")
+        assert "AI is transformative" in body
+        assert "Confirmed" in body
+
+    def test_render_unknown_event_falls_back(self):
+        title, body = render("unknown_event", "fallback_title", "fallback_body")
+        assert title == "fallback_title"
+        assert body == "fallback_body"
+
+    def test_render_with_no_data_falls_back(self):
+        title, body = render("draft_ready", "plain_title", "plain_body")
+        # No data kwargs → fall through to fallback
+        assert title == "plain_title"
+
+    def test_fmt_escapes_html_chars(self):
+        assert _fmt("AT&T <rocks>") == "AT&amp;T &lt;rocks&gt;"
+
+    def test_fmt_passthrough_plain(self):
+        assert _fmt("hello world") == "hello world"

@@ -400,3 +400,104 @@ class TestExportDraftUtf8AndIdempotence:
 
     def test_uuid_different_for_different_draft_ids(self):
         assert _block_uuid("draft-aaa") != _block_uuid("draft-bbb")
+
+
+# ---------------------------------------------------------------------------
+# export_draft — sources, mode, keywords (Logseq-native features)
+# ---------------------------------------------------------------------------
+
+class TestExportDraftLogseqFeatures:
+    def test_sources_creates_references_block(self, tmp_path):
+        sources = [
+            {"url": "https://example.com/paper", "title": "Key Paper"},
+            {"url": "https://other.org/report", "title": "Annual Report"},
+        ]
+        page = export_draft(
+            tmp_path, draft_id="feat001", title="Sources Test",
+            body_html="", sources=sources,
+        )
+        content = page.path.read_text(encoding="utf-8")
+        assert "## References" in content
+        assert "[[Key Paper]]" in content
+        assert "[[Annual Report]]" in content
+
+    def test_sources_include_url_property(self, tmp_path):
+        sources = [{"url": "https://example.com/doc", "title": "Doc"}]
+        page = export_draft(
+            tmp_path, draft_id="feat002", title="URL Prop",
+            body_html="", sources=sources,
+        )
+        content = page.path.read_text(encoding="utf-8")
+        assert "url:: https://example.com/doc" in content
+
+    def test_sources_fallback_title_from_url(self, tmp_path):
+        """When no title is given, source slug is derived from the URL."""
+        sources = [{"url": "https://arxiv.org/abs/1234.5678"}]
+        page = export_draft(
+            tmp_path, draft_id="feat003", title="URL Slug",
+            body_html="", sources=sources,
+        )
+        content = page.path.read_text(encoding="utf-8")
+        # [[...]] link derived from URL domain/path
+        assert "[[" in content
+        assert "arxiv.org" in content
+
+    def test_sources_replace_plain_count_footer(self, tmp_path):
+        """When sources are provided, the plain 'Sources reviewed: N' is not emitted."""
+        sources = [{"url": "https://x.com", "title": "X"}]
+        page = export_draft(
+            tmp_path, draft_id="feat004", title="No Plain Count",
+            body_html="", sources=sources, source_count=5,
+        )
+        content = page.path.read_text(encoding="utf-8")
+        assert "Sources reviewed:" not in content
+        assert "## References" in content
+
+    def test_mode_adds_research_mode_property(self, tmp_path):
+        page = export_draft(
+            tmp_path, draft_id="feat005", title="Mode Test",
+            body_html="", mode="deepdive",
+        )
+        content = page.path.read_text(encoding="utf-8")
+        assert "research-mode:: deepdive" in content
+
+    def test_no_mode_no_property(self, tmp_path):
+        page = export_draft(
+            tmp_path, draft_id="feat006", title="No Mode",
+            body_html="",
+        )
+        content = page.path.read_text(encoding="utf-8")
+        assert "research-mode::" not in content
+
+    def test_keywords_added_as_related_property(self, tmp_path):
+        page = export_draft(
+            tmp_path, draft_id="feat007", title="Keywords",
+            body_html="", keywords=["Climate Change", "Carbon Capture"],
+        )
+        content = page.path.read_text(encoding="utf-8")
+        assert "related:: [[Climate Change]], [[Carbon Capture]]" in content
+
+    def test_no_keywords_no_related_property(self, tmp_path):
+        page = export_draft(
+            tmp_path, draft_id="feat008", title="No Keywords",
+            body_html="",
+        )
+        content = page.path.read_text(encoding="utf-8")
+        assert "related::" not in content
+
+    def test_topic_namespace_tag(self, tmp_path):
+        """Namespace tag lighthouse/topic/<slug> added when topic is set."""
+        page = export_draft(
+            tmp_path, draft_id="feat009", title="Namespace",
+            body_html="", topic="Artificial Intelligence",
+        )
+        content = page.path.read_text(encoding="utf-8")
+        assert "lighthouse/topic/artificial-intelligence" in content
+
+    def test_no_topic_no_namespace_tag(self, tmp_path):
+        page = export_draft(
+            tmp_path, draft_id="feat010", title="No Namespace",
+            body_html="",
+        )
+        content = page.path.read_text(encoding="utf-8")
+        assert "lighthouse/topic/" not in content

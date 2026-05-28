@@ -290,3 +290,63 @@ def test_api_write_publishes_event(migrated_paths):
     asyncio.run(run())
     kinds = [m["event"] for m in received]
     assert "job.status" in kinds
+
+
+# ============================ NOTIFICATIONS SETTINGS ========================
+
+def test_notifications_status_returns_channels(migrated_paths, client):
+    body = client.get("/api/settings/notifications").json()
+    assert "channels" in body
+    assert "desktop" in body["channels"]
+    assert "telegram" in body["channels"]
+    assert "events" in body
+    assert "all_events" in body
+
+
+def test_notifications_status_telegram_not_configured_by_default(client):
+    body = client.get("/api/settings/notifications").json()
+    assert body["channels"]["telegram"]["configured"] is False
+
+
+def test_notifications_patch_events(migrated_paths, client):
+    """PATCH /api/settings/notifications updates the events list in config.toml."""
+    import tomllib
+    # Write a minimal config.toml so PATCH has something to update.
+    migrated_paths.config_file.write_text(
+        '[lighthouse]\nversion = "0.1.0"\n\n[notifications]\nevents = ["draft_ready"]\n'
+    )
+    new_events = ["draft_ready", "draft_approved", "escalation_raised"]
+    r = client.patch(
+        "/api/settings/notifications",
+        json={"events": new_events},
+    )
+    assert r.status_code == 200
+    with migrated_paths.config_file.open("rb") as fh:
+        updated = tomllib.load(fh)
+    assert updated["notifications"]["events"] == new_events
+
+
+def test_notifications_patch_rejects_unknown_events(migrated_paths, client):
+    migrated_paths.config_file.write_text(
+        '[lighthouse]\nversion = "0.1.0"\n\n[notifications]\nevents = []\n'
+    )
+    r = client.patch(
+        "/api/settings/notifications",
+        json={"events": ["not_a_real_event"]},
+    )
+    assert r.status_code == 400
+
+
+def test_notifications_patch_telegram_events_override(migrated_paths, client):
+    migrated_paths.config_file.write_text(
+        '[lighthouse]\nversion = "0.1.0"\n\n[notifications]\nevents = ["draft_ready"]\n'
+    )
+    import tomllib
+    r = client.patch(
+        "/api/settings/notifications",
+        json={"events": ["draft_ready"], "telegram_events": ["draft_approved"]},
+    )
+    assert r.status_code == 200
+    with migrated_paths.config_file.open("rb") as fh:
+        cfg = tomllib.load(fh)
+    assert cfg["notifications"]["telegram_events"] == ["draft_approved"]

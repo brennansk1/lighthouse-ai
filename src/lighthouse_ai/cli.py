@@ -46,32 +46,65 @@ def _paths_from_env() -> Paths:
     return paths_from_env()
 
 
-def _notify_event(event: str, title: str, body: str) -> None:
-    """Fire a notification through the configured channels. Best-effort —
-    never raises, so a missing/misconfigured channel can't break a command."""
+def _load_notify_cfg() -> dict:
+    """Load the [notifications] section from config.toml, or empty dict."""
     try:
         paths = _paths_from_env()
-        cfg = {}
-        if paths.config_file.exists():
-            try:
-                import tomllib
-            except ImportError:  # pragma: no cover
-                import tomli as tomllib  # type: ignore
-            with paths.config_file.open("rb") as fh:
-                cfg = tomllib.load(fh).get("notifications", {})
+        if not paths.config_file.exists():
+            return {}
+        try:
+            import tomllib
+        except ImportError:  # pragma: no cover
+            import tomli as tomllib  # type: ignore
+        with paths.config_file.open("rb") as fh:
+            return tomllib.load(fh).get("notifications", {})
+    except Exception:
+        return {}
+
+
+def _notify_event(event: str, title: str, body: str, **data: object) -> None:
+    """Fire a notification through configured channels. Best-effort — never raises.
+
+    ``data`` kwargs are forwarded to the Telegram template renderer so callers
+    can pass structured fields (question=, draft_id=, wep_phrase=, etc.) that
+    produce richly-formatted HTML messages on Telegram, while other channels
+    receive the plain (title, body) pair.
+
+    Respects ``telegram_events`` override: if set, only those events are routed
+    to Telegram so operators can keep Telegram quiet for low-priority events.
+    """
+    try:
+        cfg = _load_notify_cfg()
         if not cfg:
             return
         from .notify import DesktopChannel, DiscordChannel, Notifier
         from .notify.telegram import TelegramChannel
-        channels = [("desktop", DesktopChannel())]
+        from .notify.telegram_templates import render as _tg_render
+
+        global_events: list[str] = cfg.get("events", [])
+        tg_events: list[str] = cfg.get("telegram_events", global_events)
+
+        # For Telegram, use the professional template renderer
+        tg_title, tg_body = _tg_render(event, title, body, **data)
+
+        channels: list[tuple[str, object]] = [("desktop", DesktopChannel())]
         if cfg.get("discord_webhook_url"):
             channels.append(("discord", DiscordChannel(cfg["discord_webhook_url"])))
         if cfg.get("telegram_bot_token") and cfg.get("telegram_chat_id"):
-            channels.append(("telegram", TelegramChannel(
-                bot_token=cfg["telegram_bot_token"],
-                chat_id=cfg["telegram_chat_id"],
-            )))
-        Notifier(cfg, channels).notify(event, title, body)
+            if not tg_events or event in tg_events:
+                channels.append(("telegram", TelegramChannel(
+                    bot_token=cfg["telegram_bot_token"],
+                    chat_id=cfg["telegram_chat_id"],
+                )))
+
+        # Telegram gets the richly-rendered message; other channels get plain text.
+        # We do this by calling notify once with plain text then separately for Telegram.
+        plain_channels = [(n, c) for n, c in channels if n != "telegram"]
+        tg_channels = [(n, c) for n, c in channels if n == "telegram"]
+        if plain_channels:
+            Notifier(cfg, plain_channels).notify(event, title, body)
+        if tg_channels:
+            Notifier(cfg, tg_channels).notify(event, tg_title, tg_body)
     except Exception:
         pass
 
@@ -592,9 +625,13 @@ def research(
     if ingested:
         console.print(f"  corpus: {ingested} chunk(s)")
 
+    _notify_event("job_started", "Research started", question[:80],
+                  question=question, mode=mode)
     try:
         result = pipe.research(question)
     except Exception as exc:
+        _notify_event("job_failed", "Research failed", f"{question[:60]}\n\nError: {exc}",
+                      question=question, error=str(exc), mode=mode)
         err_console.print(f"[red]research failed:[/red] {exc}")
         raise typer.Exit(1) from None
 
@@ -612,12 +649,16 @@ def research(
                       f"{d.get('claims', 0)} claim(s) recorded as calibration positions")
     _wep = d.get("wep_phrase", "")
     _src = d.get("source_count", result.chunks_ingested)
-    _notify_body = f"{question[:60]}\n\nDraft: {result.draft_id}"
-    if _wep:
-        _notify_body += f"\nConfidence: {_wep}"
-    if _src:
-        _notify_body += f"\nSources: {_src}"
-    _notify_event("draft_ready", "Draft staged", _notify_body)
+    _notify_event(
+        "draft_ready", "Draft staged",
+        f"{question[:60]}\n\nDraft: {result.draft_id}",
+        question=question,
+        draft_id=result.draft_id,
+        mode=result.mode if hasattr(result, "mode") else mode,
+        wep_phrase=_wep,
+        source_count=_src,
+        sections=result.sections if hasattr(result, "sections") else 0,
+    )
     console.print("  review it: dashboard → Drafts, or `lighthouse status`")
 
 
@@ -1476,6 +1517,107 @@ def subconscious_tick() -> None:
             f"{outcome.reflections_committed} reflection(s), "
             f"{outcome.escalations_committed} escalation(s)"
         )
+
+
+# ------------------------------------------------------- notify ----
+
+notify_app = typer.Typer(name="notify", no_args_is_help=True,
+                         help="Notification channel management and testing.")
+app.add_typer(notify_app, name="notify")
+
+_ALL_EVENTS = [
+    "draft_ready", "draft_approved", "job_started", "job_completed",
+    "job_failed", "monitor_alert_high", "monitor_alert_medium",
+    "budget_warn", "budget_trip", "logseq_synced",
+    "escalation_raised", "position_resolved",
+]
+
+
+@notify_app.command("status")
+def notify_status() -> None:
+    """Show configured notification channels and subscribed events."""
+    cfg = _load_notify_cfg()
+    console.rule("[bold]notification channels[/bold]")
+
+    # Desktop
+    desktop = "[green]✓[/green]" if cfg.get("desktop_enabled", True) else "[dim]off[/dim]"
+    console.print(f"  desktop   {desktop}")
+
+    # Discord
+    if cfg.get("discord_webhook_url"):
+        console.print("  discord   [green]✓[/green] webhook configured")
+    else:
+        console.print("  discord   [dim]not configured[/dim]")
+
+    # Telegram
+    tg_token = cfg.get("telegram_bot_token", "")
+    tg_chat = cfg.get("telegram_chat_id", "")
+    if tg_token and tg_chat:
+        from .notify.telegram import TelegramChannel
+        tc = TelegramChannel(bot_token=tg_token, chat_id=tg_chat)
+        if tc.available():
+            tg_events = cfg.get("telegram_events", cfg.get("events", _ALL_EVENTS))
+            console.print(f"  telegram  [green]✓[/green] bot configured")
+            console.print(f"            events: {', '.join(tg_events)}")
+        else:
+            console.print("  telegram  [yellow]token or chat_id missing[/yellow]")
+    else:
+        console.print("  telegram  [dim]not configured[/dim]  "
+                      "(add telegram_bot_token + telegram_chat_id to config.toml)")
+
+    # Global events
+    global_events = cfg.get("events", _ALL_EVENTS)
+    console.rule("[bold]subscribed events[/bold]")
+    for ev in _ALL_EVENTS:
+        mark = "[green]✓[/green]" if ev in global_events else "[dim]·[/dim]"
+        console.print(f"  {mark} {ev}")
+
+
+@notify_app.command("test")
+def notify_test(
+    title: str = typer.Option("Lighthouse test", "--title", help="Notification title."),
+    body: str = typer.Option("This is a test notification from Lighthouse.",
+                             "--body", help="Notification body."),
+    event: str = typer.Option("draft_ready", "--event",
+                              help="Event name to simulate."),
+) -> None:
+    """Send a test notification through all configured channels."""
+    cfg = _load_notify_cfg()
+    if not cfg:
+        console.print("[yellow]No notification config found — "
+                      "add a [notifications] section to config.toml[/yellow]")
+        return
+
+    from .notify import DesktopChannel, DiscordChannel, Notifier
+    from .notify.telegram import TelegramChannel
+
+    channels: list[tuple[str, object]] = [("desktop", DesktopChannel())]
+    if cfg.get("discord_webhook_url"):
+        channels.append(("discord", DiscordChannel(cfg["discord_webhook_url"])))
+    if cfg.get("telegram_bot_token") and cfg.get("telegram_chat_id"):
+        channels.append(("telegram", TelegramChannel(
+            bot_token=cfg["telegram_bot_token"],
+            chat_id=cfg["telegram_chat_id"],
+        )))
+
+    from .notify.telegram_templates import render as _tg_render
+    plain_channels = [(n, c) for n, c in channels if n != "telegram"]
+    tg_channels = [(n, c) for n, c in channels if n == "telegram"]
+    all_results = []
+    if plain_channels:
+        all_results += Notifier(cfg, plain_channels).notify(event, title, body)
+    if tg_channels:
+        tg_title, tg_body = _tg_render(event, title, body)
+        all_results += Notifier(cfg, tg_channels).notify(event, tg_title, tg_body)
+    delivered_count = 0
+    for r in all_results:
+        if r.attempted:
+            mark = "[green]✓[/green]" if r.delivered else "[red]✗[/red]"
+            console.print(f"  {mark} {r.channel}")
+            if r.delivered:
+                delivered_count += 1
+    if delivered_count == 0:
+        console.print("  [yellow]no channels delivered — check your config or event subscription[/yellow]")
 
 
 if __name__ == "__main__":  # pragma: no cover
