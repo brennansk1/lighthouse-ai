@@ -14,6 +14,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   rankings are a pure function of inputs. Regression tests added.
 
 ### Added
+- **Tick Overlap Guard** (`subconscious/overlap.py`, OpenHuman §4): `GenerationGuard`
+  so a slow background pass overtaken by the next scheduled one discards its writes
+  instead of double-committing; wired into `resolver.run_resolver_pass`.
+- **Reflection / Escalation split** (`subconscious/`, OpenHuman §3): passive
+  reflections (provenance, never auto-post, cap of 5/tick, acting spawns a fresh job)
+  vs actionable escalations (status + priority). WAL store, tick engine (scheduler-gated
+  + overlap-guarded), and a stale-position escalation producer. Dashboard Intelligence
+  page still to build.
+- **Payload compaction** (`rag/compaction.py`, OpenHuman §5): deterministic, LLM-free
+  pre-context compaction with a builtin<user<project rule overlay, grapheme-safe
+  transforms, and token-savings stats; wired into `ingest_text` for HTML payloads.
+- **Tool-policy risk tiers** (`governor/tool_policy.py`, OpenHuman §6): `ToolCapability`
+  tiers + `TaskProfile`; two-point enforcement (prompt-visibility filter capped at 7 +
+  runtime refusal logged to the audit chain); content-derived steps clamped to read-only.
+- **Archivist** (`compounding/archivist.py`, OpenHuman §8): `clean_turns` → `compose_md`
+  → `archive_report`/`archive_conversation`, content-addressed (idempotent), optional Logseq.
+- **Per-module READMEs** (OpenHuman §7) for `governor/`, `subconscious/`, `compounding/`.
 - **Scheduler Gate** (`governor/scheduler_gate.py`, OpenHuman §1, P0): host-courtesy
   throttle — the third axis alongside the Governor's budget + RAM guard. Resolves
   power/CPU/server signals to a policy (Aggressive/Normal/Throttled/Paused) and gates

@@ -15,14 +15,29 @@ Legend: ✅ done & tested · 🟡 partial · ⬜ not started.
 |---|----------------------------|-------------------|----------|--------|
 | 1 | **Scheduler Gate** — host-condition throttle for background AI | `governor/scheduler_gate.py`, wired into Governor + Deep-Dive + pipeline | **P0** | ✅ |
 | 2 | **Hotness Score** — deterministic entity-importance formula | `compounding/hotness.py` + Monitor salience | **P0** | ✅ |
-| 4 | **Tick overlap guard** — generation-counter cancellation | `subconscious/` + `verification/resolver.py` | P1 | ⬜ |
-| 3 | **Reflection / Escalation split** — passive vs actionable findings | `subconscious/` + dashboard Intelligence page | P1 | ⬜ |
-| 5 | **TokenJuice-style payload compaction** — deterministic pre-context compaction | `rag/compaction.py` | P2 | ⬜ |
-| 6 | **Tool-Policy risk tiers** — risk-tiered prompt-visibility + runtime enforcement | extend tool-exposure logic | P2 | ⬜ |
-| 8 | **Archivist clean→compose→append** — finished job → durable corpus | `compounding/archivist.py` | P3 | ⬜ |
-| 7 | **Per-module README + Calls-into/Called-by convention** | repo-wide docs | P3 | ⬜ |
+| 4 | **Tick overlap guard** — generation-counter cancellation | `subconscious/overlap.py` + `verification/resolver.py` | P1 | ✅ |
+| 3 | **Reflection / Escalation split** — passive vs actionable findings | `subconscious/` + dashboard Intelligence page | P1 | 🟡 backend ✅, dashboard page ⬜ |
+| 5 | **TokenJuice-style payload compaction** — deterministic pre-context compaction | `rag/compaction.py` | P2 | ✅ |
+| 6 | **Tool-Policy risk tiers** — risk-tiered prompt-visibility + runtime enforcement | `governor/tool_policy.py` | P2 | ✅ (substrate; no tool-runtime to wire yet) |
+| 8 | **Archivist clean→compose→append** — finished job → durable corpus | `compounding/archivist.py` | P3 | ✅ |
+| 7 | **Per-module README + Calls-into/Called-by convention** | repo-wide docs | P3 | 🟡 added for touched modules (governor/subconscious/compounding); backfill ongoing |
 
-Build order: **1 → 2 → 4 → 3 → 5 → 6 → 8 → 7**. (1 and 2 complete.)
+Build order: **1 → 2 → 4 → 3 → 5 → 6 → 8 → 7** — all implemented this pass except
+the §3 dashboard Intelligence page (needs browser QA unavailable in the cloud
+sandbox) and the README backfill for older modules.
+
+## Outstanding follow-ups
+
+- **§3 dashboard Intelligence page** (8th page) + `reflections_act` endpoint —
+  backend, store, and job-spawn seam are done and tested; the React page and its
+  browser QA are not.
+- **§2 persistence** — the `entity_hotness` table + dossier materialisation gate
+  (the pure formula + Monitor salience scorer are done).
+- **§1 follow-ups** — gate the Monitor sync loop and `pipeline._auto_fetch`
+  embedding pass (Deep-Dive + resolver are gated).
+- **§5/§6 wiring** — compaction on the Deep-Dive evidence-prompt path; tool-policy
+  enforcement at a real executor call site once tool-calling lands.
+- **§7** — backfill READMEs for `modes/`, `verification/`, `rag/`.
 
 ---
 
@@ -85,27 +100,25 @@ dossier-materialisation gate (`compounding/`), which land with the dossier work;
 
 ---
 
-## Remaining (not yet started) — design carried from the spec
+## Implemented this pass (§4 → §3 → §5 → §6 → §8 → §7)
 
-- **§4 Tick Overlap Guard (P1):** monotonic generation counter in `subconscious/engine.py`
-  and `verification/resolver.py`; a tick checks its generation before committing and
-  discards superseded results; pair with a per-task `in_progress`→`cancelled` DB status so
-  startup recovery cleans crashes. *Exit:* no scheduled pass double-commits when a tick runs
-  longer than its interval.
-- **§3 Reflection / Escalation split (P1):** new `subconscious/` module (types, reflection
-  with `MAX_REFLECTIONS_PER_TICK=5`, store, engine). Reflection = passive observation with
-  provenance, never auto-posts; "Investigate" spawns a *fresh* job. Escalation = actionable
-  (retraction → re-verify; resolve-by-due). New dashboard **Intelligence** page (8th).
-- **§5 TokenJuice Compaction (P2):** `rag/compaction.py` — three-layer rule overlay
-  (builtin < user < project), grapheme-safe, deterministic pre-context compaction of fetched
-  sources before ReSum's semantic pass; stats logged to `lighthouse cost report`. *Verify
-  `vincentkoc/tokenjuice` license before lifting any builtin rule JSON.*
-- **§6 Tool-Policy Risk Tiers (P2):** `TaskRiskLevel` + `ToolCapability`; enforce at both
-  prompt-visibility and runtime; `from_content` steps may call only `read_only` tools.
-- **§8 Archivist (P3):** `compounding/archivist.py` — `clean_turns` → `compose_md` →
-  `archive_report` (corpus + Logseq via the outbox; idempotent, audited).
-- **§7 Conventions (P3):** per-module READMEs with Calls-into / Called-by maps, backfilled
-  as each module above is touched.
+- **§4 Tick Overlap Guard** — `subconscious/overlap.py` `GenerationGuard`; wired into
+  `verification/resolver.run_resolver_pass` (claims a generation, refuses commits once a
+  newer pass starts). *Exit met:* overlapping passes never double-commit.
+- **§3 Reflection / Escalation split** — `subconscious/` types + `apply_cap`
+  (`MAX_REFLECTIONS_PER_TICK=5`) + WAL store + tick engine (scheduler-gated, overlap-guarded)
+  + stale-position (resolve-by-due) escalation producer + `act_on_reflection` (spawns a fresh
+  job). Dashboard **Intelligence** page (8th) + `reflections_act` endpoint still to build.
+- **§5 TokenJuice Compaction** — `rag/compaction.py`: three-layer overlay, grapheme-safe
+  transforms, `CompactionStats`; wired into `pipeline.ingest_text` for HTML payloads. Our own
+  rules (tokenjuice JSON not copied — license uncleared).
+- **§6 Tool-Policy Risk Tiers** — `governor/tool_policy.py`: `ToolCapability`/`TaskProfile`,
+  `visible_tools` (prompt-visibility, ≤ceiling) + `enforce` (runtime refusal, audit-logged);
+  `from_content` clamped to read-only. Substrate only — no tool-calling runtime to wire yet.
+- **§8 Archivist** — `compounding/archivist.py`: `clean_turns` → `compose_md` →
+  `archive_report`/`archive_conversation` (content-addressed, idempotent; optional Logseq).
+- **§7 Conventions** — READMEs added for `governor/`, `subconscious/`, `compounding/` with
+  Calls-into / Called-by maps; older modules pending.
 
 ## Cross-cutting requirements (apply to every item)
 
