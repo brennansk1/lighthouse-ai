@@ -156,7 +156,13 @@ def _pdf_to_text(payload: bytes) -> tuple[str, bool]:
         import pypdf  # type: ignore
 
         reader = pypdf.PdfReader(io.BytesIO(payload))
-        parts = [(page.extract_text() or "") for page in reader.pages]
+        # Extract page-by-page so one corrupt page doesn't lose the whole doc.
+        parts: list[str] = []
+        for i, page in enumerate(reader.pages):
+            try:
+                parts.append(page.extract_text() or "")
+            except Exception as page_exc:  # noqa: BLE001 - skip the bad page only
+                log.warning("ingest.pdf_page_failed", page=i, error=str(page_exc))
         return "\n\n".join(parts), True
     except ImportError:
         pass

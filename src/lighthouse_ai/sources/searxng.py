@@ -59,6 +59,19 @@ class SearxResult:
     content: str
     engine: str = ""
     score: float = 0.0
+    published_date: str = ""
+
+
+def _coerce_score(value: object) -> float:
+    """Best-effort float conversion for a SearXNG result score.
+
+    SearXNG normally returns a numeric score, but a misbehaving engine could
+    send a string or null; degrade to 0.0 rather than crash the search.
+    """
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
 
 
 class SearXNGUnavailable(RuntimeError):
@@ -153,7 +166,17 @@ def search(
             f"SearXNG at {base} returned error: {exc}"
         ) from exc
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        # A 200 with a non-JSON body (e.g. JSON format not enabled in SearXNG)
+        # is an availability problem, not a usable result set.
+        raise SearXNGUnavailable(
+            f"SearXNG at {base} returned a non-JSON body "
+            f"(is the json format enabled?): {exc}"
+        ) from exc
+    if not isinstance(data, dict):
+        return []
     results: list[SearxResult] = []
     for item in data.get("results", [])[: max_results * 2]:  # fetch extra for filtering
         url_str = item.get("url", "")
@@ -167,7 +190,8 @@ def search(
                 title=item.get("title", ""),
                 content=item.get("content", ""),
                 engine=item.get("engine", ""),
-                score=float(item.get("score", 0.0)),
+                score=_coerce_score(item.get("score", 0.0)),
+                published_date=item.get("publishedDate") or "",
             )
         )
         if len(results) >= max_results:
@@ -190,14 +214,18 @@ def search_as_documents(
         results = search(query, max_results=max_results, scholarly=scholarly, url=url)
     except SearXNGUnavailable:
         return []
+    import hashlib
+
     docs: list[Document] = []
     for r in results:
         if not r.content:
             continue
-        doc_id = f"searxng:{hash(r.url) & 0xFFFFFFFF:08x}"
+        # Deterministic id from the URL (process-independent, unlike hash()),
+        # so re-fetching the same URL dedupes against the corpus.
+        digest = hashlib.sha256(r.url.encode("utf-8")).hexdigest()[:12]
         docs.append(
             Document(
-                id=doc_id,
+                id=f"searxng:{digest}",
                 text=f"{r.title}\n\n{r.content}",
                 metadata={
                     "source": "searxng",
@@ -205,6 +233,7 @@ def search_as_documents(
                     "title": r.title,
                     "engine": r.engine,
                     "grade": "B",  # web results are grade B by default
+                    "published_date": r.published_date,
                 },
             )
         )

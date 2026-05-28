@@ -183,6 +183,51 @@ def test_pubmed_published_date_year_only(mocked_http):
     assert doc.metadata["published_date"] == "2024"
 
 
+EFETCH_MONTHNAME_XML = b"""<?xml version="1.0"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>50000001</PMID>
+      <Article>
+        <ArticleTitle>Month name date</ArticleTitle>
+        <Abstract><AbstractText>Body.</AbstractText></Abstract>
+        <Journal><JournalIssue><PubDate>
+          <Year>2025</Year><Month>Mar</Month><Day>14</Day>
+        </PubDate></JournalIssue></Journal>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+</PubmedArticleSet>"""
+
+EFETCH_MEDLINEDATE_XML = b"""<?xml version="1.0"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>50000002</PMID>
+      <Article>
+        <ArticleTitle>Medline free-text date</ArticleTitle>
+        <Abstract><AbstractText>Body.</AbstractText></Abstract>
+        <Journal><JournalIssue><PubDate>
+          <MedlineDate>2024 Spring</MedlineDate>
+        </PubDate></JournalIssue></Journal>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+</PubmedArticleSet>"""
+
+
+def test_pubmed_month_name_normalised(mocked_http):
+    _pubmed_ok(mocked_http, fetch=EFETCH_MONTHNAME_XML)
+    doc = search_pubmed("crispr")[0]
+    assert doc.metadata["published_date"] == "2025-03-14"
+
+
+def test_pubmed_medline_freetext_date_year(mocked_http):
+    _pubmed_ok(mocked_http, fetch=EFETCH_MEDLINEDATE_XML)
+    doc = search_pubmed("crispr")[0]
+    assert doc.metadata["published_date"] == "2024"
+
+
 def test_pubmed_respects_max_results_param(mocked_http):
     route = mocked_http.get(
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi").respond(
@@ -278,7 +323,7 @@ def test_crossref_metadata_source_url_id(mocked_http):
 
 def test_crossref_published_date(mocked_http):
     _crossref_ok(mocked_http)
-    assert search_crossref("protein")[0].metadata["published_date"] == "2023-6-1"
+    assert search_crossref("protein")[0].metadata["published_date"] == "2023-06-01"
 
 
 def test_crossref_issued_fallback_date(mocked_http):
@@ -320,3 +365,30 @@ def test_crossref_uses_injected_client(mocked_http):
         docs = search_crossref("protein", client=client)
         assert len(docs) == 2
         assert not client.is_closed
+
+
+# --- _parse robustness against malformed API payloads (no network) ---
+
+def test_crossref_parse_non_dict_returns_empty():
+    from lighthouse_ai.sources.crossref import _parse
+    assert _parse([]) == []
+    assert _parse("garbage") == []
+    assert _parse(None) == []
+
+
+def test_openalex_parse_non_dict_returns_empty():
+    from lighthouse_ai.sources.openalex import _parse
+    assert _parse([]) == []
+    assert _parse(None) == []
+
+
+def test_openalex_reconstruct_abstract_orders_words():
+    from lighthouse_ai.sources.openalex import _reconstruct_abstract
+    inv = {"world": [1], "hello": [0], "again": [2]}
+    assert _reconstruct_abstract(inv) == "hello world again"
+
+
+def test_openalex_reconstruct_abstract_empty():
+    from lighthouse_ai.sources.openalex import _reconstruct_abstract
+    assert _reconstruct_abstract(None) == ""
+    assert _reconstruct_abstract({}) == ""

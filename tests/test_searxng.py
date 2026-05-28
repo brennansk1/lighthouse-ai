@@ -129,3 +129,83 @@ def test_search_respects_max_results():
         )
         results = search("quantum", max_results=3)
     assert len(results) == 3
+
+
+# --- Robustness & metadata (production-quality sweep) ---
+
+
+@respx.mock
+def test_search_extracts_published_date():
+    resp = {
+        "results": [
+            {
+                "url": "https://arxiv.org/abs/2401.00001",
+                "title": "Dated Paper",
+                "content": "Some content.",
+                "engine": "arxiv",
+                "score": 0.9,
+                "publishedDate": "2024-01-15T00:00:00",
+            }
+        ]
+    }
+    respx.get("http://localhost:8888/search").mock(
+        return_value=httpx.Response(200, json=resp)
+    )
+    results = search("quantum", max_results=5)
+    assert results[0].published_date == "2024-01-15T00:00:00"
+
+
+@respx.mock
+def test_search_non_numeric_score_does_not_crash():
+    resp = {
+        "results": [
+            {
+                "url": "https://arxiv.org/abs/2401.00002",
+                "title": "Weird Score",
+                "content": "Content.",
+                "engine": "x",
+                "score": "not-a-number",
+            }
+        ]
+    }
+    respx.get("http://localhost:8888/search").mock(
+        return_value=httpx.Response(200, json=resp)
+    )
+    results = search("quantum", max_results=5)
+    assert results[0].score == 0.0
+
+
+@respx.mock
+def test_search_non_json_body_raises_unavailable():
+    respx.get("http://localhost:8888/search").mock(
+        return_value=httpx.Response(200, text="<html>json not enabled</html>")
+    )
+    with pytest.raises(SearXNGUnavailable):
+        search("quantum", max_results=5)
+
+
+@respx.mock
+def test_search_as_documents_deterministic_id():
+    resp = {
+        "results": [
+            {
+                "url": "https://arxiv.org/abs/2401.00003",
+                "title": "Stable",
+                "content": "Body text.",
+                "engine": "arxiv",
+                "score": 0.9,
+            }
+        ]
+    }
+    respx.get("http://localhost:8888/search").mock(
+        return_value=httpx.Response(200, json=resp)
+    )
+    docs1 = search_as_documents("quantum", max_results=5)
+    with respx.mock:
+        respx.get("http://localhost:8888/search").mock(
+            return_value=httpx.Response(200, json=resp)
+        )
+        docs2 = search_as_documents("quantum", max_results=5)
+    # Same URL must yield the same id across calls (process-independent).
+    assert docs1[0].id == docs2[0].id
+    assert docs1[0].id.startswith("searxng:")

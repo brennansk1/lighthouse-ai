@@ -13,7 +13,7 @@ import httpx
 
 from ..rag.chunker import Document
 
-_API = "http://export.arxiv.org/api/query"
+_API = "https://export.arxiv.org/api/query"
 _NS = {"atom": "http://www.w3.org/2005/Atom"}
 
 

@@ -25,7 +25,9 @@ def _reconstruct_abstract(inv: dict | None) -> str:
     return " ".join(w for _i, w in positions)
 
 
-def _parse(data: dict) -> list[Document]:
+def _parse(data: object) -> list[Document]:
+    if not isinstance(data, dict):
+        return []
     out: list[Document] = []
     for w in data.get("results", []):
         title = (w.get("title") or "").strip()
@@ -52,4 +54,8 @@ def search_openalex(query: str, *, max_results: int = 5,
     with httpx.Client(timeout=timeout) as c:
         r = c.get(_API, params=params, headers={"User-Agent": "Lighthouse/0.1"})
     r.raise_for_status()
-    return _parse(r.json())
+    try:
+        data = r.json()
+    except ValueError:
+        return []
+    return _parse(data)

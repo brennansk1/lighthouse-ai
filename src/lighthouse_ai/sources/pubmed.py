@@ -39,6 +39,49 @@ def _parse_pmids(payload: bytes) -> list[str]:
             if el.text and el.text.strip()]
 
 
+# PubMed <Month> may be a number ("3"), a zero-padded number ("03"), or an
+# English abbreviation ("Mar"); normalise all forms to a 2-digit month.
+_MONTHS = {
+    "jan": "01", "feb": "02", "mar": "03", "apr": "04", "may": "05",
+    "jun": "06", "jul": "07", "aug": "08", "sep": "09", "oct": "10",
+    "nov": "11", "dec": "12",
+}
+
+
+def _norm_month(month: str) -> str:
+    """Normalise a PubMed month token to a 2-digit string, or '' if unknown."""
+    m = month.strip()
+    if not m:
+        return ""
+    if m.isdigit():
+        return f"{int(m):02d}"
+    return _MONTHS.get(m[:3].lower(), "")
+
+
+def _pub_date(article: ET.Element) -> str:
+    """Extract an ISO-8601 publication date from a PubmedArticle.
+
+    Prefers the article's ``<JournalIssue><PubDate>`` (anchored so we don't pick
+    up a referenced article's date). Falls back to ``<MedlineDate>`` (free-text
+    like "2025 Spring" or "2024 Jan-Feb") by taking the leading 4-digit year.
+    """
+    date_el = (article.find(".//Article//JournalIssue/PubDate")
+               or article.find(".//PubDate"))
+    if date_el is None:
+        return ""
+    year = (date_el.findtext("Year") or "").strip()
+    if year:
+        month = _norm_month(date_el.findtext("Month") or "")
+        day = (date_el.findtext("Day") or "").strip()
+        day = f"{int(day):02d}" if day.isdigit() else ""
+        return "-".join(p for p in (year, month, day) if p)
+    # MedlineDate fallback: free-text, grab the leading 4-digit year.
+    medline = (date_el.findtext("MedlineDate") or "").strip()
+    import re
+    m = re.match(r"\d{4}", medline)
+    return m.group(0) if m else ""
+
+
 def _abstract_text(article: ET.Element) -> str:
     """Join all AbstractText nodes.
 
@@ -64,19 +107,15 @@ def _parse_articles(payload: bytes) -> list[Document]:
         return []
     out: list[Document] = []
     for article in root.findall(".//PubmedArticle"):
-        pmid = (article.findtext(".//PMID") or "").strip()
+        # Anchor to the citation's own PMID so we don't pick up a referenced
+        # article's PMID from a comment/reference sub-record.
+        pmid = (article.findtext(".//MedlineCitation/PMID")
+                or article.findtext(".//PMID") or "").strip()
         title = " ".join((article.findtext(".//ArticleTitle") or "").split())
         if not title:
             continue
         abstract = _abstract_text(article)
-        # PubMed splits the publication date into Year/Month/Day children.
-        date_el = article.find(".//PubDate")
-        published = ""
-        if date_el is not None:
-            year = (date_el.findtext("Year") or "").strip()
-            month = (date_el.findtext("Month") or "").strip()
-            day = (date_el.findtext("Day") or "").strip()
-            published = "-".join(p for p in (year, month, day) if p)
+        published = _pub_date(article)
         url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else ""
         out.append(Document(
             id=f"pubmed:{pmid}" if pmid else f"pubmed:{title[:40]}",

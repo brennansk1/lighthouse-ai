@@ -47,20 +47,31 @@ def _first_str(values: list | None) -> str:
 
 
 def _published_date(item: dict) -> str:
-    """Build an ISO-ish date from Crossref's date-parts structure.
+    """Build an ISO-8601 date from Crossref's date-parts structure.
 
     Crossref encodes dates as ``{"date-parts": [[year, month, day]]}`` with
-    trailing parts optional, so we join whatever components are present.
+    trailing parts optional. We zero-pad month/day so the result is valid
+    ISO-8601 (``YYYY-MM-DD`` / ``YYYY-MM`` / ``YYYY``); the freshness-boost
+    consumer parses these and would misread an unpadded ``2023-6-1``.
     """
     for key in ("published", "published-print", "published-online", "issued"):
         block = item.get(key) or {}
         parts = (block.get("date-parts") or [[]])[0]
         if parts:
-            return "-".join(str(p) for p in parts)
+            # Year is 4-digit as-is; pad month/day (positions 1,2) to 2 digits.
+            out = [str(parts[0])]
+            for p in parts[1:3]:
+                try:
+                    out.append(f"{int(p):02d}")
+                except (TypeError, ValueError):
+                    out.append(str(p))
+            return "-".join(out)
     return ""
 
 
-def _parse(data: dict) -> list[Document]:
+def _parse(data: object) -> list[Document]:
+    if not isinstance(data, dict):
+        return []
     items = (data.get("message") or {}).get("items", [])
     out: list[Document] = []
     for item in items:
@@ -95,7 +106,13 @@ def search_crossref(query: str, *, max_results: int = 5,
         r = client.get(_API, headers=_HEADERS, params={
             "query": query, "rows": max_results})
         r.raise_for_status()
-        return _parse(r.json())
+        try:
+            data = r.json()
+        except ValueError:
+            # A 200 with a non-JSON body (HTML error page, truncated response)
+            # should yield no results rather than crash the pipeline.
+            return []
+        return _parse(data)
     finally:
         if owns_client:
             client.close()

@@ -55,7 +55,9 @@ def _parse_atom(root: ET.Element) -> list[MonitorItem]:
 
 
 def _parse_rss(root: ET.Element) -> list[MonitorItem]:
-    channel = root.find("channel")
+    # Accept both a full <rss><channel> document and a bare <channel> root
+    # (some feeds put the channel at the document root).
+    channel = root if root.tag.lower().endswith("channel") else root.find("channel")
     if channel is None:
         return []
     feed_title = channel.findtext("title", default="") or ""
@@ -84,11 +86,11 @@ def parse_feed_bytes(payload: bytes) -> list[MonitorItem]:
     tag = root.tag.lower()
     if tag.endswith("rss"):
         return _parse_rss(root)
-    if tag.endswith("feed") or tag.endswith("}feed"):
+    if tag.endswith("feed"):  # namespaced ({ns}feed) is covered by endswith
         return _parse_atom(root)
-    # Some feeds put the channel at the root.
+    # Some feeds put the channel at the document root.
     if tag.endswith("channel"):
-        return _parse_rss(ET.Element("rss", {})) + _parse_rss(root)
+        return _parse_rss(root)
     return []
 
 
