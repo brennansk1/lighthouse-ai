@@ -211,6 +211,38 @@ def _systemctl(*args: str) -> subprocess.CompletedProcess:
 
 
 @app.command()
+def serve(
+    port: int = typer.Option(DEFAULT_PORT, help="Port for the dashboard + API."),
+    host: str = typer.Option("127.0.0.1", help="Bind address (localhost by default)."),
+    open_browser: bool = typer.Option(False, "--open", help="Open the dashboard in your browser."),
+) -> None:
+    """Run Lighthouse in the foreground (dashboard + job worker). Ctrl-C to stop.
+
+    The simplest way to try Lighthouse: starts the supervisor, the research job
+    worker, and serves the web dashboard at http://<host>:<port>/ui/. No system
+    service install required (use `lighthouse start` for a managed launchd/systemd
+    service instead).
+    """
+    paths = _paths_from_env()
+    paths.ensure()
+    url = f"http://{host}:{port}/ui/"
+    console.print(f"[bold]Lighthouse[/bold] starting on [cyan]{url}[/cyan]")
+    console.print("  Open it in your browser, create a job (pick a research mode),")
+    console.print("  and the worker will run it.  Press Ctrl-C to stop.")
+    if open_browser:
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception:
+            pass
+    from . import supervisor
+    try:
+        supervisor.serve(paths, host=host, port=port, run=True)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Lighthouse stopped.[/yellow]")
+
+
+@app.command()
 def start() -> None:
     """Start the supervisor via launchd/systemd."""
     if sys.platform == "darwin":

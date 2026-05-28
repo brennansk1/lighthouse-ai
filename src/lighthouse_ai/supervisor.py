@@ -198,6 +198,15 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
 
     if run:
         _start_subconscious_loop(p)
+        # Job worker: execute research jobs created from the dashboard/API.
+        # Without this, a queued job (an "agent" with its research mode) would
+        # never run. Wired to the app's event bus so the UI gets live updates.
+        try:
+            from .worker import start_worker
+            _bus = getattr(app.state, "event_bus", None)
+            start_worker(p, bus=_bus)
+        except Exception as _wexc:
+            log.warning("worker.setup_failed", error=str(_wexc))
         # Start Logseq sync loop if configured
         try:
             import tomllib as _tomllib
