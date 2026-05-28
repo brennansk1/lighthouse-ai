@@ -304,8 +304,9 @@ def _crag_fetch(
 ) -> None:
     """Fetch from SearXNG for open questions/gaps, ingest into hybrid store."""
     import structlog
+
     from ..rag.chunker import chunk_document
-    from ..sources.searxng import SearXNGUnavailable, search_as_documents  # noqa: F401
+    from ..sources.searxng import search_as_documents
 
     # Collect gap-bearing sub-questions as queries
     queries = [
@@ -321,13 +322,17 @@ def _crag_fetch(
     log = structlog.get_logger(__name__)
 
     for query in queries[:3]:  # cap at 3 queries to avoid hammering
-        docs = search_as_documents(query, max_results=5, scholarly=True)
-        if not docs:
-            continue
-        for doc in docs:
-            chunks = chunk_document(doc)
-            hybrid.add(chunks)
-        log.info("deepdive.crag_fetch", query=query[:60], docs=len(docs))
+        # One failed fetch/parse must not abort the whole deep-dive round —
+        # CRAG is a best-effort enrichment, so log and move on.
+        try:
+            docs = search_as_documents(query, max_results=5, scholarly=True)
+            if not docs:
+                continue
+            for doc in docs:
+                hybrid.add(chunk_document(doc))
+            log.info("deepdive.crag_fetch", query=query[:60], docs=len(docs))
+        except Exception as exc:
+            log.warning("deepdive.crag_fetch_failed", query=query[:60], error=str(exc))
 
 
 def run_deepdive(

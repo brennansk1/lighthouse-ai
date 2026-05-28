@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .bm25 import BM25Index
@@ -43,19 +43,24 @@ def _freshness_boost(metadata: dict, *, half_life_days: float = 365.0) -> float:
     pub = metadata.get("published_date") or metadata.get("published") or ""
     if not pub:
         return 1.0
-    try:
-        # Accept ISO date strings: "2024-03-15" or "2024-03-15T..."
-        date_str = str(pub)[:10]
-        pub_dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
-        age_days = (now - pub_dt).days
-        if age_days < 0:
-            age_days = 0
-        decay = math.exp(-age_days / half_life_days)  # 0..1
-        # Map to [0.85, 1.15]
-        return 0.85 + 0.30 * decay
-    except (ValueError, TypeError):
+    # Accept full ISO ("2024-03-15"/"2024-03-15T…") plus the partial forms our
+    # source adapters emit ("2024-03", "2024"); a year/month alone anchors to
+    # the 1st so recency still ranks sensibly.
+    raw = str(pub)[:10]
+    pub_dt = None
+    for fmt, width in (("%Y-%m-%d", 10), ("%Y-%m", 7), ("%Y", 4)):
+        try:
+            pub_dt = datetime.strptime(raw[:width], fmt)
+            break
+        except ValueError:
+            continue
+    if pub_dt is None:
         return 1.0
+    pub_dt = pub_dt.replace(tzinfo=UTC)
+    now = datetime.now(UTC)
+    age_days = max((now - pub_dt).days, 0)
+    decay = math.exp(-age_days / half_life_days)  # 0..1
+    return 0.85 + 0.30 * decay  # map to [0.85, 1.15]
 
 
 def _mmr_dedup(
@@ -169,23 +174,25 @@ class HybridSearch:
             if (min_quality_class is not None
                 and int(chunk.metadata.get("quality_class", 0)) < min_quality_class):
                 continue
-            # Apply freshness boost to the RRF score.
-            boosted_score = score * _freshness_boost(chunk.metadata)
             candidates.append(HybridResult(
-                chunk=chunk, score=boosted_score,
+                chunk=chunk, score=score,
                 dense_rank=dense_rank.get(cid),
                 sparse_rank=sparse_rank.get(cid),
             ))
 
-        # Re-sort candidates by boosted score (freshness may have changed order).
-        candidates.sort(key=lambda r: r.score, reverse=True)
+        # Candidates are already in fusion order (RRF returns sorted). Keep that
+        # order for rerank-pool selection — the freshness multiplier is only a
+        # coarse ±15% recency nudge and must NOT decide which candidates the
+        # (much stronger) cross-encoder gets to see.
 
         # MMR semantic deduplication after RRF fusion.
         candidates = _mmr_dedup(candidates)
 
         # Reranker on top of fused candidates. Cap the pool fed to the (costly)
         # cross-encoder to `rerank_candidates` by fusion order — the canonical
-        # "retrieve N → rerank → top_k" shape (e.g. 50 → rerank → 8).
+        # "retrieve N → rerank → top_k" shape (e.g. 50 → rerank → 8). The
+        # reranker is authoritative for relevance, so freshness is not re-applied
+        # on top of its scores.
         if self.reranker is not None and candidates:
             pool = candidates[:rerank_candidates] if rerank_candidates else candidates
             reranked = self.reranker.rerank(query, [c.chunk for c in pool],
@@ -194,4 +201,17 @@ class HybridSearch:
                                  dense_rank=dense_rank.get(ch.id),
                                  sparse_rank=sparse_rank.get(ch.id))
                     for ch, sc in reranked]
-        return candidates[:top_k]
+
+        # No reranker: freshness becomes the tiebreaker over fused relevance.
+        # HybridResult is frozen, so rebuild rather than mutate in place.
+        boosted = [
+            HybridResult(
+                chunk=r.chunk,
+                score=r.score * _freshness_boost(r.chunk.metadata),
+                dense_rank=r.dense_rank,
+                sparse_rank=r.sparse_rank,
+            )
+            for r in candidates
+        ]
+        boosted.sort(key=lambda r: r.score, reverse=True)
+        return boosted[:top_k]

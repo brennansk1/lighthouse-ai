@@ -141,6 +141,38 @@ def test_bm25_empty_returns_nothing():
     assert BM25Index().search("x") == []
 
 
+def test_bm25_readd_does_not_corrupt_df():
+    """Re-adding the same chunk id must not double-count document frequency."""
+    bm = BM25Index()
+    c = chunk_document(Document(id="a", text="cat cat dog"))[0]
+    bm.add([c])
+    df_before = dict(bm._df)
+    bm.add([c])  # re-add the identical chunk
+    assert dict(bm._df) == df_before  # df unchanged, not doubled
+    assert len(bm) == 1
+
+
+def test_bm25_readd_updated_text_replaces_cleanly():
+    """Re-adding an id with new text drops the old terms' df contribution."""
+    from lighthouse_ai.rag.chunker import Chunk
+    bm = BM25Index()
+    bm.add([Chunk(id="x:0", document_id="x", text="alpha beta", position=0)])
+    bm.add([Chunk(id="x:0", document_id="x", text="gamma delta", position=0)])
+    # 'alpha' no longer present anywhere → dropped from df entirely.
+    assert "alpha" not in bm._df
+    assert bm._df.get("gamma") == 1
+    assert len(bm) == 1
+
+
+def test_freshness_boost_parses_partial_dates():
+    from lighthouse_ai.rag.hybrid import _freshness_boost
+    # Year-only and year-month must parse (sources emit these), not fall to 1.0.
+    assert _freshness_boost({"published_date": "1980"}) < 1.0  # old → penalised
+    assert _freshness_boost({"published_date": "1980-06"}) < 1.0
+    assert _freshness_boost({"published_date": ""}) == 1.0  # missing → neutral
+    assert _freshness_boost({"published_date": "garbage"}) == 1.0
+
+
 # --- RRF ---
 
 def test_rrf_higher_rank_yields_higher_score():

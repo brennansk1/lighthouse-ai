@@ -39,10 +39,19 @@ class BM25Index:
 
     def add(self, chunks: Iterable[Chunk]) -> None:
         for c in chunks:
+            # Idempotent upsert: if this id is already indexed, first back out its
+            # old document-frequency contribution so re-adding the same chunk (or
+            # an updated version) doesn't double-count terms and skew every IDF.
+            old = self._docs.get(c.id)
+            if old is not None:
+                for term in old.tf:
+                    self._df[term] -= 1
+                    if self._df[term] <= 0:
+                        del self._df[term]
             tokens = _tokenize(c.text)
             tf = Counter(tokens)
             self._docs[c.id] = _Doc(chunk=c, tokens=tokens, length=len(tokens), tf=tf)
-            for term in tf.keys():
+            for term in tf:
                 self._df[term] += 1
         self._recompute_avgdl()
 
