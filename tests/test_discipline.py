@@ -123,7 +123,7 @@ ARXIV_XML = b"""<?xml version="1.0"?>
 @respx.mock
 def test_arxiv_search_parses():
     from lighthouse_ai.sources.arxiv import search_arxiv
-    respx.get("http://export.arxiv.org/api/query").mock(
+    respx.get("https://export.arxiv.org/api/query").mock(
         return_value=httpx.Response(200, content=ARXIV_XML))
     docs = search_arxiv("quantum error correction", max_results=1)
     assert len(docs) == 1

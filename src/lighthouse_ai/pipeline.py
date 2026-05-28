@@ -148,6 +148,11 @@ class PipelineConfig:
     auto_fetch_sources: bool = True    # auto-fetch from arXiv/OpenAlex when corpus is empty
     auto_fetch_max_results: int = 5    # max papers per source
     crag_enabled: bool = True          # enable mid-loop web fetch via SearXNG
+    # Self-learning skill library (§23.2): retrieve learned strategies before
+    # planning, distil new ones from successful runs, reinforce/prune over time.
+    learning_enabled: bool = True
+    learning_distill_min_coverage: float = 0.75  # only learn from well-sourced runs
+    learning_max_skills: int = 3                  # strategies injected per run
 
 
 @dataclass
@@ -311,6 +316,7 @@ class ResearchPipeline:
     # --- run ---
     def research(self, question: str, *, job_id: str | None = None) -> ResearchResult:
         job_id = job_id or uuid.uuid4().hex[:8]
+        applied_skill_ids: list[int] = []  # learned skills applied to this run
         # Auto-fetch from academic sources when corpus is empty and not in offline mode.
         # The `not offline` gate is the test isolation guarantee — all tests use offline=True.
         if (self._chunks_ingested == 0
@@ -333,11 +339,16 @@ class ResearchPipeline:
             real_rerank = type(self.reranker).__name__ == "FlagReranker"
             dd_top_k = 8 if real_rerank else self.config.top_k
             dd_candidates = 50 if real_rerank else None
+            # Self-learning: retrieve strategies that worked on similar questions
+            # and inject them into the planner; record each application so the
+            # reinforcement step can attribute this run's outcome.
+            learned_block, applied_skill_ids = self._retrieve_skills(question, job_id)
             report = run_deepdive(question, hybrid=self.hybrid, gateway=self.gateway,
                                   max_rounds=self.config.max_rounds,
                                   top_k=dd_top_k, rerank_candidates=dd_candidates,
                                   job_id=job_id, gate=self.scheduler_gate,
-                                  crag_enabled=self.config.crag_enabled)
+                                  crag_enabled=self.config.crag_enabled,
+                                  learned_strategies=learned_block)
             synthesis = "\n\n".join(s.body for s in report.sections)
             body_html = _report_to_html(report)
             source_count = len({c for s in report.sections for c in s.citations})
@@ -372,6 +383,14 @@ class ResearchPipeline:
 
         self._audit("discipline.checked", {"draft_id": draft_id, **disc_summary,
                                            "positions_recorded": n_positions})
+
+        # Self-learning: reinforce applied skills with this run's outcome, then
+        # distil a new skill when the run was high-quality (deep-dive only).
+        if self.config.learning_enabled:
+            self._reinforce_and_distill(
+                question=question, report=report, rep=rep,
+                disc_summary=disc_summary, applied_skill_ids=applied_skill_ids,
+                job_id=job_id)
 
         # Record query hits for tracked entities that appear in the answer/synthesis (§2).
         if self._tracked_entities and synthesis:
@@ -436,6 +455,71 @@ class ResearchPipeline:
         self._audit("draft.staged", {"draft_id": draft_id, "question": question,
                                      "backends": self.backends})
         return draft_id
+
+    def _retrieve_skills(self, question: str, job_id: str) -> tuple[str, list[int]]:
+        """Pick learned strategies for this question and record their use.
+
+        Returns the planner-prompt block (or "") and the list of applied skill
+        ids so the post-run step can reinforce them. Best-effort — never raises.
+        """
+        if not self.config.learning_enabled:
+            return "", []
+        try:
+            from .learning import format_for_planner, select_skills
+            from .verification.skills import record_application
+            skills = select_skills(self.paths.state_db, question,
+                                   k=self.config.learning_max_skills)
+            applied: list[int] = []
+            for s in skills:
+                record_application(self.paths.state_db, skill_id=s.id, job_id=job_id)
+                applied.append(s.id)
+            return format_for_planner(skills), applied
+        except Exception:
+            return "", []
+
+    def _reinforce_and_distill(self, *, question, report, rep, disc_summary,
+                               applied_skill_ids, job_id) -> None:
+        """Update applied-skill stats with the outcome and distil a new skill
+        from a high-quality deep-dive run. Best-effort — never raises."""
+        try:
+            from .verification.skills import complete_application
+            for sid in applied_skill_ids:
+                complete_application(self.paths.state_db, skill_id=sid,
+                                     job_id=job_id, coverage=rep.citation_coverage,
+                                     passed=rep.passed)
+        except Exception:
+            pass
+
+        if (report is None or not rep.passed
+                or rep.citation_coverage < self.config.learning_distill_min_coverage):
+            return
+        try:
+            from .learning import distill_skill
+            framed = report.framing
+            qtype = getattr(framed.question_type, "value", str(framed.question_type))
+            sub_qs = list(framed.sub_questions) or [
+                s.sub_question for s in report.sections if s.sub_question]
+            # Independent evidence domains drawn on, for the skill body.
+            domains = sorted({
+                (e.chunk.metadata.get("source") or "")
+                for e in getattr(report, "evidence_chunks", [])
+                if e.chunk.metadata.get("source")
+            })
+            distilled = distill_skill(
+                self.paths.state_db, question=question, question_type=qtype,
+                sub_questions=sub_qs, coverage=rep.citation_coverage,
+                wep_phrase=disc_summary.get("wep_phrase", ""),
+                source_count=disc_summary.get("source_count", 0),
+                evidence_domains=domains, gateway=self.gateway,
+                gate=self.scheduler_gate, job_id=job_id)
+            if distilled is not None:
+                self._audit("skill_distilled", {
+                    "skill_id": distilled.skill_id, "name": distilled.name,
+                    "question_type": distilled.question_type,
+                    "merged": distilled.merged, "job_id": job_id,
+                    "coverage": round(rep.citation_coverage, 4)})
+        except Exception:
+            pass
 
     def _audit(self, event_type: str, payload: dict) -> None:
         if not self.paths.audit_db.exists():

@@ -327,3 +327,75 @@ def test_pipeline_auto_fetch_disabled_by_flag(migrated_paths):
                             config=PipelineConfig(offline=True, auto_fetch_sources=False))
     result = pipe.research("some question")
     assert result.chunks_ingested == 0
+
+
+# --- self-learning loop (offline, deterministic) ---
+
+def test_pipeline_learning_disabled_distils_nothing(migrated_paths):
+    from lighthouse_ai.verification.skills import list_skills
+    pipe = ResearchPipeline(
+        migrated_paths,
+        config=PipelineConfig(offline=True, mode="deep-dive", learning_enabled=False))
+    pipe.ingest_text("d1", "Qubits enable superposition. Entanglement links them.")
+    pipe.research("What is quantum computing?")
+    assert list_skills(migrated_paths.state_db) == []
+
+
+def test_pipeline_offline_run_does_not_distil_when_not_passed(migrated_paths):
+    """Stub runs don't pass the discipline gate, so nothing is learned — by design."""
+    from lighthouse_ai.verification.skills import list_skills
+    pipe = ResearchPipeline(
+        migrated_paths, config=PipelineConfig(offline=True, mode="deep-dive"))
+    pipe.ingest_text("d1", "Qubits enable superposition. Entanglement links them.")
+    r = pipe.research("What is quantum computing?")
+    assert r.discipline["passed"] is False
+    assert list_skills(migrated_paths.state_db) == []  # learns only from successes
+
+
+def test_pipeline_distill_hook_fires_on_passing_run(migrated_paths):
+    """Directly exercise the pipeline's distill hook with a passing outcome."""
+    from types import SimpleNamespace
+    from lighthouse_ai.framing.pipeline import QuestionType
+    from lighthouse_ai.verification.skills import list_skills
+    pipe = ResearchPipeline(
+        migrated_paths, config=PipelineConfig(offline=True, mode="deep-dive"))
+    framing = SimpleNamespace(
+        question_type=QuestionType.COMPARATIVE,
+        sub_questions=["What does A show?", "What does B show?", "How do they compare?"])
+    report = SimpleNamespace(framing=framing, sections=[], evidence_chunks=[])
+    rep = SimpleNamespace(citation_coverage=0.9, passed=True)
+    disc = {"wep_phrase": "likely", "source_count": 11}
+    pipe._reinforce_and_distill(question="A versus B on outcome X?", report=report,
+                                rep=rep, disc_summary=disc, applied_skill_ids=[],
+                                job_id="jobX")
+    skills = list_skills(migrated_paths.state_db)
+    assert len(skills) == 1
+    assert skills[0].question_type == "comparative"
+    # And the distillation sealed an audit event.
+    from lighthouse_ai.persistence import open_db
+    conn = open_db(migrated_paths.audit_db)
+    try:
+        n = conn.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE event_type='skill_distilled'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert n == 1
+
+
+def test_pipeline_retrieves_and_reinforces_seeded_skill(migrated_paths):
+    """A pre-seeded skill matching the question is applied + reinforced by a run."""
+    from lighthouse_ai.learning import distill_skill
+    from lighthouse_ai.verification.skills import get_skill
+    d = distill_skill(
+        migrated_paths.state_db,
+        question="What is quantum computing and how do qubits work?",
+        question_type="factual_lookup",
+        sub_questions=["What is a qubit?", "What is superposition?"],
+        coverage=0.9, wep_phrase="likely", source_count=8)
+    pipe = ResearchPipeline(
+        migrated_paths, config=PipelineConfig(offline=True, mode="deep-dive"))
+    pipe.ingest_text("d1", "Quantum computing uses qubits and superposition.")
+    pipe.research("Explain quantum computing and qubits")
+    # The seeded skill should have been applied (recorded) by the run.
+    assert get_skill(migrated_paths.state_db, d.skill_id).applied_count >= 1

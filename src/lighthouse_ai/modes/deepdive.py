@@ -349,8 +349,14 @@ def run_deepdive(
     min_entailment_for_early_stop: float = 0.0,
     crag_enabled: bool = True,
     gate: SchedulerGate | None = None,
+    learned_strategies: str = "",
 ) -> DraftReport:
-    framed = run_framing(question)
+    # Pass the gateway so the LLM planner path runs (it was dormant), and inject
+    # any learned strategies retrieved for this question so framing/decomposition
+    # benefits from what worked before (self-learning loop). Both are additive:
+    # with no gateway or no learned skills the deterministic framing is unchanged.
+    framed = run_framing(question, gateway=gateway, job_id=job_id,
+                         learned_strategies=learned_strategies or None)
     sections = _skeleton(framed)
     evidence_rounds: list[list[HybridResult]] = []
 

@@ -229,22 +229,26 @@ def _run_framing_deterministic(question: str) -> FramedQuestion:
     )
 
 
-def run_framing(question: str, *, gateway=None, job_id: str | None = None) -> FramedQuestion:
+def run_framing(question: str, *, gateway=None, job_id: str | None = None,
+                learned_strategies: str | None = None) -> FramedQuestion:
     """Frame a research question, optionally using the planner LLM.
 
     Falls back to deterministic keyword/template baseline when gateway is
     None, or when the LLM response cannot be parsed — so tests and offline
-    mode are unaffected.
+    mode are unaffected. ``learned_strategies`` (when supplied) is injected as
+    additive guidance into the planner prompt by the self-learning loop.
     """
     if gateway is not None:
         try:
-            return _run_framing_llm(question, gateway=gateway, job_id=job_id)
+            return _run_framing_llm(question, gateway=gateway, job_id=job_id,
+                                    learned_strategies=learned_strategies)
         except Exception:
             pass
     return _run_framing_deterministic(question)
 
 
-def _run_framing_llm(question: str, *, gateway, job_id: str | None) -> FramedQuestion:
+def _run_framing_llm(question: str, *, gateway, job_id: str | None,
+                     learned_strategies: str | None = None) -> FramedQuestion:
     """Use the planner role to classify, frame, and decompose the question.
 
     The planner is instructed to return JSON matching the FramedQuestion schema.
@@ -274,6 +278,9 @@ def _run_framing_llm(question: str, *, gateway, job_id: str | None) -> FramedQue
         "}\n\n"
         f"Research question: {question}"
     )
+    if learned_strategies:
+        # Additive guidance from previously successful runs (self-learning).
+        prompt += "\n\n" + learned_strategies
     resp = gateway.complete("planner", prompt, job_id=job_id)
     raw = resp.text.strip()
     # Strip markdown code fences that some models add
