@@ -80,6 +80,24 @@ def _skeleton(framed: FramedQuestion) -> list[Section]:
     return sections
 
 
+def _expand_queries(sub_question: str, gateway: Gateway | None, job_id: str | None) -> list[str]:
+    """Generate 2 alternative phrasings of the sub-question for ensemble search."""
+    if gateway is None:
+        return [sub_question]
+    prompt = (
+        f"Rephrase this research question in 2 different ways to improve search recall. "
+        f"Return ONLY the 2 rephrased questions, one per line, no numbering or explanation.\n\n"
+        f"Question: {sub_question}"
+    )
+    try:
+        resp = gateway.complete("aux_context", prompt)
+        lines = [l.strip() for l in resp.text.strip().split("\n") if l.strip()]
+        variants = lines[:2]
+        return [sub_question] + variants  # original + 2 variants
+    except Exception:
+        return [sub_question]
+
+
 def _research_section(
     section: Section,
     hybrid: HybridSearch | None,
@@ -95,8 +113,16 @@ def _research_section(
     stub when the gateway is absent so the orchestrator runs in tests."""
     evidence: list[HybridResult] = []
     if hybrid is not None:
-        evidence = hybrid.search(section.sub_question, top_k=top_k,
-                                 rerank_candidates=rerank_candidates)
+        queries = _expand_queries(section.sub_question, gateway, job_id)
+        all_results: list[HybridResult] = []
+        seen_ids: set[str] = set()
+        for q in queries:
+            for r in hybrid.search(q, top_k=top_k, rerank_candidates=rerank_candidates):
+                if r.chunk.id not in seen_ids:
+                    seen_ids.add(r.chunk.id)
+                    all_results.append(r)
+        # Re-sort by score descending, keep top_k
+        evidence = sorted(all_results, key=lambda r: r.score, reverse=True)[:top_k]
     citations = [e.chunk.id for e in evidence]
     # `citations` mirrors the chunk ids of the evidence list above.
     if gateway is None:
@@ -262,6 +288,48 @@ def _extract_debate_subquestions(
     return new_subs[:2]  # cap at 2 new sub-questions per round to control runaway loops
 
 
+def _should_crag_fetch(draft: DraftReport, progress: float) -> bool:
+    """Trigger mid-loop web fetch when gaps found or progress stalled."""
+    has_gaps = any("[GAP]" in (s.body or "") for s in draft.sections)
+    return has_gaps or progress < 0.1
+
+
+def _crag_fetch(
+    draft: DraftReport,
+    hybrid: HybridSearch,
+    cfg: object,
+    gate: SchedulerGate | None,
+    gateway: Gateway | None,
+    job_id: str | None,
+) -> None:
+    """Fetch from SearXNG for open questions/gaps, ingest into hybrid store."""
+    import structlog
+    from ..rag.chunker import chunk_document
+    from ..sources.searxng import SearXNGUnavailable, search_as_documents  # noqa: F401
+
+    # Collect gap-bearing sub-questions as queries
+    queries = [
+        s.sub_question for s in draft.sections
+        if "[GAP]" in (s.body or "") and s.sub_question
+    ]
+    if not queries:
+        # Fall back to using the original question
+        queries = [draft.question] if draft.question else []
+    if not queries:
+        return
+
+    log = structlog.get_logger(__name__)
+
+    for query in queries[:3]:  # cap at 3 queries to avoid hammering
+        docs = search_as_documents(query, max_results=5, scholarly=True)
+        if not docs:
+            continue
+        for doc in docs:
+            chunks = chunk_document(doc)
+            hybrid.add(chunks)
+        log.info("deepdive.crag_fetch", query=query[:60], docs=len(docs))
+
+
 def run_deepdive(
     question: str,
     *,
@@ -326,6 +394,10 @@ def run_deepdive(
         # questions were resolved/created since the prior round (§Sprint 28).
         open_count = sum(1 for s in sections if not s.body.strip())
         progress = _discovery_progress(evidence_rounds)
+
+        # CRAG: mid-loop web fetch when gaps detected or progress stalled
+        if hybrid is not None and round_idx < max_rounds and _should_crag_fetch(provisional, progress):
+            _crag_fetch(provisional, hybrid, None, gate, gateway, job_id)
         stuck = progress < progress_threshold
         open_unchanged = prev_open_count is not None and open_count == prev_open_count
         # Entailment gate (seam for pipeline.py to pass a threshold later)
