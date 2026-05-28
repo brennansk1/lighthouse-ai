@@ -703,6 +703,23 @@ class IntelligencePage(_Page):
 
 
 # ════════════════════════════ modals ════════════════════════════
+def _guarded_post(app: Any, path: str, json: dict | None = None) -> bool:
+    """POST from a modal, surfacing supervisor-offline/errors as a notify.
+
+    Modals are ModalScreens (not _Page) so they can't use _Page.client_post;
+    this mirrors its error handling so an offline supervisor doesn't crash the
+    Textual handler. Returns True on success.
+    """
+    try:
+        app.client.post(path, json=json)
+        return True
+    except SupervisorOffline:
+        app.notify("Supervisor offline", severity="error")
+    except Exception as exc:
+        app.notify(f"Request failed: {exc}", severity="error")
+    return False
+
+
 class NewJobModal(ModalScreen):
     BINDINGS = [Binding("escape", "dismiss", "Cancel")]
 
@@ -720,8 +737,8 @@ class NewJobModal(ModalScreen):
         if event.button.id == "ok":
             topic = self.query_one("#job-topic", Input).value.strip()
             mode = self.query_one("#job-mode", Input).value.strip() or "Deep-Dive"
-            if topic:
-                self.app.client.post("/api/jobs", json={"mode": mode, "topic": topic})
+            if topic and _guarded_post(self.app, "/api/jobs",
+                                       {"mode": mode, "topic": topic}):
                 self.app.notify("Job queued")
         self.dismiss()
 
@@ -745,10 +762,9 @@ class NewTopicModal(ModalScreen):
             name = self.query_one("#topic-name", Input).value.strip()
             mode = self.query_one("#topic-mode", Input).value.strip() or "Monitor"
             src = self.query_one("#topic-src", Input).value.strip()
-            if name:
-                self.app.client.post("/api/topics", json={
+            if name and _guarded_post(self.app, "/api/topics", {
                     "name": name, "mode": mode,
-                    "sources": [src] if src else []})
+                    "sources": [src] if src else []}):
                 self.app.notify("Topic created")
         self.dismiss()
 
@@ -772,9 +788,8 @@ class RejectModal(ModalScreen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "ok":
             reason = self.query_one("#reason", Input).value.strip()
-            if reason:
-                self.app.client.post(f"/api/drafts/{self.draft_id}/reject",
-                                     json={"reason": reason})
+            if reason and _guarded_post(self.app, f"/api/drafts/{self.draft_id}/reject",
+                                        {"reason": reason}):
                 self.app.notify("Rejected")
         self.dismiss()
 

@@ -757,7 +757,7 @@ def export(
     page = export_draft(graph_dir, draft_id=_id, title=title, body_html=body_html,
                         topic=topic, wep_phrase=wep_phrase,
                         source_count=source_count or 0)
-    console.print(f"[green]exported to Logseq[/green]")
+    console.print("[green]exported to Logseq[/green]")
     console.print(f"[green]wrote Logseq page →[/green] {page.path}")
 
 
@@ -1336,14 +1336,13 @@ def audit_egress(
     from .persistence import open_db
     conn = open_db(paths.audit_db)
     try:
+        # NB: the audit_events timestamp column is `ts` (not `created_at`).
         rows = conn.execute(
-            "SELECT event_type, payload_json, created_at FROM audit_events "
+            "SELECT event_type, payload_json, ts FROM audit_events "
             "WHERE event_type LIKE '%fetch%' OR event_type LIKE '%egress%' "
             "OR event_type LIKE '%auto_fetch%' "
-            "ORDER BY created_at DESC LIMIT 200"
+            "ORDER BY ts DESC LIMIT 200"
         ).fetchall()
-    except Exception:
-        rows = []
     finally:
         conn.close()
     if not rows:
@@ -1355,20 +1354,20 @@ def audit_egress(
     table.add_column("Event")
     table.add_column("Details")
     import json
-    for event_type, payload_json, created_at in rows:
+    for event_type, payload_json, ts in rows:
         payload = {}
         try:
             payload = json.loads(payload_json or "{}")
-        except Exception:
+        except (ValueError, TypeError):
             pass
         details = payload.get("url") or payload.get("source") or str(payload)[:60]
-        table.add_row(str(created_at)[:16], event_type, details)
+        table.add_row(str(ts)[:16], event_type, details)
     console.print(table)
     if output:
         with open(output, "w") as f:
             f.write(f"Lighthouse Egress Audit Report\nGenerated: {__import__('datetime').datetime.now().isoformat()}\n\n")
-            for event_type, payload_json, created_at in rows:
-                f.write(f"{created_at} | {event_type} | {payload_json}\n")
+            for event_type, payload_json, ts in rows:
+                f.write(f"{ts} | {event_type} | {payload_json}\n")
         console.print(f"[green]Report written to {output}[/green]")
 
 
@@ -1501,7 +1500,7 @@ def subconscious_tick() -> None:
     """Manually trigger a single subconscious tick (debug)."""
     paths = _paths_from_env()
     paths.ensure()
-    from .subconscious import SubconsciousEngine, stale_position_escalations, ReflectionStore
+    from .subconscious import ReflectionStore, SubconsciousEngine, stale_position_escalations
     from .subconscious.engine import TickResult
     store = ReflectionStore(paths.reflections_db)
     engine = SubconsciousEngine(
@@ -1557,7 +1556,7 @@ def notify_status() -> None:
         tc = TelegramChannel(bot_token=tg_token, chat_id=tg_chat)
         if tc.available():
             tg_events = cfg.get("telegram_events", cfg.get("events", _ALL_EVENTS))
-            console.print(f"  telegram  [green]✓[/green] bot configured")
+            console.print("  telegram  [green]✓[/green] bot configured")
             console.print(f"            events: {', '.join(tg_events)}")
         else:
             console.print("  telegram  [yellow]token or chat_id missing[/yellow]")

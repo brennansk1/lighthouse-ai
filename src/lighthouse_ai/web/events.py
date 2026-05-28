@@ -60,7 +60,10 @@ class EventBus:
 
         def _deliver() -> None:
             dead: list[asyncio.Queue] = []
-            for q in self._subscribers:
+            # Snapshot the set before iterating: the inline-delivery path runs on
+            # the caller's thread while subscribe/unsubscribe mutate from the
+            # event loop, and "set changed size during iteration" would raise.
+            for q in list(self._subscribers):
                 try:
                     q.put_nowait(msg)
                 except asyncio.QueueFull:

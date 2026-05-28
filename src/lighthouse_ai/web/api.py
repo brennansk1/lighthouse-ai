@@ -71,6 +71,10 @@ class NotifyEventsBody(BaseModel):
     telegram_events: list[str] | None = None
 
 
+class PlanBody(BaseModel):
+    question: str
+
+
 # ---- helpers --------------------------------------------------------------
 
 def _rows(conn, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
@@ -84,7 +88,7 @@ def _json_field(d: dict[str, Any], key: str) -> dict[str, Any]:
     return json.loads(raw) if raw else {}
 
 
-def _fire_notify(paths: "Paths", event: str, title: str, body: str, **data: Any) -> None:
+def _fire_notify(paths: Paths, event: str, title: str, body: str, **data: Any) -> None:
     """Best-effort notification dispatch from the web API.
 
     Loads the [notifications] config, builds channels, applies per-channel
@@ -170,18 +174,25 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
             raise HTTPException(404, f"job {job_id} not found")
         job = rows[0]
         job["metadata"] = _json_field(job, "metadata_json")
-        # Recent model calls for this job from the audit log.
+        # Recent model calls for THIS job from the audit log. Filter by job_id in
+        # SQL (json_extract) so an old job isn't hidden behind 50 newer global
+        # calls; only then take the most recent 50 for this job.
         aconn = open_db(paths.audit_db)
         try:
-            calls = _rows(aconn, "SELECT seq, ts, actor, payload_json FROM audit_events "
-                          "WHERE event_type='model_call' ORDER BY seq DESC LIMIT 50")
+            calls = _rows(
+                aconn,
+                "SELECT seq, ts, actor, payload_json FROM audit_events "
+                "WHERE event_type='model_call' "
+                "AND json_extract(payload_json, '$.job_id') = ? "
+                "ORDER BY seq DESC LIMIT 50",
+                (job_id,),
+            )
         finally:
             aconn.close()
         for c in calls:
             p = _json_field(c, "payload_json")
-            if p.get("job_id") == job_id:
-                c["model"] = p.get("model")
-                c["tokens"] = p.get("prompt_tokens", 0) + p.get("completion_tokens", 0)
+            c["model"] = p.get("model")
+            c["tokens"] = p.get("prompt_tokens", 0) + p.get("completion_tokens", 0)
         job["model_calls"] = [c for c in calls if c.get("model")]
         return job
 
@@ -287,6 +298,7 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
                 logseq_cfg = _cfg.get("logseq", {})
                 if logseq_cfg.get("enabled") and logseq_cfg.get("graph_dir"):
                     from pathlib import Path as _Path
+
                     from ..targets.logseq import export_draft as _logseq_export
                     _conn = open_db(paths.state_db)
                     try:
@@ -710,6 +722,7 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
 
         # Reuse the existing job-creation path so the job lands in the same store.
         import uuid
+
         from ..persistence import open_db as _open_db
 
         def _spawn(seed: str) -> str:
@@ -741,7 +754,9 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         try:
             new_status = EscalationStatus(body.status)
         except ValueError:
-            raise HTTPException(status_code=422, detail=f"invalid status: {body.status!r}")
+            raise HTTPException(
+                status_code=422, detail=f"invalid status: {body.status!r}"
+            ) from None
         store = _reflection_store()
         updated = store.update_escalation_status(escalation_id, new_status)
         if not updated:
@@ -753,9 +768,9 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
     # ========================= RESEARCH PLAN =======================
 
     @app.post("/api/research/plan", tags=["research"])
-    def preview_plan(body: dict) -> dict[str, Any]:
+    def preview_plan(body: PlanBody) -> dict[str, Any]:
         from ..framing.pipeline import run_framing
-        question = str(body.get("question", "")).strip()
+        question = body.question.strip()
         if not question:
             raise HTTPException(status_code=422, detail="question is required")
         try:

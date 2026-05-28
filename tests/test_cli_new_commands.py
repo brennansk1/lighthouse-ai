@@ -220,3 +220,30 @@ def test_models_prune_succeeds_on_200(initted_env, mock_ollama):
     runner = CliRunner()
     r = runner.invoke(app, ["models", "prune", "x"])
     assert r.exit_code == 0
+
+
+# --- audit-egress (regression: column name + no false airplane-mode claim) ---
+
+def test_audit_egress_runs_on_empty_log(initted_env):
+    """A fresh log has no egress rows; the command must succeed (not crash on
+    a bad column) and report the airplane-mode confirmation legitimately."""
+    runner = CliRunner()
+    r = runner.invoke(app, ["audit-egress"])
+    assert r.exit_code == 0, r.stdout
+    assert "No external network calls" in r.stdout
+
+
+def test_audit_egress_surfaces_recorded_fetch(initted_env):
+    """A recorded fetch event must actually appear — proving the query reads the
+    real `ts` column instead of silently swallowing an OperationalError."""
+    from lighthouse_ai.verification.audit_chain import append_event
+    from lighthouse_ai.paths import paths_from_env
+    paths = paths_from_env()
+    append_event(paths.audit_db, actor="net", event_type="auto_fetch",
+                 payload={"url": "https://arxiv.org/abs/1234"}, secret=b"k")
+    runner = CliRunner()
+    r = runner.invoke(app, ["audit-egress"])
+    assert r.exit_code == 0, r.stdout
+    assert "arxiv.org" in r.stdout
+    # Must NOT falsely claim airplane-mode when a fetch is on record.
+    assert "No external network calls" not in r.stdout

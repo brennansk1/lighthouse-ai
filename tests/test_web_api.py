@@ -350,3 +350,27 @@ def test_notifications_patch_telegram_events_override(migrated_paths, client):
     with migrated_paths.config_file.open("rb") as fh:
         cfg = tomllib.load(fh)
     assert cfg["notifications"]["telegram_events"] == ["draft_approved"]
+
+
+# ============================ PLAN / ESCALATION VALIDATION (sweep) ==========
+
+def test_preview_plan_requires_question_field(client):
+    """Missing 'question' field → 422 (Pydantic), not a 500 crash."""
+    r = client.post("/api/research/plan", json={})
+    assert r.status_code == 422
+
+
+def test_preview_plan_non_object_body_is_422(client):
+    """A non-object JSON body must be a clean 422, not an AttributeError 500."""
+    r = client.post("/api/research/plan", json="just a string")
+    assert r.status_code == 422
+
+
+def test_preview_plan_empty_question_rejected(client):
+    r = client.post("/api/research/plan", json={"question": "   "})
+    assert r.status_code == 422
+
+
+def test_escalation_status_invalid_is_422(client):
+    r = client.patch("/api/escalations/nope/status", json={"status": "bogus"})
+    assert r.status_code == 422
