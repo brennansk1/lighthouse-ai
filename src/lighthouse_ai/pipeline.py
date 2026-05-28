@@ -184,6 +184,7 @@ class ResearchPipeline:
         self._backend_warnings: list[str] = emb_warns + store_warns
         self._chunks_ingested = 0
         self._blocked_chunks = 0
+        self._compaction_saved_tokens = 0
         from .governor import InjectionGate
         self._injection_gate = InjectionGate()
         # Host-courtesy gate on real LLM calls only — offline uses a free mock,
@@ -210,9 +211,21 @@ class ResearchPipeline:
         not in offline mode, an LLM-generated 1-sentence context locator is
         used; otherwise the deterministic metadata-based preamble is used.
         """
+        from .rag.compaction import compact, looks_like_html
         from .rag.contextual import default_preamble, llm_preamble_fn, prepend_context
 
-        doc = Document(id=doc_id, text=text, metadata=metadata or {})
+        # Deterministic pre-context compaction of fetched HTML sources (§5):
+        # strip tags/boilerplate/dup-lines before chunking. Plain text is left
+        # byte-identical so only verbose web payloads pay (and benefit).
+        meta = metadata or {}
+        ct = str(meta.get("content_type", ""))
+        if ct.startswith("text/html") or looks_like_html(text):
+            text, cstats = compact(text, source=str(meta.get("source", "")),
+                                   content_type=ct or "text/html")
+            self._compaction_saved_tokens += max(
+                0, cstats.orig_tokens - cstats.new_tokens)
+
+        doc = Document(id=doc_id, text=text, metadata=meta)
         chunks = chunk_document(doc)
 
         # --- contextual preamble ---
