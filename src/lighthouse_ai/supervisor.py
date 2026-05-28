@@ -30,9 +30,11 @@ import structlog
 import uvicorn
 
 from .controlplane import create_app
+from .governor.scheduler_gate import SchedulerGate, SchedulerGateConfig
 from .paths import Paths, make_paths
 from .persistence import open_db
 from .schema import kinds_for, migrate_all
+from .subconscious import SubconsciousEngine, stale_position_escalations, ReflectionStore
 
 log = structlog.get_logger(__name__)
 
@@ -83,6 +85,36 @@ def _configure_logging(paths: Paths) -> None:
     )
 
 
+def _start_subconscious_loop(paths: Paths, *, interval_s: float = 60.0) -> threading.Thread:
+    """Start a daemon thread that calls SubconsciousEngine.tick() every interval_s seconds."""
+    store = ReflectionStore(paths.reflections_db)
+    gate_cfg = SchedulerGateConfig.from_config_file(paths.config_file)
+    gate = SchedulerGate(gate_cfg)
+    engine = SubconsciousEngine(
+        store,
+        gate=gate,
+        escalation_producers=(lambda: stale_position_escalations(paths.positions_db),),
+    )
+
+    def _loop() -> None:
+        while True:
+            time.sleep(interval_s)
+            try:
+                outcome = engine.tick()
+                log.info(
+                    "subconscious.tick",
+                    result=outcome.result.value,
+                    reflections_committed=outcome.reflections_committed,
+                    escalations_committed=outcome.escalations_committed,
+                )
+            except Exception as exc:
+                log.warning("subconscious.tick.error", exc=str(exc))
+
+    thread = threading.Thread(target=_loop, daemon=True, name="subconscious-loop")
+    thread.start()
+    return thread
+
+
 def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
           port: int = 8765, run: bool = True) -> uvicorn.Server:
     """Boot the supervisor. ``run=False`` returns the Server for tests."""
@@ -93,6 +125,11 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
     log.info("supervisor.boot", data_dir=str(p.data_dir))
     migrated = migrate_all(kinds_for(p))
     log.info("supervisor.migrations_applied", **migrated)
+
+    # Ensure self-initialising side DBs exist
+    from .compounding.hotness_store import EntityHotnessStore
+    ReflectionStore(p.reflections_db)
+    EntityHotnessStore(p.entity_hotness_db)
 
     pid = os.getpid()
     _write_pidfile(p.pid_file, pid)
@@ -109,6 +146,7 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
         server.should_exit = True
 
     if run:
+        _start_subconscious_loop(p)
         signal.signal(signal.SIGTERM, _on_signal)
         signal.signal(signal.SIGINT, _on_signal)
         try:

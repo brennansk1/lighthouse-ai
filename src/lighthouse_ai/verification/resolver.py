@@ -14,6 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..subconscious.overlap import GenerationGuard
 
 
 @dataclass
@@ -135,13 +139,20 @@ def run_resolver_pass(
     gateway=None,
     confidence_threshold: float = 0.7,
     dry_run: bool = False,
+    guard: GenerationGuard | None = None,
 ) -> list[ResolutionResult]:
     """Run auto-resolution on all past-deadline positions.
 
     When dry_run=True, returns results without writing to the database.
+
+    When a :class:`GenerationGuard` is supplied, this pass claims a generation
+    and refuses to commit once a newer pass has started — so a slow resolver run
+    colliding with the next scheduled one never double-writes outcomes (§4).
     """
     from ..persistence import open_db
     from .positions import _ensure_extras
+
+    my_gen = guard.begin() if guard is not None else None
 
     _ensure_extras(positions_db)
     conn = open_db(positions_db)
@@ -165,6 +176,9 @@ def run_resolver_pass(
         )
         results.append(result)
         if result.auto_resolved and not dry_run:
+            # A newer pass started while we were researching → discard our writes.
+            if guard is not None and not guard.is_current(my_gen):
+                break
             conn = open_db(positions_db)
             try:
                 conn.execute(

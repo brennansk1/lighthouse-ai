@@ -85,6 +85,8 @@ A "vertical slice" of the product works **end-to-end, locally, today**: ingest d
 ## Cross-cutting subsystems (built in parallel sprints)
 
 - ✅ Governor guards wired: **loop detector** in the Gateway (raises `LoopTripped` on runaway), **injection gate** screens every ingested chunk (injected content never enters the corpus). 🔌 `egress_proxy` built+tested but not yet on the fetch path.
+- ✅ **Scheduler Gate** (`governor/scheduler_gate.py`, OpenHuman §1): host-courtesy throttle (power/CPU/server → Aggressive/Normal/Throttled/Paused); cooperative `permit()` wraps Deep-Dive LLM calls; `lighthouse doctor` reports policy. See `OPENHUMAN_INTEGRATION.md`.
+- ✅ **Hotness Score** (`compounding/hotness.py`, OpenHuman §2): deterministic LLM-free entity-importance with named-term breakdown; available as a Monitor salience scorer. 🟡 persistence table + dossier materialisation deferred.
 - ✅ Notifications (`notify/`): desktop / Discord / email + dispatcher; fired on `draft_ready` from the research command. 🔌 not yet fired on `budget_trip` / `monitor_alert` from the Governor/modes.
 - ✅ Source adapters: RSS, **arXiv**, **OpenAlex**, **PubMed**, **Crossref** (all return `Document` objects)
 - ✅ Logseq export (filesystem markdown) — `lighthouse export <draft> --logseq <dir>`
@@ -159,7 +161,7 @@ Test-type legend: **U** unit · **I** integration (real deps, skip-if-absent) ·
 | Feature | Tests required | Standard | Status |
 |---|---|---|---|
 | Chunker | U: boundary, overlap, code-block preservation, metadata propagation | 100-token overlap present; code blocks intact | ✅ |
-| Hybrid search (dense+BM25+RRF) | I: ingest 10 papers, known queries | **top-5 precision ≥ 80%** (design §14) | ⬜ needs a golden set |
+| Hybrid search (dense+BM25+RRF) | I: ingest 10 papers, known queries | **top-5 precision ≥ 80%** (design §14) | 🟡 golden set + `lighthouse eval` harness shipped; real-backend numbers pending a run with bge-m3 + FlagReranker |
 | Contextual retrieval | I: recall vs no-context baseline | **≥10% recall lift** (Anthropic pattern) | ⬜ |
 | Reranker | I: MRR vs hybrid baseline | **≥5% MRR lift** over hybrid | ⬜ (stub reranker only) |
 | Faithfulness (ragas) | E: 20-pair golden set | **faithfulness ≥ 0.7** | ⬜ |
@@ -232,7 +234,7 @@ Test-type legend: **U** unit · **I** integration (real deps, skip-if-absent) ·
 
 ## Top of the queue (highest-leverage gaps)
 
-1. **Golden-set retrieval eval** (precision / MRR / faithfulness numbers) — the core quality claim is currently unmeasured.
+1. **Golden-set retrieval eval** — harness + `lighthouse eval` CLI now ship; run it with real backends (`lighthouse eval`, Ollama bge-m3 + FlagReranker installed) to capture precision / MRR / faithfulness numbers. The core quality claim is *runnable* but still unmeasured under real backends.
 2. **Browser render QA + Playwright** for the 7 webapp pages — only static checks done.
 3. **CI** (Actions: pytest + ruff + mypy, macOS + Linux) — gates everything else.
 4. **Wire egress proxy into the fetch path**; Telegram-confirmed kill switch.

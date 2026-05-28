@@ -21,11 +21,19 @@ plug LangGraph in later if desired.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 
 from ..framing import FramedQuestion, run_framing
 from ..gateway import Gateway
+from ..governor.scheduler_gate import SchedulerGate
+from ..rag.compaction import compact as compact_evidence
 from ..rag.hybrid import HybridResult, HybridSearch
+
+
+def _gate_ctx(gate: SchedulerGate | None):
+    """Host-courtesy permit around an LLM call; no-op when no gate is wired."""
+    return gate.permit() if gate is not None else nullcontext()
 
 # Imported at module level so tests can patch lighthouse_ai.modes.deepdive.run_debate
 try:
@@ -81,6 +89,7 @@ def _research_section(
     top_k: int = 5,
     rerank_candidates: int | None = None,
     working_context: CompactedContext | None = None,
+    gate: SchedulerGate | None = None,
 ) -> tuple[Section, list[HybridResult]]:
     """Fetch evidence + draft a section body. Falls back to a deterministic
     stub when the gateway is absent so the orchestrator runs in tests."""
@@ -97,6 +106,12 @@ def _research_section(
     else:
         evidence_lines = "\n".join(f"[{i+1}] {e.chunk.text[:300]}"
                                    for i, e in enumerate(evidence))
+        # §5 wiring: deterministic, LLM-free compaction of evidence payload
+        # before it enters the researcher prompt.  Only applied when the
+        # evidence is non-trivial (>200 chars or more than 3 chunks) to avoid
+        # overhead on tiny prompts.
+        if len(evidence_lines) > 200 or len(evidence) > 3:
+            evidence_lines, _compact_stats = compact_evidence(evidence_lines)
         if working_context is not None:
             open_qs = ", ".join(working_context.open_questions[:5])
             facts = "; ".join(
@@ -119,7 +134,8 @@ def _research_section(
                 f"Evidence:\n" + evidence_lines
                 + "\n\nDraft a 2-paragraph answer with [N] citations."
             )
-        resp = gateway.complete("researcher", prompt, job_id=job_id)
+        with _gate_ctx(gate):
+            resp = gateway.complete("researcher", prompt, job_id=job_id)
         body = resp.text
     from dataclasses import replace
     return replace(section, body=body, citations=citations), evidence
@@ -174,6 +190,7 @@ def _denoise(
     *,
     gateway: Gateway | None,
     job_id: str | None,
+    gate: SchedulerGate | None = None,
 ) -> list[Section]:
     """Merge step — dedupes citations (stub) or uses synthesizer LLM (real)."""
     from dataclasses import replace as dc_replace
@@ -198,7 +215,8 @@ def _denoise(
         "Do not add new sections or change section titles."
     )
     try:
-        resp = gateway.complete("synthesizer", prompt, job_id=job_id)
+        with _gate_ctx(gate):
+            resp = gateway.complete("synthesizer", prompt, job_id=job_id)
         revised = _parse_synthesizer_sections(resp.text, sections)
     except Exception:
         revised = sections
@@ -256,6 +274,7 @@ def run_deepdive(
     job_id: str | None = None,
     on_round: Callable[[int, list[Section]], None] | None = None,
     min_entailment_for_early_stop: float = 0.0,
+    gate: SchedulerGate | None = None,
 ) -> DraftReport:
     framed = run_framing(question)
     sections = _skeleton(framed)
@@ -273,10 +292,11 @@ def run_deepdive(
                 top_k=top_k,
                 rerank_candidates=rerank_candidates,
                 working_context=working_context,
+                gate=gate,
             )
             new_sections.append(sec2)
             round_evidence.extend(evid)
-        sections = _denoise(new_sections, gateway=gateway, job_id=job_id)
+        sections = _denoise(new_sections, gateway=gateway, job_id=job_id, gate=gate)
 
         # Debate auto-wiring: trigger on load-bearing sections with contradictions
         if gateway is not None and round_idx < max_rounds:

@@ -18,10 +18,10 @@ from dataclasses import dataclass, field
 
 from ..rag.bm25 import BM25Index
 from ..rag.chunker import Document, chunk_document
-from ..rag.embedder import HashEmbedder
+from ..rag.embedder import Embedder, HashEmbedder
 from ..rag.hybrid import HybridSearch
-from ..rag.rerank import ScoreReranker
-from ..rag.store import InMemoryStore
+from ..rag.rerank import Reranker, ScoreReranker
+from ..rag.store import InMemoryStore, VectorStore
 from .metrics import mean_metric, mrr, precision_at_k, recall_at_k
 
 __all__ = [
@@ -180,22 +180,29 @@ def build_golden_set() -> GoldenSet:
     return GoldenSet(documents=GOLDEN_DOCUMENTS, cases=GOLDEN_CASES)
 
 
-def build_index(golden: GoldenSet | None = None) -> HybridSearch:
+def build_index(
+    golden: GoldenSet | None = None,
+    *,
+    embedder: Embedder | None = None,
+    store: VectorStore | None = None,
+    reranker: Reranker | None = None,
+) -> HybridSearch:
     """Chunk + index the golden documents into a real ``HybridSearch``.
 
-    We assemble the exact production-shaped pipeline (InMemoryStore +
-    HashEmbedder + BM25Index + ScoreReranker) so the harness exercises the same
-    code path the system uses, just with the test-tier components. Each
+    By default we assemble the test-tier pipeline (InMemoryStore + HashEmbedder
+    + BM25Index + ScoreReranker) so the harness runs with zero setup. Callers
+    that have real backends (bge-m3 embedder, Qdrant store, FlagReranker) inject
+    them here to turn the same harness into a production quality gate. Each
     document is chunked through ``chunk_document`` so we also cover the
     chunk -> document id projection that real retrieval requires.
     """
     if golden is None:
         golden = build_golden_set()
     hybrid = HybridSearch(
-        store=InMemoryStore(),
-        embedder=HashEmbedder(),
+        store=store if store is not None else InMemoryStore(),
+        embedder=embedder if embedder is not None else HashEmbedder(),
         bm25=BM25Index(),
-        reranker=ScoreReranker(),
+        reranker=reranker if reranker is not None else ScoreReranker(),
     )
     for doc in golden.documents:
         hybrid.add(chunk_document(doc))

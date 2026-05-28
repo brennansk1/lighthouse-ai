@@ -25,6 +25,7 @@ from pathlib import Path
 
 import structlog
 
+from .compounding.hotness_store import EntityHotnessStore
 from .gateway import Gateway, resolve_against_installed
 from .governor import BUDGET_DEFAULTS, Governor
 from .hardware import HardwareProfile, probe
@@ -45,6 +46,14 @@ from .rag import (
 )
 
 _log = structlog.get_logger(__name__)
+
+
+def _source_domain(source: str) -> str:
+    """Extract a normalised domain key from a source URL or path (for hotness dedup)."""
+    from urllib.parse import urlparse
+    parsed = urlparse(source)
+    return parsed.netloc or source.split("/")[0] or source
+
 
 # ── backend factories ──────────────────────────────────────────────────
 
@@ -184,8 +193,20 @@ class ResearchPipeline:
         self._backend_warnings: list[str] = emb_warns + store_warns
         self._chunks_ingested = 0
         self._blocked_chunks = 0
+        self._compaction_saved_tokens = 0
         from .governor import InjectionGate
         self._injection_gate = InjectionGate()
+        self.hotness_store = EntityHotnessStore(paths.data_dir / "entity_hotness.db")
+        self._tracked_entities: set[str] = set()
+        # Host-courtesy gate on real LLM calls only — offline uses a free mock,
+        # so throttling it is pointless (and would slow tests). The gate samples
+        # power/CPU and serialises/sleeps when the host is busy or on battery.
+        from .governor.scheduler_gate import SchedulerGate, SchedulerGateConfig
+        self.scheduler_gate = (
+            None
+            if self.config.offline
+            else SchedulerGate(SchedulerGateConfig.from_config_file(self.paths.config_file))
+        )
 
     # --- ingestion ---
     def ingest_text(self, doc_id: str, text: str, *, metadata: dict | None = None) -> int:
@@ -201,14 +222,28 @@ class ResearchPipeline:
         not in offline mode, an LLM-generated 1-sentence context locator is
         used; otherwise the deterministic metadata-based preamble is used.
         """
+        from .rag.compaction import compact, looks_like_html
         from .rag.contextual import default_preamble, llm_preamble_fn, prepend_context
 
-        doc = Document(id=doc_id, text=text, metadata=metadata or {})
+        # Deterministic pre-context compaction of fetched HTML sources (§5):
+        # strip tags/boilerplate/dup-lines before chunking. Plain text is left
+        # byte-identical so only verbose web payloads pay (and benefit).
+        meta = metadata or {}
+        ct = str(meta.get("content_type", ""))
+        if ct.startswith("text/html") or looks_like_html(text):
+            text, cstats = compact(text, source=str(meta.get("source", "")),
+                                   content_type=ct or "text/html")
+            self._compaction_saved_tokens += max(
+                0, cstats.orig_tokens - cstats.new_tokens)
+
+        doc = Document(id=doc_id, text=text, metadata=meta)
         chunks = chunk_document(doc)
 
         # --- contextual preamble ---
         if self.gateway is not None and not self.config.offline:
-            preamble_fn = llm_preamble_fn(self.gateway, document_text=text)
+            preamble_fn = llm_preamble_fn(
+                self.gateway, document_text=text, gate=self.scheduler_gate
+            )
         else:
             preamble_fn = default_preamble
         chunks = prepend_context(chunks, preamble_fn=preamble_fn)
@@ -222,7 +257,20 @@ class ResearchPipeline:
             safe.append(c)
         self.hybrid.add(safe)
         self._chunks_ingested += len(safe)
+
+        # Record entity mentions for any tracked entities present in this document (§2).
+        if self._tracked_entities:
+            source_key = _source_domain(meta.get("source", ""))
+            text_lower = text.lower()
+            for entity_id in self._tracked_entities:
+                if entity_id.lower() in text_lower:
+                    self.hotness_store.record_mention(entity_id, source=source_key)
+
         return len(safe)
+
+    def track_entity(self, entity_id: str) -> None:
+        """Register an entity to monitor for hotness across ingested documents (§2)."""
+        self._tracked_entities.add(entity_id)
 
     def ingest_path(self, path: Path) -> int:
         text = Path(path).read_text(errors="replace")
@@ -287,7 +335,7 @@ class ResearchPipeline:
             report = run_deepdive(question, hybrid=self.hybrid, gateway=self.gateway,
                                   max_rounds=self.config.max_rounds,
                                   top_k=dd_top_k, rerank_candidates=dd_candidates,
-                                  job_id=job_id)
+                                  job_id=job_id, gate=self.scheduler_gate)
             synthesis = "\n\n".join(s.body for s in report.sections)
             body_html = _report_to_html(report)
             source_count = len({c for s in report.sections for c in s.citations})
@@ -320,6 +368,24 @@ class ResearchPipeline:
 
         self._audit("discipline.checked", {"draft_id": draft_id, **disc_summary,
                                            "positions_recorded": n_positions})
+
+        # Record query hits for tracked entities that appear in the answer/synthesis (§2).
+        if self._tracked_entities and synthesis:
+            syn_lower = synthesis.lower()
+            for entity_id in self._tracked_entities:
+                if entity_id.lower() in syn_lower:
+                    self.hotness_store.record_query_hit(entity_id)
+
+        # Emit SSE event for newly hot entities
+        if self._tracked_entities and hasattr(self, 'hotness_store'):
+            try:
+                hot = self.hotness_store.hot_entities()
+                for entity_id, _score in hot:
+                    if entity_id in self._tracked_entities:
+                        _log.info("hotness.entity_hot", entity_id=entity_id)
+            except Exception:
+                pass  # non-fatal; hotness events are advisory
+
         return ResearchResult(draft_id=draft_id, question=question,
                               mode=self.config.mode, backends=self.backends,
                               sections=sections, chunks_ingested=self._chunks_ingested,

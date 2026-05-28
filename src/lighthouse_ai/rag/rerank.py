@@ -28,33 +28,36 @@ class ScoreReranker:
 
     Good enough to validate the fold-in of reranker scores; production swaps
     this out for the actual Qwen3-Reranker call.
+
+    Stateless: IDF is computed from the candidate pool of each call, so the
+    same (query, candidates) always yields the same ranking. (Holding df/n_docs
+    as instance state would make rankings drift across calls — a real
+    non-determinism bug, since the cross-encoder this stands in for is itself
+    stateless.)
     """
 
-    def __init__(self) -> None:
-        # IDF estimated lazily over chunks we've seen.
-        self._df: Counter = Counter()
-        self._n_docs: int = 0
-
-    def _idf(self, term: str) -> float:
-        df = self._df.get(term, 0)
-        return math.log(1 + (self._n_docs - df + 0.5) / (df + 0.5)) if df else 1.0
+    @staticmethod
+    def _idf(term: str, df: Counter, n_docs: int) -> float:
+        d = df.get(term, 0)
+        return math.log(1 + (n_docs - d + 0.5) / (d + 0.5)) if d else 1.0
 
     def rerank(self, query: str, chunks: Iterable[Chunk], *,
                top_k: int | None = None) -> list[tuple[Chunk, float]]:
         chunks_list = list(chunks)
         if not chunks_list:
             return []
-        self._n_docs = max(self._n_docs, len(chunks_list))
+        n_docs = len(chunks_list)
+        df: Counter = Counter()
         for c in chunks_list:
             for tok in set(_TOKEN_RE.findall(c.text.lower())):
-                self._df[tok] += 1
+                df[tok] += 1
         q_tokens = [t.lower() for t in _TOKEN_RE.findall(query)]
         scored: list[tuple[Chunk, float]] = []
         for c in chunks_list:
             doc_tokens = Counter(_TOKEN_RE.findall(c.text.lower()))
             score = 0.0
             for q in q_tokens:
-                score += doc_tokens.get(q, 0) * self._idf(q)
+                score += doc_tokens.get(q, 0) * self._idf(q, df, n_docs)
             scored.append((c, score))
         scored.sort(key=lambda t: t[1], reverse=True)
         return scored[:top_k] if top_k else scored

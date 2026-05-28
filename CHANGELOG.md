@@ -5,7 +5,56 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased] — Sprints 30–32 (2026-05-28)
 
+### Fixed
+- **Reranker determinism**: `ScoreReranker` (the active fallback when FlagEmbedding
+  is absent) accumulated document-frequency state across calls, so the same
+  (query, candidates) drifted to different rankings as call history grew — making
+  retrieval non-deterministic and breaking recall monotonicity (recall@5 < recall@3
+  in the golden-set eval). IDF is now computed per-call from the candidate pool;
+  rankings are a pure function of inputs. Regression tests added.
+
 ### Added
+- **Tick Overlap Guard** (`subconscious/overlap.py`, OpenHuman §4): `GenerationGuard`
+  so a slow background pass overtaken by the next scheduled one discards its writes
+  instead of double-committing; wired into `resolver.run_resolver_pass`.
+- **Reflection / Escalation split** (`subconscious/`, OpenHuman §3): passive
+  reflections (provenance, never auto-post, cap of 5/tick, acting spawns a fresh job)
+  vs actionable escalations (status + priority). WAL store, tick engine (scheduler-gated
+  + overlap-guarded), stale-position escalation producer, **Intelligence dashboard page**
+  (8th page — reflections + escalations tabs, Act button → job, status transitions),
+  `GET /api/reflections`, `GET /api/escalations`, `POST /api/reflections/{id}/act`,
+  `PATCH /api/escalations/{id}/status` endpoints, `escalations_open` sidebar counter.
+- **Payload compaction** (`rag/compaction.py`, OpenHuman §5): deterministic, LLM-free
+  pre-context compaction with a builtin<user<project rule overlay, grapheme-safe
+  transforms, and token-savings stats; wired into `ingest_text` for HTML payloads.
+- **Tool-policy risk tiers** (`governor/tool_policy.py`, OpenHuman §6): `ToolCapability`
+  tiers + `TaskProfile`; two-point enforcement (prompt-visibility filter capped at 7 +
+  runtime refusal logged to the audit chain); content-derived steps clamped to read-only.
+- **Archivist** (`compounding/archivist.py`, OpenHuman §8): `clean_turns` → `compose_md`
+  → `archive_report`/`archive_conversation`, content-addressed (idempotent), optional Logseq.
+- **Per-module READMEs** (OpenHuman §7) for `governor/`, `subconscious/`, `compounding/`.
+- **Scheduler Gate** (`governor/scheduler_gate.py`, OpenHuman §1, P0): host-courtesy
+  throttle — the third axis alongside the Governor's budget + RAM guard. Resolves
+  power/CPU/server signals to a policy (Aggressive/Normal/Throttled/Paused) and gates
+  every LLM call through a cooperative `permit()` (sync translation of OpenHuman's async
+  gate; `threading.Semaphore` global slot). Wired into Deep-Dive's researcher/synthesizer
+  calls and the pipeline (real runs only); `[governor.scheduler_gate]` config block;
+  env overrides (`LIGHTHOUSE_ON_AC_POWER`/`_BATTERY_CHARGE`/`_CPU_USAGE`/`_SERVER_MODE`,
+  garbage→real-probe); `lighthouse doctor` reports current policy + reason.
+- **Hotness Score** (`compounding/hotness.py`, OpenHuman §2, P0): deterministic, LLM-free
+  entity-importance formula (`ln(mentions+1) + 0.5·distinct_sources + recency_decay +
+  graph_centrality + 2·query_hits`), `TOPIC_CREATION_THRESHOLD = 10.0`, piecewise recency
+  decay, and a `HotnessBreakdown` that decomposes every score into five named terms for the
+  "why salient" tooltip. `distinct_sources` uses *independent*-source semantics (matches the
+  discipline layer). Available as a Monitor salience scorer via `make_hotness_salience`.
+  `EntityHotnessStore` persistence: `entity_hotness` SQLite side-table, `record_mention`
+  (set-based source dedup), `should_materialise`/`hot_entities` dossier gate; wired into
+  `ResearchPipeline.ingest_text` and `research()` via `track_entity()`.
+- **`lighthouse eval` CLI**: runs the golden-set retrieval eval and reports
+  precision@k / recall@k / MRR. Uses real backends (bge-m3 via Ollama, FlagReranker)
+  when available, falling back to test-tier stubs otherwise; `--offline`, `--json`,
+  `--k` flags. `eval.build_index()` now accepts injected embedder/store/reranker so
+  the same harness becomes a production quality gate.
 - **Entailment gate** (`verification/entailment.py`): lazy MiniCheck-Flan-T5-Large
   (primary) + HHEM-2.1-Open (fallback) entailment scorer; DisciplineReport gains
   `entailment_coverage` + `entailment_checked`; graceful 1.0 fallback when models absent

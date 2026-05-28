@@ -264,6 +264,21 @@ def doctor() -> None:
     console.print(f"  backends: {', '.join(profile.available_backends)}")
     console.print(f"  suggested tier: [bold]{profile.suggested_tier}[/bold]")
 
+    # Section: scheduler gate (host-courtesy throttle)
+    from .governor.scheduler_gate import (
+        SchedulerGateConfig,
+        current_policy,
+        sample_signals,
+    )
+    gate_cfg = SchedulerGateConfig.from_config_file(paths.config_file)
+    sig = sample_signals(gate_cfg)
+    policy, reason = current_policy(gate_cfg, sig)
+    batt = "n/a" if sig.battery_charge is None else f"{sig.battery_charge * 100:.0f}%"
+    console.print(f"  scheduler gate: [bold]{policy.value}[/bold]"
+                  + (f" ({reason.value})" if reason else "")
+                  + f" — ac={sig.on_ac_power} batt={batt} "
+                  f"cpu={sig.cpu_usage_pct:.0f}% mode={gate_cfg.mode}")
+
     # Section: package versions
     console.rule("[bold]packages[/bold]")
     console.print(f"  lighthouse-ai: {__version__}")
@@ -572,6 +587,57 @@ def research(
     _notify_event("draft_ready", "Draft staged",
                   f"{question[:60]} → {result.draft_id}")
     console.print("  review it: dashboard → Drafts, or `lighthouse status`")
+
+
+@app.command("eval")
+def eval_retrieval(
+    k: int = typer.Option(5, help="Cutoff for precision@k / recall@k."),
+    offline: bool = typer.Option(False, "--offline",
+                                 help="Force test-tier stubs (no model load)."),
+    json_out: bool = typer.Option(False, "--json", help="Emit metrics as JSON."),
+) -> None:
+    """Run the golden-set retrieval eval and report precision@k / recall@k / MRR.
+
+    Uses real backends when available (bge-m3 via Ollama, FlagReranker) so the
+    numbers reflect production retrieval; falls back to the test-tier stubs
+    (HashEmbedder + ScoreReranker) when models are absent or --offline is set.
+    Design bar: precision@5 ≥ 0.40 with the real embedder + reranker.
+    """
+    from .eval import build_golden_set, build_index, evaluate
+
+    golden = build_golden_set()
+    if offline:
+        hybrid = build_index(golden)
+        backends = {"embedder": "hash-stub", "reranker": "ScoreReranker"}
+        warns: list[str] = []
+    else:
+        from .pipeline import make_embedder, make_vector_store
+        from .rag.flag_reranker import make_reranker
+        embedder, emb_name, warns = make_embedder(offline=False)
+        store, store_name, store_warns = make_vector_store(embedder.dim, offline=False)
+        warns = warns + store_warns
+        reranker = make_reranker(prefer_real=True)
+        hybrid = build_index(golden, embedder=embedder, store=store, reranker=reranker)
+        backends = {"embedder": emb_name, "vector_store": store_name,
+                    "reranker": type(reranker).__name__}
+
+    report = evaluate(hybrid, golden, k=k)
+
+    if json_out:
+        import json
+        console.print(json.dumps({"metrics": report, "backends": backends,
+                                  "warnings": warns}))
+        return
+
+    for w in warns:
+        err_console.print(f"[yellow]⚠ backend warning:[/yellow] {w}")
+    console.print(f"  backends: {', '.join(f'{k}={v}' for k, v in backends.items())}")
+    console.print(f"  golden set: {len(golden.documents)} docs · {len(golden.cases)} queries\n")
+    p_at_k = report.get(f"precision@{k}", 0.0)
+    bar = "[green]✓[/green]" if p_at_k >= 0.40 else "[yellow]below 0.40 bar[/yellow]"
+    for name, val in report.items():
+        console.print(f"  {name:<14} {val:.3f}")
+    console.print(f"\n  precision@{k} {p_at_k:.3f} — {bar}")
 
 
 @app.command()
@@ -1053,7 +1119,9 @@ def monitor_run(
     if not items:
         console.print("[yellow]feed produced no items (or sandbox rejected).[/yellow]")
         raise typer.Exit(0)
-    report = run_monitor(topic, items)
+    from .governor.scheduler_gate import SchedulerGate, SchedulerGateConfig
+    gate = SchedulerGate(SchedulerGateConfig.from_config_file(paths.config_file))
+    report = run_monitor(topic, items, gate=gate)
     html = render_monitor_html(report)
     dest = (out_dir or paths.staging_dir)
     dest.mkdir(parents=True, exist_ok=True)
@@ -1132,7 +1200,8 @@ def backup(repo: str = typer.Option(None, help="restic repo path (default: data_
             rb.init(repo)
             console.print(f"[green]initialized restic repo[/green] {repo}")
         rb.backup([paths.state_db, paths.audit_db, paths.positions_db,
-                   paths.hypotheses_db, paths.intents_db], repo=repo)
+                   paths.hypotheses_db, paths.intents_db,
+                   paths.reflections_db, paths.entity_hotness_db], repo=repo)
     except ResticUnavailable as exc:
         err_console.print(f"[red]backup failed:[/red] {exc}")
         raise typer.Exit(1) from None
@@ -1250,6 +1319,35 @@ def resolver_run(
     for r in auto:
         outcome_str = "[green]TRUE[/green]" if r.outcome else "[red]FALSE[/red]"
         console.print(f"  • {r.claim[:60]}… → {outcome_str} (conf={r.confidence:.2f}, Brier={r.brier:.3f})")
+
+
+# --------------------------------------------------- subconscious --
+
+subconscious_app = typer.Typer(name="subconscious", no_args_is_help=True)
+app.add_typer(subconscious_app, name="subconscious")
+
+
+@subconscious_app.command("tick")
+def subconscious_tick() -> None:
+    """Manually trigger a single subconscious tick (debug)."""
+    paths = _paths_from_env()
+    paths.ensure()
+    from .subconscious import SubconsciousEngine, stale_position_escalations, ReflectionStore
+    from .subconscious.engine import TickResult
+    store = ReflectionStore(paths.reflections_db)
+    engine = SubconsciousEngine(
+        store,
+        escalation_producers=(lambda: stale_position_escalations(paths.positions_db),),
+    )
+    outcome = engine.tick()
+    if outcome.result == TickResult.SUPERSEDED:
+        console.print("[yellow]tick superseded by concurrent pass[/yellow]")
+    else:
+        console.print(
+            f"[green]tick committed[/green]: "
+            f"{outcome.reflections_committed} reflection(s), "
+            f"{outcome.escalations_committed} escalation(s)"
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover

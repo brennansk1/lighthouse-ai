@@ -1,4 +1,4 @@
-"""The seven TUI page panes plus their detail/modal screens.
+"""The eight TUI page panes plus their detail/modal screens.
 
 Each page is a Container swapped into the main area by the app's
 ContentSwitcher. Pages load data from ``self.app.client`` on mount and on
@@ -536,6 +536,172 @@ class SettingsPage(_Page):
             _json.dumps(cfg, indent=2) if cfg else "{}")
 
 
+# ════════════════════════════ INTELLIGENCE ════════════════════════════
+class IntelligencePage(_Page):
+    """8th page: passive reflections + actionable escalations (§3 OpenHuman)."""
+
+    def compose(self) -> ComposeResult:
+        with TabbedContent(initial="intel-reflections"):
+            with TabPane("Reflections", id="intel-reflections"):
+                yield VerticalScroll(
+                    DataTable(id="intel-refl-table", cursor_type="row"),
+                    Static(id="intel-refl-detail"),
+                )
+            with TabPane("Escalations", id="intel-escalations"):
+                yield VerticalScroll(
+                    DataTable(id="intel-esc-table", cursor_type="row"),
+                    Static(id="intel-esc-detail"),
+                )
+        yield Static(
+            "[dim]↑/↓ move · a acknowledge · r resolve (escalations)[/]",
+            classes="page-foot",
+        )
+
+    def on_mount(self) -> None:
+        # reflections table
+        rt = self.query_one("#intel-refl-table", DataTable)
+        rt.add_columns("Kind", "Created", "Body", "Proposed action")
+        # escalations table
+        et = self.query_one("#intel-esc-table", DataTable)
+        et.add_columns("Kind", "Priority", "Status", "Created", "Body")
+        self._reflections: list[dict] = []
+        self._escalations: list[dict] = []
+        self.start_polling()
+
+    def refresh_data(self) -> None:
+        self._refresh_reflections()
+        self._refresh_escalations()
+        # Update the app's sidebar counter for open escalations.
+        try:
+            from .widgets import Sidebar
+            open_count = sum(
+                1 for e in self._escalations if e.get("status") == "open"
+            )
+            self.app.query_one(Sidebar).set_counter("intelligence", open_count)
+        except Exception:
+            pass
+
+    def _refresh_reflections(self) -> None:
+        d = self.client_get("/api/reflections")
+        t = self.query_one("#intel-refl-table", DataTable)
+        prev = t.cursor_row
+        t.clear()
+        self._reflections = (d or {}).get("reflections", [])
+        detail = self.query_one("#intel-refl-detail", Static)
+        if d is None:
+            t.add_row("—", "—", "[yellow]Supervisor offline.[/]", "—")
+            detail.update("")
+            return
+        if not self._reflections:
+            t.add_row("—", "—", "No reflections yet.", "—")
+            detail.update("")
+            return
+        for r in self._reflections:
+            ts = (r.get("created_at") or "")[:16].replace("T", " ")
+            body_short = (r.get("body") or "")[:60]
+            proposed = (r.get("proposed_action") or "")[:40] or "—"
+            t.add_row(
+                r.get("kind", ""), ts, body_short, proposed, key=r.get("id")
+            )
+        if 0 <= prev < t.row_count:
+            t.move_cursor(row=prev)
+
+    def _refresh_escalations(self) -> None:
+        d = self.client_get("/api/escalations")
+        t = self.query_one("#intel-esc-table", DataTable)
+        prev = t.cursor_row
+        t.clear()
+        self._escalations = (d or {}).get("escalations", [])
+        detail = self.query_one("#intel-esc-detail", Static)
+        if d is None:
+            t.add_row("—", "—", "—", "—", "[yellow]Supervisor offline.[/]")
+            detail.update("")
+            return
+        if not self._escalations:
+            t.add_row("—", "—", "—", "—", "No escalations yet.")
+            detail.update("")
+            return
+        for e in self._escalations:
+            ts = (e.get("created_at") or "")[:16].replace("T", " ")
+            body_short = (e.get("body") or "")[:60]
+            t.add_row(
+                e.get("kind", ""), e.get("priority", ""), e.get("status", ""),
+                ts, body_short, key=e.get("id"),
+            )
+        if 0 <= prev < t.row_count:
+            t.move_cursor(row=prev)
+
+    def _selected_escalation(self) -> dict | None:
+        t = self.query_one("#intel-esc-table", DataTable)
+        if t.row_count == 0 or not self._escalations:
+            return None
+        try:
+            row_key = t.coordinate_to_cell_key(t.cursor_coordinate).row_key
+        except Exception:
+            return None
+        return next(
+            (e for e in self._escalations if e.get("id") == row_key.value), None
+        )
+
+    def _update_escalation(self, status: str) -> None:
+        esc = self._selected_escalation()
+        if not esc:
+            return
+        result = self.client_post(
+            f"/api/escalations/{esc['id']}/status", json={"status": status}
+        )
+        if result is not None:
+            self.app.notify(f"Escalation {esc['id'][:8]}… → {status}")
+            self.refresh_data()
+
+    def action_acknowledge(self) -> None:
+        self._update_escalation("acknowledged")
+
+    def action_resolve(self) -> None:
+        self._update_escalation("resolved")
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Show full body text below the table when a row is selected."""
+        eid = event.row_key.value if event.row_key else None
+        if not eid:
+            return
+        # Determine which table fired.
+        if event.data_table.id == "intel-refl-table":
+            item = next((r for r in self._reflections if r.get("id") == eid), None)
+            if not item:
+                return
+            lines = [
+                f"[b]Kind:[/] {item.get('kind', '—')}",
+                f"[b]Created:[/] {item.get('created_at', '—')}",
+                "",
+                item.get("body", ""),
+            ]
+            if item.get("proposed_action"):
+                lines += ["", f"[b]Proposed:[/] {item['proposed_action']}"]
+            refs = item.get("source_refs") or []
+            if refs:
+                lines += ["", f"[b]Sources:[/] {', '.join(refs)}"]
+            self.query_one("#intel-refl-detail", Static).update("\n".join(lines))
+        elif event.data_table.id == "intel-esc-table":
+            item = next((e for e in self._escalations if e.get("id") == eid), None)
+            if not item:
+                return
+            lines = [
+                f"[b]Kind:[/] {item.get('kind', '—')}  "
+                f"[b]Priority:[/] {item.get('priority', '—')}  "
+                f"[b]Status:[/] {item.get('status', '—')}",
+                f"[b]Created:[/] {item.get('created_at', '—')}",
+                "",
+                item.get("body", ""),
+            ]
+            refs = item.get("source_refs") or []
+            if refs:
+                lines += ["", f"[b]Sources:[/] {', '.join(refs)}"]
+            if item.get("status") == "open":
+                lines += ["", "[dim][a] acknowledge · [r] resolve[/]"]
+            self.query_one("#intel-esc-detail", Static).update("\n".join(lines))
+
+
 # ════════════════════════════ modals ════════════════════════════
 class NewJobModal(ModalScreen):
     BINDINGS = [Binding("escape", "dismiss", "Cancel")]
@@ -620,11 +786,11 @@ class HelpModal(ModalScreen):
                 Binding("question_mark", "dismiss", "Close")]
 
     HELP = (
-        "1–7        switch pages (Home … Settings)\n"
+        "1–8        switch pages (Home … Intelligence)\n"
         "↑ / ↓      move row focus in a list\n"
         "Enter      open detail\n"
         "n          new item (job / topic)\n"
-        "a / r      approve / reject (Drafts)\n"
+        "a / r      approve / reject (Drafts)  ·  acknowledge / resolve (Intelligence)\n"
         "y / n / d  resolve overdue position\n"
         "Ctrl-P     command palette\n"
         "Esc        back / close\n"

@@ -13,16 +13,18 @@
 (function () {
 const { useState, useEffect, useCallback, useRef } = React;
 
-// Seven-item nav (design webapp_tui_design.md §0.3). Counters only where the
-// user must act: Jobs (running), Drafts (staged), Positions (overdue).
+// Eight-item nav (design webapp_tui_design.md §0.3 + §3 Intelligence page).
+// Counters only where the user must act: Jobs (running), Drafts (staged),
+// Positions (overdue), Intelligence (open escalations).
 const APP_PAGES = [
-  { id: 'home',      label: 'Home',      icon: '🏠', get C() { return window.HomePage; } },
-  { id: 'jobs',      label: 'Jobs',      icon: '⚡', counter: 'jobs_running',      get C() { return window.JobsPage; } },
-  { id: 'drafts',    label: 'Drafts',    icon: '📄', counter: 'drafts_staged',     get C() { return window.DraftsPage; } },
-  { id: 'topics',    label: 'Topics',    icon: '🗂',  get C() { return window.TopicsPage; } },
-  { id: 'positions', label: 'Positions', icon: '🎯', counter: 'positions_overdue', get C() { return window.PositionsPage; } },
-  { id: 'health',    label: 'Health',    icon: '❤',  get C() { return window.HealthPage; } },
-  { id: 'settings',  label: 'Settings',  icon: '⚙',  get C() { return window.SettingsPage; } },
+  { id: 'home',         label: 'Home',         icon: '🏠', get C() { return window.HomePage; } },
+  { id: 'jobs',         label: 'Jobs',         icon: '⚡', counter: 'jobs_running',          get C() { return window.JobsPage; } },
+  { id: 'drafts',       label: 'Drafts',       icon: '📄', counter: 'drafts_staged',         get C() { return window.DraftsPage; } },
+  { id: 'topics',       label: 'Topics',       icon: '🗂',  get C() { return window.TopicsPage; } },
+  { id: 'positions',    label: 'Positions',    icon: '🎯', counter: 'positions_overdue',     get C() { return window.PositionsPage; } },
+  { id: 'intelligence', label: 'Intelligence', icon: '🧠', counter: 'escalations_open',      get C() { return window.IntelligencePage; } },
+  { id: 'health',       label: 'Health',       icon: '❤',  get C() { return window.HealthPage; } },
+  { id: 'settings',     label: 'Settings',     icon: '⚙',  get C() { return window.SettingsPage; } },
 ];
 
 function currentPage() {
@@ -414,11 +416,12 @@ function App() {
   // Sidebar counters from a light poll of health + dashboard, every 10s.
   const refreshCounters = useCallback(async () => {
     try {
-      const [dash, health, drafts, pos] = await Promise.all([
+      const [dash, health, drafts, pos, escs] = await Promise.all([
         window.apiGet('/api/dashboard').catch(() => ({})),
         window.apiGet('/api/health').catch(() => ({})),
         window.apiGet('/api/drafts?status=staged').catch(() => ({ drafts: [] })),
         window.apiGet('/api/positions?overdue=true').catch(() => ({ positions: [] })),
+        window.apiGet('/api/escalations?status=open').catch(() => ({ escalations: [] })),
       ]);
       const running = (dash.jobs || []).filter((j) => j.status === 'running').length;
       const tier = (health.budget && health.budget.tier)
@@ -432,6 +435,7 @@ function App() {
         jobs_running: running || null,
         drafts_staged: (drafts.drafts || []).length || null,
         positions_overdue: (pos.positions || []).length || null,
+        escalations_open: (escs.escalations || []).length || null,
         tier,
         budget,
       });

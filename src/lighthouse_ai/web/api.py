@@ -62,6 +62,10 @@ class SecretBody(BaseModel):
     value: str
 
 
+class ActBody(BaseModel):
+    pass  # no payload required; act_on_reflection uses the stored reflection
+
+
 # ---- helpers --------------------------------------------------------------
 
 def _rows(conn, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
@@ -459,6 +463,105 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         from ..secrets import SecretStore
         backend = SecretStore(paths.data_dir).put(body.key, body.value)
         return {"key": body.key, "backend": backend}
+
+    # ========================= INTELLIGENCE (§3) ===================
+
+    def _reflection_store():
+        from ..subconscious.store import ReflectionStore
+        return ReflectionStore(paths.reflections_db)
+
+    @app.get("/api/reflections", tags=["intelligence"])
+    def list_reflections(limit: int = 100) -> dict[str, Any]:
+        """Return recent passive reflections (provenance notes, never auto-post)."""
+        store = _reflection_store()
+        items = store.list_reflections(limit=limit)
+        return {
+            "reflections": [
+                {
+                    "id": r.id,
+                    "kind": r.kind.value,
+                    "body": r.body,
+                    "proposed_action": r.proposed_action,
+                    "source_refs": r.source_refs,
+                    "created_at": r.created_at,
+                }
+                for r in items
+            ]
+        }
+
+    @app.get("/api/escalations", tags=["intelligence"])
+    def list_escalations(status: str | None = None) -> dict[str, Any]:
+        """Return escalations, optionally filtered by status."""
+        from ..subconscious.types import EscalationStatus
+        store = _reflection_store()
+        status_filter = EscalationStatus(status) if status else None
+        items = store.list_escalations(status=status_filter)
+        return {
+            "escalations": [
+                {
+                    "id": e.id,
+                    "kind": e.kind.value,
+                    "body": e.body,
+                    "priority": e.priority.value,
+                    "status": e.status.value,
+                    "source_refs": e.source_refs,
+                    "created_at": e.created_at,
+                    "updated_at": e.updated_at,
+                }
+                for e in items
+            ]
+        }
+
+    @app.post("/api/reflections/{reflection_id}/act", tags=["intelligence"])
+    def reflections_act(reflection_id: str) -> dict[str, Any]:
+        """Spawn a fresh research job acting on the given reflection."""
+        store = _reflection_store()
+        reflections = store.list_reflections(limit=1000)
+        target = next((r for r in reflections if r.id == reflection_id), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail="reflection not found")
+
+        # Reuse the existing job-creation path so the job lands in the same store.
+        import uuid
+        from ..persistence import open_db as _open_db
+
+        def _spawn(seed: str) -> str:
+            job_id = uuid.uuid4().hex[:8]
+            meta = json.dumps({"topic": seed[:200], "progress": 0.0, "eta": "queued"})
+            conn = _open_db(paths.state_db)
+            try:
+                conn.execute(
+                    "INSERT INTO jobs (id, mode, status, metadata_json) VALUES (?, ?, ?, ?)",
+                    (job_id, "deepdive", "queued", meta),
+                )
+            except Exception as exc:
+                raise HTTPException(status_code=500,
+                                    detail=f"failed to create job: {exc}") from exc
+            finally:
+                conn.close()
+            bus.publish("jobs.created", {"id": job_id})
+            return job_id
+
+        from ..subconscious.engine import act_on_reflection
+        job_id = act_on_reflection(target, spawn=_spawn)
+        bus.publish("intelligence.acted", {"reflection_id": reflection_id, "job_id": job_id})
+        return {"job_id": job_id, "reflection_id": reflection_id}
+
+    @app.patch("/api/escalations/{escalation_id}/status", tags=["intelligence"])
+    def update_escalation_status(escalation_id: str, body: StatusBody) -> dict[str, Any]:
+        """Update the status of an escalation (open → acknowledged → resolved)."""
+        from ..subconscious.types import EscalationStatus
+        try:
+            new_status = EscalationStatus(body.status)
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"invalid status: {body.status!r}")
+        store = _reflection_store()
+        updated = store.update_escalation_status(escalation_id, new_status)
+        if not updated:
+            raise HTTPException(status_code=404, detail="escalation not found")
+        bus.publish("intelligence.escalation_updated",
+                    {"escalation_id": escalation_id, "status": body.status})
+        return {"escalation_id": escalation_id, "status": body.status}
 
     # ========================= RESEARCH PLAN =======================
 

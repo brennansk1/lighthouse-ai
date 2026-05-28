@@ -25,6 +25,7 @@ from .screens import (
     HealthPage,
     HelpModal,
     HomePage,
+    IntelligencePage,
     JobsPage,
     PositionsPage,
     SettingsPage,
@@ -32,7 +33,7 @@ from .screens import (
 )
 from .widgets import Sidebar, StatusBar
 
-# (page_id, sidebar label, page class). Order drives digits 1-7.
+# (page_id, sidebar label, page class). Order drives digits 1-8.
 PAGES = [
     ("home", "Home", HomePage),
     ("jobs", "Jobs", JobsPage),
@@ -41,6 +42,7 @@ PAGES = [
     ("positions", "Positions", PositionsPage),
     ("health", "Health", HealthPage),
     ("settings", "Settings", SettingsPage),
+    ("intelligence", "Intelligence", IntelligencePage),
 ]
 
 # Coastal palette (mirrors web/static/tokens.css), expressed as Textual
@@ -87,6 +89,7 @@ class LighthouseTUI(App):
         Binding("5", "goto('positions')", "Positions", show=False),
         Binding("6", "goto('health')", "Health", show=False),
         Binding("7", "goto('settings')", "Settings", show=False),
+        Binding("8", "goto('intelligence')", "Intelligence", show=False),
         Binding("question_mark", "help", "Help"),
         Binding("ctrl+t", "toggle_theme", "Theme", show=False),
         Binding("q", "quit", "Quit"),
@@ -139,8 +142,8 @@ class LighthouseTUI(App):
         methods = {
             "new": ("action_new_job", "action_new_topic"),
             "detail": ("action_open_detail",),
-            "approve": ("action_approve",),
-            "reject": ("action_reject",),
+            "approve": ("action_approve", "action_acknowledge"),
+            "reject": ("action_reject", "action_resolve"),
             "pause": ("action_pause",),
             "yes": ("action_resolve_yes",),
             "defer": ("action_resolve_defer",),
@@ -180,6 +183,12 @@ class LighthouseTUI(App):
         try:
             overdue = self.client.get("/api/positions", overdue="true")
             sidebar.set_counter("positions", len(overdue.get("positions", [])))
+        except Exception:
+            pass
+        try:
+            escs = self.client.get("/api/escalations", status="open")
+            sidebar.set_counter(
+                "intelligence", len(escs.get("escalations", [])))
         except Exception:
             pass
 
