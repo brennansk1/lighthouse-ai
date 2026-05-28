@@ -1119,7 +1119,9 @@ def monitor_run(
     if not items:
         console.print("[yellow]feed produced no items (or sandbox rejected).[/yellow]")
         raise typer.Exit(0)
-    report = run_monitor(topic, items)
+    from .governor.scheduler_gate import SchedulerGate, SchedulerGateConfig
+    gate = SchedulerGate(SchedulerGateConfig.from_config_file(paths.config_file))
+    report = run_monitor(topic, items, gate=gate)
     html = render_monitor_html(report)
     dest = (out_dir or paths.staging_dir)
     dest.mkdir(parents=True, exist_ok=True)
@@ -1198,7 +1200,8 @@ def backup(repo: str = typer.Option(None, help="restic repo path (default: data_
             rb.init(repo)
             console.print(f"[green]initialized restic repo[/green] {repo}")
         rb.backup([paths.state_db, paths.audit_db, paths.positions_db,
-                   paths.hypotheses_db, paths.intents_db], repo=repo)
+                   paths.hypotheses_db, paths.intents_db,
+                   paths.reflections_db, paths.entity_hotness_db], repo=repo)
     except ResticUnavailable as exc:
         err_console.print(f"[red]backup failed:[/red] {exc}")
         raise typer.Exit(1) from None
@@ -1316,6 +1319,35 @@ def resolver_run(
     for r in auto:
         outcome_str = "[green]TRUE[/green]" if r.outcome else "[red]FALSE[/red]"
         console.print(f"  • {r.claim[:60]}… → {outcome_str} (conf={r.confidence:.2f}, Brier={r.brier:.3f})")
+
+
+# --------------------------------------------------- subconscious --
+
+subconscious_app = typer.Typer(name="subconscious", no_args_is_help=True)
+app.add_typer(subconscious_app, name="subconscious")
+
+
+@subconscious_app.command("tick")
+def subconscious_tick() -> None:
+    """Manually trigger a single subconscious tick (debug)."""
+    paths = _paths_from_env()
+    paths.ensure()
+    from .subconscious import SubconsciousEngine, stale_position_escalations, ReflectionStore
+    from .subconscious.engine import TickResult
+    store = ReflectionStore(paths.reflections_db)
+    engine = SubconsciousEngine(
+        store,
+        escalation_producers=(lambda: stale_position_escalations(paths.positions_db),),
+    )
+    outcome = engine.tick()
+    if outcome.result == TickResult.SUPERSEDED:
+        console.print("[yellow]tick superseded by concurrent pass[/yellow]")
+    else:
+        console.print(
+            f"[green]tick committed[/green]: "
+            f"{outcome.reflections_committed} reflection(s), "
+            f"{outcome.escalations_committed} escalation(s)"
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover

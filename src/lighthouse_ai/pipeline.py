@@ -376,6 +376,16 @@ class ResearchPipeline:
                 if entity_id.lower() in syn_lower:
                     self.hotness_store.record_query_hit(entity_id)
 
+        # Emit SSE event for newly hot entities
+        if self._tracked_entities and hasattr(self, 'hotness_store'):
+            try:
+                hot = self.hotness_store.hot_entities()
+                for entity_id, _score in hot:
+                    if entity_id in self._tracked_entities:
+                        _log.info("hotness.entity_hot", entity_id=entity_id)
+            except Exception:
+                pass  # non-fatal; hotness events are advisory
+
         return ResearchResult(draft_id=draft_id, question=question,
                               mode=self.config.mode, backends=self.backends,
                               sections=sections, chunks_ingested=self._chunks_ingested,

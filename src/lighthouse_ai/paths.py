@@ -29,6 +29,7 @@ class Paths:
     positions_db: Path
     hypotheses_db: Path
     reflections_db: Path
+    entity_hotness_db: Path
     corpus_dir: Path
     staging_dir: Path
     quarantine_dir: Path
@@ -47,6 +48,8 @@ class Paths:
             self.intents_db,
             self.positions_db,
             self.hypotheses_db,
+            self.reflections_db,
+            self.entity_hotness_db,
         ]
 
     def ensure(self) -> None:
@@ -84,6 +87,7 @@ def make_paths(data_dir: str | os.PathLike[str] | None = None,
         positions_db=base / "positions.db",
         hypotheses_db=base / "hypotheses.db",
         reflections_db=base / "reflections.db",
+        entity_hotness_db=base / "entity_hotness.db",
         corpus_dir=base / "corpus",
         staging_dir=base / "staging",
         quarantine_dir=base / "quarantine",
