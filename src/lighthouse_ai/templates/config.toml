@@ -48,3 +48,9 @@ events = ["draft_ready", "monitor_alert_high", "budget_warn", "budget_trip"]
 # when drafts are approved.
 # graph_dir = "~/Documents/logseq/pages"
 enabled = false
+
+[sources]
+# SearXNG self-hosted meta-search engine (used for CRAG mid-loop web fetch)
+# Run via: make stack-up  (see docker-compose in scripts/)
+# searxng_url = "http://localhost:8888"
+crag_enabled = true    # set false to disable mid-loop web fetch

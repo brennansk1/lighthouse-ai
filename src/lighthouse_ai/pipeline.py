@@ -147,6 +147,7 @@ class PipelineConfig:
     top_k: int = 5
     auto_fetch_sources: bool = True    # auto-fetch from arXiv/OpenAlex when corpus is empty
     auto_fetch_max_results: int = 5    # max papers per source
+    crag_enabled: bool = True          # enable mid-loop web fetch via SearXNG
 
 
 @dataclass
@@ -335,7 +336,8 @@ class ResearchPipeline:
             report = run_deepdive(question, hybrid=self.hybrid, gateway=self.gateway,
                                   max_rounds=self.config.max_rounds,
                                   top_k=dd_top_k, rerank_candidates=dd_candidates,
-                                  job_id=job_id, gate=self.scheduler_gate)
+                                  job_id=job_id, gate=self.scheduler_gate,
+                                  crag_enabled=self.config.crag_enabled)
             synthesis = "\n\n".join(s.body for s in report.sections)
             body_html = _report_to_html(report)
             source_count = len({c for s in report.sections for c in s.citations})
@@ -357,6 +359,8 @@ class ResearchPipeline:
             "unsourced": rep.unsourced, "coverage": rep.citation_coverage,
             "passed": rep.passed, "notes": rep.notes,
             "distinct_sources": distinct_sources,
+            "wep_phrase": band.label,
+            "source_count": source_count,
         }
         draft_id = self._persist_draft(
             question=question, title=question, body_html=body_html,

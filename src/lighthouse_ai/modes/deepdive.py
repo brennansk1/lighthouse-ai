@@ -342,6 +342,7 @@ def run_deepdive(
     job_id: str | None = None,
     on_round: Callable[[int, list[Section]], None] | None = None,
     min_entailment_for_early_stop: float = 0.0,
+    crag_enabled: bool = True,
     gate: SchedulerGate | None = None,
 ) -> DraftReport:
     framed = run_framing(question)
@@ -396,7 +397,7 @@ def run_deepdive(
         progress = _discovery_progress(evidence_rounds)
 
         # CRAG: mid-loop web fetch when gaps detected or progress stalled
-        if hybrid is not None and round_idx < max_rounds and _should_crag_fetch(provisional, progress):
+        if crag_enabled and hybrid is not None and round_idx < max_rounds and _should_crag_fetch(provisional, progress):
             _crag_fetch(provisional, hybrid, None, gate, gateway, job_id)
         stuck = progress < progress_threshold
         open_unchanged = prev_open_count is not None and open_count == prev_open_count

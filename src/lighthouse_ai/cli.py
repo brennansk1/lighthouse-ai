@@ -610,8 +610,14 @@ def research(
         console.print(f"  discipline: {verdict} — {d.get('sourced', 0)}/{d.get('claims', 0)} "
                       f"claims sourced ({d.get('coverage', 0):.0%} coverage); "
                       f"{d.get('claims', 0)} claim(s) recorded as calibration positions")
-    _notify_event("draft_ready", "Draft staged",
-                  f"{question[:60]} → {result.draft_id}")
+    _wep = d.get("wep_phrase", "")
+    _src = d.get("source_count", result.chunks_ingested)
+    _notify_body = f"{question[:60]}\n\nDraft: {result.draft_id}"
+    if _wep:
+        _notify_body += f"\nConfidence: {_wep}"
+    if _src:
+        _notify_body += f"\nSources: {_src}"
+    _notify_event("draft_ready", "Draft staged", _notify_body)
     console.print("  review it: dashboard → Drafts, or `lighthouse status`")
 
 

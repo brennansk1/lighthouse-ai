@@ -77,8 +77,17 @@ class TelegramChannel:
     def send(self, title: str, body: str) -> bool:
         if not self.available():
             return False
-        text = f"*{title}*\n{body}" if title else body
-        payload = {"chat_id": self.chat_id, "text": text}
+        if title and body:
+            text = f"<b>{title}</b>\n\n{body}"
+        elif title:
+            text = f"<b>{title}</b>"
+        else:
+            text = body
+        payload = {
+            "chat_id": self.chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+        }
         client = self.client or httpx.Client(timeout=self.timeout)
         try:
             response = client.post(_method_url(self.bot_token, "sendMessage"), json=payload)

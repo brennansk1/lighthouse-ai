@@ -66,7 +66,35 @@ class SearXNGUnavailable(RuntimeError):
 
 
 def _searxng_url() -> str:
-    return os.environ.get("LIGHTHOUSE_SEARXNG_URL", DEFAULT_URL)
+    """Return the SearXNG base URL.
+
+    Resolution order:
+    1. ``LIGHTHOUSE_SEARXNG_URL`` environment variable (highest priority, good
+       for CI / container overrides).
+    2. ``searxng_url`` key in the ``[sources]`` section of config.toml (user
+       config, set once and forget).
+    3. The compiled-in ``DEFAULT_URL`` (``http://localhost:8888``).
+    """
+    env_val = os.environ.get("LIGHTHOUSE_SEARXNG_URL")
+    if env_val:
+        return env_val
+    # Try config.toml [sources] section
+    try:
+        from ..paths import Paths
+        cfg_path = Paths.default().config_file
+        if cfg_path.exists():
+            try:
+                import tomllib
+            except ImportError:
+                import tomli as tomllib  # type: ignore[no-redef]
+            with cfg_path.open("rb") as fh:
+                cfg = tomllib.load(fh)
+            url = cfg.get("sources", {}).get("searxng_url")
+            if url:
+                return str(url)
+    except Exception:
+        pass
+    return DEFAULT_URL
 
 
 def available(url: str | None = None) -> bool:
