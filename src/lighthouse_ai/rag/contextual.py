@@ -52,13 +52,23 @@ def prepend_context(chunks: Iterable[Chunk], *,
     return out
 
 
-def llm_preamble_fn(gateway: object, *, document_text: str = "") -> PreambleFn:
+def llm_preamble_fn(
+    gateway: object,
+    *,
+    document_text: str = "",
+    gate: object | None = None,
+) -> PreambleFn:
     """Return a PreambleFn that generates context using the aux_context LLM role.
 
     Falls back to default_preamble if the gateway call fails.
     The generated preamble is a 1-sentence context locator per Anthropic's
     Contextual Retrieval technique (anthropic.com/news/contextual-retrieval).
+
+    ``gate`` (optional) is a :class:`~lighthouse_ai.governor.scheduler_gate.SchedulerGate`
+    that is acquired around each LLM completion for host-courtesy throttling (§1).
     """
+    from contextlib import nullcontext
+
     def _fn(chunk: Chunk) -> str:
         try:
             prompt = (
@@ -68,7 +78,9 @@ def llm_preamble_fn(gateway: object, *, document_text: str = "") -> PreambleFn:
                 "In one sentence, describe what this chunk is about and how it fits "
                 "within the larger document. Be specific about names, dates, and claims."
             )
-            resp = gateway.complete("aux_context", prompt)  # type: ignore[union-attr]
+            ctx = gate.permit() if gate is not None else nullcontext()
+            with ctx:
+                resp = gateway.complete("aux_context", prompt)  # type: ignore[union-attr]
             preamble = resp.text.strip()[:200]
             if preamble:
                 return f"[Context: {preamble}] "

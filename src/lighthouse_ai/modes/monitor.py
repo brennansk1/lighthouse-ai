@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable, Iterable
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -23,6 +24,7 @@ from ..rag.embedder import cosine
 
 if TYPE_CHECKING:
     from ..compounding.hotness import EntityStats
+    from ..governor.scheduler_gate import SchedulerGate
 
 
 @dataclass(frozen=True)
@@ -146,6 +148,7 @@ def run_monitor(
     salience_fn: SalienceFn = default_salience,
     gateway: Gateway | None = None,
     embed_titles: Callable[[Iterable[str]], list[list[float]]] | None = None,
+    gate: "SchedulerGate | None" = None,
 ) -> MonitorReport:
     """Run one polling cycle of Mode A.
 
@@ -170,7 +173,9 @@ def run_monitor(
     # 2. optional semantic dedupe on titles (near-duplicates from different URLs).
     titles_embeddings: list[list[float]] = []
     if embed_titles is not None and unique:
-        titles_embeddings = embed_titles(it.title for it in unique)
+        ctx = gate.permit() if gate is not None else nullcontext()
+        with ctx:
+            titles_embeddings = embed_titles(it.title for it in unique)
 
     pre_semantic = len(unique)
     deduped: list[tuple[MonitorItem, list[float] | None]] = []

@@ -25,6 +25,7 @@ from pathlib import Path
 
 import structlog
 
+from .compounding.hotness_store import EntityHotnessStore
 from .gateway import Gateway, resolve_against_installed
 from .governor import BUDGET_DEFAULTS, Governor
 from .hardware import HardwareProfile, probe
@@ -45,6 +46,14 @@ from .rag import (
 )
 
 _log = structlog.get_logger(__name__)
+
+
+def _source_domain(source: str) -> str:
+    """Extract a normalised domain key from a source URL or path (for hotness dedup)."""
+    from urllib.parse import urlparse
+    parsed = urlparse(source)
+    return parsed.netloc or source.split("/")[0] or source
+
 
 # ── backend factories ──────────────────────────────────────────────────
 
@@ -187,6 +196,8 @@ class ResearchPipeline:
         self._compaction_saved_tokens = 0
         from .governor import InjectionGate
         self._injection_gate = InjectionGate()
+        self.hotness_store = EntityHotnessStore(paths.data_dir / "entity_hotness.db")
+        self._tracked_entities: set[str] = set()
         # Host-courtesy gate on real LLM calls only — offline uses a free mock,
         # so throttling it is pointless (and would slow tests). The gate samples
         # power/CPU and serialises/sleeps when the host is busy or on battery.
@@ -230,7 +241,9 @@ class ResearchPipeline:
 
         # --- contextual preamble ---
         if self.gateway is not None and not self.config.offline:
-            preamble_fn = llm_preamble_fn(self.gateway, document_text=text)
+            preamble_fn = llm_preamble_fn(
+                self.gateway, document_text=text, gate=self.scheduler_gate
+            )
         else:
             preamble_fn = default_preamble
         chunks = prepend_context(chunks, preamble_fn=preamble_fn)
@@ -244,7 +257,20 @@ class ResearchPipeline:
             safe.append(c)
         self.hybrid.add(safe)
         self._chunks_ingested += len(safe)
+
+        # Record entity mentions for any tracked entities present in this document (§2).
+        if self._tracked_entities:
+            source_key = _source_domain(meta.get("source", ""))
+            text_lower = text.lower()
+            for entity_id in self._tracked_entities:
+                if entity_id.lower() in text_lower:
+                    self.hotness_store.record_mention(entity_id, source=source_key)
+
         return len(safe)
+
+    def track_entity(self, entity_id: str) -> None:
+        """Register an entity to monitor for hotness across ingested documents (§2)."""
+        self._tracked_entities.add(entity_id)
 
     def ingest_path(self, path: Path) -> int:
         text = Path(path).read_text(errors="replace")
@@ -342,6 +368,14 @@ class ResearchPipeline:
 
         self._audit("discipline.checked", {"draft_id": draft_id, **disc_summary,
                                            "positions_recorded": n_positions})
+
+        # Record query hits for tracked entities that appear in the answer/synthesis (§2).
+        if self._tracked_entities and synthesis:
+            syn_lower = synthesis.lower()
+            for entity_id in self._tracked_entities:
+                if entity_id.lower() in syn_lower:
+                    self.hotness_store.record_query_hit(entity_id)
+
         return ResearchResult(draft_id=draft_id, question=question,
                               mode=self.config.mode, backends=self.backends,
                               sections=sections, chunks_ingested=self._chunks_ingested,
