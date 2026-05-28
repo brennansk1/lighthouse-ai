@@ -64,45 +64,6 @@ html[data-theme="dark"], [data-theme="dark"] body { background: #061322; }
 [data-theme="dark"] .lh-side {
   box-shadow: 1px 0 0 var(--rule), 2px 0 8px rgba(0,0,0,0.4);
 }
-
-/* Sidebar active-item left accent bar */
-.lh-nav a.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: var(--primary);
-}
-
-/* Page fade-in transition */
-@keyframes lh-fade-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.lh-main-content {
-  animation: lh-fade-in .15s ease;
-}
-
-/* Governor tier chip */
-.lh-tier-chip {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 10.5px;
-  font-weight: 700;
-  font-family: var(--mono);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.lh-tier-green   { background: rgba(6,214,160,0.15); color: var(--green-dark); }
-.lh-tier-warn    { background: rgba(255,213,79,0.2);  color: #a07a00; }
-.lh-tier-degrade { background: rgba(255,152,100,0.2); color: #c05a20; }
-.lh-tier-local   { background: rgba(106,138,166,0.15); color: var(--muted); }
-.lh-tier-drain   { background: rgba(255,213,79,0.2);  color: #a07a00; }
-.lh-tier-tripped { background: rgba(240,80,80,0.15);  color: #c03030; }
 `;
 
 // Inject the extra CSS (active bar + fade + tier chips) once.
@@ -112,8 +73,14 @@ html[data-theme="dark"], [data-theme="dark"] body { background: #061322; }
   const el = document.createElement('style');
   el.id = 'lh-app-extra-css';
   el.textContent = `
-/* Sidebar active-item left accent bar */
-.lh-nav a { position: relative; }
+/* Sidebar nav links — flex row with icon + label + badge */
+.lh-nav a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+/* Active left-accent bar */
 .lh-nav a.active::before {
   content: '';
   position: absolute;
@@ -145,13 +112,16 @@ html[data-theme="dark"], [data-theme="dark"] body { background: #061322; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.lh-tier-green   { background: rgba(6,214,160,0.15);  color: var(--green-dark, #06d6a0); }
-.lh-tier-warn    { background: rgba(255,213,79,0.2);   color: #9e7b00; }
-.lh-tier-degrade { background: rgba(255,152,100,0.2);  color: #bf5820; }
-.lh-tier-local_only { background: rgba(106,138,166,0.15); color: var(--muted, #6a8aa6); }
-.lh-tier-drain   { background: rgba(255,213,79,0.2);   color: #9e7b00; }
-.lh-tier-tripped { background: rgba(220,60,60,0.15);   color: #c03030; }
-.lh-tier-unknown { background: rgba(106,138,166,0.12); color: var(--muted, #6a8aa6); }
+.lh-tier-green       { background: rgba(6,214,160,0.15);  color: var(--green-dark, #06d6a0); }
+.lh-tier-warn        { background: rgba(255,213,79,0.2);   color: #9e7b00; }
+.lh-tier-degrade     { background: rgba(255,152,100,0.2);  color: #bf5820; }
+.lh-tier-local_only  { background: rgba(106,138,166,0.15); color: var(--muted, #6a8aa6); }
+.lh-tier-drain       { background: rgba(255,213,79,0.2);   color: #9e7b00; }
+.lh-tier-tripped     { background: rgba(220,60,60,0.15);   color: #c03030; }
+.lh-tier-unknown     { background: rgba(106,138,166,0.12); color: var(--muted, #6a8aa6); }
+
+/* Command palette input reset */
+.lh-palette-input:focus { outline: none; }
 `;
   document.head && document.head.appendChild(el);
 })();
@@ -178,13 +148,15 @@ function useTheme() {
 class PageBoundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error) { return { error }; }
-  componentDidCatch(error, info) { /* surfaced in fallback; console retains stack */
-    console.error('Page crashed:', error, info); }
+  componentDidCatch(error, info) {
+    console.error('Page crashed:', error, info);
+  }
   componentDidUpdate(prev) {
     if (prev.pageKey !== this.props.pageKey && this.state.error) this.setState({ error: null });
   }
   render() {
     if (this.state.error) {
+      const BtnComp = window.Btn;
       return (
         <div role="alert" style={{ ...window.card, padding: '40px 28px', maxWidth: 560,
           margin: '40px auto', textAlign: 'center' }}>
@@ -192,13 +164,13 @@ class PageBoundary extends React.Component {
           <div style={{ fontFamily: 'var(--serif)', fontSize: 19, color: 'var(--ink)' }}>
             This page hit a snag.
           </div>
-          <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 8 }}>
-            {String(this.state.error && this.state.error.message || this.state.error)}
+          <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 8, lineHeight: 1.5 }}>
+            {String((this.state.error && this.state.error.message) || this.state.error)}
           </div>
-          <div style={{ marginTop: 18 }}>
-            <button className="btn-ghost" onClick={() => this.setState({ error: null })}>
-              Try again
-            </button>
+          <div style={{ marginTop: 20 }}>
+            {BtnComp
+              ? <BtnComp kind="ghost" onClick={() => this.setState({ error: null })}>Try again</BtnComp>
+              : <button className="btn-ghost" onClick={() => this.setState({ error: null })}>Try again</button>}
           </div>
         </div>
       );
@@ -221,6 +193,7 @@ function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
           <div className="sub">Research instrument</div>
         </div>
       </div>
+
       <nav className="lh-nav" aria-label="Primary">
         {APP_PAGES.map((p) => {
           const count = p.counter ? counters[p.counter] : null;
@@ -228,34 +201,50 @@ function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
           return (
             <a key={p.id} href={`#${p.id}`} className={isActive ? 'active' : ''}
               aria-current={isActive ? 'page' : undefined}>
-              <span aria-hidden="true" style={{ marginRight: 7, fontSize: 14, opacity: 0.8,
-                display: 'inline-block', width: 18, textAlign: 'center' }}>{p.icon}</span>
-              <span>{p.label}</span>
+              {/* Icon cell — fixed width so labels align */}
+              <span aria-hidden="true" style={{ width: 18, textAlign: 'center', fontSize: 15, flexShrink: 0 }}>
+                {p.icon}
+              </span>
+              {/* Label — expands to fill available space */}
+              <span style={{ flex: 1 }}>{p.label}</span>
+              {/* Count badge — stays on the right */}
               {count ? <span className="count">{count}</span> : null}
             </a>
           );
         })}
       </nav>
+
       <div className="lh-foot">
-        {/* Governor tier chip */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          marginBottom: 6 }}>
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--sans)' }}>Governor</span>
+        {/* Governor: tier chip + budget on one row each */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center',
+          gap: '4px 8px', marginBottom: 10 }}>
+          <span style={{ fontSize: 10.5, color: 'var(--muted)', fontFamily: 'var(--sans)',
+            textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tier</span>
           <span className={tierChipClass(tier)}>{tier}</span>
+
+          <span style={{ fontSize: 10.5, color: 'var(--muted)', fontFamily: 'var(--sans)',
+            textTransform: 'uppercase', letterSpacing: '0.05em' }}>Budget</span>
+          <span className="num" style={{ fontSize: 11, color: 'var(--ink-2)', textAlign: 'right' }}>
+            {budget}
+          </span>
         </div>
-        {/* Compact budget line */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          marginBottom: 8 }}>
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--sans)' }}>Budget</span>
-          <span className="num" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>{budget}</span>
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
-          <button onClick={onToggleTheme} className="btn-ghost" style={{ flex: 1, padding: '5px 8px',
-            fontSize: 11.5 }} aria-label="Toggle light or dark theme" aria-pressed={theme === 'dark'}>
+
+        {/* Theme toggle + help shortcut */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          <button onClick={onToggleTheme} className="btn-ghost"
+            style={{ flex: 1, padding: '5px 8px', fontSize: 11.5 }}
+            aria-label="Toggle light or dark theme" aria-pressed={theme === 'dark'}>
             {theme === 'dark' ? '☾ Dark' : '☀ Light'}
           </button>
-          <button onClick={onHelp} className="btn-ghost" style={{ padding: '5px 10px', fontSize: 11.5 }}
+          <button onClick={onHelp} className="btn-ghost"
+            style={{ padding: '5px 10px', fontSize: 11.5 }}
             aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
+        </div>
+
+        {/* Version / identity line */}
+        <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center',
+          opacity: 0.7, letterSpacing: '0.02em' }}>
+          v0.1.0 · local-first
         </div>
       </div>
     </aside>
@@ -276,10 +265,28 @@ function fuzzy(query, label) {
 function CommandPalette({ open, onClose, onGo }) {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
-  useEffect(() => { if (open) { setQ(''); setSel(0); } }, [open]);
+  const inputRef = useRef(null);
+
+  // Reset state and auto-focus + select-all when opening
+  useEffect(() => {
+    if (open) {
+      setQ('');
+      setSel(0);
+      // Defer focus until after the render so the input is in the DOM
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.select();
+        }
+      });
+    }
+  }, [open]);
+
   const matches = APP_PAGES.filter((p) => fuzzy(q, p.label));
   useEffect(() => { setSel(0); }, [q]);
+
   if (!open) return null;
+
   const commit = (id) => { if (id) { onGo(id); } onClose(); };
   const onKeyDown = (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, matches.length - 1)); }
@@ -287,16 +294,25 @@ function CommandPalette({ open, onClose, onGo }) {
     else if (e.key === 'Enter') { e.preventDefault(); commit(matches[sel] && matches[sel].id); }
     else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
   };
+
   return (
     <div onClick={onClose} role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 600,
       background: 'rgba(10,42,68,0.3)', display: 'flex', justifyContent: 'center', paddingTop: 120 }}>
       <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true"
         aria-label="Command palette" style={{ ...window.card, width: 420, height: 'fit-content',
         boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}>
-        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKeyDown}
-          placeholder="Go to page…" aria-label="Search pages"
+        <input
+          ref={inputRef}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="Go to page…"
+          aria-label="Search pages"
+          className="lh-palette-input"
           style={{ width: '100%', border: 'none', padding: '14px 16px', fontSize: 15,
-            fontFamily: 'var(--sans)', outline: 'none', color: 'var(--ink)', background: 'var(--card)' }} />
+            fontFamily: 'var(--sans)', outline: 'none', color: 'var(--ink)',
+            background: 'var(--card)', boxSizing: 'border-box' }}
+        />
         <div style={{ borderTop: '1px solid var(--rule)' }} role="listbox">
           {matches.length === 0 && (
             <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--muted)',
@@ -310,10 +326,15 @@ function CommandPalette({ open, onClose, onGo }) {
                 background: i === sel ? 'var(--rule-soft)' : 'transparent',
                 display: 'flex', alignItems: 'center', gap: 10 }}>
               <span aria-hidden="true" style={{ fontSize: 15, opacity: 0.75, width: 20,
-                textAlign: 'center' }}>{p.icon}</span>
-              <span>{p.label}</span>
+                textAlign: 'center', flexShrink: 0 }}>{p.icon}</span>
+              <span style={{ flex: 1 }}>{p.label}</span>
             </div>
           ))}
+        </div>
+        {/* Keyboard hint row */}
+        <div style={{ padding: '6px 16px 8px', borderTop: '1px solid var(--rule-soft)',
+          fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--sans)', letterSpacing: '0.01em' }}>
+          ↑↓ navigate · Enter jump · Esc close
         </div>
       </div>
     </div>
@@ -403,7 +424,10 @@ function App() {
       const tier = (health.budget && health.budget.tier)
         || (health.hardware && health.hardware.tier) || '—';
       const usd = health.budget && health.budget.usd;
-      const budget = usd ? `$${usd.used}/$${usd.cap}` : '—';
+      // Format as "$1.20 / $50" when both values are available
+      const budget = usd && usd.cap
+        ? `$${Number(usd.used || 0).toFixed(2)} / $${Number(usd.cap).toFixed(0)}`
+        : '—';
       setCounters({
         jobs_running: running || null,
         drafts_staged: (drafts.drafts || []).length || null,
@@ -413,6 +437,7 @@ function App() {
       });
     } catch (e) { /* offline; leave counters blank */ }
   }, []);
+
   useEffect(() => {
     refreshCounters();
     const id = setInterval(refreshCounters, 10000);
@@ -429,11 +454,14 @@ function App() {
       <window.BackgroundPattern />
       <AppSidebar active={page} counters={counters} theme={theme}
         onToggleTheme={toggle} onHelp={() => setHelpOpen(true)} />
-      {/* key on page drives the CSS fade-in animation each time the page changes */}
-      <main key={page} className="lh-main-content" style={{ flex: 1, padding: '28px 36px',
-        position: 'relative', overflow: 'auto', maxHeight: '100vh' }}>
+      {/* key={page} forces React to remount <main> on every navigation,
+          which re-triggers the lh-main-content fade-in animation. */}
+      <main key={page} className="lh-main-content"
+        style={{ flex: 1, padding: '28px 36px', position: 'relative',
+          overflow: 'auto', maxHeight: '100vh' }}>
         <PageBoundary pageKey={page}>
-          {PageComp ? <PageComp {...pageProps} />
+          {PageComp
+            ? <PageComp {...pageProps} />
             : <window.ErrorBox message={`Page "${pageDef.label}" failed to load.`} />}
         </PageBoundary>
       </main>

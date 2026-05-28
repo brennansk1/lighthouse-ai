@@ -7,6 +7,7 @@
 //   apiGet apiPost apiPatch apiDelete useApi useEvents useToast
 //   Toast PageHeader EmptyState Loading Skeleton ErrorBox Btn DataTable
 //   ConfidencePill StatusPill Bar SidePane Modal Field Row Metric card
+//   BrierScore WepBar ProgressRing  (new in polish pass)
 
 const { useState, useEffect, useRef, useCallback, useLayoutEffect } = React;
 
@@ -18,10 +19,13 @@ const { useState, useEffect, useRef, useCallback, useLayoutEffect } = React;
   el.textContent = `
     @keyframes lh-shimmer { 0% { background-position: -480px 0; } 100% { background-position: 480px 0; } }
     @keyframes lh-fade-in { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes lh-toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes lh-toast-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
     @keyframes lh-pane-in { from { transform: translateX(24px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
     @keyframes lh-modal-in { from { transform: translateY(12px) scale(0.98); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
     @keyframes lh-spin { to { transform: rotate(360deg); } }
+    @keyframes lh-btn-spin { to { transform: rotate(360deg); } }
+    @keyframes lh-slide-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes lh-toast-prog { from { width: 100%; } to { width: 0%; } }
     .lh-skel {
       background: linear-gradient(90deg, var(--rule-soft) 25%, var(--rule) 37%, var(--rule-soft) 63%);
       background-size: 960px 100%; animation: lh-shimmer 1.4s ease infinite; border-radius: var(--radius-sm);
@@ -31,12 +35,22 @@ const { useState, useEffect, useRef, useCallback, useLayoutEffect } = React;
     .lh-btn:active:not(:disabled) { transform: translateY(1px); }
     .lh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .lh-tab { transition: color .12s ease, border-color .12s ease; }
-    .lh-row-hover:hover { background: var(--rule-soft) !important; }
+    .lh-tab:hover { color: var(--primary) !important; }
+    .lh-row-hover:hover { background: var(--rule-soft) !important; transition: background .1s ease; }
     .lh-focusable:focus-visible, .lh-btn:focus-visible, .lh-tab:focus-visible {
       outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm);
     }
     .lh-overlay { animation: lh-fade-in .12s ease; }
     .lh-scrim { position: fixed; inset: 0; background: rgba(10,42,68,0.28); z-index: 800; }
+    .lh-truncate-2 {
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .lh-slide-up { animation: lh-slide-up .18s ease; }
+    .lh-toast-bar {
+      position: absolute; bottom: 0; left: 0; height: 3px;
+      background: rgba(255,255,255,0.35); border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+      animation: lh-toast-prog 3.5s linear forwards;
+    }
   `;
   document.head.appendChild(el);
 })();
@@ -153,7 +167,7 @@ function useToast() {
 function Toast({ toast }) {
   if (!toast) return null;
   const kind = toast.kind || 'info';
-  const bg = kind === 'error' ? 'var(--coral-2)'
+  const bg = kind === 'error' ? '#c62828'
     : kind === 'success' ? 'var(--green-dark)'
     : 'var(--primary-dark)';
   return (
@@ -161,16 +175,27 @@ function Toast({ toast }) {
       role="status"
       aria-live="polite"
       key={toast._id}
-      className="lh-overlay"
       style={{
         position: 'fixed', top: 18, right: 18, zIndex: 999,
-        background: bg, color: '#fff', padding: '10px 16px',
+        background: bg, color: '#fff', padding: '10px 40px 10px 16px',
         borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)',
         fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, maxWidth: 360,
-        animation: 'lh-toast-in .18s ease',
+        animation: 'lh-toast-in .22s cubic-bezier(0.22,1,0.36,1)',
+        overflow: 'hidden', position: 'fixed',
       }}
     >
       {toast.msg}
+      <button
+        type="button"
+        onClick={() => {/* dismiss is handled by timer; button is cosmetic close */}}
+        aria-label="Dismiss"
+        style={{
+          position: 'absolute', top: 8, right: 10,
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: 'rgba(255,255,255,0.8)', fontSize: 16, lineHeight: 1, padding: 2,
+        }}
+      >×</button>
+      <div className="lh-toast-bar" key={`bar-${toast._id}`} />
     </div>
   );
 }
@@ -181,9 +206,17 @@ const card = {
   borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)',
 };
 
-function PageHeader({ title, subtitle, actions, tabs, activeTab, onTab }) {
+function PageHeader({ title, subtitle, actions, tabs, activeTab, onTab, breadcrumb }) {
   return (
     <header style={{ marginBottom: 18 }}>
+      {breadcrumb && (
+        <div style={{
+          fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--muted)',
+          marginBottom: 6, letterSpacing: '0.01em',
+        }}>
+          {breadcrumb}
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16 }}>
         <div>
           <h1 style={{ fontFamily: 'var(--serif)', fontWeight: 700, fontSize: 26,
@@ -206,6 +239,7 @@ function PageHeader({ title, subtitle, actions, tabs, activeTab, onTab }) {
                   padding: '8px 14px', color: on ? 'var(--primary)' : 'var(--muted)',
                   borderBottom: on ? '2px solid var(--primary)' : '2px solid transparent',
                   marginBottom: -1,
+                  transition: 'color .12s ease, border-color .12s ease',
                 }}>{t}</button>
             );
           })}
@@ -215,13 +249,24 @@ function PageHeader({ title, subtitle, actions, tabs, activeTab, onTab }) {
   );
 }
 
-function EmptyState({ icon = '◌', title, hint, action }) {
+function EmptyState({ icon = '◌', title, hint, action, cta }) {
   return (
-    <div style={{ ...card, padding: '48px 24px', textAlign: 'center', color: 'var(--muted)' }}>
-      <div aria-hidden="true" style={{ fontSize: 32, marginBottom: 8, opacity: 0.5 }}>{icon}</div>
-      <div style={{ fontFamily: 'var(--serif)', fontSize: 16, color: 'var(--ink-2)' }}>{title}</div>
-      {hint && <div style={{ fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>{hint}</div>}
-      {action && <div style={{ marginTop: 16 }}>{action}</div>}
+    <div style={{
+      ...card,
+      padding: '52px 28px',
+      textAlign: 'center',
+      color: 'var(--muted)',
+      background: 'linear-gradient(135deg, var(--card) 0%, rgba(2,136,209,0.02) 100%)',
+    }}>
+      <div aria-hidden="true" style={{ fontSize: 40, marginBottom: 12, opacity: 0.3, lineHeight: 1 }}>{icon}</div>
+      <div style={{ fontFamily: 'var(--serif)', fontSize: 17, color: 'var(--ink-2)', fontWeight: 600 }}>{title}</div>
+      {hint && <div style={{ fontSize: 13, marginTop: 7, lineHeight: 1.55, color: 'var(--muted)', maxWidth: '36ch', margin: '7px auto 0' }}>{hint}</div>}
+      {(action || cta) && (
+        <div style={{ marginTop: 20, display: 'flex', justifyContent: 'center', gap: 8 }}>
+          {action}
+          {cta}
+        </div>
+      )}
     </div>
   );
 }
@@ -229,19 +274,31 @@ function EmptyState({ icon = '◌', title, hint, action }) {
 function Loading({ label = 'Loading…' }) {
   return (
     <div role="status" aria-live="polite"
-      style={{ padding: 40, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      style={{ padding: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         gap: 10, color: 'var(--muted)', fontFamily: 'var(--sans)', fontSize: 13 }}>
       <span aria-hidden="true" style={{
-        width: 14, height: 14, border: '2px solid var(--rule)',
+        width: 18, height: 18, border: '2px solid var(--rule)',
         borderTopColor: 'var(--primary)', borderRadius: '50%',
         display: 'inline-block', animation: 'lh-spin .7s linear infinite',
       }} />
-      {label}
+      <span>{label}</span>
     </div>
   );
 }
 
-function Skeleton({ rows = 3 }) {
+function Skeleton({ rows = 3, height, width, style: styleProp, radius }) {
+  // Single-item mode: height or width provided
+  if (height != null || width != null) {
+    return (
+      <div className="lh-skel" style={{
+        height: height || 14,
+        width: width || '100%',
+        borderRadius: radius || 'var(--radius-sm)',
+        ...styleProp,
+      }} />
+    );
+  }
+  // Multi-row mode: legacy API
   const n = Math.max(1, rows | 0);
   return (
     <div style={{ ...card, padding: 16 }} role="status" aria-busy="true" aria-label="Loading content">
@@ -258,22 +315,47 @@ function Skeleton({ rows = 3 }) {
   );
 }
 
+// SkeletonGroup: realistic text loading with varied widths
+function SkeletonGroup({ lines = 4, style: styleProp }) {
+  const widths = ['92%', '78%', '85%', '60%', '88%', '72%', '95%', '65%'];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, ...styleProp }}>
+      {Array.from({ length: lines }).map((_, i) => (
+        <div key={i} className="lh-skel" style={{ height: 13, width: widths[i % widths.length] }} />
+      ))}
+    </div>
+  );
+}
+
 function ErrorBox({ message, onRetry }) {
   return (
-    <div role="alert" style={{ ...card, padding: 16, borderLeft: '4px solid var(--coral-2)',
-      color: 'var(--coral-2)', fontFamily: 'var(--sans)', fontSize: 13,
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-      <span>{message || 'Something went wrong.'}</span>
+    <div role="alert" style={{
+      ...card,
+      padding: '14px 16px',
+      borderLeft: '4px solid #c62828',
+      color: 'var(--ink)',
+      fontFamily: 'var(--sans)',
+      fontSize: 14,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span aria-hidden="true" style={{ fontSize: 16, color: '#c62828', flexShrink: 0 }}>⚠</span>
+        <span style={{ color: '#b71c1c' }}>{message || 'Something went wrong.'}</span>
+      </div>
       {onRetry && (
-        <Btn kind="ghost" size="sm" onClick={onRetry} aria-label="Retry">Retry</Btn>
+        <Btn kind="ghost" size="sm" onClick={onRetry} aria-label="Retry" style={{ flexShrink: 0 }}>Retry</Btn>
       )}
     </div>
   );
 }
 
-function Btn({ children, onClick, kind = 'primary', size = 'md', style, ...rest }) {
+function Btn({ children, onClick, kind = 'primary', size = 'md', style, loading: isLoading, icon, ...rest }) {
   const base = {
-    cursor: 'pointer', fontFamily: 'var(--sans)', fontWeight: 600,
+    cursor: isLoading ? 'wait' : 'pointer',
+    fontFamily: 'var(--sans)', fontWeight: 600,
     fontSize: size === 'sm' ? 12 : 13, borderRadius: 'var(--radius-sm)',
     padding: size === 'sm' ? '5px 10px' : '8px 16px', border: '1px solid transparent',
     display: 'inline-flex', alignItems: 'center', gap: 6, lineHeight: 1.2,
@@ -285,26 +367,43 @@ function Btn({ children, onClick, kind = 'primary', size = 'md', style, ...rest 
     danger: { background: 'var(--card)', color: 'var(--coral-2)', borderColor: 'var(--coral-2)' },
     success: { background: 'var(--green-dark)', color: '#fff', boxShadow: 'var(--shadow-sm)' },
   };
+  const spinSize = size === 'sm' ? 8 : 10;
+  const spinColor = kind === 'primary' || kind === 'success' ? 'rgba(255,255,255,0.5)' : 'var(--rule)';
+  const spinTopColor = kind === 'primary' || kind === 'success' ? '#fff' : 'var(--primary)';
   return (
-    <button type="button" className="lh-btn" onClick={onClick}
+    <button type="button" className="lh-btn" onClick={onClick} disabled={isLoading || rest.disabled}
       style={{ ...base, ...(kinds[kind] || kinds.primary), ...style }} {...rest}>
+      {isLoading && (
+        <span aria-hidden="true" style={{
+          width: spinSize, height: spinSize,
+          border: `2px solid ${spinColor}`,
+          borderTopColor: spinTopColor,
+          borderRadius: '50%',
+          display: 'inline-block',
+          animation: 'lh-btn-spin .65s linear infinite',
+          flexShrink: 0,
+        }} />
+      )}
+      {!isLoading && icon && <span aria-hidden="true" style={{ flexShrink: 0, lineHeight: 1 }}>{icon}</span>}
       {children}
     </button>
   );
 }
 
-function DataTable({ columns, rows, onRow, activeRow, empty }) {
+function DataTable({ columns, rows, onRow, activeRow, empty, stickyHead }) {
   const cols = columns || [];
   if (!rows || rows.length === 0) return empty || null;
   return (
     <div style={{ ...card, overflow: 'hidden' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--sans)' }}>
-        <thead>
+        <thead style={stickyHead ? { position: 'sticky', top: 0, zIndex: 1 } : {}}>
           <tr style={{ background: 'var(--rule-soft)' }}>
             {cols.map((c) => (
               <th key={c.key} scope="col" style={{ textAlign: 'left', padding: '9px 14px',
                 fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em',
-                textTransform: 'uppercase', color: 'var(--muted)' }}>{c.label}</th>
+                textTransform: 'uppercase', color: 'var(--muted)',
+                background: 'var(--rule-soft)',
+              }}>{c.label}</th>
             ))}
           </tr>
         </thead>
@@ -313,6 +412,7 @@ function DataTable({ columns, rows, onRow, activeRow, empty }) {
             const key = (r && r._key != null) ? r._key : i;
             const active = activeRow != null && activeRow === key;
             const clickable = !!onRow;
+            const isEven = i % 2 === 1;
             return (
               <tr key={key}
                 className={clickable ? 'lh-row-hover' : undefined}
@@ -325,7 +425,9 @@ function DataTable({ columns, rows, onRow, activeRow, empty }) {
                 style={{ borderTop: '1px solid var(--rule-soft)',
                   cursor: clickable ? 'pointer' : 'default',
                   outline: 'none',
-                  background: active ? 'var(--rule-soft)' : 'transparent',
+                  background: active ? 'var(--rule-soft)'
+                    : isEven ? 'rgba(234,242,248,0.45)'
+                    : 'transparent',
                   transition: 'background .12s ease' }}>
                 {cols.map((c) => (
                   <td key={c.key} style={{ padding: '11px 14px', fontSize: 13,
@@ -343,15 +445,32 @@ function DataTable({ columns, rows, onRow, activeRow, empty }) {
 }
 
 function ConfidencePill({ phrase, band }) {
-  const p = (phrase || '').toString();
-  const klass = !p ? 'even'
-    : /certain|very likely|highly likely/i.test(p) ? 'high'
-    : /likely/i.test(p) ? 'likely'
-    : /unlikely|remote|improbable/i.test(p) ? 'unlikely'
-    : 'even';
+  const p = (phrase || '').toString().toLowerCase().trim();
+  let klass;
+  if (!p) {
+    klass = 'even';
+  } else if (/almost certain|highly likely|very likely/.test(p)) {
+    klass = 'high';
+  } else if (/^likely$|^likely\b/.test(p)) {
+    klass = 'likely';
+  } else if (/even chance|roughly even/.test(p)) {
+    klass = 'even';
+  } else if (/almost no chance|remote/.test(p)) {
+    klass = 'remote';
+  } else if (/very unlikely|unlikely/.test(p)) {
+    klass = 'unlikely';
+  } else if (/certain|high/.test(p)) {
+    klass = 'high';
+  } else if (/likely/.test(p)) {
+    klass = 'likely';
+  } else if (/improbable/.test(p)) {
+    klass = 'unlikely';
+  } else {
+    klass = 'even';
+  }
   return (
     <span className={`wep ${klass}`} title={band != null ? `confidence ${band}` : undefined}>
-      {p || 'unrated'}
+      {phrase || 'unrated'}
     </span>
   );
 }
@@ -362,8 +481,9 @@ function StatusPill({ status }) {
     running: 'running', active: 'running', published: 'running',
     queued: 'queued', pending: 'queued',
     review: 'review', staged: 'review',
-    paused: 'paused', rejected: 'paused', cancelled: 'paused',
-    failed: 'review', done: 'paused', completed: 'paused',
+    paused: 'paused', cancelled: 'paused',
+    done: 'done', completed: 'done',
+    failed: 'failed', rejected: 'failed',
   };
   return (
     <span className={`pill ${map[s] || ''}`}>
@@ -416,9 +536,12 @@ function useFocusTrap(ref, onClose) {
   }, [ref, onClose]);
 }
 
-function SidePane({ title, onClose, children }) {
+function SidePane({ title, onClose, children, footer, actions }) {
   const ref = useRef(null);
   useFocusTrap(ref, onClose);
+  const resolvedFooter = footer || (actions
+    ? <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>{actions}</div>
+    : null);
   return (
     <React.Fragment>
       <div className="lh-scrim lh-overlay" onClick={onClose} aria-hidden="true" />
@@ -430,7 +553,7 @@ function SidePane({ title, onClose, children }) {
           animation: 'lh-pane-in .2s ease', outline: 'none',
         }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '16px 20px', borderBottom: '1px solid var(--rule)' }}>
+          padding: '16px 20px', borderBottom: '1px solid var(--rule)', flexShrink: 0 }}>
           <h2 style={{ fontFamily: 'var(--serif)', fontSize: 17, fontWeight: 700,
             margin: 0, color: 'var(--ink)' }}>{title}</h2>
           <button type="button" className="lh-btn lh-focusable" onClick={onClose} aria-label="Close panel"
@@ -438,31 +561,56 @@ function SidePane({ title, onClose, children }) {
               lineHeight: 1, color: 'var(--muted)', padding: 4 }}>×</button>
         </div>
         <div style={{ padding: 20, overflow: 'auto', flex: 1 }}>{children}</div>
+        {resolvedFooter && (
+          <div style={{
+            padding: '12px 20px', borderTop: '1px solid var(--rule)',
+            background: 'var(--card)', flexShrink: 0,
+          }}>
+            {resolvedFooter}
+          </div>
+        )}
       </aside>
     </React.Fragment>
   );
 }
 
-function Modal({ title, onClose, children }) {
+function Modal({ title, onClose, children, size = 'md', footer }) {
   const ref = useRef(null);
   useFocusTrap(ref, onClose);
+  const widthMap = { sm: 380, md: 460, lg: 600, xl: 800 };
+  const w = widthMap[size] || widthMap.md;
   return (
-    <div className="lh-scrim lh-overlay" onClick={onClose}
-      style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-        padding: '8vh 16px', overflow: 'auto', zIndex: 900 }}>
+    <div className="lh-overlay" onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 900,
+        background: 'rgba(10,42,68,0.28)',
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+        padding: '8vh 16px', overflow: 'auto',
+      }}>
       <div ref={ref} role="dialog" aria-modal="true" aria-label={title || 'Dialog'} tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        style={{ ...card, width: 460, maxWidth: '100%', boxShadow: 'var(--shadow-lg)',
-          animation: 'lh-modal-in .18s ease', outline: 'none' }}>
+        style={{
+          ...card, width: w, maxWidth: '100%', boxShadow: 'var(--shadow-lg)',
+          animation: 'lh-modal-in .18s ease', outline: 'none',
+          display: 'flex', flexDirection: 'column',
+        }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '16px 20px', borderBottom: '1px solid var(--rule)' }}>
+          padding: '16px 20px', borderBottom: '1px solid var(--rule)', flexShrink: 0 }}>
           <h2 style={{ fontFamily: 'var(--serif)', fontSize: 17, fontWeight: 700,
             margin: 0, color: 'var(--ink)' }}>{title}</h2>
           <button type="button" className="lh-btn lh-focusable" onClick={onClose} aria-label="Close dialog"
             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20,
               lineHeight: 1, color: 'var(--muted)', padding: 4 }}>×</button>
         </div>
-        <div style={{ padding: 20 }}>{children}</div>
+        <div style={{ padding: 20, flex: 1 }}>{children}</div>
+        {footer && (
+          <div style={{
+            padding: '12px 20px', borderTop: '1px solid var(--rule)',
+            background: 'var(--card)', borderRadius: '0 0 var(--radius) var(--radius)', flexShrink: 0,
+          }}>
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -502,8 +650,72 @@ function Metric({ label, value, hint }) {
   );
 }
 
+// ── BrierScore: numeric score colored by quality ─────────────────────────
+function BrierScore({ score }) {
+  const n = Number(score);
+  const color = isNaN(n) ? 'var(--muted)'
+    : n < 0.1 ? '#2e7d32'
+    : n < 0.2 ? '#00695c'
+    : n < 0.25 ? '#f57c00'
+    : '#c62828';
+  return (
+    <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 600, color }}>
+      {isNaN(n) ? '—' : n.toFixed(3)}
+      <span style={{ fontFamily: 'var(--sans)', fontSize: 10, fontWeight: 500,
+        color: 'var(--muted)', marginLeft: 4 }}>Brier</span>
+    </span>
+  );
+}
+
+// ── WepBar: horizontal probability bar ────────────────────────────────────
+function WepBar({ probability }) {
+  const p = Math.min(Math.max(Number(probability) || 0, 0), 1);
+  const pct = Math.round(p * 100);
+  // gradient: red (0) → amber (0.5) → green (1)
+  const r = p < 0.5 ? 220 : Math.round(220 - (p - 0.5) * 2 * 180);
+  const g = p < 0.5 ? Math.round(p * 2 * 210) : 210;
+  const b = 40;
+  const fillColor = `rgb(${r},${g},${b})`;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}
+        style={{ flex: 1, height: 8, background: 'var(--rule-soft)', borderRadius: 4, overflow: 'hidden', minWidth: 80 }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: fillColor, transition: 'width .4s ease' }} />
+      </div>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink-2)', minWidth: 34, textAlign: 'right' }}>
+        {pct}%
+      </span>
+    </div>
+  );
+}
+
+// ── ProgressRing: SVG circle progress ring ────────────────────────────────
+function ProgressRing({ value, max, size = 40, stroke = 4 }) {
+  const v = Number(value) || 0;
+  const m = Number(max) || 1;
+  const pct = Math.min(Math.max(v / m, 0), 1);
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const dash = circ * pct;
+  const center = size / 2;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
+      role="progressbar" aria-valuenow={v} aria-valuemin={0} aria-valuemax={m}
+      style={{ transform: 'rotate(-90deg)' }}>
+      <circle cx={center} cy={center} r={r}
+        fill="none" stroke="var(--rule-soft)" strokeWidth={stroke} />
+      <circle cx={center} cy={center} r={r}
+        fill="none" stroke="var(--primary)" strokeWidth={stroke}
+        strokeDasharray={`${dash} ${circ}`}
+        strokeLinecap="round"
+        style={{ transition: 'stroke-dasharray .4s ease' }} />
+    </svg>
+  );
+}
+
 Object.assign(window, {
   apiGet, apiPost, apiPatch, apiDelete, useApi, useEvents, useToast,
-  Toast, PageHeader, EmptyState, Loading, Skeleton, ErrorBox, Btn, DataTable,
+  Toast, PageHeader, EmptyState, Loading, Skeleton, SkeletonGroup, ErrorBox, Btn, DataTable,
   ConfidencePill, StatusPill, Bar, SidePane, Modal, Field, Row, Metric, card,
+  BrierScore, WepBar, ProgressRing,
 });
