@@ -240,8 +240,13 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
                     log.info("telegram_bot.scheduled", chat_id=_tg_chat)
         except Exception as _exc2:
             log.warning("telegram_bot.setup_failed", error=str(_exc2))
-        signal.signal(signal.SIGTERM, _on_signal)
-        signal.signal(signal.SIGINT, _on_signal)
+        # Signal handlers only register on the main thread; guard so embedding
+        # serve() in a thread (tests, notebooks) doesn't crash the boot.
+        try:
+            signal.signal(signal.SIGTERM, _on_signal)
+            signal.signal(signal.SIGINT, _on_signal)
+        except ValueError:
+            log.info("supervisor.signals_skipped", reason="not main thread")
         try:
             server.run()
         finally:
