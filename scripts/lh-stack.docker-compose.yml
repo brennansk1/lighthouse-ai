@@ -1,8 +1,8 @@
-# Lighthouse local stack — Qdrant only this sprint.
+# Lighthouse local stack — Qdrant + SearXNG.
 # Boot with: docker compose -f scripts/lh-stack.docker-compose.yml up -d
 # Stop with: docker compose -f scripts/lh-stack.docker-compose.yml down
-# Data persists in the named volume `lighthouse_qdrant`; nuke with:
-#   docker volume rm lighthouse_qdrant
+# Data persists in named volumes; nuke with:
+#   docker volume rm lighthouse_qdrant lighthouse_searxng
 services:
   qdrant:
     image: qdrant/qdrant:v1.12.0
@@ -16,5 +16,25 @@ services:
     # Conservative memory cap so a runaway Qdrant can't OOM the laptop.
     mem_limit: 2g
     cpus: 2.0
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: lighthouse-searxng
+    ports:
+      - "8888:8080"
+    environment:
+      - SEARXNG_SECRET_KEY=lighthouse-local-secret
+      - SEARXNG_BASE_URL=http://localhost:8888
+      - SEARXNG_SEARCH_FORMATS=html,json
+    volumes:
+      - lighthouse_searxng:/etc/searxng
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
 volumes:
   lighthouse_qdrant:
+  lighthouse_searxng:

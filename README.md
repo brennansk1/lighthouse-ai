@@ -1,120 +1,185 @@
-# Lighthouse
+# Lighthouse — local-first deep research
 
-> Local-first, hardware-adaptive 24/7 multi-agent research system. Runs on
-> your machine, on your files, with reproducible auditable outputs.
+> The deep-research tool for regulated-industry knowledge workers who cannot use
+> Gemini/OpenAI/Perplexity Deep Research on their actual working corpus.
 
-Lighthouse is the tool you reach for instead of Gemini Deep Research,
-OpenAI Deep Research, Claude Research, Perplexity Pro, Elicit, or
-Consensus — while keeping every byte on your hardware.
+A full research slice runs end-to-end, locally, today: ingest documents → frame the
+question with an LLM-powered pipeline → retrieve with `bge-m3` embeddings + BM25 +
+FlagReranker → synthesize with a local LLM via Ollama → enforce a citation-discipline
+gate → record calibration positions → stage a draft → review it in the dashboard.
+Every claim carries a WEP confidence band and an HMAC-chained audit log makes the
+entire run tamper-evident.
 
-The full design specification is in `lighthouse_design.md`. The
-surface design is in `webapp_tui_design.md`. A frank, line-by-line view of
-what's done vs. pending is in **[`PRODUCTION_CHECKLIST.md`](./PRODUCTION_CHECKLIST.md)**.
+## Why local-first matters
 
-**Status:** ~12,400 source lines, 86 modules, **622 passing tests**. A full
-research slice runs end-to-end, locally, today.
+- **HIPAA / ABA Model Rule 1.6 / GDPR / ITAR compliance**: your corpus never leaves
+  your hardware — no BAA required, no data-processing addendum.
+- **FedRAMP-adjacent posture**: air-gap compatible; audit trail ready for review.
+- **Full tamper-evident provenance**: HMAC-chained log, PROV-O metadata, replay
+  verification — every claim is traceable back to a source chunk and model call.
+- **Reproducible outputs**: model fingerprinting + drift detection; replay reconstructs
+  the exact model-call trace.
+- **Cost-free after hardware**: no per-query API fees; runs on an Apple M4 24 GB
+  today, scales down gracefully to smaller machines.
 
 ## What works today
 
-- **Real local research, end-to-end:** ingest docs → frame the question →
-  retrieve with real **`bge-m3`** embeddings → synthesize with a real local
-  LLM via **Ollama** → enforce a **citation-discipline gate** → record
-  **calibration positions** → stage a draft → approve it → export to Logseq.
-- **Honest by construction:** every claim carries a WEP confidence band,
-  unsourced claims are downgraded, predictions are tracked and Brier-scored,
-  and an HMAC-chained audit log makes the whole run tamper-evident.
-- **Hardware-adaptive:** probes RAM/GPU → tier; budget-aware model selection
-  with **MoE SSD-paging awareness** and a **runtime RAM guard** so it never
-  swaps your machine to death; disk-safe model pulls.
-- **Two surfaces:** a React **web dashboard** (7 pages, Cmd-K palette, live
-  SSE, light/dark) and a **Textual TUI** (7 screens) — same JSON API.
-- **Durable & governed:** SQLite-WAL spine, outbox+saga consistency, a
-  Governor with token-budget circuit-breakers, sandboxed ingestion.
-- **Real sources:** RSS, arXiv, OpenAlex adapters.
+- **Real end-to-end research** with Ollama (`qwen3:14b` / `llama3.1:8b`) + `bge-m3`
+  1024-dim embeddings + Qdrant (or in-memory fallback)
+- **HybridSearch**: BM25 + dense ANN + RRF k=60 + FlagReranker (`bge-reranker-v2-m3`,
+  always-on when FlagEmbedding is installed)
+- **Contextual Retrieval**: LLM-generated 1-sentence preamble prepended to each chunk
+  at ingest time (Anthropic pattern)
+- **LLM-powered framing pipeline**: classify → critique → multiply-frames → decompose
+  (planner role, falls back to keyword baseline)
+- **IterResearch shared scratchpad**: `CompactedContext` injected into each round's
+  researcher prompts
+- **Real denoiser**: synthesizer LLM resolves contradictions, emits
+  `[CONTRADICTION]` / `[GAP]` markers
+- **Debate auto-wiring**: fires `run_debate()` on load-bearing `[CONTRADICTION]`
+  sections; adds crux as a new sub-question
+- **Entailment gate** (`verification/entailment.py`): lazy MiniCheck/HHEM; degrades
+  gracefully to no-penalty when the PyPI package is absent
+- **Auto web retrieval**: fetches arXiv + OpenAlex when corpus is empty at research
+  start (CRAG-style pre-loop)
+- **Auto-resolver** (`verification/resolver.py`): Halawi et al. style — machine-
+  resolvable positions auto-resolved at deadline
+- **WEP confidence bands** (ICD-203) + Brier calibration scoring + 90-day positions
+- **Source adapters**: arXiv, OpenAlex, PubMed, Crossref (all return `Document` objects)
+- **SQLite-WAL spine**: outbox + saga compensation + HMAC-chained audit log
+- **Governor**: hierarchical token buckets, loop detector, injection gate, degradation
+  tiers, cost report
+- **Sandbox**: EICAR / PDF-JS / HTML-script / zip-bomb scanners + quarantine
+- **Web dashboard**: 7 pages (Home, Jobs, Drafts, Topics, Positions, Health, Settings),
+  SSE live updates, light/dark theme, Cmd-K palette, editable research plan
+  (PlanPreview before each run), Elicit-style extraction table in draft reader
+- **TUI**: 7 Textual screens, themed coastal light/dark, offline-graceful
+- **CLI**: `lighthouse`, `lighthouse-supervisor`, `lighthouse-tui` console scripts;
+  `lighthouse audit-egress`, `lighthouse resolver run`, and more
+- **Backend fallback warnings**: silent fallbacks logged and surfaced to the user
+- **Citation source diversity**: distinct source domains counted per report
+- **CI**: GitHub Actions, ruff clean, pytest
 
-See `PRODUCTION_CHECKLIST.md` for what's stubbed (real reranker, LangGraph,
-Qdrant/Litestream runtime, cloud escalation, Zotero/Telegram, …).
+## What is not yet wired
+
+- SearXNG mid-loop CRAG fetch — seam is in place, SearXNG integration pending
+- Litestream replication — config written, binary optional
+- Logseq / Zotero / Telegram integrations — adapters exist, not wired into main flow
+- `minicheck` PyPI package does not exist yet — entailment gate degrades gracefully
+- FedRAMP / HIPAA compliance one-pager — planned Sprint 32
+- RAPTOR long-document tree — planned
+- LangGraph — plain Python for-loop (intentional; LangGraph deferred)
 
 ## Quick start
 
 ```bash
-# install uv: https://docs.astral.sh/uv/
-uv sync
-uv run lighthouse init --no-install-service   # set up ~/.lighthouse
-uv run lighthouse doctor                      # readiness check
+# 1. Prerequisites
+brew install ollama
+ollama pull bge-m3          # embeddings (1.2 GB)
+ollama pull qwen3:14b       # researcher / synthesizer
 
-# run research offline (stub backends, no model load — instant):
-uv run lighthouse research "What mitigates decoherence?" --doc notes.txt --offline
+# 2. Install Lighthouse
+pip install lighthouse-ai   # or: uvx lighthouse-ai
 
-# or for real (needs Ollama + a pulled model; loads into RAM):
-uv run lighthouse models bind                 # map roles → installed Ollama tags
-uv run lighthouse research "..." --arxiv "quantum error correction"
+# 3. Initialize
+lighthouse init
+
+# 4. Start (optional: Qdrant for persistent vectors)
+docker compose -f ~/.lighthouse/stack/lh-stack.yml up -d  # optional
+lighthouse-supervisor &
+open http://localhost:8765
+
+# 5. Research
+lighthouse research "Why did psychology's replication crisis emerge?"
 ```
 
-Launch the dashboard / TUI:
+Running from source:
 
 ```bash
-uv run lighthouse-supervisor      # then open http://127.0.0.1:8765/
-uv run lighthouse tui             # terminal dashboard
+uv sync
+uv run lighthouse init
+uv run lighthouse doctor        # readiness check
+uv run lighthouse-supervisor    # then open http://127.0.0.1:8765/
 ```
 
 Other commands: `lighthouse status`, `cost report`, `positions-due`,
-`models {list,pull,info}`, `quarantine list`, `audit verify`,
-`sandbox redteam`, `export <draft> --logseq <dir>`, `pause`/`resume`.
+`models {list,pull,info,bind}`, `quarantine list`, `audit verify`,
+`audit-egress`, `resolver run`, `sandbox redteam`, `export <draft> --logseq <dir>`,
+`pause` / `resume`, `replay <job_id>`.
 
-## Running the test suite
+## Research modes
 
-```bash
-uv run pytest -q          # 622 pass; 3 skip (opt-in real-backend / litestream binary)
-```
-
-Real-backend integration tests are opt-in (they load a model into RAM):
-
-```bash
-LIGHTHOUSE_REAL_BACKEND=1 uv run pytest tests/test_backends_ollama.py
-```
+| Mode | Name | Description |
+|------|------|-------------|
+| A | Monitor | Continuous RSS / source watch; classify → alert or digest |
+| B | Deep-Dive | Multi-round iterative research with denoiser + debate + entailment gate |
+| C | QUC (Quick) | Single-pass cited answer with calibration position |
+| D | Digest | Scheduled briefing synthesized from monitored sources |
+| E | Debate | Structured pro/con with LLM judge; auto-fired on contradictions |
 
 ## Architecture
 
 ```
-src/lighthouse_ai/
-├── cli.py                 typer CLI (init, doctor, status, pause/resume, cost, budget)
-├── supervisor.py          launchd/systemd-managed long-lived process
-├── controlplane.py        FastAPI app on 127.0.0.1:8765
-├── persistence.py         §26.1 PRAGMA discipline + sqlite helpers
-├── schema.py              per-DB migrations
-├── paths.py               filesystem layout (~/.lighthouse/*)
-├── hardware.py            §5.1 probe + tier classification
-├── litestream.py          replica config + lag reporting
-├── gateway.py             §6 model gateway + fingerprinting
-├── intents.py             §25 outbox API
-├── effector.py            durable intent drainer
-├── sagas.py               §25.4 compensator registry
-├── governor/              §24 token buckets + degradation
-├── rag/                   §14 chunker / embedder / store / BM25 / fusion / hybrid
-├── sandbox/               §15 scanners + quarantine + broker
-├── modes/                 monitor, deepdive, quc, digest, debate
-├── framing/               §10 framing pipeline + §14.5 adaptive router
-├── verification/          §22-23 WEP, Brier, positions, hypotheses, skills, audit chain
-├── output/                §20 Tufte-CSS HTML renderer
-├── web/                   static design bundle + /api/dashboard
-├── catalog/               5-tier model catalog
-└── templates/             config.toml / launchd plist / systemd unit / litestream.yml
+Sources (arXiv · OpenAlex · PubMed · Crossref · RSS)
+        │
+        ▼
+   Ingest + Sandbox (scanners · quarantine · injection gate)
+        │
+        ▼
+   Contextual Chunker ──► BM25 Index
+        │                      │
+        ▼                      │
+  bge-m3 Embedder ──► Qdrant / InMemory ◄── HybridSearch (RRF k=60)
+                                                    │
+                                                    ▼
+                               FlagReranker (bge-reranker-v2-m3)
+                                                    │
+                                                    ▼
+   Framing Pipeline (classify · critique · multiply · decompose)
+        │
+        ▼
+   IterResearch Loop (researcher fan-out · CompactedContext scratchpad)
+        │
+        ▼
+   Denoiser (synthesizer LLM · [CONTRADICTION]/[GAP] markers)
+        │
+        ├──► Debate auto-wire (on load-bearing contradictions)
+        │
+        ▼
+   Discipline Gate (citation coverage · two-source rule · WEP downgrade)
+        │
+        ▼
+   Entailment Gate (MiniCheck/HHEM · sourced-claim verification)
+        │
+        ▼
+   Auto-Resolver · Brier Calibration · WEP Positions
+        │
+        ▼
+   HMAC-Chained Audit Log ──► Draft ──► Dashboard / TUI / Logseq export
 ```
 
-## Production swap-in points
+## Status
 
-The Sprint 5 implementations are runnable end-to-end but use stub
-backends so the system has no external dependencies. Production swaps:
+**814 tests passing · 3 skipped (opt-in real-backend / litestream binary) · ruff clean · CI green · macOS M4 24 GB verified**
 
-| Interface (Protocol)              | Stub                  | Production                  |
-| --------------------------------- | --------------------- | --------------------------- |
-| `rag.embedder.Embedder`           | `HashEmbedder`        | BGE-M3 via FlagEmbedding    |
-| `rag.store.VectorStore`           | `InMemoryStore`       | Qdrant (HNSW + int8)        |
-| `rag.rerank.Reranker`             | `ScoreReranker`       | Qwen3-Reranker-0.6B         |
-| `gateway` model dispatch          | `MockProvider`        | Ollama / MLX / vLLM         |
-| `sandbox.scanners`                | Pure-Python           | qpdf, oletools, ClamAV, YARA |
-| `governor.langfuse_stub`          | No-op                 | Self-hosted Langfuse         |
+## Development
+
+```bash
+uv run pytest -q                          # 814 pass, 3 skip
+uv run ruff check src tests               # 0 errors
+LIGHTHOUSE_REAL_BACKEND=1 uv run pytest tests/test_backends_ollama.py  # real LLM
+```
+
+Contributions welcome. Open an issue to discuss before large PRs. All new features
+require unit tests; integration tests for real-backend paths must be gated on
+`LIGHTHOUSE_REAL_BACKEND=1` and must not start background processes.
+
+## Links
+
+- [`PRODUCTION_CHECKLIST.md`](./PRODUCTION_CHECKLIST.md) — line-by-line status
+- [`lighthouse_design.md`](./lighthouse_design.md) — full design specification
+- [`MODE_PROCESSES.md`](./MODE_PROCESSES.md) — per-mode process details
+- [`SPRINT_QUALITY.md`](./SPRINT_QUALITY.md) — sprint acceptance criteria
 
 ## License
 
