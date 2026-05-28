@@ -258,8 +258,11 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
                             wep_phrase=row[3],
                             source_count=row[4] or 0,
                         )
-        except Exception:
-            pass  # Logseq export is best-effort; never fail the approval
+        except Exception as _exc:
+            import structlog as _structlog
+            _structlog.get_logger(__name__).warning(
+                "logseq.export_failed", draft_id=draft_id, error=str(_exc)
+            )  # Logseq export is best-effort; never fail the approval
         bus.publish("draft.approved", {"id": draft_id})
         return {"id": draft_id, "status": "published"}
 

@@ -1,11 +1,14 @@
-"""Logseq landing — write an approved draft as a Logseq-compatible markdown
-page on the filesystem (design §16).
+"""Logseq landing — write an approved draft as a Logseq-compatible markdown page.
 
-We use the *filesystem* path (write ``pages/<title>.md`` into the graph dir)
-rather than the HTTP API, so it works with zero setup — no running Logseq,
-no API token. Logseq picks up the file on its next scan. Idempotent: a
-stable ``id::`` block property derived from the draft id means re-exporting
-updates the same page instead of duplicating it.
+Uses the filesystem path (write ``pages/<title>.md`` into the graph dir) rather
+than the HTTP API — works with zero setup, no running Logseq instance required.
+Logseq picks up the file on its next directory scan.
+
+Page format follows Logseq's standard conventions:
+- Page properties block at top (key:: value)
+- Each research section becomes a top-level bullet block
+- Topic and linked entities use [[Page Link]] syntax for graph connectivity
+- Sources listed as numbered reference blocks at the bottom
 """
 
 from __future__ import annotations
@@ -33,46 +36,161 @@ class LogseqPage:
     uuid: str
 
 
-def _html_to_blocks(body_html: str) -> list[str]:
-    """Very small HTML→markdown-block conversion for our own draft HTML."""
-    text = body_html
-    # Drop <style>/<script>/<head> blocks and their contents entirely.
+def _convert_ol(inner: str) -> str:
+    """Convert <ol> inner HTML to numbered Markdown list."""
+    items = re.findall(r"<li[^>]*>(.*?)</li>", inner, flags=re.S)
+    return "\n" + "\n".join(f"{i+1}. {item.strip()}" for i, item in enumerate(items))
+
+
+def _html_to_md(html: str) -> str:
+    """Convert draft HTML to clean Markdown suitable for Logseq blocks."""
+    import html as html_lib
+
+    text = html or ""
+    # Remove entire style/script/head blocks
     text = re.sub(r"<(style|script|head)[^>]*>.*?</\1>", "", text, flags=re.S | re.I)
-    text = re.sub(r"<h2[^>]*>(.*?)</h2>", r"\n## \1", text, flags=re.S)
-    text = re.sub(r"<li[^>]*>(.*?)</li>", r"- \1", text, flags=re.S)
-    text = re.sub(r"</?(ul|section|div)[^>]*>", "", text, flags=re.S)
+    # Headings
+    text = re.sub(r"<h1[^>]*>(.*?)</h1>", r"\n# \1\n", text, flags=re.S)
+    text = re.sub(r"<h2[^>]*>(.*?)</h2>", r"\n## \1\n", text, flags=re.S)
+    text = re.sub(r"<h3[^>]*>(.*?)</h3>", r"\n### \1\n", text, flags=re.S)
+    text = re.sub(r"<h4[^>]*>(.*?)</h4>", r"\n#### \1\n", text, flags=re.S)
+    # Inline formatting
+    text = re.sub(r"<strong[^>]*>(.*?)</strong>", r"**\1**", text, flags=re.S)
+    text = re.sub(r"<b[^>]*>(.*?)</b>", r"**\1**", text, flags=re.S)
+    text = re.sub(r"<em[^>]*>(.*?)</em>", r"*\1*", text, flags=re.S)
+    text = re.sub(r"<i[^>]*>(.*?)</i>", r"*\1*", text, flags=re.S)
+    text = re.sub(r"<code[^>]*>(.*?)</code>", r"`\1`", text, flags=re.S)
+    text = re.sub(r"<pre[^>]*>(.*?)</pre>", r"\n```\n\1\n```\n", text, flags=re.S)
+    # Links — convert <a href="url">text</a> to [text](url)
+    text = re.sub(
+        r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+        r'[\2](\1)',
+        text,
+        flags=re.S,
+    )
+    # Blockquotes
+    text = re.sub(
+        r"<blockquote[^>]*>(.*?)</blockquote>",
+        lambda m: "\n" + "\n".join(f"> {l}" for l in m.group(1).strip().splitlines()) + "\n",
+        text,
+        flags=re.S,
+    )
+    # Lists — ordered (must come before unordered to avoid eating <ol> tags)
+    text = re.sub(
+        r"<ol[^>]*>(.*?)</ol>",
+        lambda m: _convert_ol(m.group(1)),
+        text,
+        flags=re.S,
+    )
+    # Lists — unordered
+    text = re.sub(
+        r"<ul[^>]*>(.*?)</ul>",
+        lambda m: re.sub(r"<li[^>]*>(.*?)</li>", r"\n- \1", m.group(1), flags=re.S),
+        text,
+        flags=re.S,
+    )
+    text = re.sub(r"<li[^>]*>(.*?)</li>", r"\n- \1", text, flags=re.S)
+    # Paragraphs and divs
     text = re.sub(r"<p[^>]*>(.*?)</p>", r"\1\n", text, flags=re.S)
-    text = re.sub(r"<[^>]+>", "", text)            # strip remaining tags
-    blocks = [b.strip() for b in text.splitlines() if b.strip()]
-    return blocks
+    text = re.sub(r"<br\s*/?>", "\n", text)
+    text = re.sub(r"<hr\s*/?>", "\n---\n", text)
+    text = re.sub(r"</?(div|section|article|main|aside)[^>]*>", "\n", text, flags=re.S | re.I)
+    # Strip remaining tags
+    text = re.sub(r"<[^>]+>", "", text)
+    # Decode HTML entities
+    text = html_lib.unescape(text)
+    # Collapse excess blank lines (max 2 in a row)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
-def export_draft(graph_dir: Path, *, draft_id: str, title: str, body_html: str,
-                 topic: str = "", wep_phrase: str | None = None,
-                 source_count: int = 0, tags: list[str] | None = None) -> LogseqPage:
-    """Write/overwrite a Logseq page for the draft. Returns the page handle."""
+def export_draft(
+    graph_dir: Path,
+    *,
+    draft_id: str,
+    title: str,
+    body_html: str,
+    topic: str = "",
+    wep_phrase: str | None = None,
+    source_count: int = 0,
+    tags: list[str] | None = None,
+) -> LogseqPage:
+    """Write/overwrite a Logseq page for the draft.
+
+    Page structure:
+    - Page properties (title, id, type, topic, confidence, date, tags)
+    - One top-level block per research section, with content nested inside
+    - Sources summary block at the bottom
+    """
+    from datetime import date as _date
+
     pages_dir = Path(graph_dir) / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
     page_path = pages_dir / f"{_slugify(title)}.md"
     block_uuid = _block_uuid(draft_id)
 
-    lines = [
+    # ── Page properties block ──────────────────────────────────────────────
+    # All properties use Logseq's key:: value format so they appear in
+    # queries and the property panel.
+    props = [
         f"title:: {title}",
         f"id:: {block_uuid}",
-        "type:: lighthouse-draft",
         f"lighthouse-draft-id:: {draft_id}",
+        f"type:: lighthouse/draft",
+        f"date:: [[{_date.today().isoformat()}]]",
     ]
     if topic:
-        lines.append(f"topic:: {topic}")
+        # [[Topic]] creates a bidirectional link in the graph view.
+        props.append(f"topic:: [[{topic}]]")
     if wep_phrase:
-        lines.append(f"confidence:: {wep_phrase}")
+        props.append(f"confidence:: {wep_phrase}")
     if source_count:
-        lines.append(f"sources:: {source_count}")
-    tag_str = " ".join(f"#{t}" for t in (tags or ["lighthouse"]))
-    lines.append("")
-    lines.append(f"- # {title} {tag_str}")
-    for block in _html_to_blocks(body_html):
-        # nest content blocks under the heading block
-        lines.append(f"  - {block}")
-    page_path.write_text("\n".join(lines) + "\n")
+        props.append(f"source-count:: {source_count}")
+
+    # tags:: uses Logseq's native tag system (shown as chips in the sidebar)
+    tag_list = list(tags) if tags else []
+    tag_list = ["lighthouse", "lighthouse/draft"] + [t for t in tag_list if t not in ("lighthouse",)]
+    props.append(f"tags:: {', '.join(tag_list)}")
+
+    # ── Body ──────────────────────────────────────────────────────────────
+    # Convert HTML to clean Markdown, then split into section blocks.
+    md_body = _html_to_md(body_html)
+
+    # Split on ## headings to create top-level Logseq blocks per section
+    blocks: list[str] = []
+    if md_body:
+        # Split on level-2 headings (research sections)
+        section_parts = re.split(r"(?m)^(## .+)$", md_body)
+        if len(section_parts) <= 1:
+            # No h2 sections — wrap as a single block
+            for line in md_body.splitlines():
+                if line.strip():
+                    blocks.append(f"- {line}")
+        else:
+            # First part is preamble (before first ##)
+            preamble = section_parts[0].strip()
+            if preamble:
+                for line in preamble.splitlines():
+                    if line.strip():
+                        blocks.append(f"- {line}")
+            # Remaining parts are (heading, content) pairs
+            for i in range(1, len(section_parts), 2):
+                heading = section_parts[i].strip()  # e.g. "## Methodology"
+                content = section_parts[i + 1].strip() if i + 1 < len(section_parts) else ""
+                # Top-level block for the section heading
+                section_heading = heading.lstrip("# ").strip()
+                block_lines = [f"- ## {section_heading}"]
+                for line in content.splitlines():
+                    stripped = line.strip()
+                    if stripped:
+                        block_lines.append(f"  - {stripped}")
+                blocks.append("\n".join(block_lines))
+
+    # ── Sources footer block ───────────────────────────────────────────────
+    if source_count:
+        blocks.append(f"- **Sources reviewed:** {source_count} independent sources")
+
+    # ── Assemble ──────────────────────────────────────────────────────────
+    page_content = "\n".join(props) + "\n\n" + "\n".join(blocks) + "\n"
+    page_path.write_text(page_content, encoding="utf-8")
     return LogseqPage(path=page_path, title=title, uuid=block_uuid)
