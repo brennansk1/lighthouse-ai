@@ -29,6 +29,16 @@ from .scheduler_gate import (
     current_policy,
     sample_signals,
 )
+from .tool_policy import (
+    TaskProfile,
+    Tool,
+    ToolCapability,
+    ToolPolicyDecision,
+    ToolPolicyViolation,
+    decide,
+    enforce,
+    visible_tools,
+)
 
 __all__ = [
     "BUDGET_DEFAULTS",
@@ -49,8 +59,16 @@ __all__ = [
     "SchedulerGate",
     "SchedulerGateConfig",
     "Signals",
+    "TaskProfile",
+    "Tool",
+    "ToolCapability",
+    "ToolPolicyDecision",
+    "ToolPolicyViolation",
     "current_policy",
+    "decide",
     "degradation_tier",
+    "enforce",
     "sample_signals",
     "spotlight",
+    "visible_tools",
 ]
