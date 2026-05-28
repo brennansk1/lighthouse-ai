@@ -1,6 +1,6 @@
 # Lighthouse — Production Readiness Checklist
 
-Status snapshot: **87 Python modules · ~12,700 source lines · 631 tests (628 pass, 3 opt-in skips)**.
+Status snapshot: **87 Python modules · ~12,800 source lines · 634 tests (631 pass, 3 opt-in skips)**.
 Legend: ✅ done & tested · 🟡 built but stubbed/needs-real-backend · 🔌 built, needs runtime wiring · ⬜ not started.
 
 A "vertical slice" of the product works **end-to-end, locally, today**: ingest documents → frame the question → retrieve with real `bge-m3` embeddings → synthesize with a real local LLM (Ollama) → enforce citation discipline → record calibration positions → stage a draft → approve it in the dashboard → export to Logseq. Everything below tracks the gap from that slice to full production.
@@ -73,7 +73,7 @@ A "vertical slice" of the product works **end-to-end, locally, today**: ingest d
 
 ## Cross-cutting subsystems (built in parallel sprints)
 
-- 🔌 Governor guards: `loop_detector`, `injection_gate` (heuristic), `egress_proxy` — built & tested, **not yet called from the runtime/gateway** (next up)
+- ✅ Governor guards wired: **loop detector** in the Gateway (raises `LoopTripped` on runaway), **injection gate** screens every ingested chunk (injected content never enters the corpus). 🔌 `egress_proxy` built+tested but not yet on the fetch path.
 - ✅ Notifications (`notify/`): desktop / Discord / email + dispatcher; fired on `draft_ready` from the research command. 🔌 not yet fired on `budget_trip` / `monitor_alert` from the Governor/modes.
 - ✅ Source adapters: RSS, **arXiv**, **OpenAlex** (real public APIs)
 - ✅ Logseq export (filesystem markdown) — `lighthouse export <draft> --logseq <dir>`
@@ -103,3 +103,124 @@ A "vertical slice" of the product works **end-to-end, locally, today**: ingest d
 ## Definition of done (v1.0)
 
 A researcher can `pip install lighthouse-ai`, run `lighthouse init && lighthouse start`, point it at sources, and get **honest, cited, calibrated** research — running entirely on their own hardware — with the dashboard/TUI for control, durable storage with automatic recovery, and every claim traceable through a tamper-evident audit log.
+
+---
+
+# Acceptance criteria & test standards
+
+This section is the bar each feature must clear before we call it production-ready.
+Every row lists the **tests required**, the **standard (pass threshold)**, and the
+current **status**: ✅ met · 🟡 partial / not yet measured · ⬜ not tested.
+Thresholds come from the design doc's per-sprint testing requirements where stated;
+otherwise they are set here.
+
+Test-type legend: **U** unit · **I** integration (real deps, skip-if-absent) ·
+**E** end-to-end · **P** property-based (Hypothesis) · **Chaos** fault-injection ·
+**Perf** latency/throughput · **Sec** adversarial.
+
+## 1. Persistence & durability
+
+| Feature | Tests required | Standard to pass | Status |
+|---|---|---|---|
+| SQLite PRAGMA discipline | U: every `.db` opens with all §26.1 PRAGMAs; readback asserts | 100% of opens pass PRAGMA assertions; WAL on every on-disk db | ✅ |
+| Migrations | U: forward apply, idempotent re-run, CHECK constraints reject bad rows | re-run is a no-op; bad inserts raise | ✅ |
+| Outbox / saga | U+P+Chaos: idempotency by key; kill effector mid-drain | **zero** duplicate or orphaned writes after recovery | ✅ (chaos at 50 intents; ⬜ scale to 1000) |
+| Litestream replication | I: start replicate, write, restore to fresh path, integrity ok | replica lag **<10s** sustained; restore integrity `ok` | 🟡 binary not installed in CI |
+| restic backup | I: init → backup → check → snapshots | `restic check` clean; restore RTO **<1 min** for state.db | 🟡 wired, not yet I-tested with real restic |
+| Disaster recovery | E: kill supervisor mid-write → restore → schema intact | in-flight jobs marked `interrupted`; no corruption | 🟡 sqlite-backup variant ✅; full litestream drill ⬜ |
+| 24h soak | Perf: supervisor runs 24h under load | no OOM, no fd/conn leak, RSS stable | ⬜ |
+
+## 2. Hardware adaptation & model gateway
+
+| Feature | Tests required | Standard | Status |
+|---|---|---|---|
+| Hardware probe | U: tier classification across RAM/VRAM/GPU matrix | correct tier for every floor/ceiling case | ✅ |
+| Budget-aware selection | U: every tier floor fits its model under §5.2 math | no dense model over-commits its tier floor; MoE may page | ✅ |
+| Runtime RAM guard | U: refuse load when `need + margin > available`; I: real low-RAM | never loads a model that would swap; falls back to mock | ✅ U; 🟡 real low-RAM observed manually |
+| Pull preflight | U: refuse pull that breaches disk margin; CLI never starts download | leaves **≥5 GB** free; oversized pull → exit 1, no `/api/pull` call | ✅ |
+| Fingerprint + drift | U: digest capture; drift refuses byte-replay without `--allow-drift` | mismatch flagged; replay refused unless override | ✅ |
+| Real LLM round-trip | I (`LIGHTHOUSE_REAL_BACKEND=1`): one real Ollama completion | non-mock text; tokens > 0; deterministic at temp 0 (± kernel) | 🟡 verified manually, not in CI |
+
+## 3. RAG / retrieval
+
+| Feature | Tests required | Standard | Status |
+|---|---|---|---|
+| Chunker | U: boundary, overlap, code-block preservation, metadata propagation | 100-token overlap present; code blocks intact | ✅ |
+| Hybrid search (dense+BM25+RRF) | I: ingest 10 papers, known queries | **top-5 precision ≥ 80%** (design §14) | ⬜ needs a golden set |
+| Contextual retrieval | I: recall vs no-context baseline | **≥10% recall lift** (Anthropic pattern) | ⬜ |
+| Reranker | I: MRR vs hybrid baseline | **≥5% MRR lift** over hybrid | ⬜ (stub reranker only) |
+| Faithfulness (ragas) | E: 20-pair golden set | **faithfulness ≥ 0.7** | ⬜ |
+| Retrieval latency | Perf: 1000-chunk corpus | ingest <60s on T2; query **p95 <300ms** | ⬜ |
+| Real embeddings (bge-m3) | I: 1024-dim, similar>dissimilar cosine | dim correct; semantic ordering holds | ✅ verified |
+
+## 4. Sandbox & ingestion security
+
+| Feature | Tests required | Standard | Status |
+|---|---|---|---|
+| Scanner verdicts | U: EICAR, zip-bomb, JS-PDF, script-HTML, SVG-script | each correctly reject/quarantine | ✅ |
+| Redteam suite | Sec (weekly CI): all known-hostile artifacts | **100% blocked**, 0 escapes | ✅ mini suite; ⬜ ClamAV/YARA real corpus |
+| Injection gate | U+Sec: known injection prompts; ingest screening | injected chunks **never** enter corpus; FP rate measured | ✅ U + wired at ingest; 🟡 FP rate on real text ⬜ |
+| Quarantine quota/eviction | I: fill to quota, evict, WORM preserved | eviction triggers; WORM-tagged files survive | 🟡 manifest ✅; quota/eviction ⬜ |
+| Real isolation | I: bubblewrap/sandbox-exec download of hostile file | escape attempts contained at OS level | ⬜ (pure-Python scanners only) |
+
+## 5. Honesty: discipline, calibration, audit
+
+| Feature | Tests required | Standard | Status |
+|---|---|---|---|
+| Claim extraction + citation gate | U: coverage, two-source rule, WEP downgrade | coverage floor enforced; unsourced → lower band | ✅ |
+| Calibration loop | U+E: research emits Positions; resolve → Brier | every run records positions; Brier computed on resolve | ✅ |
+| Brier / reliability | I: scored over a resolved golden set | reliability diagram tracks diagonal; calibration error reported | 🟡 plumbing ✅; real track-record ⬜ |
+| HMAC audit chain | U+Sec: append/verify; tamper any row → chain breaks | tamper detected at exact seq; wrong key fails all | ✅ |
+| Provenance / replay | U+E: PROV-O round-trip; `replay` reconstructs trace + drift | trace order exact; drift flagged; refuse byte-replay on drift | ✅ U/E; 🟡 PROV-O sidecar per run ⬜ |
+
+## 6. Governor & cost control
+
+| Feature | Tests required | Standard | Status |
+|---|---|---|---|
+| Token buckets | U+P+Concurrency: hierarchical debit; 10-thread race | sum never negative; math exact under concurrency | ✅ |
+| Degradation tiers | U: thresholds 50/70/85/95/100% | correct tier at each boundary | ✅ |
+| Loop detection | U: per-job/per-node caps, recursion, repeat; gateway raises | trips at cap; `LoopTripped` from gateway on runaway | ✅ U + gateway-wired |
+| Egress proxy | U: allowlist + privacy tiers + log | PRIVATE blocked; non-allowlisted blocked; all conns logged | 🟡 built+U; ⬜ not wired into fetch path |
+| Kill switch | I: `kill` drains then stops; Telegram-confirm | graceful drain, no cross-store corruption | 🟡 API kill ✅; Telegram-confirm ⬜ |
+
+## 7. Surfaces (web + TUI)
+
+| Feature | Tests required | Standard | Status |
+|---|---|---|---|
+| API endpoints | U: every `/api/*` returns expected shape | 200 + schema for all ~25 endpoints | ✅ |
+| SSE event bus | U: publish/subscribe, drop on full queue | events delivered; no unbounded growth | ✅ |
+| Webapp JS integrity | U: each file compiles; combined-scope no redeclaration; symbol contract | Babel clean; no global collision; consumed symbols exported | ✅ |
+| Webapp render | E (Playwright): 7 pages render, no console errors, a11y audit | 0 console errors; axe a11y pass; keyboard reachable | ⬜ **no browser QA yet** |
+| TUI screens | U (Textual pilot): boot, 7-page nav, per-screen data, modals, offline | screens render seeded data; offline degrades, no crash | ✅ (34 tests) |
+| Responsive/theme | E: light/dark toggle, narrow viewport | no layout break; theme persists | ⬜ |
+
+## 8. Research modes (end-to-end)
+
+| Feature | Tests required | Standard | Status |
+|---|---|---|---|
+| QUC | E offline + I real | cited, grounded answer; positions recorded | ✅ offline+real verified |
+| Deep-Dive | E offline + I real | multi-section, sourced, terminates on progress plateau | ✅ offline+real verified |
+| Monitor | I: live RSS → classify → HTML | dedupe works; alerts vs digest split; report written | ✅ |
+| Debate / Digest | U + I | judge summary; scheduled briefing dispatched | 🟡 stubs; depth ⬜ |
+| Specialty sources | I (respx + live): arXiv, OpenAlex, +PubMed/EDGAR | parse correctly; rate-limited; graded | 🟡 arXiv/OpenAlex ✅; others ⬜ |
+
+## 9. Engineering quality gates (whole repo)
+
+| Gate | How | Standard | Status |
+|---|---|---|---|
+| Test suite | `uv run pytest` | **100% pass**, 0 unexpected skips | ✅ 628 pass |
+| Coverage | `pytest --cov` | **≥80%** overall; ≥90% on persistence/governor/verification | 🟡 ~83% measured once; not gated |
+| Lint | `ruff check` | 0 errors | ⬜ not gated |
+| Types | `mypy src` | 0 errors on public modules | ⬜ not gated |
+| CI | GitHub Actions | suite + lint + types green on every push (macOS + Linux) | ⬜ no CI yet |
+| Cross-platform | run suite on Linux | green; systemd unit + /var paths work | ⬜ |
+| Security review | manual + Sec tests | egress/injection/sandbox boundary reviewed; no high findings | ⬜ |
+| Packaging | build + install | `pip install` works; entry points run; launchd/systemd install verified | 🟡 builds; install not verified |
+
+## Top of the queue (highest-leverage gaps)
+
+1. **Golden-set retrieval eval** (precision / MRR / faithfulness numbers) — the core quality claim is currently unmeasured.
+2. **Browser render QA + Playwright** for the 7 webapp pages — only static checks done.
+3. **CI** (Actions: pytest + ruff + mypy, macOS + Linux) — gates everything else.
+4. **Wire egress proxy into the fetch path**; Telegram-confirmed kill switch.
+5. **Real reranker + real isolation (bubblewrap / ClamAV)** to satisfy the §3 / §4 standards.

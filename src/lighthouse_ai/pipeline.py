@@ -149,14 +149,31 @@ class ResearchPipeline:
             "gateway": "mock" if self.config.offline else "ollama",
         }
         self._chunks_ingested = 0
+        self._blocked_chunks = 0
+        from .governor import InjectionGate
+        self._injection_gate = InjectionGate()
 
     # --- ingestion ---
     def ingest_text(self, doc_id: str, text: str, *, metadata: dict | None = None) -> int:
+        """Chunk + index text, screening each chunk for prompt-injection (§24.8).
+
+        Chunks the injection gate flags are NOT added to the retrievable corpus
+        — injected instructions must never reach the LLM's context silently.
+        Blocked chunks are counted (surfaced in the result) so the user can see
+        a source was partially withheld.
+        """
         doc = Document(id=doc_id, text=text, metadata=metadata or {})
         chunks = chunk_document(doc)
-        self.hybrid.add(chunks)
-        self._chunks_ingested += len(chunks)
-        return len(chunks)
+        safe = []
+        for c in chunks:
+            verdict = self._injection_gate.score(c.text)
+            if verdict.blocked:
+                self._blocked_chunks += 1
+                continue
+            safe.append(c)
+        self.hybrid.add(safe)
+        self._chunks_ingested += len(safe)
+        return len(safe)
 
     def ingest_path(self, path: Path) -> int:
         text = Path(path).read_text(errors="replace")

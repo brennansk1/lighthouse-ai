@@ -73,6 +73,10 @@ class DriftDetected(RuntimeError):
     pass
 
 
+class LoopTripped(RuntimeError):
+    """Raised when the Governor loop detector trips a per-job/per-node cap (§24.6)."""
+
+
 # --- catalog loading ---
 
 def load_catalog() -> dict[str, Any]:
@@ -585,6 +589,8 @@ class Gateway:
         self._mock = MockProvider(governor, usd_per_1k_tokens=0.0)
         self._ollama = ollama
         self._prefer_real = prefer_real_backends
+        from .governor import LoopDetector
+        self._loop_detector = LoopDetector()
 
     # --- backend access (lazy) ---
     def _get_ollama(self):
@@ -617,6 +623,13 @@ class Gateway:
     def complete(self, role: str, prompt: str, *, job_id: str | None = None,
                  allow_drift: bool = True) -> CompletionResponse:
         b = self.binding(role)
+        # Loop guard (§24.6): count calls per job/role; a runaway loop trips
+        # the per-job (default 1500) or per-node (25) cap and raises before we
+        # burn budget on an obviously stuck job.
+        if job_id is not None:
+            decision = self._loop_detector.record_call(job_id, node=role)
+            if not decision.allowed:
+                raise LoopTripped(decision.reason)
         fp = fingerprint(b.model, b.backend)
         # Drift check: only if chosen_models.yaml has a record for this model.
         if self._chosen is not None:
