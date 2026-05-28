@@ -102,9 +102,19 @@ def stale_position_escalations(positions_db: Path) -> list[Escalation]:
     from ..verification.positions import _ensure_extras
     from ..verification.resolver import is_past_deadline
 
+    # On a fresh install the DB file may not exist yet; nothing to escalate.
+    if not positions_db.exists():
+        return []
+
     _ensure_extras(positions_db)
     conn = open_db(positions_db)
     try:
+        # Guard against a DB that exists but has no positions table yet.
+        has_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='positions'"
+        ).fetchone()
+        if not has_table:
+            return []
         rows = conn.execute(
             "SELECT id, claim, resolve_by FROM positions WHERE outcome IS NULL"
         ).fetchall()

@@ -527,12 +527,16 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
 
         def _spawn(seed: str) -> str:
             job_id = uuid.uuid4().hex[:8]
+            meta = json.dumps({"topic": seed[:200], "progress": 0.0, "eta": "queued"})
             conn = _open_db(paths.state_db)
             try:
                 conn.execute(
-                    "INSERT INTO jobs (id, topic, mode, status) VALUES (?, ?, ?, ?)",
-                    (job_id, seed[:200], "deepdive", "queued"),
+                    "INSERT INTO jobs (id, mode, status, metadata_json) VALUES (?, ?, ?, ?)",
+                    (job_id, "deepdive", "queued", meta),
                 )
+            except Exception as exc:
+                raise HTTPException(status_code=500,
+                                    detail=f"failed to create job: {exc}") from exc
             finally:
                 conn.close()
             bus.publish("jobs.created", {"id": job_id})

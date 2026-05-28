@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from ..framing import FramedQuestion, run_framing
 from ..gateway import Gateway
 from ..governor.scheduler_gate import SchedulerGate
+from ..rag.compaction import compact as compact_evidence
 from ..rag.hybrid import HybridResult, HybridSearch
 
 
@@ -105,6 +106,12 @@ def _research_section(
     else:
         evidence_lines = "\n".join(f"[{i+1}] {e.chunk.text[:300]}"
                                    for i, e in enumerate(evidence))
+        # §5 wiring: deterministic, LLM-free compaction of evidence payload
+        # before it enters the researcher prompt.  Only applied when the
+        # evidence is non-trivial (>200 chars or more than 3 chunks) to avoid
+        # overhead on tiny prompts.
+        if len(evidence_lines) > 200 or len(evidence) > 3:
+            evidence_lines, _compact_stats = compact_evidence(evidence_lines)
         if working_context is not None:
             open_qs = ", ".join(working_context.open_questions[:5])
             facts = "; ".join(
