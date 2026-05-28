@@ -1,6 +1,6 @@
 # Lighthouse — Production Readiness Checklist
 
-Status snapshot: **86 Python modules · ~12,400 source lines · 625 tests (622 pass, 3 opt-in skips)**.
+Status snapshot: **87 Python modules · ~12,700 source lines · 631 tests (628 pass, 3 opt-in skips)**.
 Legend: ✅ done & tested · 🟡 built but stubbed/needs-real-backend · 🔌 built, needs runtime wiring · ⬜ not started.
 
 A "vertical slice" of the product works **end-to-end, locally, today**: ingest documents → frame the question → retrieve with real `bge-m3` embeddings → synthesize with a real local LLM (Ollama) → enforce citation discipline → record calibration positions → stage a draft → approve it in the dashboard → export to Logseq. Everything below tracks the gap from that slice to full production.
@@ -17,7 +17,7 @@ A "vertical slice" of the product works **end-to-end, locally, today**: ingest d
 - ✅ Outbox + Saga compensation + Effector (idempotent, retry/backoff, dead-letter)
 - ✅ Governor: hierarchical token buckets, degradation tiers, trip/reset, cost report
 - 🟡 Litestream replication — config + lag reporting + `LitestreamRunner` built; **binary not installed**, replication not started
-- 🔌 restic backup (`backup.py`) + integrity job (`recovery.py`) — built & tested, **not wired into supervisor/cron**
+- ✅ restic backup + integrity job — wired: `lighthouse backup`, `lighthouse integrity` (§26.3/§26.5). 🟡 not yet on a cron/supervisor schedule.
 - ⬜ 24-hour soak test; cross-platform (Linux systemd) validation
 
 ## Stage 1 — Hardware adaptation, models, RAG, sandbox
@@ -33,7 +33,7 @@ A "vertical slice" of the product works **end-to-end, locally, today**: ingest d
 - 🟡 Reranker: `ScoreReranker` stub — real **Qwen3-Reranker-0.6b (FlagEmbedding)** not wired
 - ✅ Sandbox broker + quarantine + scanners (EICAR, PDF-JS, HTML-script, zip-bomb) + redteam
 - 🟡 Real sandbox: pure-Python scanners only — **bubblewrap/sandbox-exec isolation, ClamAV, YARA, qpdf, oletools** not wired
-- 🟡 Document ingestion (`ingest.py`): sandbox-first HTML/PDF/text extraction — **trafilatura/pypdf optional, not installed** (regex fallback active)
+- ✅ Document ingestion (`ingest.py`) wired into `research --url` (fetch → sandbox → extract → corpus). 🟡 trafilatura/pypdf optional (regex/text fallback active until installed).
 
 ## Stage 2 — Question framing + adaptive RAG
 
@@ -55,7 +55,7 @@ A "vertical slice" of the product works **end-to-end, locally, today**: ingest d
 - ✅ HMAC-chained audit log (append, seal, verify)
 - ✅ **Quality discipline gate** (§12): claim extraction, citation coverage, two-source rule, WEP downgrade
 - ✅ **Calibration loop closed** — research emits Positions; `lighthouse positions-due`
-- 🔌 Reproducibility: `replay.py` (job replay + drift verify) + `provenance.py` (PROV-O) — built, **`lighthouse replay` CLI not wired**
+- ✅ Reproducibility: `lighthouse replay <job_id>` wired (reconstructs the model-call trace + drift verify against installed digests, §27.8); `provenance.py` PROV-O emitter built. 🔌 PROV-O sidecar not yet emitted per research run.
 - ⬜ Re-verification scheduler; track-record-based prior adjustment; A-MEM auto-linking / dossiers
 
 ## Stage 5 — Web dashboard (production)
@@ -73,8 +73,8 @@ A "vertical slice" of the product works **end-to-end, locally, today**: ingest d
 
 ## Cross-cutting subsystems (built in parallel sprints)
 
-- 🔌 Governor guards: `loop_detector`, `injection_gate` (heuristic), `egress_proxy` — built & tested, **not called from the runtime/gateway yet**
-- 🔌 Notifications (`notify/`): desktop / Discord / email channels + dispatcher — built & tested, **not fired on events yet**
+- 🔌 Governor guards: `loop_detector`, `injection_gate` (heuristic), `egress_proxy` — built & tested, **not yet called from the runtime/gateway** (next up)
+- ✅ Notifications (`notify/`): desktop / Discord / email + dispatcher; fired on `draft_ready` from the research command. 🔌 not yet fired on `budget_trip` / `monitor_alert` from the Governor/modes.
 - ✅ Source adapters: RSS, **arXiv**, **OpenAlex** (real public APIs)
 - ✅ Logseq export (filesystem markdown) — `lighthouse export <draft> --logseq <dir>`
 - ⬜ Integrations: Zotero, Telegram bot, Obsidian/Notion, menu-bar app
@@ -88,7 +88,9 @@ A "vertical slice" of the product works **end-to-end, locally, today**: ingest d
 
 - [ ] **Browser render QA** of all 7 webapp pages (manual + ideally Playwright)
 - [ ] **Real-backend integration suite** run green with `LIGHTHOUSE_REAL_BACKEND=1` (Ollama + Qdrant up)
-- [ ] **Wire the 🔌 modules** (governor guards, notifications, replay, restic/integrity, ingestion) into runtime + CLI, with tests
+- [x] ~~Wire replay, restic/integrity, ingestion, notifications into the CLI~~ (done — `replay`/`backup`/`integrity`/`research --url`/draft_ready notify)
+- [ ] **Wire the Governor guards** (loop detection, injection gate, egress proxy) into the gateway + research loop, with tests
+- [ ] Fire notifications on `budget_trip` / `monitor_alert`; emit PROV-O sidecar per run; schedule backup+integrity on a cadence
 - [ ] **Coverage target** (design: ≥80% on persistence/supervisor — currently met there; raise overall)
 - [ ] **Lint + type-check clean**: `ruff check` and `mypy` with no errors
 - [ ] **Cross-platform**: Linux (systemd unit, bubblewrap, /var paths) validated

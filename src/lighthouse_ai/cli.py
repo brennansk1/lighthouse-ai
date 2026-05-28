@@ -48,6 +48,30 @@ def _paths_from_env() -> Paths:
     return paths_from_env()
 
 
+def _notify_event(event: str, title: str, body: str) -> None:
+    """Fire a notification through the configured channels. Best-effort —
+    never raises, so a missing/misconfigured channel can't break a command."""
+    try:
+        paths = _paths_from_env()
+        cfg = {}
+        if paths.config_file.exists():
+            try:
+                import tomllib
+            except ImportError:  # pragma: no cover
+                import tomli as tomllib  # type: ignore
+            with paths.config_file.open("rb") as fh:
+                cfg = tomllib.load(fh).get("notifications", {})
+        if not cfg:
+            return
+        from .notify import DesktopChannel, DiscordChannel, Notifier
+        channels = [("desktop", DesktopChannel())]
+        if cfg.get("discord_webhook_url"):
+            channels.append(("discord", DiscordChannel(cfg["discord_webhook_url"])))
+        Notifier(cfg, channels).notify(event, title, body)
+    except Exception:  # noqa: BLE001 - notifications must never break a command
+        pass
+
+
 # ---------------------------------------------------------------- init --
 
 @app.command()
@@ -443,6 +467,7 @@ def research(
                                    help="File(s) to ingest into the corpus first."),
     arxiv: str = typer.Option(None, "--arxiv", help="arXiv query to ingest abstracts."),
     openalex: str = typer.Option(None, "--openalex", help="OpenAlex query to ingest."),
+    url: list[str] = typer.Option(None, "--url", help="URL(s) to fetch + sandbox-ingest."),
     sources: int = typer.Option(5, help="Max papers per source query."),
     mode: str = typer.Option("deep-dive", help="deep-dive | quc"),
     rounds: int = typer.Option(2, help="Deep-dive refinement rounds."),
@@ -495,6 +520,21 @@ def research(
             console.print(f"  OpenAlex '{openalex}': ingested {len(docs)} work(s)")
         except Exception as exc:  # noqa: BLE001
             err_console.print(f"[yellow]OpenAlex fetch failed:[/yellow] {exc}")
+    if url:
+        from .ingest import fetch_and_ingest
+        from .sandbox.broker import build_default_broker
+        broker = build_default_broker(paths.data_dir)
+        for u in url:
+            try:
+                doc_obj = fetch_and_ingest(u, broker)
+                if doc_obj is None:
+                    err_console.print(f"[yellow]rejected/empty (sandbox):[/yellow] {u}")
+                    continue
+                ingested += pipe.ingest_text(doc_obj.id, doc_obj.text,
+                                             metadata=doc_obj.metadata)
+                console.print(f"  fetched + sandbox-admitted: {u}")
+            except Exception as exc:  # noqa: BLE001
+                err_console.print(f"[yellow]fetch failed:[/yellow] {u}: {exc}")
     if ingested:
         console.print(f"  corpus: {ingested} chunk(s)")
 
@@ -513,6 +553,8 @@ def research(
         console.print(f"  discipline: {verdict} — {d.get('sourced', 0)}/{d.get('claims', 0)} "
                       f"claims sourced ({d.get('coverage', 0):.0%} coverage); "
                       f"{d.get('claims', 0)} claim(s) recorded as calibration positions")
+    _notify_event("draft_ready", "Draft staged",
+                  f"{question[:60]} → {result.draft_id}")
     console.print("  review it: dashboard → Drafts, or `lighthouse status`")
 
 
@@ -1011,6 +1053,87 @@ def tui(port: int = DEFAULT_PORT) -> None:
     from .tui.app import LighthouseTUI
     from .tui.client import LighthouseClient
     LighthouseTUI(client=LighthouseClient(f"http://127.0.0.1:{port}")).run()
+
+
+# --------------------------------------------------- replay --
+
+@app.command()
+def replay(job_id: str = typer.Argument(..., help="Job id to replay/inspect."),
+           allow_drift: bool = typer.Option(False, "--allow-drift",
+                                             help="Don't fail on model drift.")) -> None:
+    """Reconstruct a job's model-call trace from the audit log and report
+    whether it can be replayed byte-exact against the installed models (§27.8)."""
+    paths = _paths_from_env()
+    from .replay import ReplayDriftError, replay_job, verify_replayable
+    trace = replay_job(paths.audit_db, job_id)
+    if not trace.steps:
+        console.print(f"[yellow]no model calls recorded for job {job_id}[/yellow]")
+        raise typer.Exit(0)
+    console.print(f"[bold]{len(trace.steps)} step(s)[/bold] for job {job_id}:")
+    for i, s in enumerate(trace.steps, 1):
+        console.print(f"  {i}. {s.model}  ({s.prompt_tokens}+{s.completion_tokens} tok)")
+    # Build installed digests from Ollama (best-effort; empty if daemon down).
+    installed: dict[str, str] = {}
+    try:
+        from .gateway import fingerprint
+        for m in trace.models():
+            installed[m] = fingerprint(m, "ollama").registry_digest_sha256
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        report = verify_replayable(paths.audit_db, job_id,
+                                   installed_digests=installed, allow_drift=allow_drift)
+    except ReplayDriftError as exc:
+        err_console.print(f"[red]drift detected — not byte-exact replayable:[/red] {exc}")
+        raise typer.Exit(1) from None
+    console.print(f"[green]replayable: {report.fully_replayable}[/green] "
+                  f"({len(report.replayable_steps)} byte-exact, "
+                  f"{len(report.drifted_steps)} drifted)")
+
+
+# --------------------------------------------------- backup / integrity --
+
+@app.command()
+def backup(repo: str = typer.Option(None, help="restic repo path (default: data_dir/backups/restic)"),
+           init: bool = typer.Option(False, "--init", help="Initialize the repo first."),
+           passphrase: str = typer.Option(None, help="restic passphrase (else from keychain).")) -> None:
+    """Back up the data dir with restic (§26.3)."""
+    from .backup import ResticBackup, ResticUnavailable, restic_installed
+    if not restic_installed():
+        err_console.print("[red]restic not installed.[/red] brew install restic")
+        raise typer.Exit(1)
+    paths = _paths_from_env()
+    repo = repo or str(paths.data_dir / "backups" / "restic")
+    if passphrase is None:
+        from .secrets import SecretStore
+        passphrase = SecretStore(paths.data_dir).get_or_create("restic.passphrase")
+    rb = ResticBackup(passphrase=passphrase)
+    try:
+        if init:
+            rb.init(repo); console.print(f"[green]initialized restic repo[/green] {repo}")
+        rb.backup([paths.state_db, paths.audit_db, paths.positions_db,
+                   paths.hypotheses_db, paths.intents_db], repo=repo)
+    except ResticUnavailable as exc:
+        err_console.print(f"[red]backup failed:[/red] {exc}")
+        raise typer.Exit(1) from None
+    console.print(f"[green]backed up to {repo}[/green]")
+
+
+@app.command()
+def integrity() -> None:
+    """Run the periodic integrity check (§26.5): DB PRAGMA checks + replica lag."""
+    paths = _paths_from_env()
+    from .recovery import integrity_report
+    rep = integrity_report(paths)
+    for d in rep.databases:
+        mark = "[green]OK[/green]" if d.ok else "[red]BAD[/red]"
+        console.print(f"  {d.kind}.db: {mark} ({d.result})")
+    for r in rep.replicas:
+        console.print(f"  replica {r.name}: {'fresh' if r.ok else 'STALE'}")
+    if not rep.overall_ok:
+        err_console.print("[red]integrity check found problems.[/red]")
+        raise typer.Exit(1)
+    console.print("[green]integrity ok.[/green]")
 
 
 if __name__ == "__main__":  # pragma: no cover
