@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+from .archivist import (
+    ArchiveOutcome,
+    archive_conversation,
+    archive_report,
+    clean_turns,
+    compose_md,
+    report_to_markdown,
+)
 from .hotness import (
     TOPIC_CREATION_THRESHOLD,
     EntityStats,
@@ -14,10 +22,16 @@ from .hotness import (
 
 __all__ = [
     "TOPIC_CREATION_THRESHOLD",
+    "ArchiveOutcome",
     "EntityStats",
     "HotnessBreakdown",
+    "archive_conversation",
+    "archive_report",
+    "clean_turns",
+    "compose_md",
     "hotness",
     "hotness_at",
     "hotness_breakdown",
     "recency_decay",
+    "report_to_markdown",
 ]
