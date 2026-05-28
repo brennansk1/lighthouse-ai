@@ -27,10 +27,13 @@ def test_ensure_creates_all_subdirs(tmp_path: Path):
         assert d.is_dir(), d
 
 
-def test_all_dbs_returns_five_paths(tmp_path: Path):
+def test_all_dbs_returns_expected_paths(tmp_path: Path):
     p = make_paths(tmp_path)
-    assert len(p.all_dbs()) == 5
-    assert p.state_db in p.all_dbs()
+    dbs = p.all_dbs()
+    assert p.state_db in dbs
+    assert p.reflections_db in dbs
+    assert p.entity_hotness_db in dbs
+    assert len(dbs) == 7
 
 
 def test_paths_from_env_honors_env(tmp_path, monkeypatch):
