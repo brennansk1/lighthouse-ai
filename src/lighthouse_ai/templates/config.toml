@@ -13,6 +13,17 @@ total_ram_gb = {total_ram_gb}
 max_concurrent_jobs = 3
 checkpoint_every_node = true
 
+# Host-courtesy throttle for background LLM work (OpenHuman §1). The Governor
+# meters budget + RAM; this adds host pressure — is now a polite time to run?
+[governor.scheduler_gate]
+mode = "auto"                 # auto | aggressive | off
+battery_floor_pct = 80        # below this on battery → Throttled
+cpu_idle_ceiling_pct = 70     # above this → Throttled
+sample_interval_s = 30
+throttled_backoff_ms = 2000   # sleep before each permit when throttled
+paused_poll_ms = 5000         # re-poll cadence when paused
+max_concurrent_llm = 1        # global slot count (raise on T3+)
+
 [depth]
 default_preset = "standard"
 

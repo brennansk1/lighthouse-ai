@@ -20,6 +20,15 @@ from .buckets import (
 from .egress_proxy import EgressDecision, EgressProxy, PrivacyTier
 from .injection_gate import InjectionGate, InjectionVerdict, spotlight
 from .loop_detector import LoopConfig, LoopDecision, LoopDetector
+from .scheduler_gate import (
+    PauseReason,
+    Policy,
+    SchedulerGate,
+    SchedulerGateConfig,
+    Signals,
+    current_policy,
+    sample_signals,
+)
 
 __all__ = [
     "BUDGET_DEFAULTS",
@@ -34,7 +43,14 @@ __all__ = [
     "LoopConfig",
     "LoopDecision",
     "LoopDetector",
+    "PauseReason",
+    "Policy",
     "PrivacyTier",
+    "SchedulerGate",
+    "SchedulerGateConfig",
+    "Signals",
+    "current_policy",
     "degradation_tier",
+    "sample_signals",
     "spotlight",
 ]

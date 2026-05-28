@@ -16,9 +16,13 @@ import hashlib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from ..gateway import Gateway
 from ..rag.embedder import cosine
+
+if TYPE_CHECKING:
+    from ..compounding.hotness import EntityStats
 
 
 @dataclass(frozen=True)
@@ -75,6 +79,45 @@ def default_salience(item: MonitorItem) -> tuple[float, str]:
     if any(k in text for k in ("rumor", "speculation", "alleged")):
         return max(score - 0.3, 0.0), "noise"
     return score, "informational"
+
+
+def make_hotness_salience(
+    tracked: dict[str, EntityStats],
+    *,
+    extract_entities: Callable[[MonitorItem], list[str]] | None = None,
+    now_ms: int | None = None,
+) -> SalienceFn:
+    """Hotness-backed salience (OpenHuman §2): score an item by the hotness of
+    the tracked entities it mentions.
+
+    ``tracked`` maps entity-id → :class:`EntityStats`. An item's salience is the
+    max entity hotness it mentions, squashed to 0..1 against
+    ``TOPIC_CREATION_THRESHOLD``. Unlike the length+keyword heuristic, every
+    score decomposes into the five named hotness terms (surface in the
+    "why salient" tooltip). ``distinct_sources`` in the stats MUST be the
+    independent-source count, never raw citation count.
+    """
+    from ..compounding.hotness import TOPIC_CREATION_THRESHOLD, hotness_at
+
+    now = now_ms if now_ms is not None else int(datetime.now(UTC).timestamp() * 1000)
+
+    def _default_extract(it: MonitorItem) -> list[str]:
+        text = (it.title + " " + it.body).lower()
+        return [eid for eid in tracked if eid.lower() in text]
+
+    extract = extract_entities or _default_extract
+
+    def _score(item: MonitorItem) -> tuple[float, str]:
+        mentioned = extract(item)
+        if not mentioned:
+            return 0.0, "noise"
+        best = max(hotness_at(tracked[e], now) for e in mentioned if e in tracked)
+        salience = min(best / TOPIC_CREATION_THRESHOLD, 1.0)
+        if best >= TOPIC_CREATION_THRESHOLD:
+            return salience, "alert"
+        return salience, "informational"
+
+    return _score
 
 
 @dataclass

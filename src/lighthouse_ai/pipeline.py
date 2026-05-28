@@ -186,6 +186,15 @@ class ResearchPipeline:
         self._blocked_chunks = 0
         from .governor import InjectionGate
         self._injection_gate = InjectionGate()
+        # Host-courtesy gate on real LLM calls only — offline uses a free mock,
+        # so throttling it is pointless (and would slow tests). The gate samples
+        # power/CPU and serialises/sleeps when the host is busy or on battery.
+        from .governor.scheduler_gate import SchedulerGate, SchedulerGateConfig
+        self.scheduler_gate = (
+            None
+            if self.config.offline
+            else SchedulerGate(SchedulerGateConfig.from_config_file(self.paths.config_file))
+        )
 
     # --- ingestion ---
     def ingest_text(self, doc_id: str, text: str, *, metadata: dict | None = None) -> int:
@@ -287,7 +296,7 @@ class ResearchPipeline:
             report = run_deepdive(question, hybrid=self.hybrid, gateway=self.gateway,
                                   max_rounds=self.config.max_rounds,
                                   top_k=dd_top_k, rerank_candidates=dd_candidates,
-                                  job_id=job_id)
+                                  job_id=job_id, gate=self.scheduler_gate)
             synthesis = "\n\n".join(s.body for s in report.sections)
             body_html = _report_to_html(report)
             source_count = len({c for s in report.sections for c in s.citations})

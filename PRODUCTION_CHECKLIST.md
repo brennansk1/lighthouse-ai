@@ -85,6 +85,8 @@ A "vertical slice" of the product works **end-to-end, locally, today**: ingest d
 ## Cross-cutting subsystems (built in parallel sprints)
 
 - ✅ Governor guards wired: **loop detector** in the Gateway (raises `LoopTripped` on runaway), **injection gate** screens every ingested chunk (injected content never enters the corpus). 🔌 `egress_proxy` built+tested but not yet on the fetch path.
+- ✅ **Scheduler Gate** (`governor/scheduler_gate.py`, OpenHuman §1): host-courtesy throttle (power/CPU/server → Aggressive/Normal/Throttled/Paused); cooperative `permit()` wraps Deep-Dive LLM calls; `lighthouse doctor` reports policy. See `OPENHUMAN_INTEGRATION.md`.
+- ✅ **Hotness Score** (`compounding/hotness.py`, OpenHuman §2): deterministic LLM-free entity-importance with named-term breakdown; available as a Monitor salience scorer. 🟡 persistence table + dossier materialisation deferred.
 - ✅ Notifications (`notify/`): desktop / Discord / email + dispatcher; fired on `draft_ready` from the research command. 🔌 not yet fired on `budget_trip` / `monitor_alert` from the Governor/modes.
 - ✅ Source adapters: RSS, **arXiv**, **OpenAlex**, **PubMed**, **Crossref** (all return `Document` objects)
 - ✅ Logseq export (filesystem markdown) — `lighthouse export <draft> --logseq <dir>`

@@ -264,6 +264,21 @@ def doctor() -> None:
     console.print(f"  backends: {', '.join(profile.available_backends)}")
     console.print(f"  suggested tier: [bold]{profile.suggested_tier}[/bold]")
 
+    # Section: scheduler gate (host-courtesy throttle)
+    from .governor.scheduler_gate import (
+        SchedulerGateConfig,
+        current_policy,
+        sample_signals,
+    )
+    gate_cfg = SchedulerGateConfig.from_config_file(paths.config_file)
+    sig = sample_signals(gate_cfg)
+    policy, reason = current_policy(gate_cfg, sig)
+    batt = "n/a" if sig.battery_charge is None else f"{sig.battery_charge * 100:.0f}%"
+    console.print(f"  scheduler gate: [bold]{policy.value}[/bold]"
+                  + (f" ({reason.value})" if reason else "")
+                  + f" — ac={sig.on_ac_power} batt={batt} "
+                  f"cpu={sig.cpu_usage_pct:.0f}% mode={gate_cfg.mode}")
+
     # Section: package versions
     console.rule("[bold]packages[/bold]")
     console.print(f"  lighthouse-ai: {__version__}")

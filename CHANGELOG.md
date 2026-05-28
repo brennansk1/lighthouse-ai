@@ -14,6 +14,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   rankings are a pure function of inputs. Regression tests added.
 
 ### Added
+- **Scheduler Gate** (`governor/scheduler_gate.py`, OpenHuman §1, P0): host-courtesy
+  throttle — the third axis alongside the Governor's budget + RAM guard. Resolves
+  power/CPU/server signals to a policy (Aggressive/Normal/Throttled/Paused) and gates
+  every LLM call through a cooperative `permit()` (sync translation of OpenHuman's async
+  gate; `threading.Semaphore` global slot). Wired into Deep-Dive's researcher/synthesizer
+  calls and the pipeline (real runs only); `[governor.scheduler_gate]` config block;
+  env overrides (`LIGHTHOUSE_ON_AC_POWER`/`_BATTERY_CHARGE`/`_CPU_USAGE`/`_SERVER_MODE`,
+  garbage→real-probe); `lighthouse doctor` reports current policy + reason.
+- **Hotness Score** (`compounding/hotness.py`, OpenHuman §2, P0): deterministic, LLM-free
+  entity-importance formula (`ln(mentions+1) + 0.5·distinct_sources + recency_decay +
+  graph_centrality + 2·query_hits`), `TOPIC_CREATION_THRESHOLD = 10.0`, piecewise recency
+  decay, and a `HotnessBreakdown` that decomposes every score into five named terms for the
+  "why salient" tooltip. `distinct_sources` uses *independent*-source semantics (matches the
+  discipline layer). Available as a Monitor salience scorer via `make_hotness_salience`.
 - **`lighthouse eval` CLI**: runs the golden-set retrieval eval and reports
   precision@k / recall@k / MRR. Uses real backends (bge-m3 via Ollama, FlagReranker)
   when available, falling back to test-tier stubs otherwise; `--offline`, `--json`,
