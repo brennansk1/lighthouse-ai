@@ -14,7 +14,6 @@ from lighthouse_ai.backends.ollama import (
     _sampling_to_options,
 )
 
-
 # ============================== unit (mocked HTTP) ==============================
 
 HOST = "http://test-ollama"
@@ -203,6 +202,7 @@ def _ollama_reachable() -> bool:
 # model into RAM and can OOM a daily-driver laptop. Set
 # LIGHTHOUSE_REAL_BACKEND=1 to enable.
 import os as _os
+
 _REAL_BACKEND_OK = (_os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1"
                     and _ollama_reachable())
 _REAL_BACKEND_SKIP_REASON = (

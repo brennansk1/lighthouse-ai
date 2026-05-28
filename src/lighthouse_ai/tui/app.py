@@ -21,8 +21,14 @@ from textual.widgets import ContentSwitcher, Footer
 
 from .client import Client, LighthouseClient
 from .screens import (
-    DraftsPage, HealthPage, HelpModal, HomePage, JobsPage, PositionsPage,
-    SettingsPage, TopicsPage,
+    DraftsPage,
+    HealthPage,
+    HelpModal,
+    HomePage,
+    JobsPage,
+    PositionsPage,
+    SettingsPage,
+    TopicsPage,
 )
 from .widgets import Sidebar, StatusBar
 
@@ -162,7 +168,7 @@ class LighthouseTUI(App):
         try:
             health = self.client.get("/api/health")
             jobs = self.client.get("/api/jobs").get("jobs", [])
-        except Exception:  # noqa: BLE001 - offline
+        except Exception:
             bar.set_offline()
             return
         bar.set_health(health, jobs)
@@ -174,7 +180,7 @@ class LighthouseTUI(App):
         try:
             overdue = self.client.get("/api/positions", overdue="true")
             sidebar.set_counter("positions", len(overdue.get("positions", [])))
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
 

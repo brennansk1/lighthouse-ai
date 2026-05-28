@@ -13,10 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from lighthouse_ai import backup, litestream_runner, recovery
+from lighthouse_ai import backup, litestream_runner
 from lighthouse_ai.backup import ResticBackup, ResticUnavailable
 from lighthouse_ai.litestream_runner import LitestreamNotInstalled, LitestreamRunner
-from lighthouse_ai.paths import make_paths
 from lighthouse_ai.persistence import open_db
 from lighthouse_ai.recovery import (
     MAX_REPLICA_LAG_SECONDS,
@@ -24,7 +23,6 @@ from lighthouse_ai.recovery import (
     integrity_report,
     litestream_replicate_command,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fakes

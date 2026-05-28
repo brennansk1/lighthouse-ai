@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Callable, Protocol, Sequence
+from typing import Protocol
 
 from .paths import Paths
 from .recovery import litestream_replicate_command

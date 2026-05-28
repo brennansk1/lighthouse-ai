@@ -8,7 +8,7 @@ PROV-O JSON-LD round trip through provenance.jsonl. No model is ever loaded.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -29,7 +29,6 @@ from lighthouse_ai.replay import (
     verify_replayable,
 )
 from lighthouse_ai.schema import migrate_path
-
 
 # --- fixtures / helpers ---------------------------------------------------
 
@@ -295,8 +294,8 @@ def test_prov_activity_shape() -> None:
         used=["sha256:abc", "arxiv_search"],
         generated="c12",
         attributed_to="8f4",
-        started_at=datetime(2026, 5, 27, 14, 33, 12, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 5, 27, 14, 33, 18, tzinfo=timezone.utc),
+        started_at=datetime(2026, 5, 27, 14, 33, 12, tzinfo=UTC),
+        ended_at=datetime(2026, 5, 27, 14, 33, 18, tzinfo=UTC),
     )
     assert rec["@context"] == PROV_CONTEXT
     assert rec["@type"] == "prov:Activity"

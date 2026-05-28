@@ -121,7 +121,7 @@ def _html_to_text(payload: bytes) -> str:
     try:
         import trafilatura  # type: ignore
     except ImportError:
-        trafilatura = None  # noqa: N816
+        trafilatura = None
 
     if trafilatura is not None:
         extracted = trafilatura.extract(raw)  # type: ignore[union-attr]
@@ -156,7 +156,7 @@ def _pdf_to_text(payload: bytes) -> tuple[str, bool]:
         return "\n\n".join(parts), True
     except ImportError:
         pass
-    except Exception:  # noqa: BLE001 - corrupt PDF; try the next backend.
+    except Exception:
         pass
 
     try:
@@ -165,7 +165,7 @@ def _pdf_to_text(payload: bytes) -> tuple[str, bool]:
         return _pdfminer_extract(io.BytesIO(payload)), True
     except ImportError:
         return "", False
-    except Exception:  # noqa: BLE001 - corrupt PDF.
+    except Exception:
         return "", False
 
 
@@ -263,7 +263,7 @@ def ingest_file(path: str | Path, broker: SandboxBroker) -> Document | None:
 
 
 def fetch_and_ingest(url: str, broker: SandboxBroker,
-                     client: "httpx.Client | None" = None) -> Document | None:
+                     client: httpx.Client | None = None) -> Document | None:
     """Fetch a URL over HTTP and ingest the response body.
 
     ``client`` is injectable so tests can mock transport (via ``respx``) without

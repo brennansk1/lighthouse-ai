@@ -15,8 +15,6 @@ Process lifecycle is delegated to launchd/systemd. The CLI just wraps
 
 from __future__ import annotations
 
-import getpass
-import json
 import os
 import shutil
 import subprocess
@@ -30,7 +28,7 @@ from rich.table import Table
 
 from . import __version__
 from . import litestream as ls
-from .hardware import load_profile, probe, write_profile
+from .hardware import probe, write_profile
 from .paths import Paths, make_paths
 from .persistence import integrity_check, open_db
 from .schema import kinds_for, migrate_all
@@ -68,7 +66,7 @@ def _notify_event(event: str, title: str, body: str) -> None:
         if cfg.get("discord_webhook_url"):
             channels.append(("discord", DiscordChannel(cfg["discord_webhook_url"])))
         Notifier(cfg, channels).notify(event, title, body)
-    except Exception:  # noqa: BLE001 - notifications must never break a command
+    except Exception:
         pass
 
 
@@ -359,7 +357,7 @@ def doctor() -> None:
                     console.print("  [green]✓[/green] chain intact")
             except Exception as exc:
                 console.print(f"  [yellow]-[/yellow] could not verify: {exc!r}")
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     # Section: outbox depth
@@ -375,7 +373,7 @@ def doctor() -> None:
             else:
                 console.print(f"  [red]✗[/red] depth = {depth} (>1000)")
                 issues.append(f"outbox depth {depth}")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             console.print(f"  [yellow]-[/yellow] could not read: {exc!r}")
 
     # Section: model selection (budget fit + paging) + fingerprint drift
@@ -391,7 +389,7 @@ def doctor() -> None:
         if rep["paging"]:
             console.print(f"  [yellow]note:[/yellow] {', '.join(rep['paging'])} "
                           f"page from SSD on this RAM — slower but functional.")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         console.print(f"  [yellow]-[/yellow] could not compute budget: {exc!r}")
 
     chosen = paths.data_dir / "chosen_models.yaml"
@@ -405,7 +403,7 @@ def doctor() -> None:
                                   f"recorded {d['recorded'][:12]} != installed {d['installed'][:12]}")
             else:
                 console.print("  [green]✓[/green] no fingerprint drift")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             console.print(f"  [yellow]-[/yellow] could not check drift: {exc!r}")
 
     console.rule()
@@ -467,6 +465,8 @@ def research(
                                    help="File(s) to ingest into the corpus first."),
     arxiv: str = typer.Option(None, "--arxiv", help="arXiv query to ingest abstracts."),
     openalex: str = typer.Option(None, "--openalex", help="OpenAlex query to ingest."),
+    pubmed: str = typer.Option(None, "--pubmed", help="PubMed query to ingest abstracts."),
+    crossref: str = typer.Option(None, "--crossref", help="Crossref query to ingest."),
     url: list[str] = typer.Option(None, "--url", help="URL(s) to fetch + sandbox-ingest."),
     sources: int = typer.Option(5, help="Max papers per source query."),
     mode: str = typer.Option("deep-dive", help="deep-dive | quc"),
@@ -509,7 +509,7 @@ def research(
             for dd in docs:
                 ingested += pipe.ingest_text(dd.id, dd.text, metadata=dd.metadata)
             console.print(f"  arXiv '{arxiv}': ingested {len(docs)} paper(s)")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             err_console.print(f"[yellow]arXiv fetch failed:[/yellow] {exc}")
     if openalex:
         from .sources.openalex import search_openalex
@@ -518,8 +518,21 @@ def research(
             for dd in docs:
                 ingested += pipe.ingest_text(dd.id, dd.text, metadata=dd.metadata)
             console.print(f"  OpenAlex '{openalex}': ingested {len(docs)} work(s)")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             err_console.print(f"[yellow]OpenAlex fetch failed:[/yellow] {exc}")
+    for q, name, fn_path in [(pubmed, "PubMed", "pubmed.search_pubmed"),
+                             (crossref, "Crossref", "crossref.search_crossref")]:
+        if not q:
+            continue
+        mod, fn = fn_path.split(".")
+        search = getattr(__import__(f"lighthouse_ai.sources.{mod}", fromlist=[fn]), fn)
+        try:
+            docs = search(q, max_results=sources)
+            for dd in docs:
+                ingested += pipe.ingest_text(dd.id, dd.text, metadata=dd.metadata)
+            console.print(f"  {name} '{q}': ingested {len(docs)} item(s)")
+        except Exception as exc:
+            err_console.print(f"[yellow]{name} fetch failed:[/yellow] {exc}")
     if url:
         from .ingest import fetch_and_ingest
         from .sandbox.broker import build_default_broker
@@ -533,14 +546,14 @@ def research(
                 ingested += pipe.ingest_text(doc_obj.id, doc_obj.text,
                                              metadata=doc_obj.metadata)
                 console.print(f"  fetched + sandbox-admitted: {u}")
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 err_console.print(f"[yellow]fetch failed:[/yellow] {u}: {exc}")
     if ingested:
         console.print(f"  corpus: {ingested} chunk(s)")
 
     try:
         result = pipe.research(question)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         err_console.print(f"[red]research failed:[/red] {exc}")
         raise typer.Exit(1) from None
 
@@ -696,8 +709,10 @@ def models_pull(
     happens lazily at inference, gated by the Governor.
     """
     import shutil as _shutil
+
     from .gateway import (
-        LARGE_PULL_GB, MIN_DISK_HEADROOM_GB, budget_report, model_pages,
+        budget_report,
+        model_pages,
         preflight_pull,
     )
 
@@ -727,7 +742,7 @@ def models_pull(
             console.print(f"[yellow]note:[/yellow] at runtime this model pages from "
                           f"SSD on your {rep['budget_gb']:.1f} GB budget — it will run, "
                           f"but slower. Pulling does not load it into RAM.")
-    except Exception:  # noqa: BLE001 - advisory only
+    except Exception:
         pass
 
     # --- confirmation for large downloads ---
@@ -921,6 +936,7 @@ def sandbox_redteam() -> None:
     """Feed the canonical hostile payloads through the broker; assert blocked."""
     import io
     import zipfile
+
     from .sandbox import Verdict
     from .sandbox.broker import build_default_broker
     from .sandbox.scanners import EICAR_SIGNATURE
@@ -1078,7 +1094,7 @@ def replay(job_id: str = typer.Argument(..., help="Job id to replay/inspect."),
         from .gateway import fingerprint
         for m in trace.models():
             installed[m] = fingerprint(m, "ollama").registry_digest_sha256
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     try:
         report = verify_replayable(paths.audit_db, job_id,
@@ -1110,7 +1126,8 @@ def backup(repo: str = typer.Option(None, help="restic repo path (default: data_
     rb = ResticBackup(passphrase=passphrase)
     try:
         if init:
-            rb.init(repo); console.print(f"[green]initialized restic repo[/green] {repo}")
+            rb.init(repo)
+            console.print(f"[green]initialized restic repo[/green] {repo}")
         rb.backup([paths.state_db, paths.audit_db, paths.positions_db,
                    paths.hypotheses_db, paths.intents_db], repo=repo)
     except ResticUnavailable as exc:

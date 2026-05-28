@@ -18,10 +18,9 @@ We create a new ``governor_buckets`` table here via a migration.
 from __future__ import annotations
 
 import datetime as _dt
-import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 from ..persistence import open_db
 
@@ -101,7 +100,7 @@ def ensure_schema(state_db: Path) -> None:
 # --- period keys ---
 
 def _now_utc() -> _dt.datetime:
-    return _dt.datetime.now(_dt.timezone.utc)
+    return _dt.datetime.now(_dt.UTC)
 
 
 def _period_key(period: str, now: _dt.datetime | None = None) -> str:

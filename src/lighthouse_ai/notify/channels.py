@@ -17,9 +17,10 @@ from __future__ import annotations
 import shutil
 import smtplib
 import subprocess
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from email.message import EmailMessage
-from typing import Callable, Optional, Protocol, Sequence, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import httpx
 
@@ -60,11 +61,11 @@ class DesktopChannel:
     """
 
     runner: Runner = subprocess.run
-    which: Callable[[str], Optional[str]] = shutil.which
+    which: Callable[[str], str | None] = shutil.which
     # Preference order; first binary found wins.
     binaries: Sequence[str] = ("terminal-notifier", "notify-send")
 
-    def _resolve(self) -> Optional[str]:
+    def _resolve(self) -> str | None:
         for binary in self.binaries:
             if self.which(binary):
                 return binary
@@ -111,7 +112,7 @@ class DiscordChannel:
     """
 
     webhook_url: str
-    client: Optional[httpx.Client] = None
+    client: httpx.Client | None = None
     timeout: float = 10.0
 
     def send(self, title: str, body: str) -> bool:
@@ -139,7 +140,7 @@ class DiscordChannel:
 Sender = Callable[[EmailMessage, "EmailChannel"], None]
 
 
-def _smtp_sender(message: EmailMessage, channel: "EmailChannel") -> None:
+def _smtp_sender(message: EmailMessage, channel: EmailChannel) -> None:
     """Default email transport using stdlib smtplib.
 
     Kept module-level (not a method) so it can be referenced as the dataclass
@@ -169,8 +170,8 @@ class EmailChannel:
     from_addr: str
     to_addrs: Sequence[str]
     smtp_port: int = 587
-    username: Optional[str] = None
-    password: Optional[str] = None
+    username: str | None = None
+    password: str | None = None
     use_starttls: bool = True
     use_ssl: bool = False
     timeout: float = 30.0

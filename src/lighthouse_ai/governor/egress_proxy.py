@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -210,7 +210,7 @@ class EgressProxy:
         """
 
         record: dict[str, object] = {
-            "ts": (timestamp or _dt.datetime.now(_dt.timezone.utc)).isoformat(),
+            "ts": (timestamp or _dt.datetime.now(_dt.UTC)).isoformat(),
             "host": host,
             "port": port,
             "bytes_sent": bytes_sent,

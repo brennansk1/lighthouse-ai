@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Sequence
 
 # A runner takes the argv list and returns something with .returncode/.stdout.
 # subprocess.run matches this shape; tests pass a fake recording callable.
@@ -38,7 +38,7 @@ def restic_installed() -> bool:
     return shutil.which("restic") is not None
 
 
-def _default_runner(argv: Sequence[str]) -> "subprocess.CompletedProcess[str]":
+def _default_runner(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
     """Run ``restic`` for real, capturing output as text.
 
     Kept tiny and side-effecting so tests can replace it wholesale; production
@@ -70,7 +70,7 @@ class ResticBackup:
         """
         return ["restic", "--repo", repo]
 
-    def _run(self, argv: Sequence[str]) -> "subprocess.CompletedProcess[str]":
+    def _run(self, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
         if not restic_installed():
             raise ResticUnavailable(
                 "restic binary not found on PATH; install restic to enable "
@@ -96,7 +96,7 @@ class ResticBackup:
         """Build the argv to list snapshots as JSON."""
         return [*self._base_argv(repo), "snapshots", "--json"]
 
-    def init(self, repo: str, passphrase: str) -> "subprocess.CompletedProcess[str]":
+    def init(self, repo: str, passphrase: str) -> subprocess.CompletedProcess[str]:
         """Initialize the restic repository.
 
         ``passphrase`` is accepted to mirror the operational contract; it is
@@ -105,15 +105,15 @@ class ResticBackup:
         return self._run(self.init_argv(repo))
 
     def backup(self, paths: Sequence[str | Path], *, repo: str
-               ) -> "subprocess.CompletedProcess[str]":
+               ) -> subprocess.CompletedProcess[str]:
         """Back up the given filesystem paths into ``repo``."""
         return self._run(self.backup_argv(repo, paths))
 
-    def check(self, repo: str) -> "subprocess.CompletedProcess[str]":
+    def check(self, repo: str) -> subprocess.CompletedProcess[str]:
         """Run ``restic check`` to validate stored data integrity."""
         return self._run(self.check_argv(repo))
 
-    def snapshots(self, repo: str) -> "subprocess.CompletedProcess[str]":
+    def snapshots(self, repo: str) -> subprocess.CompletedProcess[str]:
         """List repository snapshots (JSON)."""
         return self._run(self.snapshots_argv(repo))
 

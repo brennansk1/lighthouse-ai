@@ -9,7 +9,7 @@
 // ConfidencePill, StatusPill, Bar, EmptyState, ErrorBox, Loading, card) come
 // from app-lib.jsx and are read off the global scope.
 
-const { useState: rUseState, useEffect: rUseEffect, useRef: rUseRef } = React;
+const { useState: rUseState, useEffect: rUseEffect, useRef: rUseRef, useCallback: rUseCallback } = React;
 
 // ── tiny self-contained primitives (R-prefixed, no global collisions) ─────
 const rInput = {
@@ -156,12 +156,6 @@ function RGrade({ grade }) {
   return <span className={`wep ${klass}`} style={{ minWidth: 22, justifyContent: 'center' }}>{g}</span>;
 }
 
-function RConfirmBtn(props) {
-  // thin alias so we read Btn off the global scope lazily at render time
-  const B = window.Btn;
-  return <B {...props} />;
-}
-
 // inject the shimmer keyframes once
 (function ensureShimmerCSS() {
   if (typeof document === 'undefined') return;
@@ -172,142 +166,168 @@ function RConfirmBtn(props) {
   document.head && document.head.appendChild(el);
 })();
 
+// ── Shared: small toggle switch component ─────────────────────────────────
+function RToggle({ value, onChange, id }) {
+  return (
+    <button role="switch" aria-checked={!!value} id={id} onClick={() => onChange(!value)}
+      style={{
+        width: 36, height: 20, borderRadius: 10, border: 'none', cursor: 'pointer',
+        background: value ? 'var(--primary)' : 'var(--rule)',
+        position: 'relative', flexShrink: 0, transition: 'background .2s',
+      }}>
+      <span style={{
+        position: 'absolute', top: 2, left: value ? 18 : 2,
+        width: 16, height: 16, borderRadius: '50%',
+        background: '#fff', transition: 'left .2s',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+      }} />
+    </button>
+  );
+}
+
 // ════════════════════════════ TOPICS ════════════════════════════
 function TopicsPage({ toast }) {
   const { data, loading, error, reload } = window.useApi('/api/topics', { pollMs: 15000 });
-  const [sel, setSel] = rUseState(null);
-  const [detail, setDetail] = rUseState(null);
-  const [detailErr, setDetailErr] = rUseState(null);
-  const [tab, setTab] = rUseState('Overview');
   const [showNew, setShowNew] = rUseState(false);
+  const [confirmDel, setConfirmDel] = rUseState(null); // topic object to confirm-delete
 
   window.useEvents((name) => { if (name && name.indexOf('topic') === 0) reload(); });
 
   const topics = (data && data.topics) || [];
 
-  rUseEffect(() => {
-    if (sel == null) { setDetail(null); setDetailErr(null); return; }
-    let live = true;
-    setDetail(null); setDetailErr(null);
-    window.apiGet(`/api/topics/${sel}`)
-      .then((d) => { if (live) setDetail(d); })
-      .catch((e) => { if (live) setDetailErr(e.message); });
-    return () => { live = false; };
-  }, [sel]);
-
-  async function del(id) {
-    if (!window.confirm('Delete this topic and all of its sources? This cannot be undone.')) return;
+  async function del(topic) {
     try {
-      await window.apiDelete(`/api/topics/${id}`);
-      setSel(null); reload();
+      await window.apiDelete(`/api/topics/${topic.id}`);
+      setConfirmDel(null);
+      reload();
       toast.show('Topic deleted', 'info');
     } catch (e) { toast.show(e.message, 'error'); }
   }
 
-  const columns = [
-    { key: 'name', label: 'Name', render: (r) => (
-      <span style={{ fontFamily: 'var(--serif)', fontWeight: 600 }}>{r.name || 'Untitled'}</span>
-    ) },
-    { key: 'mode', label: 'Mode', render: (r) => r.mode || '—' },
-    { key: 'source_count', label: 'Sources', render: (r) => (
-      <span className="num">{r.source_count != null ? r.source_count : (r.sources ? r.sources.length : 0)}</span>
-    ) },
-    { key: 'status', label: '', render: (r) => (
-      <window.StatusPill status={r.status === 'active' ? 'running' : 'paused'} />
-    ) },
-  ];
-
-  const PageHeader = window.PageHeader, Btn = window.Btn;
+  const Btn = window.Btn;
 
   return (
     <div>
-      <PageHeader title="Topics" subtitle={`${topics.length} standing ${topics.length === 1 ? 'watch' : 'watches'}`}
+      <window.PageHeader title="Topics"
+        subtitle={`${topics.length} standing ${topics.length === 1 ? 'watch' : 'watches'}`}
         actions={<Btn onClick={() => setShowNew(true)} aria-label="Create a new topic">+ New topic</Btn>} />
 
-      {loading && <RTableSkeleton />}
+      {loading && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+          {[1,2,3,4].map((i) => (
+            <div key={i} style={{ ...window.card, padding: 20 }}>
+              <RSkeleton h={18} w="60%" mb={10} />
+              <RSkeleton h={12} mb={8} />
+              <RSkeleton h={12} w="80%" mb={14} />
+              <RSkeleton h={20} w={60} r={10} />
+            </div>
+          ))}
+        </div>
+      )}
+
       {!loading && error && <window.ErrorBox message={`Could not load topics — ${error}`} />}
+
       {!loading && !error && topics.length === 0 && (
-        <window.EmptyState title="No topics yet" icon="🗺"
-          hint="A topic is something Lighthouse watches for you — a feed, a question, a theme to track over time."
+        <window.EmptyState title="No research topics yet" icon="🗂"
+          hint="No research topics yet — add one to start monitoring."
           action={<Btn onClick={() => setShowNew(true)}>+ New topic</Btn>} />
       )}
 
       {!loading && !error && topics.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: sel != null ? '1fr 380px' : '1fr', gap: 16 }}>
-          <window.DataTable columns={columns} activeRow={sel}
-            rows={topics.map((t) => ({ ...t, _key: t.id }))}
-            onRow={(r) => { setSel(r.id); setTab('Overview'); }} />
-
-          {sel != null && (
-            <RSidePane title={detail ? detail.name : 'Loading…'}
-              subtitle={detail ? detail.mode : ''}
-              tabs={['Overview', 'Sources', 'Recent items']} activeTab={tab} onTab={setTab}
-              onClose={() => setSel(null)}>
-              {detailErr && <window.ErrorBox message={detailErr} />}
-              {!detail && !detailErr && <div><RSkeleton /><RSkeleton w="80%" /><RSkeleton w="60%" /></div>}
-              {detail && tab === 'Overview' && (
-                <div>
-                  <RRow k="Mode" v={detail.mode} />
-                  <RRow k="Cadence" v={detail.cadence} />
-                  <RRow k="Status" v={detail.status} />
-                  <RRow k="Sources" v={(detail.sources || []).length} />
-                  <RRow k="Created" v={detail.created_at} />
-                  <div style={{ marginTop: 16 }}>
-                    <Btn kind="danger" size="sm" onClick={() => del(detail.id)}
-                      aria-label={`Delete topic ${detail.name}`}>Delete topic</Btn>
-                  </div>
-                </div>
-              )}
-              {detail && tab === 'Sources' && (
-                (detail.sources || []).length
-                  ? (detail.sources || []).map((s, i) => (
-                    <div key={s.id != null ? s.id : i} style={{ display: 'flex', gap: 8,
-                      alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--rule-soft)' }}>
-                      <RGrade grade={s.grade} />
-                      <span style={{ fontSize: 12, color: 'var(--ink-2)', wordBreak: 'break-all' }}>
-                        {s.url || s.name || '(unnamed source)'}
-                      </span>
-                    </div>
-                  ))
-                  : <div style={{ color: 'var(--muted)' }}>No sources attached to this topic yet.</div>
-              )}
-              {detail && tab === 'Recent items' && (
-                (detail.recent_items || detail.items || []).length
-                  ? (detail.recent_items || detail.items || []).map((it, i) => (
-                    <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid var(--rule-soft)' }}>
-                      <div style={{ fontFamily: 'var(--serif)', fontSize: 13.5, color: 'var(--ink)' }}>
-                        {it.title || it.text || it.summary || 'Item'}
-                      </div>
-                      {it.ts && <div className="num" style={{ fontSize: 11, color: 'var(--muted)',
-                        marginTop: 2 }}>{it.ts}</div>}
-                    </div>
-                  ))
-                  : <div style={{ color: 'var(--muted)' }}>Items appear here after the first refresh.</div>
-              )}
-            </RSidePane>
-          )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+          {topics.map((t) => (
+            <RTopicCard key={t.id} topic={t} onDelete={() => setConfirmDel(t)} />
+          ))}
         </div>
       )}
 
-      {showNew && <RNewTopicModal toast={toast} onClose={() => setShowNew(false)}
-        onCreated={() => { setShowNew(false); reload(); toast.show('Topic created', 'success'); }} />}
+      {showNew && (
+        <RNewTopicModal toast={toast} onClose={() => setShowNew(false)}
+          onCreated={() => { setShowNew(false); reload(); toast.show('Topic created', 'success'); }} />
+      )}
+
+      {confirmDel && (
+        <RModal title="Delete topic?" onClose={() => setConfirmDel(null)} width={400}>
+          <div style={{ fontSize: 14, color: 'var(--ink-2)', marginBottom: 20, lineHeight: 1.5 }}>
+            Delete <strong style={{ color: 'var(--ink)' }}>{confirmDel.name}</strong> and all of its
+            associated sources? This cannot be undone.
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Btn kind="ghost" onClick={() => setConfirmDel(null)}>Cancel</Btn>
+            <Btn kind="danger" onClick={() => del(confirmDel)}>Delete</Btn>
+          </div>
+        </RModal>
+      )}
+    </div>
+  );
+}
+
+function RTopicCard({ topic: t, onDelete }) {
+  const Btn = window.Btn;
+  const jobCount = t.job_count != null ? t.job_count : (t.source_count != null ? t.source_count : 0);
+  const active = t.status === 'active' || !t.status;
+  return (
+    <div style={{ ...window.card, padding: 20, display: 'flex', flexDirection: 'column', gap: 10,
+      borderTop: `3px solid ${active ? 'var(--primary)' : 'var(--rule)'}` }}>
+      {/* Name */}
+      <div style={{ fontFamily: 'var(--serif)', fontSize: 17, fontWeight: 600,
+        color: 'var(--ink)', lineHeight: 1.3 }}>{t.name || 'Untitled'}</div>
+
+      {/* Description */}
+      {t.description && (
+        <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5,
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+          overflow: 'hidden' }}>{t.description}</div>
+      )}
+
+      {/* Query tag */}
+      {t.query && (
+        <div style={{ display: 'flex' }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, background: 'var(--sky-soft)',
+            color: 'var(--ink-2)', padding: '2px 8px', borderRadius: 'var(--radius-sm)',
+            maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {t.query}
+          </span>
+        </div>
+      )}
+
+      {/* Footer: job count badge + mode + delete */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto', paddingTop: 4 }}>
+        {jobCount > 0 && (
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700,
+            background: 'var(--primary)', color: '#fff', padding: '2px 7px',
+            borderRadius: 10 }}>{jobCount} {jobCount === 1 ? 'job' : 'jobs'}</span>
+        )}
+        {t.mode && (
+          <span style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase',
+            letterSpacing: '0.05em' }}>{t.mode}</span>
+        )}
+        <span style={{ flex: 1 }} />
+        <button onClick={onDelete} aria-label={`Delete topic ${t.name}`}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14,
+            color: 'var(--muted)', padding: '2px 4px', lineHeight: 1,
+            borderRadius: 4 }} title="Delete topic">✕</button>
+      </div>
     </div>
   );
 }
 
 function RNewTopicModal({ toast, onClose, onCreated }) {
   const [name, setName] = rUseState('');
-  const [mode, setMode] = rUseState('Monitor');
-  const [sources, setSources] = rUseState('');
+  const [description, setDescription] = rUseState('');
+  const [query, setQuery] = rUseState('');
   const [busy, setBusy] = rUseState(false);
   const Btn = window.Btn;
 
   async function submit() {
     if (!name.trim()) { toast.show('Give the topic a name first.', 'error'); return; }
-    const srcs = sources.split('\n').map((s) => s.trim()).filter(Boolean);
     setBusy(true);
     try {
-      await window.apiPost('/api/topics', { name: name.trim(), mode, sources: srcs });
+      await window.apiPost('/api/topics', {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        query: query.trim() || undefined,
+      });
       onCreated();
     } catch (e) { toast.show(e.message, 'error'); setBusy(false); }
   }
@@ -318,15 +338,15 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
         <input value={name} onChange={(e) => setName(e.target.value)}
           placeholder="e.g. EU AI Act" style={rInput} aria-label="Topic name" autoFocus />
       </RField>
-      <RField label="Mode">
-        <select value={mode} onChange={(e) => setMode(e.target.value)} style={rInput} aria-label="Topic mode">
-          {['Monitor', 'Deep-Dive', 'QUC'].map((m) => <option key={m}>{m}</option>)}
-        </select>
+      <RField label="Description">
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
+          placeholder="What are you watching for?" style={{ ...rInput, resize: 'vertical' }}
+          aria-label="Topic description" />
       </RField>
-      <RField label="Sources" hint="One URL per line. Optional — you can add them later.">
-        <textarea value={sources} onChange={(e) => setSources(e.target.value)} rows={4}
-          placeholder="https://hnrss.org/frontpage" style={{ ...rInput, resize: 'vertical' }}
-          aria-label="Sources, one URL per line" />
+      <RField label="Query" hint="A search expression or keyword cluster to guide collection.">
+        <input value={query} onChange={(e) => setQuery(e.target.value)}
+          placeholder="e.g. AI regulation OR \"foundation models\"" style={rInput}
+          aria-label="Topic query" />
       </RField>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
         <Btn kind="ghost" onClick={onClose} disabled={busy}>Cancel</Btn>
@@ -338,230 +358,219 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
 
 // ════════════════════════════ POSITIONS ════════════════════════════
 function PositionsPage({ toast }) {
-  const [tab, setTab] = rUseState('Overdue');
+  const [tab, setTab] = rUseState('Pending');
+  // Fetch all positions once for calibration summary
+  const { data: allData } = window.useApi('/api/positions');
+  const allPositions = (allData && allData.positions) || [];
+  const resolved = allPositions.filter((p) => p.resolved || p.outcome != null);
+  const pending = allPositions.filter((p) => !p.resolved && p.outcome == null);
+
+  // Brier score calculation from resolved positions
+  function computeBrier(positions) {
+    const valid = positions.filter((p) =>
+      p.probability != null && (p.outcome === true || p.outcome === false ||
+        p.outcome === 'confirmed' || p.outcome === 'refuted')
+    );
+    if (!valid.length) return null;
+    const sum = valid.reduce((acc, p) => {
+      const prob = Number(p.probability);
+      const out = p.outcome === true || p.outcome === 'confirmed' ? 1 : 0;
+      return acc + Math.pow(prob - out, 2);
+    }, 0);
+    return sum / valid.length;
+  }
+
+  const brier = computeBrier(resolved);
+
+  function brierInfo(b) {
+    if (b == null) return { label: 'No data', color: 'var(--muted)' };
+    if (b < 0.1)  return { label: 'Excellent', color: 'var(--green-dark)' };
+    if (b < 0.2)  return { label: 'Good',      color: '#0aa' };
+    if (b < 0.25) return { label: 'Fair',       color: 'var(--sand)' };
+    return              { label: 'Needs work',  color: 'var(--coral-2)' };
+  }
+  const bi = brierInfo(brier);
+
   const PageHeader = window.PageHeader;
   return (
     <div>
-      <PageHeader title="Positions" subtitle="Resolve predictions and watch your calibration improve"
-        tabs={['Overdue', 'All', 'Calibration', 'Hypotheses']} activeTab={tab} onTab={setTab} />
-      {tab === 'Overdue' && <RPositionList key="overdue" overdue toast={toast} />}
-      {tab === 'All' && <RPositionList key="all" toast={toast} />}
-      {tab === 'Calibration' && <RCalibrationView />}
-      {tab === 'Hypotheses' && <RHypothesesView toast={toast} />}
+      <PageHeader title="Positions"
+        subtitle="Resolve predictions and watch your calibration improve"
+        tabs={['Pending', 'Resolved']} activeTab={tab} onTab={setTab} />
+
+      {/* Calibration summary header */}
+      <div style={{ ...window.card, padding: '14px 20px', marginBottom: 16,
+        display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase',
+            letterSpacing: '0.06em', marginBottom: 2 }}>Brier Score</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <span className="num" style={{ fontSize: 22, fontWeight: 700,
+              color: bi.color }}>
+              {brier != null ? brier.toFixed(3) : '—'}
+            </span>
+            <span style={{ fontSize: 12, color: bi.color, fontWeight: 600 }}>{bi.label}</span>
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase',
+            letterSpacing: '0.06em', marginBottom: 2 }}>Resolved</div>
+          <span className="num" style={{ fontSize: 22, fontWeight: 700,
+            color: 'var(--ink)' }}>{resolved.length}</span>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase',
+            letterSpacing: '0.06em', marginBottom: 2 }}>Pending</div>
+          <span className="num" style={{ fontSize: 22, fontWeight: 700,
+            color: 'var(--ink)' }}>{pending.length}</span>
+        </div>
+      </div>
+
+      {tab === 'Pending'  && <RPositionList key="pending"  pending toast={toast} />}
+      {tab === 'Resolved' && <RPositionList key="resolved" resolved toast={toast} />}
     </div>
   );
 }
 
-function RPositionList({ overdue, toast }) {
-  const path = overdue ? '/api/positions?overdue=true' : '/api/positions';
+function RPositionList({ pending, resolved, toast }) {
+  const path = pending ? '/api/positions' : '/api/positions';
   const { data, loading, error, reload } = window.useApi(path);
-  const positions = (data && data.positions) || [];
+  const [sel, setSel] = rUseState(null); // selected position object
+
+  const rawPositions = (data && data.positions) || [];
+  const positions = pending
+    ? rawPositions.filter((p) => !p.resolved && p.outcome == null)
+    : rawPositions.filter((p) => p.resolved || p.outcome != null);
 
   async function resolve(id, outcome) {
     try {
       await window.apiPost(`/api/positions/${id}/resolve`, { outcome });
       reload();
       toast.show(outcome === 'defer' ? 'Deferred 30 days' : `Marked ${outcome}`, 'success');
+      setSel(null);
     } catch (e) { toast.show(e.message, 'error'); }
   }
 
-  if (loading) return <RTableSkeleton rows={3} />;
-  if (error) return <window.ErrorBox message={`Could not load positions — ${error}`} />;
-  if (!positions.length) {
-    return <window.EmptyState icon="✓"
-      title={overdue ? 'Nothing overdue' : 'No positions yet'}
-      hint={overdue
-        ? 'Every prediction is either resolved or still has time on the clock.'
-        : 'Positions are recorded automatically when research emits a falsifiable claim.'} />;
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {positions.map((p) => {
-        const open = p.outcome == null;
-        return (
-          <div key={p.id} style={{ ...window.card, padding: '14px 18px' }}>
-            <div style={{ fontFamily: 'var(--serif)', fontSize: 15, color: 'var(--ink)' }}>
-              {p.claim || '(no claim text)'}
-            </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-              <window.ConfidencePill phrase={p.wep_band || p.wep_phrase}
-                band={p.confidence != null ? String(p.confidence) : ''} />
-              {p.due_at && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>due {p.due_at}</span>}
-              {p.created_at && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>created {p.created_at}</span>}
-              <span style={{ flex: 1 }} />
-              {open ? (
-                <div style={{ display: 'flex', gap: 6 }} role="group" aria-label="Resolve position">
-                  <window.Btn size="sm" kind="success" onClick={() => resolve(p.id, 'confirmed')}
-                    aria-label="Mark confirmed">Confirmed</window.Btn>
-                  <window.Btn size="sm" kind="danger" onClick={() => resolve(p.id, 'refuted')}
-                    aria-label="Mark refuted">Refuted</window.Btn>
-                  <window.Btn size="sm" kind="ghost" onClick={() => resolve(p.id, 'defer')}
-                    aria-label="Defer 30 days">Defer 30d</window.Btn>
-                </div>
-              ) : (
-                <span className="num" style={{ fontSize: 12,
-                  color: p.outcome === 'refuted' || p.outcome === false ? 'var(--coral-2)' : 'var(--green-dark)' }}>
-                  {p.outcome === false ? 'refuted' : p.outcome === true ? 'confirmed' : p.outcome}
-                  {p.brier != null && ` · Brier ${Number(p.brier).toFixed(3)}`}
-                </span>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function RCalibrationView() {
-  const { data, loading, error } = window.useApi('/api/calibration');
-  const canvasRef = rUseRef(null);
-  const m = data || {};
-  const bins = m.bins || m.reliability || [];
-
-  rUseEffect(() => {
-    const cv = canvasRef.current;
-    if (!cv) return;
-    const dpr = window.devicePixelRatio || 1;
-    const W = 320, H = 320, pad = 32;
-    cv.width = W * dpr; cv.height = H * dpr;
-    cv.style.width = W + 'px'; cv.style.height = H + 'px';
-    const ctx = cv.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    const x = (v) => pad + v * (W - 2 * pad);
-    const y = (v) => (H - pad) - v * (H - 2 * pad);
-    // grid box
-    ctx.strokeStyle = '#d4e2ed'; ctx.lineWidth = 1;
-    ctx.strokeRect(pad, pad, W - 2 * pad, H - 2 * pad);
-    // perfect-calibration diagonal
-    ctx.strokeStyle = '#6a8aa6'; ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(x(0), y(0)); ctx.lineTo(x(1), y(1)); ctx.stroke();
-    ctx.setLineDash([]);
-    // points
-    ctx.fillStyle = '#0288d1';
-    (bins || []).forEach((b) => {
-      const px = b.predicted != null ? b.predicted : b.confidence;
-      const py = b.observed != null ? b.observed : b.outcome_rate;
-      if (px == null || py == null) return;
-      ctx.beginPath();
-      const r = 4 + Math.min((b.n || 1), 20) * 0.5;
-      ctx.arc(x(px), y(py), r, 0, Math.PI * 2);
-      ctx.globalAlpha = 0.75; ctx.fill(); ctx.globalAlpha = 1;
-    });
-    // axis labels
-    ctx.fillStyle = '#6a8aa6'; ctx.font = '10px sans-serif';
-    ctx.fillText('predicted →', pad, H - 8);
-    ctx.save(); ctx.translate(10, H - pad); ctx.rotate(-Math.PI / 2);
-    ctx.fillText('observed →', 0, 0); ctx.restore();
-  }, [data]);
-
-  if (loading) return <RTableSkeleton rows={2} />;
-  if (error) return <window.ErrorBox message={`Could not load calibration — ${error}`} />;
-  const n = m.n != null ? m.n : m.resolved;
-  if (!n) {
-    return <window.EmptyState icon="◎" title="No resolved positions yet"
-      hint="Resolve a handful of predictions and your reliability curve will appear here." />;
-  }
-
-  const brier = m.mean_brier != null ? m.mean_brier : m.brier;
-  return (
-    <div style={{ ...window.card, padding: 24 }}>
-      <div style={{ display: 'flex', gap: 40, flexWrap: 'wrap', marginBottom: 24 }}>
-        <RMetric label="Mean Brier" value={brier != null ? Number(brier).toFixed(3) : '—'} hint="lower is better" />
-        <RMetric label="Resolved" value={n} />
-        <RMetric label="Avg confidence"
-          value={m.mean_probability != null ? Number(m.mean_probability).toFixed(2) : '—'} />
-        <RMetric label="Hit rate"
-          value={m.mean_outcome_rate != null ? Number(m.mean_outcome_rate).toFixed(2) : '—'} />
-        <RMetric label="Calibration error"
-          value={m.calibration_error != null ? Number(m.calibration_error).toFixed(3) : '—'}
-          hint="|confidence − outcome|" />
-      </div>
-      <div className="small-caps" style={{ marginBottom: 8 }}>Reliability diagram</div>
-      {bins && bins.length
-        ? <canvas ref={canvasRef} role="img"
-            aria-label="Reliability scatter: predicted probability versus observed outcome rate" />
-        : <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-            Not enough binned data yet to plot a reliability curve.</div>}
-    </div>
-  );
-}
-
-function RHypothesesView({ toast }) {
-  const { data, loading, error, reload } = window.useApi('/api/hypotheses');
-  const [stmt, setStmt] = rUseState('');
-  const [busy, setBusy] = rUseState(false);
-  const cols = ['open', 'supported', 'refuted', 'retired'];
-  const items = (data && data.hypotheses) || [];
-  const Btn = window.Btn;
-
-  const colColor = { open: 'var(--primary)', supported: 'var(--green-dark)',
-    refuted: 'var(--coral-2)', retired: 'var(--muted)' };
-
-  async function add() {
-    if (!stmt.trim()) { toast.show('Type a hypothesis first.', 'error'); return; }
-    setBusy(true);
+  function fmt(dateStr) {
+    if (!dateStr) return null;
     try {
-      await window.apiPost('/api/hypotheses', { statement: stmt.trim() });
-      setStmt(''); reload(); toast.show('Hypothesis added', 'success');
-    } catch (e) { toast.show(e.message, 'error'); }
-    setBusy(false);
+      return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch (e) { return dateStr; }
   }
-  async function move(h, status) {
-    try { await window.apiPatch(`/api/hypotheses/${h.id}`, { status }); reload(); }
-    catch (e) { toast.show(e.message, 'error'); }
+
+  if (loading) return <RTableSkeleton rows={4} />;
+  if (error) return <window.ErrorBox message={`Could not load positions — ${error}`} />;
+
+  if (!positions.length) {
+    return (
+      <window.EmptyState icon={pending ? '✓' : '◎'}
+        title={pending ? 'All positions resolved — calibration is up to date.' : 'No resolved positions yet'}
+        hint={pending
+          ? 'Every prediction is either resolved or still has time on the clock.'
+          : 'Resolve a prediction and it will appear here with its outcome.'} />
+    );
   }
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-        <input value={stmt} onChange={(e) => setStmt(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
-          placeholder="State a new hypothesis…" aria-label="New hypothesis"
-          style={{ ...rInput, flex: 1 }} />
-        <Btn onClick={add} disabled={busy}>{busy ? 'Adding…' : 'Add'}</Btn>
+    <div style={{ display: 'grid', gridTemplateColumns: sel ? '1fr 360px' : '1fr', gap: 16, alignItems: 'start' }}>
+      {/* Position rows */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {positions.map((p) => {
+          const isSelected = sel && sel.id === p.id;
+          const open = !p.resolved && p.outcome == null;
+          const prob = p.probability != null ? p.probability : p.confidence;
+          return (
+            <div key={p.id} onClick={() => setSel(isSelected ? null : p)}
+              role="button" tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSel(isSelected ? null : p); }}
+              aria-selected={isSelected}
+              style={{ ...window.card, padding: '13px 18px', cursor: 'pointer',
+                border: `1px solid ${isSelected ? 'var(--primary)' : 'transparent'}`,
+                transition: 'border-color .15s' }}>
+              {/* Claim text — truncated to 2 lines */}
+              <div style={{ fontFamily: 'var(--serif)', fontSize: 14.5, color: 'var(--ink)',
+                lineHeight: 1.45,
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                overflow: 'hidden', marginBottom: 8 }}>
+                {p.claim || '(no claim text)'}
+              </div>
+              {/* Meta row */}
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                {prob != null && (
+                  <window.ConfidencePill phrase={p.wep_band || p.wep_phrase || ''}
+                    band={String(prob)} />
+                )}
+                {prob != null && (
+                  <span className="num" style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+                    {(prob * 100).toFixed(0)}%
+                  </span>
+                )}
+                {p.created_at && (
+                  <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                    {fmt(p.created_at)}
+                  </span>
+                )}
+                {p.due_at && (
+                  <span style={{ fontSize: 11.5, color: 'var(--sand)' }}>due {fmt(p.due_at)}</span>
+                )}
+                {!open && (
+                  <span style={{ fontSize: 12, fontWeight: 600,
+                    color: (p.outcome === 'refuted' || p.outcome === false) ? 'var(--coral-2)' : 'var(--green-dark)' }}>
+                    {p.outcome === false ? 'refuted' : p.outcome === true ? 'confirmed' : p.outcome}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {loading && <RTableSkeleton rows={3} />}
-      {error && <window.ErrorBox message={`Could not load hypotheses — ${error}`} />}
-      {!loading && !error && items.length === 0 && (
-        <window.EmptyState icon="🜂" title="No hypotheses yet"
-          hint="Frame a falsifiable statement above; evidence will sort it across the board." />
-      )}
+      {/* Side detail pane */}
+      {sel && (
+        <RSidePane title="Position detail" onClose={() => setSel(null)}>
+          <div style={{ fontFamily: 'var(--serif)', fontSize: 15, color: 'var(--ink)',
+            lineHeight: 1.55, marginBottom: 14 }}>{sel.claim}</div>
 
-      {!loading && !error && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-          {cols.map((col) => {
-            const inCol = items.filter((h) => h.status === col);
+          {/* Probability bar */}
+          {(sel.probability != null || sel.confidence != null) && (() => {
+            const prob = sel.probability != null ? sel.probability : sel.confidence;
             return (
-              <div key={col} style={{ ...window.card, padding: 10, minHeight: 200 }}>
-                <div className="small-caps" style={{ color: colColor[col] }}>
-                  {col} ({inCol.length})
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase',
+                  letterSpacing: '0.06em', marginBottom: 4 }}>Probability</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <window.Bar value={prob} max={1} color="var(--primary)" />
+                  <span className="num" style={{ fontSize: 13, fontWeight: 700,
+                    color: 'var(--ink)', whiteSpace: 'nowrap' }}>{(prob * 100).toFixed(0)}%</span>
                 </div>
-                {inCol.length === 0 && <div style={{ fontSize: 11, color: 'var(--muted)',
-                  marginTop: 8 }}>—</div>}
-                {inCol.map((h) => (
-                  <div key={h.id} style={{ ...window.card, padding: 8, margin: '8px 0', fontSize: 12.5 }}>
-                    <div style={{ fontFamily: 'var(--serif)', color: 'var(--ink)' }}>{h.statement}</div>
-                    <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
-                      {cols.filter((c) => c !== col).map((c) => (
-                        <button key={c} onClick={() => move(h, c)} title={`Move to ${c}`}
-                          aria-label={`Move hypothesis to ${c}`}
-                          style={{ fontSize: 9, border: '1px solid var(--rule)', borderRadius: 3,
-                            background: 'var(--card)', cursor: 'pointer', color: 'var(--muted)',
-                            padding: '2px 5px', fontWeight: 700, letterSpacing: '0.04em' }}>
-                          → {c[0].toUpperCase()}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
               </div>
             );
-          })}
-        </div>
+          })()}
+
+          {/* Brier score if resolved */}
+          {sel.brier != null && (
+            <RRow k="Brier score" v={Number(sel.brier).toFixed(3)} />
+          )}
+          {sel.created_at && <RRow k="Created" v={sel.created_at} />}
+          {sel.due_at && <RRow k="Due" v={sel.due_at} />}
+          {sel.resolved_at && <RRow k="Resolved" v={sel.resolved_at} />}
+
+          {/* Resolve buttons for pending positions */}
+          {(!sel.resolved && sel.outcome == null) && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase',
+                letterSpacing: '0.06em', marginBottom: 8 }}>Resolve</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <window.Btn kind="success" size="sm" onClick={() => resolve(sel.id, 'confirmed')}
+                  aria-label="Mark confirmed">True — Confirmed</window.Btn>
+                <window.Btn kind="danger" size="sm" onClick={() => resolve(sel.id, 'refuted')}
+                  aria-label="Mark refuted">False — Refuted</window.Btn>
+                <window.Btn kind="ghost" size="sm" onClick={() => resolve(sel.id, 'defer')}
+                  aria-label="Defer 30 days">Defer 30d</window.Btn>
+              </div>
+            </div>
+          )}
+        </RSidePane>
       )}
     </div>
   );
@@ -569,236 +578,214 @@ function RHypothesesView({ toast }) {
 
 // ════════════════════════════ HEALTH ════════════════════════════
 function HealthPage({ toast }) {
-  const [tab, setTab] = rUseState('Overview');
-  const { data, loading, error, reload } = window.useApi('/api/health', { pollMs: 10000 });
+  const [lastRefreshed, setLastRefreshed] = rUseState(null);
+  const [elapsed, setElapsed] = rUseState(0);
+
+  const { data, loading, error, reload } = window.useApi('/api/health');
+  const { data: govData } = window.useApi('/api/governor');
   const h = data || {};
+  const gov = govData || {};
+
   const PageHeader = window.PageHeader, Btn = window.Btn;
+
+  // Auto-poll every 15s and track last refresh time
+  rUseEffect(() => {
+    setLastRefreshed(Date.now());
+    setElapsed(0);
+    const pollId = setInterval(() => {
+      reload();
+      setLastRefreshed(Date.now());
+      setElapsed(0);
+    }, 15000);
+    return () => clearInterval(pollId);
+  }, []); // eslint-disable-line
+
+  // Tick elapsed counter every second
+  rUseEffect(() => {
+    const tickId = setInterval(() => {
+      setElapsed((e) => e + 1);
+    }, 1000);
+    return () => clearInterval(tickId);
+  }, []);
+
+  function manualReload() {
+    reload();
+    setLastRefreshed(Date.now());
+    setElapsed(0);
+  }
+
+  const hw = h.hardware || {};
+  const budget = h.budget || gov || {};
+  const checks = h.checks || [];
+  const degraded = gov.degraded || budget.tier === 'degrade';
+  const tier = hw.tier;
+  const statusLight = degraded ? 'var(--coral-2)'
+    : (tier === 'T3' ? 'var(--sand)' : 'var(--green-dark)');
+
+  // Governor tier for coloring
+  const govTier = (gov.tier || budget.tier || '—');
+  function govChipClass(t) {
+    if (!t || t === '—') return 'lh-tier-chip lh-tier-unknown';
+    const key = String(t).toLowerCase().replace(/[^a-z_]/g, '_');
+    return `lh-tier-chip lh-tier-${key}`;
+  }
 
   return (
     <div>
       <PageHeader title="Health"
         subtitle={loading ? 'Checking…' : h.overall === 'green' ? 'All systems nominal' : 'Some items need attention'}
-        tabs={['Overview', 'Budget', 'Storage', 'Audit']} activeTab={tab} onTab={setTab}
-        actions={<Btn kind="ghost" onClick={reload} aria-label="Re-check health now">Re-check</Btn>} />
+        actions={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'var(--sans)' }}>
+              {lastRefreshed ? `Refreshed ${elapsed}s ago` : 'Refreshing…'}
+            </span>
+            <Btn kind="ghost" onClick={manualReload} aria-label="Re-check health now">Re-check</Btn>
+          </div>
+        } />
 
-      {loading && tab !== 'Audit' && <RTableSkeleton rows={5} />}
-      {!loading && error && tab !== 'Audit' && (
-        <window.ErrorBox message={`Could not reach the health endpoint — ${error}`} />
+      {loading && !data && <RTableSkeleton rows={6} />}
+      {!loading && error && <window.ErrorBox message={`Could not reach the health endpoint — ${error}`} />}
+
+      {(data || !loading) && !error && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* ── 1. System ─────────────────────────────────────────────── */}
+          <div style={{ ...window.card, padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%',
+                background: statusLight, display: 'inline-block',
+                boxShadow: `0 0 6px ${statusLight}` }} aria-label="system status indicator" />
+              <div style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 600,
+                color: 'var(--ink)' }}>System</div>
+            </div>
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase',
+                  letterSpacing: '0.06em', marginBottom: 4 }}>Hardware tier</div>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 700,
+                  background: tier === 'T1' || tier === 'T2' ? 'rgba(6,214,160,0.12)' : 'rgba(255,213,79,0.18)',
+                  color: tier === 'T1' || tier === 'T2' ? 'var(--green-dark)' : '#9e7b00',
+                  padding: '3px 10px', borderRadius: 8 }}>{tier || '—'}</span>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase',
+                  letterSpacing: '0.06em', marginBottom: 4 }}>Model</div>
+                <span className="num" style={{ fontSize: 13, color: 'var(--ink)' }}>
+                  {hw.model || h.version || '—'}
+                </span>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase',
+                  letterSpacing: '0.06em', marginBottom: 4 }}>RAM</div>
+                <span className="num" style={{ fontSize: 13, color: 'var(--ink)' }}>
+                  {hw.ram_gb != null ? `${hw.ram_gb} GB`
+                    : hw.total_ram_gb != null ? `${hw.total_ram_gb} GB` : '—'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── 2. Budget ─────────────────────────────────────────────── */}
+          <div style={{ ...window.card, padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: 14 }}>
+              <div style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 600,
+                color: 'var(--ink)' }}>Budget</div>
+              <span className={govChipClass(govTier)}>{govTier}</span>
+            </div>
+
+            {budget.usd && (() => {
+              const used = budget.usd.used || 0, cap = budget.usd.cap || 0;
+              const hot = cap > 0 && used / cap > 0.85;
+              return (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between',
+                    fontSize: 12, color: 'var(--ink-2)', marginBottom: 5 }}>
+                    <span>Cloud USD</span>
+                    <span className="num" style={{ color: hot ? 'var(--coral-2)' : 'var(--ink)' }}>
+                      ${used.toFixed(2)} of ${cap.toFixed(2)} remaining: ${(cap - used).toFixed(2)}
+                    </span>
+                  </div>
+                  <window.Bar value={used} max={cap || 1}
+                    color={hot ? 'var(--coral-2)' : 'var(--primary)'} />
+                </div>
+              );
+            })()}
+
+            {budget.tokens && (() => {
+              const used = budget.tokens.used || 0, cap = budget.tokens.cap || 0;
+              const hot = cap > 0 && used / cap > 0.85;
+              return (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between',
+                    fontSize: 12, color: 'var(--ink-2)', marginBottom: 5 }}>
+                    <span>Tokens</span>
+                    <span className="num" style={{ color: hot ? 'var(--coral-2)' : 'var(--ink)' }}>
+                      {(used / 1e6).toFixed(1)}M of {(cap / 1e6).toFixed(1)}M
+                      — {((cap - used) / 1e6).toFixed(1)}M remaining
+                    </span>
+                  </div>
+                  <window.Bar value={used} max={cap || 1}
+                    color={hot ? 'var(--coral-2)' : 'var(--primary)'} />
+                </div>
+              );
+            })()}
+
+            {!budget.usd && !budget.tokens && (
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>No budget data reported yet.</div>
+            )}
+          </div>
+
+          {/* ── 3. Checks ─────────────────────────────────────────────── */}
+          <div style={{ ...window.card, padding: 20 }}>
+            <div style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 600,
+              color: 'var(--ink)', marginBottom: 14 }}>Checks</div>
+
+            {checks.length === 0 && (
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>No checks reported by backend.</div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {checks.map((c, i) => (
+                <RCheckRow key={c.name || i} check={c} />
+              ))}
+            </div>
+          </div>
+
+        </div>
       )}
-      {!loading && !error && tab === 'Overview' && <RHealthOverview h={h} />}
-      {!loading && !error && tab === 'Budget' && <RHealthBudget h={h} toast={toast} reload={reload} />}
-      {!loading && !error && tab === 'Storage' && <RHealthStorage h={h} />}
-      {tab === 'Audit' && <RHealthAudit toast={toast} />}
     </div>
   );
 }
 
-function RHealthRow({ ok, label, detail, expandable, children }) {
+function RCheckRow({ check }) {
   const [open, setOpen] = rUseState(false);
-  const mark = ok
-    ? <span style={{ color: 'var(--green-dark)' }} aria-label="healthy">✓</span>
-    : <span style={{ color: 'var(--coral-2)' }} aria-label="needs attention">!</span>;
-  const canExpand = !ok && expandable;
-  return (
-    <div style={{ borderBottom: '1px solid var(--rule-soft)', paddingBottom: 6 }}>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 13.5,
-        cursor: canExpand ? 'pointer' : 'default' }}
-        onClick={canExpand ? () => setOpen((o) => !o) : undefined}
-        role={canExpand ? 'button' : undefined} tabIndex={canExpand ? 0 : undefined}
-        onKeyDown={canExpand ? (e) => { if (e.key === 'Enter') setOpen((o) => !o); } : undefined}>
-        <span style={{ width: 16, textAlign: 'center', fontWeight: 700 }}>{mark}</span>
-        <span style={{ width: 110, fontWeight: 600, color: 'var(--ink)' }}>{label}</span>
-        <span style={{ color: ok ? 'var(--ink-2)' : 'var(--coral-2)', flex: 1 }}>{detail}</span>
-        {canExpand && <span style={{ color: 'var(--muted)' }}>{open ? '▾' : '▸'}</span>}
-      </div>
-      {canExpand && open && <div style={{ paddingLeft: 28, marginTop: 6 }}>{children}</div>}
-    </div>
-  );
-}
-
-function RHealthOverview({ h }) {
-  const dbVals = h.databases ? Object.values(h.databases) : [];
-  const dbOk = dbVals.length > 0 && dbVals.every((v) => v === 'ok');
-  const extOllamaOk = !!(h.external && h.external.ollama);
-  const budgetOk = !!(h.budget && h.budget.tier === 'green');
-  const chainOk = h.audit_chain_ok !== false;
-  const healthy = h.overall === 'green';
+  const ok = check.ok !== false && check.status !== 'fail';
+  const hasDetail = !ok && check.detail;
 
   return (
-    <div style={{ ...window.card, padding: 24, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <RHealthRow ok={true} label="Hardware"
-        detail={h.hardware
-          ? `${h.hardware.platform || '?'} ${h.hardware.arch || ''} · ${h.hardware.total_ram_gb ?? '?'} GB · tier ${h.hardware.tier ?? '?'}`
-          : 'detected'} />
-      <RHealthRow ok={true} label="Storage"
-        detail={h.storage
-          ? `${(h.storage.disk_total_gb || 0) - (h.storage.disk_free_gb || 0)} GB used · ${h.storage.disk_free_gb ?? '?'} GB free`
-          : 'available'} />
-      <RHealthRow ok={dbOk} label="Databases" expandable
-        detail={h.databases
-          ? `${dbVals.filter((v) => v === 'ok').length} of ${dbVals.length} healthy`
-          : 'unknown'}>
-        {h.databases && Object.entries(h.databases).map(([name, st]) => (
-          <RRow key={name} k={name} v={st} accent={st === 'ok' ? 'var(--green-dark)' : 'var(--coral-2)'} />
-        ))}
-      </RHealthRow>
-      <RHealthRow ok={chainOk} label="Audit chain" expandable
-        detail={chainOk ? 'intact' : 'BROKEN — verify on the Audit tab'}>
-        <div style={{ fontSize: 12, color: 'var(--coral-2)' }}>
-          The hash chain failed verification. Open the Audit tab and run “Verify chain” to find the break.
-        </div>
-      </RHealthRow>
-      <RHealthRow ok={extOllamaOk} label="External" expandable
-        detail={h.external
-          ? `ollama ${extOllamaOk ? '✓' : 'offline'} · qdrant ${h.external.qdrant ? '✓' : 'offline (optional)'}`
-          : 'unknown'}>
-        <div style={{ fontSize: 12, color: 'var(--coral-2)' }}>
-          Ollama is unreachable. Start it with <span className="num">ollama serve</span> so local models can run.
-        </div>
-      </RHealthRow>
-      <RHealthRow ok={budgetOk} label="Budget" expandable
-        detail={h.budget
-          ? `$${h.budget.usd ? h.budget.usd.used : '?'} of $${h.budget.usd ? h.budget.usd.cap : '?'} monthly · tier ${h.budget.tier}`
-          : 'unknown'}>
-        <div style={{ fontSize: 12, color: 'var(--coral-2)' }}>
-          A budget tier above green throttles spend. Review or reset buckets on the Budget tab.
-        </div>
-      </RHealthRow>
-
-      <div style={{ marginTop: 10, fontSize: 13,
-        color: healthy ? 'var(--green-dark)' : 'var(--coral-2)' }}>
-        {healthy ? 'Everything looks good. No action needed.' : 'Expand the flagged rows above for next steps.'}
-      </div>
-    </div>
-  );
-}
-
-function RHealthBudget({ h, toast, reload }) {
-  if (!h.budget) {
-    return <window.EmptyState icon="◔" title="No budget data"
-      hint="The governor hasn’t reported budget buckets yet." />;
-  }
-  const b = h.budget;
-  const Btn = window.Btn;
-
-  async function reset() {
-    if (!window.confirm('Reset all budget buckets back to zero?')) return;
-    try { await window.apiPost('/api/governor/reset'); reload(); toast.show('Budget reset', 'success'); }
-    catch (e) { toast.show(e.message, 'error'); }
-  }
-  async function kill() {
-    if (!window.confirm('Engage the kill switch and stop ALL running jobs? This halts the supervisor.')) return;
-    try { await window.apiPost('/api/governor/kill'); reload(); toast.show('Kill switch engaged', 'error'); }
-    catch (e) { toast.show(e.message, 'error'); }
-  }
-
-  const line = (label, bucket, fmt) => {
-    if (!bucket) return null;
-    const used = bucket.used || 0, cap = bucket.cap || 0;
-    const hot = cap > 0 && used / cap > 0.85;
-    return (
-      <div key={label} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '6px 0' }}>
-        <span style={{ width: 150, fontSize: 12.5, color: 'var(--ink-2)' }}>{label}</span>
-        <window.Bar value={used} max={cap} color={hot ? 'var(--coral-2)' : 'var(--primary)'} />
-        <span className="num" style={{ fontSize: 12, color: hot ? 'var(--coral-2)' : 'var(--ink)' }}>
-          {fmt(used)} of {fmt(cap)}
+    <div style={{ padding: '7px 0', borderBottom: '1px solid var(--rule-soft)' }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13,
+        cursor: hasDetail ? 'pointer' : 'default' }}
+        onClick={hasDetail ? () => setOpen((o) => !o) : undefined}
+        role={hasDetail ? 'button' : undefined}
+        tabIndex={hasDetail ? 0 : undefined}
+        onKeyDown={hasDetail ? (e) => { if (e.key === 'Enter') setOpen((o) => !o); } : undefined}>
+        <span style={{ fontSize: 15, lineHeight: 1, flexShrink: 0,
+          color: ok ? 'var(--green-dark)' : 'var(--coral-2)' }}
+          aria-label={ok ? 'passing' : 'failing'}>
+          {ok ? '✓' : '✕'}
         </span>
+        <span style={{ fontWeight: 500, color: 'var(--ink)', flex: 1 }}>{check.name}</span>
+        {hasDetail && (
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{open ? '▾' : '▸'} detail</span>
+        )}
       </div>
-    );
-  };
-
-  return (
-    <div style={{ ...window.card, padding: 24 }}>
-      {line('USD (monthly)', b.usd, (v) => `$${v}`)}
-      {line('Tokens (daily)', b.tokens, (v) => `${(v / 1e6).toFixed(1)}M`)}
-      {line('Tool calls (daily)', b.tool_calls, (v) => `${v}`)}
-      <div style={{ marginTop: 14, fontSize: 13 }}>Tier: <b style={{
-        color: b.tier === 'green' ? 'var(--green-dark)' : 'var(--coral-2)' }}>{b.tier}</b></div>
-      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-        <Btn kind="ghost" onClick={reset}>Reset budget</Btn>
-        <Btn kind="danger" onClick={kill}>Kill all jobs</Btn>
-      </div>
-    </div>
-  );
-}
-
-function RHealthStorage({ h }) {
-  if (!h.storage) {
-    return <window.EmptyState icon="◇" title="No storage data"
-      hint="Disk usage hasn’t been reported yet." />;
-  }
-  const s = h.storage;
-  const subdirs = s.subdirs_bytes || {};
-  const maxBytes = Math.max(1, ...Object.values(subdirs));
-  const replicas = s.replicas || [];
-
-  return (
-    <div style={{ ...window.card, padding: 24 }}>
-      <div style={{ marginBottom: 16, fontSize: 13 }}>
-        <b>{(s.disk_total_gb || 0) - (s.disk_free_gb || 0)} GB</b> used of {s.disk_total_gb ?? '?'} GB
-        {' '}({s.disk_free_gb ?? '?'} GB free)
-      </div>
-      <div className="small-caps" style={{ marginBottom: 6 }}>By subdirectory</div>
-      {Object.keys(subdirs).length === 0 && (
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>No subdirectory breakdown reported.</div>
-      )}
-      {Object.entries(subdirs).map(([name, bytes]) => (
-        <div key={name} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '4px 0' }}>
-          <span style={{ width: 100, fontSize: 12, color: 'var(--ink-2)' }}>{name}/</span>
-          <window.Bar value={bytes} max={maxBytes} />
-          <span className="num" style={{ fontSize: 11, color: 'var(--muted)', width: 70, textAlign: 'right' }}>
-            {(bytes / 1e6).toFixed(1)} MB
-          </span>
+      {hasDetail && open && (
+        <div style={{ paddingLeft: 25, paddingTop: 5, fontSize: 12,
+          color: 'var(--coral-2)', fontFamily: 'var(--mono)', wordBreak: 'break-word' }}>
+          {check.detail}
         </div>
-      ))}
-      <div className="small-caps" style={{ marginTop: 18, marginBottom: 6 }}>Litestream replicas</div>
-      {replicas.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>No replicas configured.</div>}
-      {replicas.map((r) => (
-        <div key={r.name} style={{ fontSize: 12, padding: '3px 0', color: 'var(--ink-2)' }}>
-          {r.name}: {r.lag_seconds == null
-            ? <span style={{ color: 'var(--muted)' }}>no snapshot yet</span>
-            : <span className="num" style={{ color: r.lag_seconds > 60 ? 'var(--coral-2)' : 'var(--green-dark)' }}>
-                lag {r.lag_seconds}s</span>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function RHealthAudit({ toast }) {
-  const { data, loading, error, reload } = window.useApi('/api/audit?limit=100', { pollMs: 10000 });
-  const events = (data && data.events) || [];
-  const [verifying, setVerifying] = rUseState(false);
-  window.useEvents((name) => { if (name === 'audit.appended') reload(); });
-
-  async function verify() {
-    setVerifying(true);
-    try {
-      const r = await window.apiPost('/api/audit/verify');
-      toast.show(r.ok ? 'Chain intact ✓' : `BROKEN at ${r.bad_seqs || '?'}`, r.ok ? 'success' : 'error');
-    } catch (e) { toast.show(e.message, 'error'); }
-    setVerifying(false);
-  }
-
-  const columns = [
-    { key: 'seq', label: 'Seq', render: (r) => <span className="num">{r.seq}</span> },
-    { key: 'ts', label: 'Time', render: (r) => <span className="num" style={{ fontSize: 11 }}>{r.ts}</span> },
-    { key: 'actor', label: 'Actor', render: (r) => r.actor || '—' },
-    { key: 'event_type', label: 'Event', render: (r) => r.event_type || r.type || '—' },
-  ];
-
-  return (
-    <div>
-      <div style={{ marginBottom: 10 }}>
-        <window.Btn kind="ghost" onClick={verify} disabled={verifying}
-          aria-label="Verify the audit hash chain">{verifying ? 'Verifying…' : 'Verify chain'}</window.Btn>
-      </div>
-      {loading && <RTableSkeleton rows={6} />}
-      {!loading && error && <window.ErrorBox message={`Could not load the audit log — ${error}`} />}
-      {!loading && !error && (
-        <window.DataTable columns={columns} rows={events.map((e) => ({ ...e, _key: e.seq }))}
-          empty={<window.EmptyState icon="🗒" title="No audit events yet"
-            hint="Every governed action appends a tamper-evident entry here." />} />
       )}
     </div>
   );
@@ -806,151 +793,160 @@ function RHealthAudit({ toast }) {
 
 // ════════════════════════════ SETTINGS ════════════════════════════
 function SettingsPage({ toast }) {
-  const [tab, setTab] = rUseState('General');
-  const PageHeader = window.PageHeader;
-  return (
-    <div>
-      <PageHeader title="Settings"
-        tabs={['General', 'Models', 'Secrets', 'Skills', 'Perspectives', 'Advanced']}
-        activeTab={tab} onTab={setTab} />
-      {tab === 'General' && <RSettingsGeneral />}
-      {tab === 'Models' && <RSettingsModels />}
-      {tab === 'Secrets' && <RSettingsSecrets toast={toast} />}
-      {tab === 'Skills' && <RSimpleList path="/api/skills" keyName="skills"
-        emptyTitle="No skills curated yet"
-        emptyHint="Skills accumulate as Lighthouse learns reusable research procedures."
-        render={(s) => (
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontFamily: 'var(--serif)', color: 'var(--ink)' }}>{s.name || 'Unnamed skill'}</span>
-            <span className="num" style={{ color: 'var(--muted)', fontSize: 12 }}>
-              used {s.use_count != null ? s.use_count : 0}×</span>
-          </div>
-        )} />}
-      {tab === 'Perspectives' && <RSimpleList path="/api/perspectives" keyName="perspectives"
-        emptyTitle="No perspectives defined"
-        emptyHint="Perspectives are stances the debate engine argues from."
-        render={(p) => (
-          <div>
-            <span style={{ fontFamily: 'var(--serif)', fontWeight: 600, color: 'var(--ink)' }}>{p.name || 'Unnamed'}</span>
-            {p.stance && <span style={{ color: 'var(--ink-2)' }}> — {p.stance}</span>}
-          </div>
-        )} />}
-      {tab === 'Advanced' && <RSettingsAdvanced />}
-    </div>
-  );
-}
-
-function RSettingsGeneral() {
-  const { data, loading, error } = window.useApi('/api/settings');
-  if (loading) return <RTableSkeleton rows={5} />;
-  if (error) return <window.ErrorBox message={`Could not load settings — ${error}`} />;
-  const cfg = (data && data.config) || {};
-  const lh = cfg.lighthouse || {}, hw = cfg.hardware || {}, ls = cfg.logseq || {}, tg = cfg.telegram || {};
-  return (
-    <div style={{ ...window.card, padding: 24 }}>
-      <RRow k="Version" v={lh.version} />
-      <RRow k="Data dir" v={lh.data_dir || '~/.lighthouse'} />
-      <RRow k="Detected tier" v={hw.detected_tier} />
-      <RRow k="Logseq" v={ls.enabled ? (ls.graph_path || 'enabled') : 'disabled'} />
-      <RRow k="Telegram" v={tg.enabled ? 'enabled' : 'disabled'} />
-      <div style={{ marginTop: 14, fontSize: 12, color: 'var(--muted)' }}>
-        Edit these in the Advanced tab or directly in <span className="num">~/.lighthouse/config.toml</span>.
-      </div>
-    </div>
-  );
-}
-
-function RSettingsModels() {
-  const { data, loading, error } = window.useApi('/api/health');
-  if (loading) return <RTableSkeleton rows={3} />;
-  if (error) return <window.ErrorBox message={`Could not reach the model host — ${error}`} />;
-  const ext = (data && data.external) || {};
-  return (
-    <div style={{ ...window.card, padding: 24 }}>
-      <RRow k="Ollama" v={ext.ollama ? 'reachable ✓' : 'offline — run ollama serve'}
-        accent={ext.ollama ? 'var(--green-dark)' : 'var(--coral-2)'} />
-      <RRow k="Qdrant" v={ext.qdrant ? 'reachable ✓' : 'offline (optional)'}
-        accent={ext.qdrant ? 'var(--green-dark)' : 'var(--muted)'} />
-      <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>
-        Pull models from the CLI: <span className="num">lighthouse models pull qwen3:8b</span>
-      </div>
-    </div>
-  );
-}
-
-function RSettingsSecrets({ toast }) {
-  const { data, loading, error, reload } = window.useApi('/api/secrets');
-  const [key, setKey] = rUseState('');
-  const [val, setVal] = rUseState('');
-  const [busy, setBusy] = rUseState(false);
-  const secrets = (data && data.secrets) || {};
+  const { data, loading, error, reload } = window.useApi('/api/settings');
+  const [form, setForm] = rUseState(null);
+  const [dirty, setDirty] = rUseState(false);
+  const [saving, setSaving] = rUseState(false);
+  const [doctorData, setDoctorData] = rUseState(null);
+  const [doctorLoading, setDoctorLoading] = rUseState(false);
   const Btn = window.Btn;
 
-  async function save() {
-    if (!key.trim()) { toast.show('Provide a key name.', 'error'); return; }
-    setBusy(true);
-    try {
-      await window.apiPost('/api/secrets', { key: key.trim(), value: val });
-      setKey(''); setVal(''); reload(); toast.show('Secret stored', 'success');
-    } catch (e) { toast.show(e.message, 'error'); }
-    setBusy(false);
+  // Sync form from fetched data (only on initial load, not on every poll)
+  rUseEffect(() => {
+    if (data && !form) {
+      setForm({
+        data_dir: data.data_dir || '',
+        offline_mode: !!data.offline_mode,
+        backup_enabled: !!data.backup_enabled,
+        notify_enabled: !!data.notify_enabled,
+        theme: data.theme || 'system',
+      });
+    }
+  }, [data]); // eslint-disable-line
+
+  function patch(key, val) {
+    setForm((f) => ({ ...f, [key]: val }));
+    setDirty(true);
   }
 
-  if (loading) return <RTableSkeleton rows={3} />;
-  if (error) return <window.ErrorBox message={`Could not load secrets — ${error}`} />;
+  async function save() {
+    setSaving(true);
+    try {
+      await window.apiPatch('/api/settings', form);
+      setDirty(false);
+      toast.show('Settings saved', 'success');
+      reload();
+    } catch (e) { toast.show(e.message, 'error'); }
+    setSaving(false);
+  }
+
+  async function runDiagnostics() {
+    setDoctorLoading(true);
+    setDoctorData(null);
+    try {
+      const d = await window.apiGet('/api/health');
+      setDoctorData(d);
+    } catch (e) { toast.show(e.message, 'error'); }
+    setDoctorLoading(false);
+  }
+
+  if (loading && !form) return <RTableSkeleton rows={8} />;
+  if (error && !form) return <window.ErrorBox message={`Could not load settings — ${error}`} />;
+  if (!form) return <RTableSkeleton rows={8} />;
 
   return (
-    <div style={{ ...window.card, padding: 24 }}>
-      {Object.keys(secrets).length === 0 && (
-        <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 12 }}>
-          No secrets stored in the file store. (Keychain entries are not listable.)
-        </div>
-      )}
-      {Object.entries(secrets).map(([k, v]) => <RRow key={k} k={k} v={v} />)}
-      <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-        <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="key"
-          aria-label="Secret key" style={{ ...rInput, width: 200 }} />
-        <input value={val} onChange={(e) => setVal(e.target.value)} type="password"
-          placeholder="value (masked)" aria-label="Secret value"
-          style={{ ...rInput, flex: 1, minWidth: 160 }} />
-        <Btn onClick={save} disabled={busy}>{busy ? 'Storing…' : 'Store'}</Btn>
-      </div>
-      <div style={{ marginTop: 10, fontSize: 11, color: 'var(--muted)' }}>
-        Values are write-only from here and are never echoed back in full.
+    <div>
+      <window.PageHeader title="Settings"
+        actions={
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {dirty && (
+              <span style={{ fontSize: 12, color: 'var(--sand)', fontWeight: 600,
+                fontFamily: 'var(--sans)' }}>Unsaved changes</span>
+            )}
+            <Btn onClick={save} disabled={saving || !dirty}>
+              {saving ? 'Saving…' : 'Save'}
+            </Btn>
+          </div>
+        } />
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 600 }}>
+
+        {/* ── General ──────────────────────────────────────────────── */}
+        <RSettingsSection title="General">
+          <RField label="Data directory">
+            <input value={form.data_dir} onChange={(e) => patch('data_dir', e.target.value)}
+              style={rInput} aria-label="Data directory path" placeholder="~/.lighthouse" />
+          </RField>
+          <RToggleRow label="Offline mode" hint="Disables all cloud model calls."
+            value={form.offline_mode} onChange={(v) => patch('offline_mode', v)} id="s-offline" />
+        </RSettingsSection>
+
+        {/* ── Backup ───────────────────────────────────────────────── */}
+        <RSettingsSection title="Backup">
+          <RToggleRow label="Enable backup" hint="Stream SQLite WAL to configured replicas via Litestream."
+            value={form.backup_enabled} onChange={(v) => patch('backup_enabled', v)} id="s-backup" />
+        </RSettingsSection>
+
+        {/* ── Notifications ────────────────────────────────────────── */}
+        <RSettingsSection title="Notifications">
+          <RToggleRow label="Enable notifications" hint="Send alerts via configured channels (Telegram, etc.)."
+            value={form.notify_enabled} onChange={(v) => patch('notify_enabled', v)} id="s-notify" />
+        </RSettingsSection>
+
+        {/* ── Appearance ───────────────────────────────────────────── */}
+        <RSettingsSection title="Appearance">
+          <RField label="Theme">
+            <select value={form.theme} onChange={(e) => patch('theme', e.target.value)}
+              style={rInput} aria-label="Theme selection">
+              <option value="system">System (auto)</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </RField>
+        </RSettingsSection>
+
+        {/* ── Doctor ───────────────────────────────────────────────── */}
+        <RSettingsSection title="Doctor">
+          <div style={{ marginBottom: 12 }}>
+            <Btn kind="ghost" onClick={runDiagnostics} disabled={doctorLoading}>
+              {doctorLoading ? 'Running diagnostics…' : 'Run diagnostics'}
+            </Btn>
+          </div>
+          {doctorData && (
+            <div>
+              {(doctorData.checks || []).length === 0 && (
+                <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+                  No checks returned from the health endpoint.
+                </div>
+              )}
+              {(doctorData.checks || []).map((c, i) => (
+                <RCheckRow key={c.name || i} check={c} />
+              ))}
+              {doctorData.overall && (
+                <div style={{ marginTop: 10, fontSize: 13, fontWeight: 600,
+                  color: doctorData.overall === 'green' ? 'var(--green-dark)' : 'var(--coral-2)' }}>
+                  Overall: {doctorData.overall}
+                </div>
+              )}
+            </div>
+          )}
+        </RSettingsSection>
+
       </div>
     </div>
   );
 }
 
-function RSettingsAdvanced() {
-  const { data, loading, error } = window.useApi('/api/settings');
-  if (loading) return <RTableSkeleton rows={6} />;
-  if (error) return <window.ErrorBox message={`Could not load settings — ${error}`} />;
+function RSettingsSection({ title, children }) {
   return (
-    <div style={{ ...window.card, padding: 24 }}>
-      <div className="small-caps" style={{ marginBottom: 8 }}>config.toml (read-only preview)</div>
-      <pre style={{ fontFamily: 'var(--mono)', fontSize: 11.5, background: 'var(--rule-soft)',
-        padding: 14, borderRadius: 8, overflow: 'auto', maxHeight: 420, margin: 0,
-        color: 'var(--ink)' }}>
-        {JSON.stringify((data && data.config) || {}, null, 2)}
-      </pre>
+    <div style={{ ...window.card, padding: '18px 20px' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase',
+        letterSpacing: '0.08em', marginBottom: 14 }}>{title}</div>
+      {children}
     </div>
   );
 }
 
-function RSimpleList({ path, keyName, emptyTitle, emptyHint, render }) {
-  const { data, loading, error } = window.useApi(path);
-  if (loading) return <RTableSkeleton rows={3} />;
-  if (error) return <window.ErrorBox message={`Could not load — ${error}`} />;
-  const items = (data && data[keyName]) || [];
-  if (!items.length) return <window.EmptyState icon="◌" title={emptyTitle} hint={emptyHint} />;
+function RToggleRow({ label, hint, value, onChange, id }) {
   return (
-    <div style={{ ...window.card, padding: 16 }}>
-      {items.map((it, i) => (
-        <div key={i} style={{ padding: '9px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13 }}>
-          {render(it)}
-        </div>
-      ))}
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      gap: 16, marginBottom: 12 }}>
+      <label htmlFor={id} style={{ cursor: 'pointer' }}>
+        <div style={{ fontSize: 13, color: 'var(--ink)', fontFamily: 'var(--sans)',
+          fontWeight: 500 }}>{label}</div>
+        {hint && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{hint}</div>}
+      </label>
+      <RToggle id={id} value={value} onChange={onChange} />
     </div>
   );
 }

@@ -11,10 +11,10 @@ keys are off by default in SQLite and must be enabled per connection.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 
 @dataclass(frozen=True)

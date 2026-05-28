@@ -6,8 +6,6 @@ import io
 import zipfile
 from pathlib import Path
 
-import pytest
-
 from lighthouse_ai.sandbox import (
     ArchiveBombScanner,
     HTMLScriptScanner,
@@ -18,7 +16,6 @@ from lighthouse_ai.sandbox import (
 )
 from lighthouse_ai.sandbox.broker import build_default_broker
 from lighthouse_ai.sandbox.scanners import EICAR_SIGNATURE, EICARScanner
-
 
 # --- scanners ----------------------------------------------------
 

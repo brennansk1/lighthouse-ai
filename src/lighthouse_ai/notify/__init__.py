@@ -14,12 +14,15 @@ from .channels import (
     EmailChannel,
 )
 from .dispatcher import ChannelResult, Notifier
+from .telegram import TelegramChannel, request_confirmation
 
 __all__ = [
     "Channel",
+    "ChannelResult",
     "DesktopChannel",
     "DiscordChannel",
     "EmailChannel",
     "Notifier",
-    "ChannelResult",
+    "TelegramChannel",
+    "request_confirmation",
 ]

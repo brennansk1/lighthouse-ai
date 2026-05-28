@@ -9,8 +9,8 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from .chunker import Chunk
 

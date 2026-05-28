@@ -3,8 +3,6 @@ research --url ingestion, and the notification hook."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from typer.testing import CliRunner
 
@@ -35,6 +33,7 @@ def test_replay_graceful_when_no_job(env):
 def test_replay_reconstructs_recorded_trace(env):
     # seed a model_call audit row for a job
     import json
+
     from lighthouse_ai.persistence import open_db
     conn = open_db(env / "audit.db")
     try:

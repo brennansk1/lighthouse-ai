@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import math
-from typing import Iterable, Protocol
+from collections.abc import Iterable
+from typing import Protocol
 
 
 class Embedder(Protocol):

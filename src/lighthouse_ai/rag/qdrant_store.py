@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from .chunker import Chunk
 from .store import SearchResult
@@ -67,7 +68,7 @@ class QdrantStore:
             client = self._get_client()
             client.get_collections()
             return True
-        except Exception:  # noqa: BLE001 - any connection error → unavailable
+        except Exception:
             return False
 
     # --- collection bootstrap ---
@@ -107,7 +108,7 @@ class QdrantStore:
                         field_name=field,
                         field_schema=qm.PayloadSchemaType.KEYWORD,
                     )
-                except Exception:  # noqa: BLE001 - index may already exist; ignore
+                except Exception:
                     log.debug("payload index %s already exists", field)
         self._ensured = True
 
@@ -193,5 +194,5 @@ class QdrantStore:
         client = self._get_client()
         try:
             return int(client.count(collection_name=self.collection, exact=True).count)
-        except Exception:  # noqa: BLE001 - collection may not exist yet
+        except Exception:
             return 0

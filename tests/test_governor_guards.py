@@ -11,13 +11,11 @@ import json
 
 import pytest
 
-from lighthouse_ai.governor.loop_detector import (
-    LOOP_DEFAULTS,
-    LoopConfig,
-    LoopDetector,
-    cosine_similarity,
-    normalize_query,
-    query_hash,
+from lighthouse_ai.governor.egress_proxy import (
+    DEFAULT_ALLOWED_DOMAINS,
+    EgressProxy,
+    PrivacyTier,
+    extract_host,
 )
 from lighthouse_ai.governor.injection_gate import (
     InjectionGate,
@@ -26,13 +24,14 @@ from lighthouse_ai.governor.injection_gate import (
     normalize_unicode,
     spotlight,
 )
-from lighthouse_ai.governor.egress_proxy import (
-    DEFAULT_ALLOWED_DOMAINS,
-    EgressProxy,
-    PrivacyTier,
-    extract_host,
+from lighthouse_ai.governor.loop_detector import (
+    LOOP_DEFAULTS,
+    LoopConfig,
+    LoopDetector,
+    cosine_similarity,
+    normalize_query,
+    query_hash,
 )
-
 
 # --------------------------------------------------------------------------- #
 # Loop detection (§24.6)

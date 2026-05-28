@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 import httpx
-
 
 DEFAULT_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 DEFAULT_CONNECT_TIMEOUT = 60.0
@@ -68,7 +68,7 @@ class OllamaBackend:
         if self._owns_client:
             self._client.close()
 
-    def __enter__(self) -> "OllamaBackend":
+    def __enter__(self) -> OllamaBackend:
         return self
 
     def __exit__(self, *exc: object) -> None:

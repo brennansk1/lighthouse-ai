@@ -10,15 +10,16 @@ Pipeline:
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from .bm25 import BM25Index
 from .chunker import Chunk
 from .embedder import Embedder
 from .fusion import reciprocal_rank_fusion
 from .rerank import Reranker
-from .store import SearchResult, VectorStore
+from .store import VectorStore
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,8 @@ class HybridSearch:
 
     def search(self, query: str, *, top_k: int = 5, dense_k: int = 100,
                sparse_k: int = 100, filter: dict[str, Any] | None = None,
-               min_quality_class: int | None = None) -> list[HybridResult]:
+               min_quality_class: int | None = None,
+               rerank_candidates: int | None = None) -> list[HybridResult]:
         q_vec = self.embedder.embed([query])[0]
         dense = self.store.search(q_vec, k=dense_k, filter=filter)
         sparse = self.bm25.search(query, k=sparse_k)
@@ -80,9 +82,12 @@ class HybridSearch:
                 sparse_rank=sparse_rank.get(cid),
             ))
 
-        # Reranker on top of fused candidates.
+        # Reranker on top of fused candidates. Cap the pool fed to the (costly)
+        # cross-encoder to `rerank_candidates` by fusion order — the canonical
+        # "retrieve N → rerank → top_k" shape (e.g. 50 → rerank → 8).
         if self.reranker is not None and candidates:
-            reranked = self.reranker.rerank(query, [c.chunk for c in candidates],
+            pool = candidates[:rerank_candidates] if rerank_candidates else candidates
+            reranked = self.reranker.rerank(query, [c.chunk for c in pool],
                                             top_k=top_k)
             return [HybridResult(chunk=ch, score=sc,
                                  dense_rank=dense_rank.get(ch.id),

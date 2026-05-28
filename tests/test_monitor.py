@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from lighthouse_ai.modes.monitor import (
-    ClassifiedItem,
     MonitorItem,
     MonitorState,
     default_salience,

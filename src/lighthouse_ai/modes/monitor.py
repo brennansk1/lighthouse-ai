@@ -13,9 +13,9 @@ as the dedup key.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Callable, Iterable
+from datetime import UTC, datetime
 
 from ..gateway import Gateway
 from ..rag.embedder import cosine
@@ -155,7 +155,7 @@ def run_monitor(
 
     return MonitorReport(
         topic=topic,
-        generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
         alerts=alerts,
         digest=digest,
         suppressed_duplicates=suppressed,

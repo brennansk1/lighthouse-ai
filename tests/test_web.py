@@ -58,7 +58,6 @@ def test_design_canvas_still_available(migrated_paths):
 
 
 def test_ui_serves_coastal_background():
-    from pathlib import Path
     from lighthouse_ai.web.routes import _static_root
     bg = _static_root() / "assets" / "coastal-bg.png"
     assert bg.exists()
@@ -80,6 +79,7 @@ def test_dashboard_api_returns_expected_shape(migrated_paths):
 
 def test_dashboard_api_jobs_reflect_state_db(migrated_paths):
     import json
+
     from lighthouse_ai.persistence import open_db
     conn = open_db(migrated_paths.state_db)
     try:
@@ -119,6 +119,7 @@ def test_ui_does_not_shadow_existing_health(migrated_paths):
 def test_dashboard_lead_picks_review_job(migrated_paths):
     """A job in 'review' status becomes the dashboard's lead story."""
     import json
+
     from lighthouse_ai.persistence import open_db
     conn = open_db(migrated_paths.state_db)
     try:
@@ -139,6 +140,7 @@ def test_dashboard_lead_picks_review_job(migrated_paths):
 
 def test_dashboard_digest_surfaces_running_jobs(migrated_paths):
     import json
+
     from lighthouse_ai.persistence import open_db
     conn = open_db(migrated_paths.state_db)
     try:

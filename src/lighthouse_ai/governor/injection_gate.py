@@ -46,11 +46,11 @@ class _Pattern:
     """One weighted injection signature."""
 
     name: str
-    regex: "re.Pattern[str]"
+    regex: re.Pattern[str]
     weight: float
 
 
-def _compile(pattern: str, flags: int = re.IGNORECASE) -> "re.Pattern[str]":
+def _compile(pattern: str, flags: int = re.IGNORECASE) -> re.Pattern[str]:
     return re.compile(pattern, flags)
 
 

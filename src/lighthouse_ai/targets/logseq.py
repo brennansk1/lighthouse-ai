@@ -59,7 +59,7 @@ def export_draft(graph_dir: Path, *, draft_id: str, title: str, body_html: str,
     lines = [
         f"title:: {title}",
         f"id:: {block_uuid}",
-        f"type:: lighthouse-draft",
+        "type:: lighthouse-draft",
         f"lighthouse-draft-id:: {draft_id}",
     ]
     if topic:

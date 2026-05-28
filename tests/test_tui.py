@@ -388,7 +388,7 @@ async def test_job_detail_screen_tabs():
     async with app.run_test() as pilot:
         await pilot.press("2")
         await pilot.pause()
-        from lighthouse_ai.tui.screens import JobsPage, JobDetailScreen
+        from lighthouse_ai.tui.screens import JobDetailScreen, JobsPage
         app.query_one("#jobs", JobsPage).action_open_detail()
         await pilot.pause()
         assert isinstance(app.screen, JobDetailScreen)

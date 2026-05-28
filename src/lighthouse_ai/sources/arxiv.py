@@ -8,7 +8,6 @@ when calling in a loop (the caller paces; we do one request per search).
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from typing import Iterable
 
 import httpx
 

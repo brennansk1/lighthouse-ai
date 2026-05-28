@@ -5,11 +5,11 @@ from __future__ import annotations
 import threading
 
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from lighthouse_ai.governor import (
     BUDGET_DEFAULTS,
-    BudgetConfig,
     BudgetTripped,
     Governor,
     degradation_tier,
@@ -125,7 +125,7 @@ def test_concurrent_spend_math_correct(gov):
         try:
             for _ in range(20):
                 gov.try_spend(usd=0.01)
-        except BaseException as exc:  # noqa: BLE001
+        except BaseException as exc:
             errors.append(exc)
 
     threads = [threading.Thread(target=worker) for _ in range(5)]
@@ -165,6 +165,7 @@ def test_mock_provider_raises_when_tripped(gov):
 def test_property_remaining_never_negative(amounts):
     """Hypothesis: random USD spends never push the remaining below zero."""
     import tempfile
+
     from lighthouse_ai.paths import make_paths
     from lighthouse_ai.schema import kinds_for, migrate_all
     td = tempfile.mkdtemp()

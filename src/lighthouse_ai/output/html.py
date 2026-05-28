@@ -9,9 +9,8 @@ and runs Pandoc/Quarto for richer exports.
 from __future__ import annotations
 
 import html as _html
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
-
 
 _TUFTE_LITE_CSS = """
 <style>

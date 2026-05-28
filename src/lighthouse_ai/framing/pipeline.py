@@ -179,25 +179,25 @@ def decompose(question: str, qtype: QuestionType) -> list[str]:
         return [
             f"What is the strongest case for each option in '{base}'?",
             f"What evidence would *change* the choice in '{base}'?",
-            f"On what dimensions do the options materially differ?",
+            "On what dimensions do the options materially differ?",
         ]
     if qtype is QuestionType.PREDICTIVE_FORECAST:
         return [
             f"What is the base rate for outcomes like '{base}'?",
-            f"What are the load-bearing drivers?",
-            f"What uncertainty intervals does the evidence support?",
+            "What are the load-bearing drivers?",
+            "What uncertainty intervals does the evidence support?",
         ]
     if qtype is QuestionType.CAUSAL_EXPLANATION:
         return [
             f"What is the proximate cause of '{base}'?",
-            f"What are the contributing distal causes?",
-            f"What counterfactuals undermine the proposed cause?",
+            "What are the contributing distal causes?",
+            "What counterfactuals undermine the proposed cause?",
         ]
     if qtype is QuestionType.METHODOLOGY_EVALUATION:
         return [
             f"What is the track record of the method in '{base}'?",
-            f"What alternative methods exist and how do they compare?",
-            f"What are the documented failure modes?",
+            "What alternative methods exist and how do they compare?",
+            "What are the documented failure modes?",
         ]
     return [
         f"What is established about '{base}'?",

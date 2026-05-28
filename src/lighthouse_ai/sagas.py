@@ -11,7 +11,7 @@ This is deliberately a tiny module — most of the policy lives in the
 
 from __future__ import annotations
 
-from typing import Callable, Iterable
+from collections.abc import Callable, Iterable
 
 from .intents import Intent
 

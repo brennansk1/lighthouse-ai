@@ -53,7 +53,7 @@ class SandboxBroker:
                 continue
             try:
                 results.append(scanner.scan(payload, filename=filename))
-            except Exception as exc:  # noqa: BLE001 - defensive
+            except Exception as exc:
                 results.append(ScanResult(scanner.name, "quarantine",
                                           f"scanner error: {exc!r}"))
 
@@ -79,7 +79,9 @@ class SandboxBroker:
 def build_default_broker(data_dir: Path) -> SandboxBroker:
     """Convenience: assemble a broker with bundled scanners + quarantine."""
     from .scanners import (
-        ArchiveBombScanner, HTMLScriptScanner, PDFJavaScriptScanner,
+        ArchiveBombScanner,
+        HTMLScriptScanner,
+        PDFJavaScriptScanner,
     )
     q = Quarantine(data_dir / "quarantine.db", data_dir / "quarantine")
     scanners: list[Scanner] = [

@@ -7,13 +7,12 @@ by Brier and the running calibration curve updated.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..persistence import open_db
 from .brier import brier_score
-from .wep import WEPBand, band_for_probability, parse_band
+from .wep import band_for_probability, parse_band
 
 
 @dataclass(frozen=True)

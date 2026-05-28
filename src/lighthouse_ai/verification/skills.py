@@ -10,7 +10,6 @@ from pathlib import Path
 
 from ..persistence import open_db
 
-
 _SKILLS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS skills (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

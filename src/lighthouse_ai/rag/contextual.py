@@ -15,7 +15,7 @@ preamble per Anthropic's pattern. Here we provide:
 
 from __future__ import annotations
 
-from typing import Callable, Iterable
+from collections.abc import Callable, Iterable
 
 from .chunker import Chunk
 
@@ -31,7 +31,7 @@ def default_preamble(chunk: Chunk) -> str:
         parts.append(f"grade {m['grade']}")
     if "published_date" in m:
         parts.append(f"published {m['published_date']}")
-    if "stakes" in m and m["stakes"]:
+    if m.get("stakes"):
         parts.append(f"stakes: {m['stakes']}")
     if not parts:
         return ""

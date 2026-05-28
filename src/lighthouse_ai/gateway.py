@@ -182,7 +182,7 @@ def enough_ram_for(model: str, *, available_gb: float | None = None,
         try:
             import psutil
             available_gb = psutil.virtual_memory().available / 1e9
-        except Exception:  # noqa: BLE001
+        except Exception:
             return True  # can't measure → don't block
     return need + margin_gb <= available_gb
 
@@ -413,8 +413,6 @@ def resolve_against_installed(profile: HardwareProfile, installed: list[str],
 
     # Reasoning: walk preference, prefer ones that fit the budget.
     reasoning = None
-    fitting = [t for t in _REASONING_PREFERENCE
-               if t in set(installed) or _first_installed([t], installed)]
     # resolve each preference to its installed tag, keep order
     resolved_pref = []
     for t in _REASONING_PREFERENCE:
@@ -600,7 +598,7 @@ class Gateway:
             try:
                 if not self._ollama.available():
                     return None
-            except Exception:  # noqa: BLE001 - any error → treat as unavailable
+            except Exception:
                 return None
             return self._ollama
         if not self._prefer_real:
@@ -611,7 +609,7 @@ class Gateway:
             if not backend.available():
                 return None
             self._ollama = backend
-        except Exception:  # noqa: BLE001 - defensive: never block on missing backend
+        except Exception:
             return None
         return self._ollama
 
@@ -662,7 +660,7 @@ class Gateway:
                     self.governor.spend(usd=0.0, tool_calls=1,
                                         tokens=prompt_tokens + completion_tokens,
                                         job_id=job_id)
-                except Exception:  # noqa: BLE001 - fall back to mock on any backend failure
+                except Exception:
                     backend_used = "mock"
                     mock_resp = self._mock.complete(prompt, job_id=job_id)
                     text, prompt_tokens, completion_tokens = (
@@ -686,7 +684,7 @@ class Gateway:
             text=text, model=b.model, role=role,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
-            usd=0.0 if backend_used != "cloud" else 0.0,  # placeholder for cloud pricing
+            usd=0.0,  # local calls are free; cloud pricing TBD when escalation lands
             fingerprint=fp,
         )
         self._record(resp, job_id=job_id, prompt=prompt, backend_used=backend_used)
@@ -698,7 +696,7 @@ class Gateway:
             loaded = getattr(ollama, "loaded_models", None)
             if callable(loaded) and model in (loaded() or []):
                 return True
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         return enough_ram_for(model)
 

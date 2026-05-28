@@ -20,8 +20,8 @@ plug LangGraph in later if desired.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from ..framing import FramedQuestion, run_framing
 from ..gateway import Gateway
@@ -72,12 +72,14 @@ def _research_section(
     *,
     job_id: str | None,
     top_k: int = 5,
+    rerank_candidates: int | None = None,
 ) -> tuple[Section, list[HybridResult]]:
     """Fetch evidence + draft a section body. Falls back to a deterministic
     stub when the gateway is absent so the orchestrator runs in tests."""
     evidence: list[HybridResult] = []
     if hybrid is not None:
-        evidence = hybrid.search(section.sub_question, top_k=top_k)
+        evidence = hybrid.search(section.sub_question, top_k=top_k,
+                                 rerank_candidates=rerank_candidates)
     citations = [e.chunk.id for e in evidence]
     # `citations` mirrors the chunk ids of the evidence list above.
     if gateway is None:
@@ -135,22 +137,25 @@ def run_deepdive(
     hybrid: HybridSearch | None = None,
     gateway: Gateway | None = None,
     max_rounds: int = 3,
-    progress_threshold: float = 0.1,
+    progress_threshold: float = 0.05,
+    top_k: int = 5,
+    rerank_candidates: int | None = None,
     job_id: str | None = None,
     on_round: Callable[[int, list[Section]], None] | None = None,
 ) -> DraftReport:
     framed = run_framing(question)
     sections = _skeleton(framed)
     evidence_rounds: list[list[HybridResult]] = []
-    open_q = list(framed.sub_questions)
 
     rounds_used = 0
+    prev_open_count: int | None = None
     for round_idx in range(1, max_rounds + 1):
         round_evidence: list[HybridResult] = []
         new_sections: list[Section] = []
         for sec in sections:
-            sec2, evid = _research_section(sec, hybrid, gateway,
-                                           job_id=job_id, top_k=5)
+            sec2, evid = _research_section(sec, hybrid, gateway, job_id=job_id,
+                                           top_k=top_k,
+                                           rerank_candidates=rerank_candidates)
             new_sections.append(sec2)
             round_evidence.extend(evid)
         sections = _denoise(new_sections)
@@ -158,9 +163,15 @@ def run_deepdive(
         rounds_used = round_idx
         if on_round:
             on_round(round_idx, sections)
+        # Terminate when the discovery curve has flattened AND no new open
+        # questions were resolved/created since the prior round (§Sprint 28).
+        open_count = sum(1 for s in sections if not s.body.strip())
         progress = _discovery_progress(evidence_rounds)
-        if progress < progress_threshold and round_idx > 1:
+        stuck = progress < progress_threshold
+        open_unchanged = prev_open_count is not None and open_count == prev_open_count
+        if stuck and open_unchanged and round_idx > 1:
             break
+        prev_open_count = open_count
 
     # Anything with an empty body remains an open question.
     open_questions = [s.sub_question for s in sections if not s.body.strip()]

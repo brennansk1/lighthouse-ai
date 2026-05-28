@@ -1,5 +1,5 @@
 """Output renderers (design §20)."""
 
-from .html import render_monitor_html, render_html_document
+from .html import render_html_document, render_monitor_html
 
-__all__ = ["render_monitor_html", "render_html_document"]
+__all__ = ["render_html_document", "render_monitor_html"]

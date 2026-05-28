@@ -11,7 +11,6 @@ import subprocess
 from email.message import EmailMessage
 
 import httpx
-import pytest
 import respx
 
 from lighthouse_ai.notify import (
@@ -22,7 +21,6 @@ from lighthouse_ai.notify import (
     EmailChannel,
     Notifier,
 )
-
 
 # --- helpers -----------------------------------------------------------------
 

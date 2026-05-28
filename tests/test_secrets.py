@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import stat
 from pathlib import Path
 
@@ -163,7 +162,9 @@ def test_audit_append_with_explicit_secret_unchanged(migrated_paths):
 def test_audit_append_pulls_from_secret_store_when_secret_none(migrated_paths):
     """secret=None + data_dir → SecretStore mints/loads the chain key."""
     from lighthouse_ai.verification.audit_chain import (
-        append_event, resolve_secret, verify_audit_chain,
+        append_event,
+        resolve_secret,
+        verify_audit_chain,
     )
     append_event(migrated_paths.audit_db, actor="t", event_type="e",
                  payload={"v": 1}, data_dir=migrated_paths.data_dir)
@@ -174,7 +175,11 @@ def test_audit_append_pulls_from_secret_store_when_secret_none(migrated_paths):
 
 def test_audit_append_consistent_secret_across_calls(migrated_paths):
     """Multiple append_event(secret=None) calls share the same minted key."""
-    from lighthouse_ai.verification.audit_chain import append_event, resolve_secret, verify_audit_chain
+    from lighthouse_ai.verification.audit_chain import (
+        append_event,
+        resolve_secret,
+        verify_audit_chain,
+    )
     for i in range(3):
         append_event(migrated_paths.audit_db, actor="t", event_type="e",
                      payload={"i": i}, data_dir=migrated_paths.data_dir)

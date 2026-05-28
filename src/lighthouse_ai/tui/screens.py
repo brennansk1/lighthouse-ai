@@ -21,12 +21,20 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import (
-    Button, DataTable, Input, Label, ListItem, ListView, Markdown, Static,
-    TabbedContent, TabPane,
+    Button,
+    DataTable,
+    Input,
+    Label,
+    ListItem,
+    ListView,
+    Markdown,
+    Static,
+    TabbedContent,
+    TabPane,
 )
 
 from .client import SupervisorOffline
-from .widgets import Sparkline, WepBadge, sparkline
+from .widgets import WepBadge, sparkline
 
 
 # ════════════════════════════ base page ════════════════════════════
@@ -40,7 +48,7 @@ class _Page(Container):
             return self.app.client.get(path, **params)
         except SupervisorOffline:
             return None
-        except Exception:  # noqa: BLE001 - never let a page crash the app
+        except Exception:
             return None
 
     def client_post(self, path: str, json: dict | None = None) -> dict[str, Any] | None:
@@ -49,7 +57,7 @@ class _Page(Container):
         except SupervisorOffline:
             self.app.notify("Supervisor offline", severity="error")
             return None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.app.notify(f"Request failed: {exc}", severity="error")
             return None
 
@@ -162,7 +170,7 @@ class JobsPage(_Page):
             return None
         try:
             row_key = t.coordinate_to_cell_key(t.cursor_coordinate).row_key
-        except Exception:  # noqa: BLE001
+        except Exception:
             return None
         return next((j for j in self._rows if j["id"] == row_key.value), None)
 
@@ -215,7 +223,7 @@ class JobDetailScreen(ModalScreen):
             "Seq", "Time", "Model", "Tokens")
         try:
             d = self.app.client.get(f"/api/jobs/{self.job_id}")
-        except Exception:  # noqa: BLE001
+        except Exception:
             d = None
         if not d:
             self.query_one("#jd-trace-body", Static).update(

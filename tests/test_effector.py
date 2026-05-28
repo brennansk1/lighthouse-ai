@@ -8,7 +8,6 @@ from lighthouse_ai.effector import (
     MAX_ATTEMPTS,
     Effector,
     clear_targets,
-    register_target,
 )
 from lighthouse_ai.intents import list_dead, outbox_depth, write_intent
 from lighthouse_ai.targets import test_target

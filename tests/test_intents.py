@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import uuid
 
-import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from lighthouse_ai.intents import (
     claim_one,
@@ -110,6 +110,7 @@ def test_derive_point_uuid_differs_per_key():
 def test_property_writing_n_unique_keys_produces_n_rows(keys):
     """Outbox depth equals number of unique idempotency keys written."""
     import tempfile
+
     from lighthouse_ai.paths import make_paths
     from lighthouse_ai.schema import kinds_for, migrate_all
     with tempfile.TemporaryDirectory() as td:
@@ -126,6 +127,7 @@ def test_property_writing_n_unique_keys_produces_n_rows(keys):
 @given(st.text(min_size=1, max_size=20), st.integers(min_value=1, max_value=10))
 def test_property_writing_same_key_n_times_yields_one_row(key, n):
     import tempfile
+
     from lighthouse_ai.paths import make_paths
     from lighthouse_ai.schema import kinds_for, migrate_all
     with tempfile.TemporaryDirectory() as td:

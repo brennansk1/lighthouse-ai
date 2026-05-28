@@ -12,7 +12,6 @@ from typer.testing import CliRunner
 from lighthouse_ai.cli import app
 from lighthouse_ai.sources.rss import fetch_feed, parse_feed_bytes
 
-
 ATOM_FIXTURE = b"""<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title>Test Atom Feed</title>

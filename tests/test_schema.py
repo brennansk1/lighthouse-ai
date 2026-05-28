@@ -8,8 +8,8 @@ import pytest
 
 from lighthouse_ai.persistence import open_db
 from lighthouse_ai.schema import (
-    Migration,
     _MIGRATIONS_BY_DB,
+    Migration,
     applied_migrations,
     apply_migrations,
     kinds_for,

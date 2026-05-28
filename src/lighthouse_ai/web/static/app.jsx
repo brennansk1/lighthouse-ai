@@ -16,13 +16,13 @@ const { useState, useEffect, useCallback, useRef } = React;
 // Seven-item nav (design webapp_tui_design.md §0.3). Counters only where the
 // user must act: Jobs (running), Drafts (staged), Positions (overdue).
 const APP_PAGES = [
-  { id: 'home',      label: 'Home',      get C() { return window.HomePage; } },
-  { id: 'jobs',      label: 'Jobs',      counter: 'jobs_running',      get C() { return window.JobsPage; } },
-  { id: 'drafts',    label: 'Drafts',    counter: 'drafts_staged',     get C() { return window.DraftsPage; } },
-  { id: 'topics',    label: 'Topics',    get C() { return window.TopicsPage; } },
-  { id: 'positions', label: 'Positions', counter: 'positions_overdue', get C() { return window.PositionsPage; } },
-  { id: 'health',    label: 'Health',    get C() { return window.HealthPage; } },
-  { id: 'settings',  label: 'Settings',  get C() { return window.SettingsPage; } },
+  { id: 'home',      label: 'Home',      icon: '🏠', get C() { return window.HomePage; } },
+  { id: 'jobs',      label: 'Jobs',      icon: '⚡', counter: 'jobs_running',      get C() { return window.JobsPage; } },
+  { id: 'drafts',    label: 'Drafts',    icon: '📄', counter: 'drafts_staged',     get C() { return window.DraftsPage; } },
+  { id: 'topics',    label: 'Topics',    icon: '🗂',  get C() { return window.TopicsPage; } },
+  { id: 'positions', label: 'Positions', icon: '🎯', counter: 'positions_overdue', get C() { return window.PositionsPage; } },
+  { id: 'health',    label: 'Health',    icon: '❤',  get C() { return window.HealthPage; } },
+  { id: 'settings',  label: 'Settings',  icon: '⚙',  get C() { return window.SettingsPage; } },
 ];
 
 function currentPage() {
@@ -63,7 +63,104 @@ html[data-theme="dark"], [data-theme="dark"] body { background: #061322; }
 }
 [data-theme="dark"] .lh-side {
   box-shadow: 1px 0 0 var(--rule), 2px 0 8px rgba(0,0,0,0.4);
-}`;
+}
+
+/* Sidebar active-item left accent bar */
+.lh-nav a.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--primary);
+}
+
+/* Page fade-in transition */
+@keyframes lh-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.lh-main-content {
+  animation: lh-fade-in .15s ease;
+}
+
+/* Governor tier chip */
+.lh-tier-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.lh-tier-green   { background: rgba(6,214,160,0.15); color: var(--green-dark); }
+.lh-tier-warn    { background: rgba(255,213,79,0.2);  color: #a07a00; }
+.lh-tier-degrade { background: rgba(255,152,100,0.2); color: #c05a20; }
+.lh-tier-local   { background: rgba(106,138,166,0.15); color: var(--muted); }
+.lh-tier-drain   { background: rgba(255,213,79,0.2);  color: #a07a00; }
+.lh-tier-tripped { background: rgba(240,80,80,0.15);  color: #c03030; }
+`;
+
+// Inject the extra CSS (active bar + fade + tier chips) once.
+(function ensureAppCSS() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('lh-app-extra-css')) return;
+  const el = document.createElement('style');
+  el.id = 'lh-app-extra-css';
+  el.textContent = `
+/* Sidebar active-item left accent bar */
+.lh-nav a { position: relative; }
+.lh-nav a.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--primary);
+}
+
+/* Page fade-in */
+@keyframes lh-fade-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.lh-main-content {
+  animation: lh-fade-in .15s ease;
+}
+
+/* Governor tier chip */
+.lh-tier-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: var(--mono, monospace);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.lh-tier-green   { background: rgba(6,214,160,0.15);  color: var(--green-dark, #06d6a0); }
+.lh-tier-warn    { background: rgba(255,213,79,0.2);   color: #9e7b00; }
+.lh-tier-degrade { background: rgba(255,152,100,0.2);  color: #bf5820; }
+.lh-tier-local_only { background: rgba(106,138,166,0.15); color: var(--muted, #6a8aa6); }
+.lh-tier-drain   { background: rgba(255,213,79,0.2);   color: #9e7b00; }
+.lh-tier-tripped { background: rgba(220,60,60,0.15);   color: #c03030; }
+.lh-tier-unknown { background: rgba(106,138,166,0.12); color: var(--muted, #6a8aa6); }
+`;
+  document.head && document.head.appendChild(el);
+})();
+
+function tierChipClass(tier) {
+  if (!tier || tier === '—') return 'lh-tier-chip lh-tier-unknown';
+  const t = String(tier).toLowerCase().replace(/[^a-z_]/g, '_');
+  return `lh-tier-chip lh-tier-${t}`;
+}
 
 function useTheme() {
   const [theme, setTheme] = useState(() => {
@@ -112,6 +209,9 @@ class PageBoundary extends React.Component {
 
 // ── Sidebar ─────────────────────────────────────────────────────────────
 function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
+  const tier = counters.tier || '—';
+  const budget = counters.budget || '—';
+
   return (
     <aside className="lh-side">
       <div className="lh-brand">
@@ -128,6 +228,8 @@ function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
           return (
             <a key={p.id} href={`#${p.id}`} className={isActive ? 'active' : ''}
               aria-current={isActive ? 'page' : undefined}>
+              <span aria-hidden="true" style={{ marginRight: 7, fontSize: 14, opacity: 0.8,
+                display: 'inline-block', width: 18, textAlign: 'center' }}>{p.icon}</span>
               <span>{p.label}</span>
               {count ? <span className="count">{count}</span> : null}
             </a>
@@ -135,9 +237,19 @@ function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
         })}
       </nav>
       <div className="lh-foot">
-        <div className="row"><span>Tier</span><span className="num">{counters.tier || '—'}</span></div>
-        <div className="row"><span>Budget</span><span className="num">{counters.budget || '—'}</span></div>
-        <div className="row" style={{ marginTop: 6, gap: 8 }}>
+        {/* Governor tier chip */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 6 }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--sans)' }}>Governor</span>
+          <span className={tierChipClass(tier)}>{tier}</span>
+        </div>
+        {/* Compact budget line */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 8 }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--sans)' }}>Budget</span>
+          <span className="num" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>{budget}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
           <button onClick={onToggleTheme} className="btn-ghost" style={{ flex: 1, padding: '5px 8px',
             fontSize: 11.5 }} aria-label="Toggle light or dark theme" aria-pressed={theme === 'dark'}>
             {theme === 'dark' ? '☾ Dark' : '☀ Light'}
@@ -195,8 +307,11 @@ function CommandPalette({ open, onClose, onGo }) {
               onMouseEnter={() => setSel(i)} onClick={() => commit(p.id)}
               style={{ padding: '10px 16px', cursor: 'pointer', fontSize: 13,
                 fontFamily: 'var(--sans)', color: 'var(--ink)',
-                background: i === sel ? 'var(--rule-soft)' : 'transparent' }}>
-              {p.label}
+                background: i === sel ? 'var(--rule-soft)' : 'transparent',
+                display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span aria-hidden="true" style={{ fontSize: 15, opacity: 0.75, width: 20,
+                textAlign: 'center' }}>{p.icon}</span>
+              <span>{p.label}</span>
             </div>
           ))}
         </div>
@@ -285,12 +400,16 @@ function App() {
         window.apiGet('/api/positions?overdue=true').catch(() => ({ positions: [] })),
       ]);
       const running = (dash.jobs || []).filter((j) => j.status === 'running').length;
+      const tier = (health.budget && health.budget.tier)
+        || (health.hardware && health.hardware.tier) || '—';
+      const usd = health.budget && health.budget.usd;
+      const budget = usd ? `$${usd.used}/$${usd.cap}` : '—';
       setCounters({
         jobs_running: running || null,
         drafts_staged: (drafts.drafts || []).length || null,
         positions_overdue: (pos.positions || []).length || null,
-        tier: (health.hardware && health.hardware.tier) || (health.budget && health.budget.tier) || '—',
-        budget: health.budget ? `$${health.budget.usd.used}/$${health.budget.usd.cap}` : '—',
+        tier,
+        budget,
       });
     } catch (e) { /* offline; leave counters blank */ }
   }, []);
@@ -310,8 +429,9 @@ function App() {
       <window.BackgroundPattern />
       <AppSidebar active={page} counters={counters} theme={theme}
         onToggleTheme={toggle} onHelp={() => setHelpOpen(true)} />
-      <main style={{ flex: 1, padding: '28px 36px', position: 'relative',
-        overflow: 'auto', maxHeight: '100vh' }}>
+      {/* key on page drives the CSS fade-in animation each time the page changes */}
+      <main key={page} className="lh-main-content" style={{ flex: 1, padding: '28px 36px',
+        position: 'relative', overflow: 'auto', maxHeight: '100vh' }}>
         <PageBoundary pageKey={page}>
           {PageComp ? <PageComp {...pageProps} />
             : <window.ErrorBox message={`Page "${pageDef.label}" failed to load.`} />}

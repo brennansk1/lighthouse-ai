@@ -8,7 +8,7 @@ text with ``str(widget.render())``.
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from textual.app import ComposeResult
 from textual.containers import Container
@@ -154,7 +154,7 @@ class Sidebar(Container):
         self._counters[page_id] = count
         try:
             item = self.query_one(f"#nav-{page_id}", ListItem)
-        except Exception:  # noqa: BLE001 - not yet mounted
+        except Exception:
             return
         label = next((lbl for pid, lbl in self._pages if pid == page_id), page_id)
         text = label

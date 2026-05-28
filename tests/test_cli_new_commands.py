@@ -78,6 +78,7 @@ def test_audit_verify_passes_with_signed_events(initted_env):
 
 def test_audit_verify_fails_on_broken_chain(initted_env):
     import json
+
     from lighthouse_ai.persistence import open_db
     from lighthouse_ai.verification.audit_chain import append_event
     append_event(initted_env / "audit.db", actor="t", event_type="e",

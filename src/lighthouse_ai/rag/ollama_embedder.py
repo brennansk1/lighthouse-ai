@@ -13,7 +13,7 @@ callers can detect and downgrade to :class:`HashEmbedder` for offline use.
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from ..backends.ollama import OllamaBackend, OllamaUnavailable
 

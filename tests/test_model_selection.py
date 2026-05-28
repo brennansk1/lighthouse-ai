@@ -200,9 +200,10 @@ def test_estimate_resident_param_hint():
 def test_gateway_falls_back_to_mock_when_lowmem(migrated_paths):
     """Real Ollama binding degrades to mock (not crash) when RAM is tight."""
     from dataclasses import dataclass
+
+    from lighthouse_ai.backends.ollama import ChatResponse
     from lighthouse_ai.gateway import Gateway
     from lighthouse_ai.governor import BUDGET_DEFAULTS, Governor
-    from lighthouse_ai.backends.ollama import ChatResponse
 
     @dataclass
     class _Fake:

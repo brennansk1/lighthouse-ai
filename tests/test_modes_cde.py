@@ -8,7 +8,7 @@ from lighthouse_ai.modes.debate import (
     run_debate,
 )
 from lighthouse_ai.modes.digest import aggregate_digest
-from lighthouse_ai.modes.monitor import MonitorReport, run_monitor, MonitorItem
+from lighthouse_ai.modes.monitor import MonitorItem, MonitorReport, run_monitor
 from lighthouse_ai.modes.quc import QUCSession, ask
 from lighthouse_ai.rag import (
     BM25Index,
@@ -18,7 +18,6 @@ from lighthouse_ai.rag import (
     InMemoryStore,
     chunk_document,
 )
-
 
 # --- QUC ---
 

@@ -55,7 +55,7 @@ def attach_web(app: FastAPI, paths: Paths, bus: EventBus | None = None) -> Event
                     try:
                         msg = await asyncio.wait_for(q.get(), timeout=15.0)
                         yield sse_format(msg)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         yield ": keepalive\n\n"
             finally:
                 bus.unsubscribe(q)

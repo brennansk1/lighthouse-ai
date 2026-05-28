@@ -26,7 +26,6 @@ from lighthouse_ai.verification import (
     verify_audit_chain,
 )
 
-
 # --- WEP ---
 
 def test_wep_bands_cover_zero_to_one():

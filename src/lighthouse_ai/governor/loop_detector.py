@@ -34,8 +34,8 @@ import hashlib
 import math
 import re
 from collections import OrderedDict, defaultdict
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Callable, Sequence
 
 # Defaults mirror the [governor.loops] block in §24.12 for the Exhaustive tier.
 DEFAULT_PER_JOB_TOOL_CALLS: int = 1_500
@@ -132,7 +132,7 @@ class LoopDetector:
         self._node_calls: dict[tuple[str, str], int] = defaultdict(int)
         self._seen_hashes: dict[str, set[str]] = defaultdict(set)
         # job_id -> ordered {query_hash: embedding}; OrderedDict gives us LRU.
-        self._embeddings: dict[str, "OrderedDict[str, list[float]]"] = defaultdict(
+        self._embeddings: dict[str, OrderedDict[str, list[float]]] = defaultdict(
             OrderedDict
         )
 

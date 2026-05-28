@@ -16,10 +16,11 @@ final line instead of corrupting the whole document.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 # The PROV-O namespace is the W3C Recommendation context. Using the canonical
 # URL keeps records interoperable with external PROV consumers.
@@ -51,8 +52,8 @@ def _iso_utc(ts: datetime | str | None) -> str | None:
     if isinstance(ts, str):
         return ts
     if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    ts = ts.astimezone(timezone.utc)
+        ts = ts.replace(tzinfo=UTC)
+    ts = ts.astimezone(UTC)
     # Drop microseconds for stable, second-resolution timestamps.
     return ts.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 

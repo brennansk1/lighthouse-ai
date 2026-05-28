@@ -39,6 +39,9 @@ dependencies = [
 
 [project.optional-dependencies]
 gpu-nvidia = ["pynvml>=11.5"]
+# Heavy cross-encoder reranker (pulls torch). Lazy-imported; absent → graceful
+# fallback to the score-passthrough reranker. Install to activate real reranking.
+reranker = ["FlagEmbedding>=1.3"]
 
 [project.scripts]
 lighthouse = "lighthouse_ai.cli:app"
@@ -87,10 +90,37 @@ exclude_lines = [
     "if __name__ == .__main__.:",
 ]
 
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+# No strict mode yet — the codebase isn't fully typed. mypy is non-blocking in CI.
+exclude = ["tests/"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
-ignore = ["E501"]
+ignore = [
+    "E501",      # line length — handled by formatter, not worth churn
+    "RUF001",    # ambiguous unicode in strings — we use en-dash/middot typography intentionally
+    "RUF002",    # ditto, in docstrings
+    "RUF012",    # mutable class attr needs ClassVar — pedantic for our dataclass configs
+    "RUF059",    # unused unpacked variable — fine for readability (e.g. `a, _b = ...`)
+    "B008",      # function call in default — this IS the Typer pattern (typer.Option(...))
+    "B905",      # zip() without strict= — equal-length is obvious at every call site
+    "SIM105",    # contextlib.suppress vs try/except/pass — try/except is clearer here
+    "SIM108",    # ternary vs if/else — readability is a judgment call
+    "SIM102",    # nested if — sometimes clearer than a combined condition
+    "SIM103",    # return-condition-directly — opinionated
+    "SIM110",    # any()/all() loop rewrite — opinionated
+    "SIM117",    # combine with-statements — opinionated
+    "SIM118",    # key in dict.keys() — harmless
+    "UP042",     # StrEnum migration — we target 3.11 but keep str, Enum for clarity
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests intentionally use patterns ruff flags: late imports to test optional-dep
+# paths, blind-except assertions, and bare expressions as importorskip markers.
+"tests/*" = ["E402", "B017", "B018"]

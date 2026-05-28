@@ -2,32 +2,43 @@
 
 from __future__ import annotations
 
-import json
-
 from fastapi.testclient import TestClient
 
 from lighthouse_ai.controlplane import create_app
+from lighthouse_ai.effector import Effector, clear_targets
 from lighthouse_ai.gateway import Gateway
 from lighthouse_ai.governor import BUDGET_DEFAULTS, Governor
 from lighthouse_ai.hardware import HardwareProfile
 from lighthouse_ai.intents import outbox_depth, write_intent
-from lighthouse_ai.effector import Effector, clear_targets
 from lighthouse_ai.modes.deepdive import run_deepdive
 from lighthouse_ai.modes.monitor import MonitorItem, run_monitor
 from lighthouse_ai.output.html import render_monitor_html
-from lighthouse_ai.persistence import open_db
 from lighthouse_ai.rag import (
-    BM25Index, Document, HashEmbedder, HybridSearch, InMemoryStore,
-    ScoreReranker, chunk_document,
+    BM25Index,
+    Document,
+    HashEmbedder,
+    HybridSearch,
+    InMemoryStore,
+    ScoreReranker,
+    chunk_document,
 )
 from lighthouse_ai.sandbox import (
-    ArchiveBombScanner, HTMLScriptScanner, PDFJavaScriptScanner,
-    Quarantine, SandboxBroker, Verdict,
+    ArchiveBombScanner,
+    HTMLScriptScanner,
+    PDFJavaScriptScanner,
+    Quarantine,
+    SandboxBroker,
+    Verdict,
 )
 from lighthouse_ai.targets import test_target
 from lighthouse_ai.verification import (
-    append_event, band_for_probability, record_position, resolve_position,
-    score_all, seal_event_chain, verify_audit_chain,
+    append_event,
+    band_for_probability,
+    record_position,
+    resolve_position,
+    score_all,
+    seal_event_chain,
+    verify_audit_chain,
 )
 
 

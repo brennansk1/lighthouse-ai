@@ -9,7 +9,8 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
-from typing import Iterable, Protocol
+from collections.abc import Iterable
+from typing import Protocol
 
 from .chunker import Chunk
 

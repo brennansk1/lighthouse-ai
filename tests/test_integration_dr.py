@@ -10,13 +10,11 @@ If ``litestream`` is on PATH we additionally do an end-to-end round trip.
 
 from __future__ import annotations
 
-import os
 import shutil
 import sqlite3
 import subprocess
 import threading
 import time
-from pathlib import Path
 
 import pytest
 

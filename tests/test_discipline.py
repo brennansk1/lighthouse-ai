@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import httpx
-import pytest
 import respx
 
 from lighthouse_ai.verification.discipline import (
-    check, downgrade_wep, extract_claims,
+    check,
+    downgrade_wep,
+    extract_claims,
 )
-
 
 # --- claim extraction ---
 

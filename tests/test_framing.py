@@ -16,7 +16,6 @@ from lighthouse_ai.framing import (
     run_framing,
 )
 
-
 # --- typing ---
 
 @pytest.mark.parametrize("q,expected", [

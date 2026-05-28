@@ -19,23 +19,27 @@ model load at all (pure stubs) — used by tests and for dry runs.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from .gateway import Gateway, resolve_against_installed
 from .governor import BUDGET_DEFAULTS, Governor
 from .hardware import HardwareProfile, probe
 from .modes.deepdive import DraftReport, run_deepdive
-from .modes.quc import QUCSession, ask as quc_ask
+from .modes.quc import QUCSession
+from .modes.quc import ask as quc_ask
 from .output.html import render_html_document
 from .paths import Paths
 from .persistence import open_db
 from .rag import (
-    BM25Index, Chunk, Document, HashEmbedder, HybridSearch, InMemoryStore,
-    ScoreReranker, chunk_document,
+    BM25Index,
+    Document,
+    HashEmbedder,
+    HybridSearch,
+    InMemoryStore,
+    chunk_document,
+    make_reranker,
 )
-
 
 # ── backend factories ──────────────────────────────────────────────────
 
@@ -46,7 +50,7 @@ def _ollama_installed_tags() -> list[str]:
         if not b.available():
             return []
         return [m.name for m in b.list_models()]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
 
 
@@ -66,7 +70,7 @@ def make_embedder(*, offline: bool = False, installed: list[str] | None = None):
             emb = OllamaEmbedder(model=embed_tag, dim=dim)
             if emb.available():
                 return emb, embed_tag
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     return HashEmbedder(dim=256), "hash-stub"
 
@@ -80,7 +84,7 @@ def make_vector_store(dim: int, *, offline: bool = False):
         store = QdrantStore(dim=dim, collection="lighthouse_corpus")
         if store.available():
             return store, "qdrant"
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     return InMemoryStore(), "in-memory"
 
@@ -108,7 +112,7 @@ def make_gateway(paths: Paths, profile: HardwareProfile, *,
 class PipelineConfig:
     offline: bool = False
     mode: str = "deep-dive"        # deep-dive | quc
-    max_rounds: int = 2
+    max_rounds: int = 3            # TTD-DR iterates a few rounds; 3 is the floor
     top_k: int = 5
 
 
@@ -139,7 +143,11 @@ class ResearchPipeline:
                                                  installed=installed)
         self.store, store_name = make_vector_store(self.embedder.dim,
                                                    offline=self.config.offline)
-        self.reranker = ScoreReranker()
+        # Real cross-encoder (BAAI/bge-reranker-v2-m3) when FlagEmbedding is
+        # installed; otherwise a score-passthrough that preserves fusion order.
+        # `available()` probes via find_spec, so this never imports torch or
+        # downloads a model on its own (§Sprint 28 step 1).
+        self.reranker = make_reranker(prefer_real=not self.config.offline)
         self.hybrid = HybridSearch(self.store, self.embedder, BM25Index(),
                                    reranker=self.reranker)
         self.gateway = gateway or make_gateway(
@@ -193,8 +201,16 @@ class ResearchPipeline:
             report = None
             answer = synthesis
         else:  # deep-dive
+            # With a real cross-encoder, retrieve a wide pool and rerank down
+            # (50 → rerank → 8). With the passthrough stub, keep the narrow
+            # top_k so stub behavior is unchanged (§Sprint 28 step 1).
+            real_rerank = type(self.reranker).__name__ == "FlagReranker"
+            dd_top_k = 8 if real_rerank else self.config.top_k
+            dd_candidates = 50 if real_rerank else None
             report = run_deepdive(question, hybrid=self.hybrid, gateway=self.gateway,
-                                  max_rounds=self.config.max_rounds, job_id=job_id)
+                                  max_rounds=self.config.max_rounds,
+                                  top_k=dd_top_k, rerank_candidates=dd_candidates,
+                                  job_id=job_id)
             synthesis = "\n\n".join(s.body for s in report.sections)
             body_html = _report_to_html(report)
             source_count = len({c for s in report.sections for c in s.citations})
@@ -202,7 +218,8 @@ class ResearchPipeline:
             answer = None
 
         # --- quality discipline gate + calibration (§12, §22) ---
-        from .verification.discipline import check as discipline_check, downgrade_wep
+        from .verification.discipline import check as discipline_check
+        from .verification.discipline import downgrade_wep
         rep = discipline_check(synthesis)
         # Stated confidence starts at "likely" (0.75); discipline downgrades it.
         band = downgrade_wep(0.75, rep)
@@ -228,8 +245,8 @@ class ResearchPipeline:
 
     def _record_positions(self, report, band) -> int:
         """Record each extracted claim as a Position (claim + WEP + resolve-by)."""
-        from .verification.positions import record_position
         from .persistence import open_db as _open
+        from .verification.positions import record_position
         n = 0
         for claim in report.claims:
             # only register substantive, sourced-or-not claims as positions
@@ -245,7 +262,7 @@ class ResearchPipeline:
                 finally:
                     conn.close()
                 n += 1
-            except Exception:  # noqa: BLE001 - never fail a run on calibration write
+            except Exception:
                 pass
         return n
 
@@ -284,7 +301,7 @@ class ResearchPipeline:
             append_event(self.paths.audit_db, actor="pipeline",
                          event_type=event_type, payload=payload,
                          data_dir=self.paths.data_dir)
-        except Exception:  # noqa: BLE001 - audit must never break a research run
+        except Exception:
             pass
 
 

@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from lighthouse_ai.modes.deepdive import (
     DraftReport,
-    Section,
+    _discovery_progress,
     compact,
     run_deepdive,
 )
-from lighthouse_ai.modes.deepdive import _discovery_progress
 from lighthouse_ai.rag import (
     BM25Index,
     Document,
@@ -61,8 +60,6 @@ def test_deepdive_with_no_hybrid_runs():
 
 
 def test_discovery_progress_one_when_all_new():
-    from lighthouse_ai.rag.store import SearchResult
-    from lighthouse_ai.rag.chunker import Chunk
     rounds = [[]]
     assert _discovery_progress(rounds) == 0.0
 
@@ -83,3 +80,28 @@ def test_load_bearing_subquestions_become_load_bearing_sections():
     r = run_deepdive("X vs Y", hybrid=hs)
     load_bearing_sections = [s for s in r.sections if s.is_load_bearing]
     assert load_bearing_sections  # comparative ⇒ at least one load-bearing
+
+
+def test_deepdive_new_defaults():
+    """run_deepdive defaults are max_rounds=3 and progress_threshold=0.05
+    (Sprint 28 step 1 — previously 2 and 0.1 respectively).
+
+    We verify the defaults by inspecting the function signature, then confirm
+    a call without explicit arguments uses them end-to-end by running against
+    a tiny corpus and checking rounds_used does not exceed 3.
+    """
+    import inspect
+
+    sig = inspect.signature(run_deepdive)
+    assert sig.parameters["max_rounds"].default == 3, (
+        "max_rounds default must be 3 after Sprint 28 step 1"
+    )
+    assert sig.parameters["progress_threshold"].default == 0.05, (
+        "progress_threshold default must be 0.05 after Sprint 28 step 1"
+    )
+
+    # Also confirm the function runs without error using those defaults.
+    hs = _hybrid_with_docs()
+    r = run_deepdive("What is decoherence?", hybrid=hs)
+    assert r.rounds_used >= 1
+    assert r.rounds_used <= 3

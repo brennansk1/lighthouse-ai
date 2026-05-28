@@ -284,7 +284,7 @@ def test_api_write_publishes_event(migrated_paths):
         try:
             while True:
                 received.append(await asyncio.wait_for(q.get(), timeout=0.2))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
     asyncio.run(run())

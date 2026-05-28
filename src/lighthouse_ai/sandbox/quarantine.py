@@ -12,7 +12,6 @@ from pathlib import Path
 
 from ..persistence import open_db
 
-
 _QUARANTINE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS quarantine (
     sha256 TEXT PRIMARY KEY,

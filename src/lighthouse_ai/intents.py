@@ -21,10 +21,9 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from .persistence import open_db
 
@@ -90,7 +89,7 @@ def write_intent(
     conn = open_db(db_path)
     try:
         cur = conn.execute(
-            f"""
+            """
             INSERT INTO intents (
                 idempotency_key, target, op, payload_json,
                 job_id, node_id, write_id, compensator_json

@@ -12,8 +12,7 @@ from __future__ import annotations
 
 import json
 import shutil
-import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +24,6 @@ from ..paths import Paths
 from ..persistence import integrity_check, open_db
 from ..verification.positions import score_all
 from .events import EventBus
-
 
 # ---- request bodies -------------------------------------------------------
 
@@ -391,7 +389,7 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         from ..verification.audit_chain import resolve_secret, verify_audit_chain
         try:
             secret = resolve_secret(None, data_dir=paths.data_dir)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise HTTPException(500, f"cannot resolve secret: {exc}") from None
         bad = verify_audit_chain(paths.audit_db, secret=secret)
         return {"ok": not bad, "bad_seqs": bad}
@@ -499,19 +497,19 @@ def _build_health(paths: Paths, gov: Governor) -> dict[str, Any]:
                 db_status[kind] = integrity_check(conn)
             finally:
                 conn.close()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             db_status[kind] = f"error: {exc!r}"
 
     # external services (probe is cheap, never blocks)
     try:
         from ..backends.ollama import OllamaBackend
         ollama_ok = OllamaBackend().available()
-    except Exception:  # noqa: BLE001
+    except Exception:
         ollama_ok = False
     try:
         from ..rag.qdrant_store import QdrantStore
         qdrant_ok = QdrantStore(dim=8).available()
-    except Exception:  # noqa: BLE001
+    except Exception:
         qdrant_ok = False
 
     # budget
@@ -536,7 +534,7 @@ def _build_health(paths: Paths, gov: Governor) -> dict[str, Any]:
             from ..verification.audit_chain import resolve_secret, verify_audit_chain
             secret = resolve_secret(None, data_dir=paths.data_dir)
             chain_ok = not verify_audit_chain(paths.audit_db, secret=secret)
-        except Exception:  # noqa: BLE001
+        except Exception:
             chain_ok = None
 
     all_db_ok = all(v == "ok" for v in db_status.values())
@@ -544,7 +542,7 @@ def _build_health(paths: Paths, gov: Governor) -> dict[str, Any]:
 
     return {
         "overall": "green" if overall_green else "attention",
-        "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "hardware": {
             "platform": profile.platform, "arch": profile.arch,
             "total_ram_gb": profile.total_ram_gb, "tier": profile.suggested_tier,

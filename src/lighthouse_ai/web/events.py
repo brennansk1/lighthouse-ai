@@ -22,7 +22,6 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-
 KNOWN_EVENTS = {
     "job.progress", "job.status",
     "draft.staged", "draft.approved", "draft.rejected",

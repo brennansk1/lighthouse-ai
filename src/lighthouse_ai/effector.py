@@ -15,8 +15,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from .intents import Intent, claim_one, mark_applied, mark_failed
 
@@ -77,7 +77,7 @@ class Effector:
             return "unknown_target"
         try:
             applier(intent)
-        except Exception as exc:  # noqa: BLE001 — effector must catch
+        except Exception as exc:
             # ``intent.attempts`` is the post-bump count from claim_one.
             should_die = intent.attempts >= MAX_ATTEMPTS
             mark_failed(self.db_path, intent.id, repr(exc), dead=should_die)

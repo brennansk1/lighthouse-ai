@@ -10,8 +10,9 @@ both.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Iterable, Protocol
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Any, Protocol
 
 from .chunker import Chunk
 from .embedder import cosine

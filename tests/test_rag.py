@@ -8,16 +8,18 @@ import pytest
 from lighthouse_ai.rag import (
     BM25Index,
     Document,
+    FlagReranker,
     HashEmbedder,
     HybridSearch,
     InMemoryStore,
+    RerankerUnavailable,
     ScoreReranker,
     chunk_document,
+    make_reranker,
     prepend_context,
     reciprocal_rank_fusion,
 )
 from lighthouse_ai.rag.contextual import default_preamble
-
 
 # --- chunker ---
 
@@ -217,3 +219,57 @@ def test_prepend_context_noop_without_metadata():
     chunks = chunk_document(Document(id="d", text="body"))
     out = prepend_context(chunks)
     assert out[0].text == "body"
+
+
+# --- make_reranker export ---
+
+def test_make_reranker_exported_from_rag():
+    """FlagReranker, RerankerUnavailable, and make_reranker are importable from
+    the top-level rag package (Sprint 28 step 1 contract)."""
+    # If any name is missing the import at the top of this module already failed.
+    assert callable(make_reranker)
+    assert FlagReranker is not None
+    assert RerankerUnavailable is not None
+
+
+# --- HybridSearch rerank_candidates cap ---
+
+def _length_scorer(query, texts):
+    """Fake cross-encoder: scores by text length (deterministic, no model)."""
+    return [float(len(t)) for t in texts]
+
+
+def test_hybrid_search_rerank_candidates_cap():
+    """With rerank_candidates=3, only the first 3 fused results reach the
+    reranker even when the pool is larger.  We verify this by injecting a scorer
+    that records which chunks it received and asserting it saw at most 3."""
+    e = HashEmbedder(dim=128)
+    reranker = FlagReranker(scorer=_length_scorer)
+    hs = HybridSearch(InMemoryStore(), e, BM25Index(), reranker=reranker)
+
+    # Add 6 distinct chunks so the fused pool is larger than the cap.
+    docs = [
+        Document(id=f"d{i}", text=f"chunk number {i} " + "word " * (i + 1))
+        for i in range(6)
+    ]
+    for d in docs:
+        hs.add(chunk_document(d))
+
+    # Track how many chunks the scorer receives across calls.
+    call_sizes: list[int] = []
+    original_scorer = _length_scorer
+
+    def _tracking_scorer(query, texts):
+        call_sizes.append(len(texts))
+        return original_scorer(query, texts)
+
+    hs.reranker = FlagReranker(scorer=_tracking_scorer)
+
+    res = hs.search("chunk number", top_k=2, rerank_candidates=3)
+    # Reranker must have been called, and each call must have received ≤ 3 chunks.
+    assert call_sizes, "scorer was never called — reranker was not invoked"
+    assert all(n <= 3 for n in call_sizes), (
+        f"scorer received more than 3 candidates: {call_sizes}"
+    )
+    # Final output is still capped to top_k.
+    assert len(res) <= 2

@@ -9,8 +9,9 @@ loading large models on the user's machine during the harness run.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 import pytest
 
@@ -18,7 +19,6 @@ from lighthouse_ai.backends.ollama import EmbeddingResponse, OllamaUnavailable
 from lighthouse_ai.rag.chunker import Chunk
 from lighthouse_ai.rag.ollama_embedder import OllamaEmbedder
 from lighthouse_ai.rag.qdrant_store import QdrantStore
-
 
 # ============================== OllamaEmbedder ==============================
 

@@ -15,7 +15,6 @@ from lighthouse_ai.hardware import (
     write_profile,
 )
 
-
 # --- tier classification (pure function) ---
 
 def test_t1_baseline_16gb_unified():

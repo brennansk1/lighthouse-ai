@@ -15,7 +15,6 @@ import os
 import secrets as _stdlib_secrets
 import stat
 from pathlib import Path
-from typing import Iterable
 
 try:
     import tomllib as _toml_read
@@ -81,7 +80,7 @@ class SecretStore:
                 value = kr.get_password(self.service, key)
                 if value is not None:
                     return value
-            except Exception:  # noqa: BLE001 - keychain may be locked
+            except Exception:
                 pass
         return _read_fallback(_fallback_path(self.data_dir)).get(key)
 
@@ -92,7 +91,7 @@ class SecretStore:
             try:
                 kr.set_password(self.service, key, value)
                 return "keyring"
-            except Exception:  # noqa: BLE001 - fall through to file
+            except Exception:
                 pass
         path = _fallback_path(self.data_dir)
         existing = _read_fallback(path)
@@ -109,7 +108,7 @@ class SecretStore:
                 if kr.get_password(self.service, key) is not None:
                     kr.delete_password(self.service, key)
                     found = True
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
         path = _fallback_path(self.data_dir)
         existing = _read_fallback(path)

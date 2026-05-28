@@ -17,8 +17,6 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import asdict
-from typing import Iterable
 
 import httpx
 

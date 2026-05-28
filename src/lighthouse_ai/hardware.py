@@ -208,7 +208,7 @@ QDRANT_RESERVE_GB = 0.8
 CONCURRENCY_BUFFER_GB = 2.0
 
 
-def llm_budget_gb(profile: "HardwareProfile") -> float:
+def llm_budget_gb(profile: HardwareProfile) -> float:
     """RAM (or VRAM) available to the reasoning LLM, per §5.2.
 
     For unified-memory machines (Apple Silicon) we budget against total RAM.

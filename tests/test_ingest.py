@@ -117,7 +117,7 @@ def test_whitespace_collapsed() -> None:
 
 def test_normalization_strips_zero_width() -> None:
     # Zero-width space (U+200B) embedded between words must be removed (§13.14).
-    payload = "clean​text".encode("utf-8")
+    payload = "clean​text".encode()
     assert extract_text(payload, "text/plain", None) == "cleantext"
 
 
