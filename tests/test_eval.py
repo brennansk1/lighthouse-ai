@@ -240,3 +240,23 @@ def test_evaluate_custom_k_label() -> None:
     report = evaluate(build_index(golden), golden, k=3)
     assert "precision@3" in report
     assert "recall@3" in report
+
+
+def test_evaluate_recall_monotonic_in_k() -> None:
+    # Recall@k is non-decreasing in k. A drop (recall@5 < recall@3) means the
+    # ranking shifted with the requested cutoff — the signature of a stateful
+    # reranker. One shared index, evaluated at two cutoffs, must hold the law.
+    golden = build_golden_set()
+    hybrid = build_index(golden)
+    r3 = evaluate(hybrid, golden, k=3)["recall@3"]
+    r5 = evaluate(hybrid, golden, k=5)["recall@5"]
+    assert r5 >= r3
+
+
+def test_evaluate_is_deterministic() -> None:
+    # Same index, same golden set, repeated runs -> identical metrics.
+    golden = build_golden_set()
+    hybrid = build_index(golden)
+    first = evaluate(hybrid, golden)
+    again = evaluate(hybrid, golden)
+    assert first == again

@@ -5,7 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased] — Sprints 30–32 (2026-05-28)
 
+### Fixed
+- **Reranker determinism**: `ScoreReranker` (the active fallback when FlagEmbedding
+  is absent) accumulated document-frequency state across calls, so the same
+  (query, candidates) drifted to different rankings as call history grew — making
+  retrieval non-deterministic and breaking recall monotonicity (recall@5 < recall@3
+  in the golden-set eval). IDF is now computed per-call from the candidate pool;
+  rankings are a pure function of inputs. Regression tests added.
+
 ### Added
+- **`lighthouse eval` CLI**: runs the golden-set retrieval eval and reports
+  precision@k / recall@k / MRR. Uses real backends (bge-m3 via Ollama, FlagReranker)
+  when available, falling back to test-tier stubs otherwise; `--offline`, `--json`,
+  `--k` flags. `eval.build_index()` now accepts injected embedder/store/reranker so
+  the same harness becomes a production quality gate.
 - **Entailment gate** (`verification/entailment.py`): lazy MiniCheck-Flan-T5-Large
   (primary) + HHEM-2.1-Open (fallback) entailment scorer; DisciplineReport gains
   `entailment_coverage` + `entailment_checked`; graceful 1.0 fallback when models absent

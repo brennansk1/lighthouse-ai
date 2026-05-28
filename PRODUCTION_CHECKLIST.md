@@ -159,7 +159,7 @@ Test-type legend: **U** unit · **I** integration (real deps, skip-if-absent) ·
 | Feature | Tests required | Standard | Status |
 |---|---|---|---|
 | Chunker | U: boundary, overlap, code-block preservation, metadata propagation | 100-token overlap present; code blocks intact | ✅ |
-| Hybrid search (dense+BM25+RRF) | I: ingest 10 papers, known queries | **top-5 precision ≥ 80%** (design §14) | ⬜ needs a golden set |
+| Hybrid search (dense+BM25+RRF) | I: ingest 10 papers, known queries | **top-5 precision ≥ 80%** (design §14) | 🟡 golden set + `lighthouse eval` harness shipped; real-backend numbers pending a run with bge-m3 + FlagReranker |
 | Contextual retrieval | I: recall vs no-context baseline | **≥10% recall lift** (Anthropic pattern) | ⬜ |
 | Reranker | I: MRR vs hybrid baseline | **≥5% MRR lift** over hybrid | ⬜ (stub reranker only) |
 | Faithfulness (ragas) | E: 20-pair golden set | **faithfulness ≥ 0.7** | ⬜ |
@@ -232,7 +232,7 @@ Test-type legend: **U** unit · **I** integration (real deps, skip-if-absent) ·
 
 ## Top of the queue (highest-leverage gaps)
 
-1. **Golden-set retrieval eval** (precision / MRR / faithfulness numbers) — the core quality claim is currently unmeasured.
+1. **Golden-set retrieval eval** — harness + `lighthouse eval` CLI now ship; run it with real backends (`lighthouse eval`, Ollama bge-m3 + FlagReranker installed) to capture precision / MRR / faithfulness numbers. The core quality claim is *runnable* but still unmeasured under real backends.
 2. **Browser render QA + Playwright** for the 7 webapp pages — only static checks done.
 3. **CI** (Actions: pytest + ruff + mypy, macOS + Linux) — gates everything else.
 4. **Wire egress proxy into the fetch path**; Telegram-confirmed kill switch.

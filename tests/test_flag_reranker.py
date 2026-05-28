@@ -199,3 +199,28 @@ def test_score_reranker_fallback_actually_works(monkeypatch):
     rr = make_reranker(prefer_real=True)
     out = rr.rerank("hello", [_chunk("1", "hello world"), _chunk("2", "nope")])
     assert len(out) == 2
+
+
+def test_score_reranker_is_stateless_across_calls():
+    # Regression: ScoreReranker used to accumulate document-frequency state on
+    # every call, so the same (query, chunks) drifted to different rankings as
+    # call history grew. It must be a pure function of its inputs.
+    rr = ScoreReranker()
+    chunks = [_chunk("1", "alpha beta gamma"), _chunk("2", "beta delta"),
+              _chunk("3", "gamma epsilon")]
+    first = rr.rerank("beta gamma", chunks)
+    for _ in range(5):
+        rr.rerank("unrelated noise", chunks)  # mutate-prone calls in between
+    again = rr.rerank("beta gamma", chunks)
+    assert [(c.id, s) for c, s in first] == [(c.id, s) for c, s in again]
+
+
+def test_score_reranker_top_k_is_prefix_of_full():
+    # The top-k cut must be a strict prefix of the full ranking for the same
+    # query/candidates — i.e. ranking is independent of the requested k.
+    rr = ScoreReranker()
+    chunks = [_chunk(str(i), t) for i, t in enumerate(
+        ["alpha beta", "beta gamma", "gamma delta", "delta alpha"])]
+    full = [c.id for c, _ in rr.rerank("beta gamma", chunks)]
+    top2 = [c.id for c, _ in rr.rerank("beta gamma", chunks, top_k=2)]
+    assert top2 == full[:2]
