@@ -25,8 +25,12 @@ import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import structlog
+
 from .rag.chunker import Document
 from .sandbox.broker import SandboxBroker, Verdict
+
+log = structlog.get_logger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import httpx
@@ -156,8 +160,8 @@ def _pdf_to_text(payload: bytes) -> tuple[str, bool]:
         return "\n\n".join(parts), True
     except ImportError:
         pass
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("ingest.pdf_pypdf_failed", error=str(exc))
 
     try:
         from pdfminer.high_level import extract_text as _pdfminer_extract  # type: ignore
@@ -165,7 +169,8 @@ def _pdf_to_text(payload: bytes) -> tuple[str, bool]:
         return _pdfminer_extract(io.BytesIO(payload)), True
     except ImportError:
         return "", False
-    except Exception:
+    except Exception as exc:
+        log.warning("ingest.pdf_pdfminer_failed", error=str(exc))
         return "", False
 
 
