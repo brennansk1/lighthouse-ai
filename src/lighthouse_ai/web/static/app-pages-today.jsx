@@ -62,6 +62,36 @@
       '.lh-jobs-split{display:flex;gap:24px;align-items:flex-start}',
       '.lh-jobs-table{flex:1 1 0%;min-width:0}',
       '.lh-jobs-pane{flex:0 0 320px;position:sticky;top:24px}',
+      // ── New-research creation page ──
+      '@keyframes lhfadein{from{opacity:0}to{opacity:1}}',
+      '@keyframes lhpanelin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}',
+      '@keyframes lhindet{0%{left:-40%}100%{left:100%}}',
+      '.lh-create-scrim{position:fixed;inset:0;z-index:900;background:rgba(10,42,68,0.42);',
+        'display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto;animation:lhfadein .14s ease}',
+      '.lh-create-panel{background:var(--card);border:1px solid var(--rule);border-radius:var(--radius-lg);',
+        'box-shadow:var(--shadow-lg);width:680px;max-width:100%;display:flex;flex-direction:column;',
+        'animation:lhpanelin .2s cubic-bezier(0.22,1,0.36,1);overflow:hidden}',
+      '.lh-create-head{padding:16px 20px 0;border-bottom:1px solid var(--rule-soft)}',
+      '.lh-create-headrow{display:flex;align-items:center;gap:12px}',
+      '.lh-create-close{flex-shrink:0;width:34px;height:34px;border-radius:50%;border:1px solid var(--rule);',
+        'background:var(--card);color:var(--ink-2);font-size:18px;line-height:1;cursor:pointer;',
+        'display:inline-flex;align-items:center;justify-content:center;transition:background .12s,color .12s}',
+      '.lh-create-close:hover{background:var(--rule-soft);color:var(--ink)}',
+      '.lh-create-close:focus-visible{outline:2px solid var(--primary);outline-offset:2px}',
+      '.lh-stepbar{display:flex;gap:8px;padding:14px 0 16px}',
+      '.lh-step{flex:1;display:flex;flex-direction:column;gap:6px}',
+      '.lh-step-track{height:5px;border-radius:99px;background:var(--rule-soft);overflow:hidden;position:relative}',
+      '.lh-step-fill{position:absolute;inset:0;background:var(--primary);border-radius:99px;transform-origin:left;transition:transform .35s ease}',
+      '.lh-step-fill.indet{width:40%;inset:0 auto 0 -40%;animation:lhindet 1.1s ease-in-out infinite}',
+      '.lh-step-label{font-size:10.5px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--muted)}',
+      '.lh-step-label.on{color:var(--primary)}',
+      '.lh-create-body{padding:18px 20px 22px;overflow-y:auto;max-height:calc(90vh - 150px)}',
+      '.lh-help{font-size:12.5px;line-height:1.55;color:var(--ink-2);background:var(--paper);',
+        'border-left:3px solid var(--sky);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:10px 14px;margin:0 0 16px}',
+      '.lh-help b{color:var(--ink)}',
+      '.lh-launch{padding:48px 24px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:16px}',
+      '.lh-launch-bar{width:240px;max-width:80%;height:6px;border-radius:99px;background:var(--rule-soft);overflow:hidden;position:relative}',
+      '.lh-launch-bar .fill{position:absolute;width:40%;inset:0 auto 0 -40%;background:var(--primary);border-radius:99px;animation:lhindet 1.1s ease-in-out infinite}',
     ].join('');
     document.head.appendChild(el);
   })();
@@ -837,11 +867,13 @@
     return (
       <div style={{ padding: PAD, maxWidth: 1200 }}>
         <PageHeader
-          title="Research jobs"
-          subtitle={firstLoad ? 'Loading…' : `${allJobs.length} total`}
+          title="Research agents"
+          subtitle={firstLoad ? 'Loading…'
+            : `${allJobs.length} total · ${tabCounts.running} running · ${tabCounts.review} in review`}
           actions={
-            <Btn onClick={() => setShowNew(true)} aria-label="Start a new research job">
-              + New research
+            <Btn onClick={() => setShowNew(true)} icon="+"
+              aria-label="Create a new research agent">
+              New agent
             </Btn>
           }
         />
@@ -1394,6 +1426,33 @@
     );
   }
 
+  // 3-step progress bar shown atop the creation page.
+  const CREATE_STEPS = ['Your question', 'Plan & options', 'Launch'];
+  function StepBar({ step, analysing }) {
+    // step: 1 question · 2 plan/options · 3 launching. `analysing` makes the
+    // active segment indeterminate while the plan is being computed.
+    return (
+      <div className="lh-stepbar" aria-label={`Step ${step} of 3: ${CREATE_STEPS[step - 1]}`}>
+        {CREATE_STEPS.map((label, i) => {
+          const n = i + 1;
+          const done = n < step;
+          const active = n === step;
+          const indet = active && analysing;
+          return (
+            <div className="lh-step" key={label}>
+              <div className="lh-step-track">
+                {indet
+                  ? <div className="lh-step-fill indet" />
+                  : <div className="lh-step-fill" style={{ transform: `scaleX(${done || active ? 1 : 0})` }} />}
+              </div>
+              <span className={`lh-step-label${active || done ? ' on' : ''}`}>{n}. {label}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   function NewJobModal({ onClose, onCreated, toast }) {
     const [mode, setMode] = useState('Deep-Dive');
     const [topic, setTopic] = useState('');
@@ -1404,7 +1463,17 @@
     const [plan, setPlan] = useState(null);
     const [planMods, setPlanMods] = useState(null); // user edits to the plan
     const textRef = useRef(null);
+    const panelRef = useRef(null);
     useEffect(() => { if (textRef.current) textRef.current.focus(); }, []);
+    // Esc closes the creation page; click on the dim scrim (outside the panel) closes too.
+    useEffect(() => {
+      const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+      document.addEventListener('keydown', onKey, true);
+      return () => document.removeEventListener('keydown', onKey, true);
+    }, [onClose]);
+
+    // Which step are we on? Drives the progress bar.
+    const step = busy ? 3 : (plan ? 2 : 1);
 
     async function previewPlan() {
       if (!topic.trim()) { toast.show('Enter a topic first.', 'info'); return; }
@@ -1434,100 +1503,167 @@
       }
     }
 
+    const modeInfo = JOB_MODES.find((m) => m.key === mode);
+
     return (
-      <Modal title="New research job" onClose={onClose}>
-        <form onSubmit={submit}>
-          <LocalField label="Topic" htmlFor="nj-topic">
-            <textarea
-              id="nj-topic"
-              ref={textRef}
-              rows={3}
-              value={topic}
-              onChange={(e) => { setTopic(e.target.value); setPlan(null); setPlanMods(null); }}
-              placeholder="What should Lighthouse research?"
-              style={{ ...inputStyle, resize: 'vertical', minHeight: 72 }}
-              aria-label="Research topic"
-            />
-          </LocalField>
+      <div className="lh-create-scrim" role="presentation"
+        onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+        <div ref={panelRef} className="lh-create-panel" role="dialog" aria-modal="true"
+          aria-label="Create a research agent" onMouseDown={(e) => e.stopPropagation()}>
 
-          {/* Preview Plan button — shown when there is a topic but no plan yet */}
-          {!plan && (
-            <div style={{ marginBottom: 14 }}>
-              <button
-                type="button"
-                disabled={planBusy || !topic.trim()}
-                onClick={previewPlan}
-                aria-label="Preview research plan"
-                style={{
-                  border: `1px solid var(--primary)`, borderRadius: 'var(--radius-sm)',
-                  background: planBusy ? 'var(--sky-soft)' : 'var(--card)',
-                  color: 'var(--primary)', cursor: planBusy || !topic.trim() ? 'not-allowed' : 'pointer',
-                  fontSize: 12, fontWeight: 600, padding: '6px 14px',
-                  fontFamily: 'var(--sans)', opacity: !topic.trim() ? 0.5 : 1,
-                  transition: 'background .12s',
-                }}
-              >{planBusy ? 'Analysing…' : 'Preview Plan →'}</button>
+          {/* Header: top-LEFT close, title, and the step progress bar */}
+          <div className="lh-create-head">
+            <div className="lh-create-headrow">
+              <button type="button" className="lh-create-close" onClick={onClose}
+                aria-label="Close and exit job creation" title="Exit (Esc)">&times;</button>
+              <div>
+                <div style={{ fontFamily: 'var(--serif)', fontWeight: 700, fontSize: 19,
+                  color: 'var(--ink)', lineHeight: 1.2 }}>New research agent</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                  {busy ? 'Launching…' : plan ? 'Review the plan and choose how it runs'
+                    : 'Tell Lighthouse what to investigate'}
+                </div>
+              </div>
             </div>
-          )}
-
-          {/* Plan preview panel */}
-          {plan && (
-            <PlanPreview
-              plan={plan}
-              onUpdate={(mods) => setPlanMods(mods)}
-            />
-          )}
-
-          <LocalField label="Mode" style={{ marginTop: plan ? 14 : 0 }}>
-            <ModeRadio value={mode} onChange={setMode} />
-          </LocalField>
-
-          <LocalField label="Depth" htmlFor="nj-depth">
-            <div style={{ display: 'flex', gap: 8 }} role="group" aria-label="Research depth">
-              {JOB_DEPTHS.map((dp) => (
-                <button
-                  key={dp}
-                  type="button"
-                  aria-pressed={depth === dp}
-                  onClick={() => setDepth(dp)}
-                  style={{
-                    flex: 1, padding: '7px 0', border: `2px solid ${depth === dp ? 'var(--primary)' : 'var(--rule)'}`,
-                    borderRadius: 'var(--radius-sm)', background: depth === dp ? 'var(--sky-soft)' : 'var(--card)',
-                    color: depth === dp ? 'var(--primary)' : 'var(--ink)', fontWeight: 600, fontSize: 13,
-                    cursor: 'pointer', transition: 'border-color .12s, background .12s',
-                    fontFamily: 'var(--sans)',
-                  }}
-                >{dp}</button>
-              ))}
-            </div>
-          </LocalField>
-
-          <LocalField label={`Sources to consult: ${sources}`} htmlFor="nj-sources">
-            <input
-              id="nj-sources"
-              type="range"
-              min={1}
-              max={20}
-              value={sources}
-              onChange={(e) => setSources(Number(e.target.value))}
-              style={{ width: '100%', accentColor: 'var(--primary)' }}
-              aria-label={`Source count: ${sources}`}
-            />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
-              <span>1</span>
-              <span className="num" style={{ fontWeight: 700, color: 'var(--ink)' }}>{sources}</span>
-              <span>20</span>
-            </div>
-          </LocalField>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 22 }}>
-            <Btn kind="ghost" type="button" onClick={onClose} aria-label="Cancel new job">Cancel</Btn>
-            <Btn type="submit" disabled={busy} aria-label={busy ? 'Starting research' : 'Start research'}>
-              {busy ? 'Starting…' : 'Start research'}
-            </Btn>
+            <StepBar step={step} analysing={planBusy} />
           </div>
-        </form>
-      </Modal>
+
+          {/* Body — either the launch loading page or the form */}
+          {busy ? (
+            <div className="lh-launch" role="status" aria-live="polite">
+              <div style={{ fontFamily: 'var(--serif)', fontSize: 18, color: 'var(--ink)' }}>
+                Queuing your research…
+              </div>
+              <div className="lh-launch-bar" aria-hidden="true"><div className="fill" /></div>
+              <div style={{ fontSize: 12.5, color: 'var(--muted)', maxWidth: '42ch', lineHeight: 1.5 }}>
+                Your agent is being created and added to the queue. It will appear on the
+                Jobs board and move through <b>queued → running → review</b> on its own —
+                you can close this and watch its status there.
+              </div>
+            </div>
+          ) : (
+            <div className="lh-create-body">
+              <form onSubmit={submit}>
+                <LocalField label="Research question" htmlFor="nj-topic">
+                  <textarea
+                    id="nj-topic"
+                    ref={textRef}
+                    rows={3}
+                    value={topic}
+                    onChange={(e) => { setTopic(e.target.value); setPlan(null); setPlanMods(null); }}
+                    placeholder="e.g. Compare the cardiovascular outcomes of GLP-1 agonists vs metformin in adults with type 2 diabetes"
+                    style={{ ...inputStyle, resize: 'vertical', minHeight: 72 }}
+                    aria-label="Research question"
+                  />
+                </LocalField>
+
+                {/* Helper text — how to write a good question */}
+                <div className="lh-help">
+                  <b>Tip:</b> the more specific your question, the better the result. Name the
+                  <b> subject</b>, the <b>scope</b> (who/where/when), and <b>what you want to know</b>.
+                  Click <b>Analyse question</b> and Lighthouse will propose a research plan —
+                  framing, sub-questions and sources — which you can edit before launching.
+                </div>
+
+                {/* Analyse button — shown when there is a question but no plan yet */}
+                {!plan && (
+                  <div style={{ marginBottom: 14 }}>
+                    <button
+                      type="button"
+                      disabled={planBusy || !topic.trim()}
+                      onClick={previewPlan}
+                      aria-label="Analyse the question and preview a research plan"
+                      style={{
+                        border: `1px solid var(--primary)`, borderRadius: 'var(--radius-sm)',
+                        background: planBusy ? 'var(--sky-soft)' : 'var(--card)',
+                        color: 'var(--primary)', cursor: planBusy || !topic.trim() ? 'not-allowed' : 'pointer',
+                        fontSize: 12.5, fontWeight: 600, padding: '7px 16px',
+                        fontFamily: 'var(--sans)', opacity: !topic.trim() ? 0.5 : 1,
+                        transition: 'background .12s',
+                      }}
+                    >{planBusy ? 'Analysing your question…' : 'Analyse question →'}</button>
+                    {planBusy && (
+                      <div className="lh-launch-bar" aria-hidden="true"
+                        style={{ width: '100%', maxWidth: 'none', marginTop: 10 }}>
+                        <div className="fill" />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Plan preview panel */}
+                {plan && (
+                  <PlanPreview plan={plan} onUpdate={(mods) => setPlanMods(mods)} />
+                )}
+
+                <LocalField label="Mode" style={{ marginTop: plan ? 14 : 0 }}>
+                  <ModeRadio value={mode} onChange={setMode} />
+                  {modeInfo && (
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6, lineHeight: 1.45 }}>
+                      {modeInfo.desc}
+                    </div>
+                  )}
+                </LocalField>
+
+                <LocalField label="Depth" htmlFor="nj-depth">
+                  <div style={{ display: 'flex', gap: 8 }} role="group" aria-label="Research depth">
+                    {JOB_DEPTHS.map((dp) => (
+                      <button
+                        key={dp}
+                        type="button"
+                        aria-pressed={depth === dp}
+                        onClick={() => setDepth(dp)}
+                        style={{
+                          flex: 1, padding: '7px 0', border: `2px solid ${depth === dp ? 'var(--primary)' : 'var(--rule)'}`,
+                          borderRadius: 'var(--radius-sm)', background: depth === dp ? 'var(--sky-soft)' : 'var(--card)',
+                          color: depth === dp ? 'var(--primary)' : 'var(--ink)', fontWeight: 600, fontSize: 13,
+                          cursor: 'pointer', transition: 'border-color .12s, background .12s',
+                          fontFamily: 'var(--sans)',
+                        }}
+                      >{dp}</button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
+                    Quick is fastest; Thorough runs more rounds for deeper coverage.
+                  </div>
+                </LocalField>
+
+                <LocalField label={`Sources to consult: ${sources}`} htmlFor="nj-sources">
+                  <input
+                    id="nj-sources"
+                    type="range"
+                    min={1}
+                    max={20}
+                    value={sources}
+                    onChange={(e) => setSources(Number(e.target.value))}
+                    style={{ width: '100%', accentColor: 'var(--primary)' }}
+                    aria-label={`Source count: ${sources}`}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                    <span>1</span>
+                    <span className="num" style={{ fontWeight: 700, color: 'var(--ink)' }}>{sources}</span>
+                    <span>20</span>
+                  </div>
+                </LocalField>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  gap: 8, marginTop: 22 }}>
+                  <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                    {plan ? 'Plan ready — launch when you are.' : 'You can launch without analysing first.'}
+                  </span>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Btn kind="ghost" type="button" onClick={onClose} aria-label="Cancel">Cancel</Btn>
+                    <Btn type="submit" disabled={busy || !topic.trim()} icon="🚀"
+                      aria-label={busy ? 'Launching research agent' : 'Launch research agent'}>
+                      {busy ? 'Launching…' : 'Launch agent'}
+                    </Btn>
+                  </div>
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+      </div>
     );
   }
 

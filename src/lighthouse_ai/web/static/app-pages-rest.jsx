@@ -927,276 +927,278 @@ function RPositionList({ positions: rawPositions, loading, error, reload, isPend
 // ════════════════════════════════════════════════════════════════════════════
 //  HEALTH PAGE
 // ════════════════════════════════════════════════════════════════════════════
+// Map a database status string ("ok" | "absent" | "error: ...") to a chip tone.
+function rDbTone(status) {
+  if (status === 'ok') return 'ok';
+  if (status === 'absent') return 'neutral';
+  return 'bad';
+}
+
+// Section header label used across Health cards.
+function RCardLabel({ children }) {
+  return (
+    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)',
+      textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>
+      {children}
+    </div>
+  );
+}
+
+// One labeled budget bar (usd / tokens / tool_calls).
+function RBudgetBar({ label, used, cap, fmt }) {
+  const u = Number(used || 0);
+  const c = Number(cap || 0);
+  const ratio = c > 0 ? u / c : 0;
+  const hot = ratio > 0.85;
+  const format = fmt || ((n) => String(Math.round(n)));
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between',
+        fontSize: 12, color: 'var(--ink-2)', marginBottom: 6 }}>
+        <span>{label}</span>
+        <span className="num" style={{ color: hot ? R_DANGER : 'var(--ink)' }}>
+          {format(u)} / {format(c)}
+        </span>
+      </div>
+      <window.Bar value={u} max={c || 1} color={hot ? R_DANGER : 'var(--primary)'} />
+    </div>
+  );
+}
+
+// External service up/down row.
+function RServiceRow({ name, up }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      gap: 12, padding: '8px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13 }}>
+      <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{name}</span>
+      <RChip tone={up ? 'ok' : 'bad'}>{up ? 'up' : 'down'}</RChip>
+    </div>
+  );
+}
+
 function HealthPage({ toast }) {
-  const [lastRefreshed, setLastRefreshed] = rUseState(null);
-  const [elapsed, setElapsed] = rUseState(0);
-  const [reloading, setReloading] = rUseState(false);
-
-  const { data, loading, error, reload } = window.useApi('/api/health');
-  const { data: govData } = window.useApi('/api/governor');
-
-  const h   = data   || {};
-  const gov = govData || {};
-
-  const hw     = h.hardware || {};
-  const budget = h.budget   || {};
-  const checks = h.checks   || [];
-
-  const govTier = gov.tier || budget.tier || '—';
-  const degraded = gov.degraded || govTier === 'degrade' || govTier === 'tripped';
-  const tripped  = gov.tripped  || govTier === 'tripped';
-
-  const allOk    = checks.length > 0 && checks.every((c) => c.ok !== false && c.status !== 'fail');
-  const failCount = checks.filter((c) => c.ok === false || c.status === 'fail').length;
-
-  const statusColor = tripped  ? 'var(--coral-2)'
-    : degraded ? '#d98020'
-    : allOk && checks.length  ? 'var(--green-dark)'
-    : 'var(--muted)';
-
-  // Auto-poll every 15s
-  rUseEffect(() => {
-    setLastRefreshed(Date.now());
-    setElapsed(0);
-    const pollId = setInterval(() => {
-      reload();
-      setLastRefreshed(Date.now());
-      setElapsed(0);
-    }, 15000);
-    return () => clearInterval(pollId);
-  }, []); // eslint-disable-line
-
-  // 1-second elapsed tick
-  rUseEffect(() => {
-    const tickId = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(tickId);
-  }, []);
-
-  async function manualRecheck() {
-    setReloading(true);
-    reload();
-    setLastRefreshed(Date.now());
-    setElapsed(0);
-    // Small delay so the loading spinner is visible
-    await new Promise((r) => setTimeout(r, 400));
-    setReloading(false);
-  }
-
-  function govChipClass(t) {
-    if (!t || t === '—') return 'lh-tier-chip lh-tier-unknown';
-    const key = String(t).toLowerCase().replace(/[^a-z_]/g, '_');
-    return `lh-tier-chip lh-tier-${key}`;
-  }
-
+  const { data, loading, error, reload } = window.useApi('/api/health', { pollMs: 10000 });
+  const [busy, setBusy] = rUseState(false);
+  const [confirmKill, setConfirmKill] = rUseState(false);
   const Btn = window.Btn;
+
+  const h        = data || {};
+  const hw       = h.hardware || {};
+  const dbs      = h.databases || {};
+  const external = h.external || {};
+  const budget   = h.budget || {};
+  const storage  = h.storage || {};
+
+  const overall = h.overall;
+  const healthy = overall === 'green';
+
+  const fmtUsd = (n) => `$${Number(n).toFixed(2)}`;
+  const fmtCompact = (n) => {
+    const v = Number(n);
+    if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+    if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+    return String(Math.round(v));
+  };
+
+  async function governorAction(path, label) {
+    setBusy(true);
+    try {
+      await window.apiPost(path, {});
+      toast.show(label, 'success');
+      reload();
+    } catch (e) {
+      toast.show(e.message || 'Action failed', 'error');
+    } finally {
+      setBusy(false);
+      setConfirmKill(false);
+    }
+  }
+
+  const dbNames = Object.keys(dbs);
 
   return (
     <div>
       <window.PageHeader
         title="System Health"
+        subtitle="Live status of hardware, services, budget and storage"
         actions={
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <span style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'var(--sans)' }}>
-              {lastRefreshed
-                ? `Last checked: ${elapsed}s ago`
-                : 'Checking…'}
-            </span>
-            <Btn kind="ghost" onClick={manualRecheck} disabled={reloading}
+            {h.checked_at && (
+              <span style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'var(--sans)' }}>
+                Checked {fmtDate(h.checked_at) || ''} · auto every 10s
+              </span>
+            )}
+            <Btn kind="ghost" onClick={reload} disabled={loading}
               aria-label="Re-check health now">
-              {reloading ? 'Checking…' : 'Re-check'}
+              {loading ? 'Checking…' : 'Re-check'}
             </Btn>
           </div>
         }
       />
 
       {/* Overall status banner */}
-      {!loading && data && (
-        <div style={{ padding: '10px 16px', borderRadius: 'var(--radius)',
-          marginBottom: 18, fontSize: 13, fontWeight: 600, fontFamily: 'var(--sans)',
-          background: allOk
-            ? 'rgba(6,214,160,0.09)'
-            : failCount > 0 ? 'rgba(255,152,100,0.12)' : 'var(--rule-soft)',
-          color: allOk ? 'var(--green-dark)' : failCount > 0 ? '#c05a20' : 'var(--muted)',
-          border: `1px solid ${allOk ? 'var(--green-dark)' : failCount > 0 ? '#c05a20' : 'var(--rule)'}` }}>
-          {allOk
-            ? '✓ All systems operational'
-            : failCount > 0 ? `⚠ ${failCount} check${failCount > 1 ? 's' : ''} need attention`
-            : '— Health data loading…'}
+      {data && (
+        <div style={{ padding: '12px 18px', borderRadius: 'var(--radius)',
+          marginBottom: 18, fontSize: 14, fontWeight: 600, fontFamily: 'var(--sans)',
+          display: 'flex', alignItems: 'center', gap: 10,
+          background: healthy ? 'rgba(6,214,160,0.09)' : 'rgba(255,152,100,0.12)',
+          color: healthy ? 'var(--green-dark)' : R_WARN,
+          border: `1px solid ${healthy ? 'var(--green-dark)' : '#d98020'}` }}>
+          <span style={{ fontSize: 16, lineHeight: 1 }}>{healthy ? '✓' : '⚠'}</span>
+          {healthy
+            ? 'All systems healthy'
+            : 'Attention needed — one or more checks are degraded'}
         </div>
       )}
 
       {loading && !data && <RTableSkeleton rows={6} />}
-      {!loading && error && (
-        <window.ErrorBox message={`Could not reach the health endpoint — ${error}`} />
+      {!loading && error && !data && (
+        <window.ErrorBox message={`Could not reach the health endpoint — ${error}`} onRetry={reload} />
       )}
 
-      {(data || (!loading && !error)) && (
+      {data && (
         <div style={{ display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
           gap: 16, alignItems: 'start' }}>
 
-          {/* ── System column ─────────────────────────────────────────── */}
+          {/* ── System ───────────────────────────────────────────────── */}
           <div style={{ ...window.card, padding: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)',
-              textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>
-              System
+            <RCardLabel>System</RCardLabel>
+            <RRow k="Platform" v={hw.platform} />
+            <RRow k="Architecture" v={hw.arch} />
+            <RRow k="Total RAM" v={hw.total_ram_gb != null ? `${hw.total_ram_gb} GB` : null} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 12, padding: '8px 0', fontSize: 13 }}>
+              <span style={{ color: 'var(--muted)' }}>Tier</span>
+              {hw.tier ? <RChip tone="info">{hw.tier}</RChip>
+                : <span style={{ color: 'var(--ink)' }}>—</span>}
             </div>
-
-            {/* Status light + tier badge */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <span
-                role="img"
-                aria-label={tripped ? 'tripped' : degraded ? 'degraded' : 'healthy'}
-                style={{ width: 10, height: 10, borderRadius: '50%',
-                  background: statusColor, display: 'inline-block', flexShrink: 0,
-                  boxShadow: `0 0 6px ${statusColor}` }}
-              />
-              <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
-                {tripped ? 'Tripped' : degraded ? 'Degraded' : 'Healthy'}
-              </span>
-            </div>
-
-            {/* Hardware tier — big badge */}
-            {hw.tier && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase',
-                  letterSpacing: '0.06em', marginBottom: 5 }}>Hardware tier</div>
-                <span className={govChipClass(hw.tier)} style={{ fontSize: 12 }}>
-                  {hw.tier}
-                </span>
-              </div>
-            )}
-
-            <RRow k="Model" v={hw.model || h.version || '—'} />
-            <RRow k="RAM"   v={hw.ram_gb != null ? `${hw.ram_gb} GB`
-              : hw.total_ram_gb != null ? `${hw.total_ram_gb} GB` : '—'} />
-            <RRow k="Version" v={h.version || '—'} />
           </div>
 
-          {/* ── Budget column ─────────────────────────────────────────── */}
+          {/* ── Databases ────────────────────────────────────────────── */}
+          <div style={{ ...window.card, padding: 20 }}>
+            <RCardLabel>Databases</RCardLabel>
+            {dbNames.length === 0 && (
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>No databases reported.</div>
+            )}
+            {dbNames.map((name) => {
+              const status = dbs[name];
+              const short = status && status.startsWith('error')
+                ? 'error' : status;
+              return (
+                <div key={name}
+                  title={status}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: 12, padding: '8px 0', borderBottom: '1px solid var(--rule-soft)',
+                    fontSize: 13 }}>
+                  <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{name}</span>
+                  <RChip tone={rDbTone(status)}>{short}</RChip>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── External services ────────────────────────────────────── */}
+          <div style={{ ...window.card, padding: 20 }}>
+            <RCardLabel>External services</RCardLabel>
+            <RServiceRow name="Ollama" up={!!external.ollama} />
+            <RServiceRow name="Qdrant" up={!!external.qdrant} />
+            <RServiceRow name="Litestream" up={!!external.litestream} />
+          </div>
+
+          {/* ── Budget ───────────────────────────────────────────────── */}
           <div style={{ ...window.card, padding: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               marginBottom: 14 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)',
                 textTransform: 'uppercase', letterSpacing: '0.08em' }}>Budget</div>
-              <span className={govChipClass(govTier)}>{govTier}</span>
+              {budget.tier && <RChip tone="info">{budget.tier}</RChip>}
             </div>
 
-            {budget.usd && (() => {
-              const used = Number(budget.usd.used || 0);
-              const cap  = Number(budget.usd.cap  || 0);
-              const ratio = cap > 0 ? used / cap : 0;
-              const hot = ratio > 0.85;
+            {budget.usd && (
+              <RBudgetBar label="Cloud USD / mo"
+                used={budget.usd.used} cap={budget.usd.cap} fmt={fmtUsd} />
+            )}
+            {budget.tokens && (
+              <RBudgetBar label="Tokens / day"
+                used={budget.tokens.used} cap={budget.tokens.cap} fmt={fmtCompact} />
+            )}
+            {budget.tool_calls && (
+              <RBudgetBar label="Tool calls / day"
+                used={budget.tool_calls.used} cap={budget.tool_calls.cap} fmt={fmtCompact} />
+            )}
+            {!budget.usd && !budget.tokens && !budget.tool_calls && (
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>No budget data reported.</div>
+            )}
+
+            {/* Optional governor controls */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+              <Btn kind="ghost" onClick={() => setConfirmKill(true)} disabled={busy}
+                aria-label="Pause all spending">Pause all</Btn>
+              <Btn kind="ghost" onClick={() => governorAction('/api/governor/reset', 'Budget reset')}
+                disabled={busy} aria-label="Reset budget counters">Reset</Btn>
+            </div>
+          </div>
+
+          {/* ── Storage ──────────────────────────────────────────────── */}
+          <div style={{ ...window.card, padding: 20 }}>
+            <RCardLabel>Storage</RCardLabel>
+            {(() => {
+              const total = Number(storage.disk_total_gb || 0);
+              const free  = Number(storage.disk_free_gb || 0);
+              const used  = total > 0 ? total - free : 0;
               return (
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ marginBottom: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between',
                     fontSize: 12, color: 'var(--ink-2)', marginBottom: 6 }}>
-                    <span>Cloud USD</span>
-                    <span className="num" style={{ color: hot ? 'var(--coral-2)' : 'var(--ink)' }}>
-                      ${used.toFixed(2)} / ${cap.toFixed(0)}/mo
-                    </span>
+                    <span>Disk used</span>
+                    <span className="num">{used.toFixed(1)} / {total.toFixed(1)} GB</span>
                   </div>
-                  <window.Bar value={used} max={cap || 1}
-                    color={hot ? 'var(--coral-2)' : 'var(--primary)'} />
+                  <window.Bar value={used} max={total || 1} color="var(--primary)" />
                 </div>
               );
             })()}
-
-            {budget.tokens && (() => {
-              const used = Number(budget.tokens.used || 0);
-              const cap  = Number(budget.tokens.cap  || 0);
-              const hot  = cap > 0 && used / cap > 0.85;
-              return (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between',
-                    fontSize: 12, color: 'var(--ink-2)', marginBottom: 6 }}>
-                    <span>Tokens</span>
-                    <span className="num" style={{ color: hot ? 'var(--coral-2)' : 'var(--ink)' }}>
-                      {(used / 1e6).toFixed(1)}M / {(cap / 1e6).toFixed(1)}M/day
-                    </span>
-                  </div>
-                  <window.Bar value={used} max={cap || 1}
-                    color={hot ? 'var(--coral-2)' : 'var(--primary)'} />
-                </div>
-              );
-            })()}
-
-            {gov.usd_remaining != null && (
-              <RRow k="USD remaining" v={`$${Number(gov.usd_remaining).toFixed(2)}`} />
-            )}
-            {gov.tokens_remaining != null && (
-              <RRow k="Tokens remaining"
-                v={`${(Number(gov.tokens_remaining) / 1e6).toFixed(2)}M`} />
-            )}
-
-            {!budget.usd && !budget.tokens && !gov.usd_remaining && (
-              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-                No budget data reported yet.
-              </div>
+            <RRow k="Disk free" v={storage.disk_free_gb != null
+              ? `${storage.disk_free_gb} GB` : null} />
+            {Array.isArray(storage.replicas) && (
+              <RRow k="Replicas" v={storage.replicas.length} />
             )}
           </div>
 
-          {/* ── Checks column ─────────────────────────────────────────── */}
+          {/* ── Reliability ──────────────────────────────────────────── */}
           <div style={{ ...window.card, padding: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)',
-              textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>
-              Checks
-            </div>
-
-            {checks.length === 0 && (
-              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-                No checks reported by backend.
-              </div>
-            )}
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {checks.map((c, i) => <RCheckRow key={c.name || i} check={c} />)}
+            <RCardLabel>Reliability</RCardLabel>
+            <RRow k="Outbox depth"
+              v={h.outbox_depth != null ? h.outbox_depth : null}
+              accent={Number(h.outbox_depth) >= 100 ? R_DANGER : undefined} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 12, padding: '8px 0', fontSize: 13 }}>
+              <span style={{ color: 'var(--muted)' }}>Audit chain</span>
+              {h.audit_chain_ok == null ? (
+                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>— unknown</span>
+              ) : h.audit_chain_ok ? (
+                <span style={{ color: 'var(--green-dark)', fontWeight: 700 }}>✓ verified</span>
+              ) : (
+                <span style={{ color: R_DANGER, fontWeight: 700 }}>✕ broken</span>
+              )}
             </div>
           </div>
 
         </div>
       )}
-    </div>
-  );
-}
 
-function RCheckRow({ check }) {
-  const [open, setOpen] = rUseState(false);
-  const ok       = check.ok !== false && check.status !== 'fail';
-  const hasDetail = !ok && !!check.detail;
-
-  return (
-    <div style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-      <div
-        style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13,
-          padding: '8px 0', cursor: hasDetail ? 'pointer' : 'default' }}
-        onClick={hasDetail ? () => setOpen((o) => !o) : undefined}
-        role={hasDetail ? 'button' : undefined}
-        tabIndex={hasDetail ? 0 : undefined}
-        onKeyDown={hasDetail ? (e) => { if (e.key === 'Enter') setOpen((o) => !o); } : undefined}
-        aria-expanded={hasDetail ? open : undefined}>
-        <span
-          aria-label={ok ? 'passing' : 'failing'}
-          style={{ fontSize: 14, lineHeight: 1, flexShrink: 0,
-            color: ok ? 'var(--green-dark)' : 'var(--coral-2)' }}>
-          {ok ? '✓' : '✕'}
-        </span>
-        <span style={{ flex: 1, fontWeight: 500, color: 'var(--ink)' }}>
-          {check.name}
-        </span>
-        {hasDetail && (
-          <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>
-            {open ? '▾' : '▸'} detail
-          </span>
-        )}
-      </div>
-
-      {hasDetail && open && (
-        <div style={{ paddingLeft: 24, paddingBottom: 8, paddingTop: 2,
-          fontSize: 11.5, color: 'var(--coral-2)', fontFamily: 'var(--mono)',
-          wordBreak: 'break-word', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-          {check.detail}
-        </div>
+      {confirmKill && (
+        <RModal title="Pause all spending?" onClose={() => setConfirmKill(false)} width={400}>
+          <div style={{ fontSize: 14, color: 'var(--ink-2)', marginBottom: 22, lineHeight: 1.6 }}>
+            This trips the budget governor kill switch, halting all cloud model calls
+            and tool spending until you reset it. Continue?
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Btn kind="ghost" onClick={() => setConfirmKill(false)} disabled={busy}>Cancel</Btn>
+            <Btn kind="danger" onClick={() => governorAction('/api/governor/kill', 'Spending paused')}
+              disabled={busy}>Pause all</Btn>
+          </div>
+        </RModal>
       )}
     </div>
   );
@@ -1205,211 +1207,273 @@ function RCheckRow({ check }) {
 // ════════════════════════════════════════════════════════════════════════════
 //  SETTINGS PAGE
 // ════════════════════════════════════════════════════════════════════════════
-function SettingsPage({ toast }) {
-  const { data, loading, error, reload } = window.useApi('/api/settings');
-  const [form, setForm] = rUseState(null);
-  const [dirty, setDirty] = rUseState(false);
-  const [saving, setSaving] = rUseState(false);
-  const [saved, setSaved] = rUseState(false);
-  const [doctorData, setDoctorData] = rUseState(null);
-  const [doctorLoading, setDoctorLoading] = rUseState(false);
-  const [copied, setCopied] = rUseState(false);
+// ── Notifications section ──────────────────────────────────────────────────
+function RNotificationsSection({ toast }) {
+  const { data, loading, error, reload } = window.useApi('/api/settings/notifications');
+  const [savingEvent, setSavingEvent] = rUseState(null);
+
+  const channels = (data && data.channels) || {};
+  const allEvents = (data && data.all_events) || [];
+  const events = (data && data.events) || [];
+  const enabled = new Set(events);
+
+  async function toggleEvent(name, on) {
+    const next = on
+      ? Array.from(new Set([...events, name]))
+      : events.filter((e) => e !== name);
+    setSavingEvent(name);
+    try {
+      await window.apiPatch('/api/settings/notifications', { events: next, telegram_events: null });
+      toast.show(`Notifications updated — ${name} ${on ? 'on' : 'off'}`, 'success');
+      reload();
+    } catch (e) {
+      toast.show(e.message || 'Update failed', 'error');
+    } finally {
+      setSavingEvent(null);
+    }
+  }
+
+  if (loading && !data) return <window.Loading />;
+  if (error && !data) {
+    return <window.ErrorBox message={`Could not load notifications — ${error}`} onRetry={reload} />;
+  }
+
+  const tg = channels.telegram || {};
+  return (
+    <div>
+      {/* Channel status */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+        <RChannelChip name="Desktop" on={channels.desktop && channels.desktop.enabled} />
+        <RChannelChip name="Discord" on={channels.discord && channels.discord.enabled} />
+        <RChannelChip name="Telegram"
+          on={tg.enabled} hint={tg.configured ? undefined : 'not configured'} />
+      </div>
+
+      {/* Event checklist */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)',
+        textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+        Events to notify on
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {allEvents.length === 0 && (
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>No event types available.</div>
+        )}
+        {allEvents.map((name) => {
+          const on = enabled.has(name);
+          const busy = savingEvent === name;
+          return (
+            <label key={name}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: busy ? 'wait' : 'pointer',
+                padding: '7px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13,
+                opacity: busy ? 0.6 : 1 }}>
+              <input type="checkbox" checked={on} disabled={busy}
+                onChange={(e) => toggleEvent(name, e.target.checked)}
+                aria-label={`Notify on ${name}`} />
+              <span style={{ color: 'var(--ink)', fontFamily: 'var(--mono)', fontSize: 12.5 }}>
+                {name}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function RChannelChip({ name, on, hint }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <RChip tone={on ? 'ok' : 'neutral'}>{name} {on ? 'on' : 'off'}</RChip>
+      {hint && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{hint}</span>}
+    </div>
+  );
+}
+
+// ── Logseq section (read-only) ──────────────────────────────────────────────
+function RLogseqSection() {
+  const { data, loading, error } = window.useApi('/api/settings/logseq');
+  if (loading && !data) return <window.Loading />;
+  if (error && !data) return <window.ErrorBox message={`Could not load Logseq status — ${error}`} />;
+  const d = data || {};
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 12, padding: '8px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13 }}>
+        <span style={{ color: 'var(--muted)' }}>Status</span>
+        <RChip tone={d.enabled ? 'ok' : 'neutral'}>{d.enabled ? 'enabled' : 'disabled'}</RChip>
+      </div>
+      <RRow k="Graph directory" v={d.graph_dir} />
+      <RRow k="Sync interval" v={d.sync_interval_hours != null ? `every ${d.sync_interval_hours}h` : null} />
+      <RRow k="Pending sync" v={d.pending_sync != null ? d.pending_sync : null} />
+    </div>
+  );
+}
+
+// ── Learned skills section ──────────────────────────────────────────────────
+function RSkillsSection() {
+  const { data, loading, error } = window.useApi('/api/skills');
+  if (loading && !data) return <window.Loading />;
+  if (error && !data) return <window.ErrorBox message={`Could not load skills — ${error}`} />;
+  const skills = (data && data.skills) || [];
+  const top = skills.slice()
+    .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0))
+    .slice(0, 5);
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: 'var(--ink-2)', marginBottom: 12, lineHeight: 1.5 }}>
+        <strong style={{ color: 'var(--ink)' }}>{skills.length}</strong>{' '}
+        learned skill{skills.length === 1 ? '' : 's'} from self-evaluation. Manage via{' '}
+        <code style={{ fontFamily: 'var(--mono)', fontSize: 12, background: 'var(--rule-soft)',
+          padding: '1px 5px', borderRadius: 4 }}>lighthouse skills</code>.
+      </div>
+      {top.length === 0 && (
+        <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+          No skills learned yet — they appear as the system evaluates its own work.
+        </div>
+      )}
+      {top.map((s) => (
+        <div key={s.id || s.name}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 12, padding: '8px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: 'var(--ink)', fontWeight: 500, wordBreak: 'break-word' }}>
+              {s.name || s.id}
+            </div>
+            {s.applied_count != null && (
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                applied {s.applied_count}× · {s.win_count != null ? `${s.win_count} wins` : ''}
+              </div>
+            )}
+          </div>
+          {s.score != null && (
+            <span className="num" style={{ fontSize: 13, fontWeight: 700,
+              color: 'var(--ink)', flexShrink: 0 }}>
+              {Number(s.score).toFixed(2)}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Secrets section ─────────────────────────────────────────────────────────
+function RSecretsSection({ toast }) {
+  const { data, loading, error, reload } = window.useApi('/api/secrets');
+  const [key, setKey] = rUseState('');
+  const [value, setValue] = rUseState('');
+  const [busy, setBusy] = rUseState(false);
   const Btn = window.Btn;
 
-  // Sync form from fetched data — only on first load
-  rUseEffect(() => {
-    if (data && !form) {
-      setForm({
-        data_dir:       data.data_dir       || '',
-        offline_mode:   !!data.offline_mode,
-        backup_enabled: !!data.backup_enabled,
-        notify_enabled: !!data.notify_enabled,
-        theme:          data.theme          || 'system',
-      });
-    }
-  }, [data]); // eslint-disable-line
+  const secrets = (data && data.secrets) || {};
+  const keys = Object.keys(secrets);
 
-  function patch(key, val) {
-    setForm((f) => ({ ...f, [key]: val }));
-    setDirty(true);
-    setSaved(false);
-  }
-
-  async function save() {
-    setSaving(true);
+  async function addSecret(e) {
+    e.preventDefault();
+    if (!key.trim() || !value) return;
+    setBusy(true);
     try {
-      await window.apiPatch('/api/settings', form);
-      setDirty(false);
-      setSaved(true);
-      toast.show('Settings saved', 'success');
+      await window.apiPost('/api/secrets', { key: key.trim(), value });
+      toast.show(`Secret "${key.trim()}" saved`, 'success');
+      setKey('');
+      setValue('');
       reload();
-      // Clear "Saved" label after 2.5s
-      setTimeout(() => setSaved(false), 2500);
-    } catch (e) {
-      toast.show(e.message || 'Save failed', 'error');
-    }
-    setSaving(false);
-  }
-
-  async function copyDataDir() {
-    try {
-      await navigator.clipboard.writeText(form.data_dir || '');
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch (e) {
-      toast.show('Could not copy to clipboard', 'error');
+    } catch (err) {
+      toast.show(err.message || 'Could not save secret', 'error');
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function runDiagnostics() {
-    setDoctorLoading(true);
-    setDoctorData(null);
-    try {
-      const d = await window.apiGet('/api/health');
-      setDoctorData(d);
-    } catch (e) {
-      toast.show(e.message || 'Diagnostics failed', 'error');
-    }
-    setDoctorLoading(false);
-  }
+  return (
+    <div>
+      {error && !data && (
+        <div style={{ marginBottom: 12 }}>
+          <window.ErrorBox message={`Could not load secrets — ${error}`} onRetry={reload} />
+        </div>
+      )}
+      {loading && !data && <window.Loading />}
 
-  if (loading && !form) return <RTableSkeleton rows={8} />;
-  if (error   && !form) return <window.ErrorBox message={`Could not load settings — ${error}`} />;
-  if (!form)            return <RTableSkeleton rows={8} />;
+      {data && (
+        <div style={{ marginBottom: 16 }}>
+          {keys.length === 0 && (
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 10 }}>
+              No secrets stored yet.
+            </div>
+          )}
+          {keys.map((k) => (
+            <div key={k}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                gap: 12, padding: '8px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13 }}>
+              <span style={{ color: 'var(--ink)', fontFamily: 'var(--mono)', fontSize: 12.5 }}>{k}</span>
+              <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)',
+                letterSpacing: '0.15em' }}>••••••</span>
+            </div>
+          ))}
+        </div>
+      )}
 
-  const doctorChecks   = (doctorData && doctorData.checks)  || [];
-  const doctorFailCount = doctorChecks.filter((c) => c.ok === false || c.status === 'fail').length;
+      {/* Add form — write-only */}
+      <form onSubmit={addSecret}>
+        <RField label="Add or update a secret"
+          hint="Values are write-only and never displayed after saving.">
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <input value={key} onChange={(e) => setKey(e.target.value)}
+              placeholder="KEY (e.g. ANTHROPIC_API_KEY)"
+              style={{ ...rInput, flex: 1 }} aria-label="Secret key" />
+            <input value={value} onChange={(e) => setValue(e.target.value)}
+              type="password" placeholder="value"
+              style={{ ...rInput, flex: 1 }} aria-label="Secret value" autoComplete="off" />
+            <Btn type="submit" loading={busy} disabled={busy || !key.trim() || !value}>
+              {busy ? 'Saving…' : 'Save'}
+            </Btn>
+          </div>
+        </RField>
+      </form>
+    </div>
+  );
+}
+
+function SettingsPage({ toast }) {
+  const { data, loading, error } = window.useApi('/api/settings');
 
   return (
     <div>
       <window.PageHeader
         title="Settings"
-        actions={
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            {/* Unsaved changes indicator */}
-            {dirty && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5,
-                fontSize: 12, color: '#a07a00', fontWeight: 600, fontFamily: 'var(--sans)' }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%',
-                  background: '#c99a00', display: 'inline-block', flexShrink: 0 }} />
-                Unsaved changes
-              </span>
-            )}
-            <Btn onClick={save} disabled={saving || !dirty}>
-              {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save changes'}
-            </Btn>
-          </div>
-        }
+        subtitle="Notifications, integrations, learned skills and secrets"
       />
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 640 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 680 }}>
 
-        {/* ── General ──────────────────────────────────────────────────── */}
-        <RSettingsSection title="General">
-          {/* Data dir — read-only + copy button */}
-          <RField label="Data directory" hint="Location of the Lighthouse data folder on disk.">
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
-                readOnly
-                value={form.data_dir}
-                style={{ ...rInput, background: 'var(--rule-soft)', color: 'var(--ink-2)',
-                  cursor: 'default', flex: 1 }}
-                aria-label="Data directory path (read-only)"
-              />
-              <button
-                onClick={copyDataDir}
-                aria-label="Copy data directory path"
-                style={{ padding: '8px 12px', fontSize: 12, background: 'var(--card)',
-                  border: '1px solid var(--rule)', borderRadius: 6, cursor: 'pointer',
-                  color: copied ? 'var(--green-dark)' : 'var(--muted)',
-                  fontFamily: 'var(--sans)', flexShrink: 0, transition: 'color .2s' }}>
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-          </RField>
-          <RToggleRow
-            label="Offline mode"
-            hint="Disables all cloud model calls — uses local models only."
-            value={form.offline_mode}
-            onChange={(v) => patch('offline_mode', v)}
-            id="s-offline"
-          />
-        </RSettingsSection>
-
-        {/* ── Backup ───────────────────────────────────────────────────── */}
-        <RSettingsSection title="Backup">
-          <RToggleRow
-            label="Enable backup"
-            hint="Stream SQLite WAL to configured replicas via Litestream."
-            value={form.backup_enabled}
-            onChange={(v) => patch('backup_enabled', v)}
-            id="s-backup"
-          />
-        </RSettingsSection>
-
-        {/* ── Notifications ────────────────────────────────────────────── */}
         <RSettingsSection title="Notifications">
-          <RToggleRow
-            label="Enable notifications"
-            hint="Send alerts via configured channels (Telegram, etc.)."
-            value={form.notify_enabled}
-            onChange={(v) => patch('notify_enabled', v)}
-            id="s-notify"
-          />
+          <RNotificationsSection toast={toast} />
         </RSettingsSection>
 
-        {/* ── Appearance ───────────────────────────────────────────────── */}
-        <RSettingsSection title="Appearance">
-          <RField label="Theme">
-            <select
-              value={form.theme}
-              onChange={(e) => patch('theme', e.target.value)}
-              style={rInput}
-              aria-label="Theme selection">
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-              <option value="system">System (auto)</option>
-            </select>
-          </RField>
+        <RSettingsSection title="Logseq integration">
+          <RLogseqSection />
         </RSettingsSection>
 
-        {/* ── Doctor ───────────────────────────────────────────────────── */}
-        <RSettingsSection title="Doctor">
-          <div style={{ marginBottom: 14, fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-            Run a full diagnostics pass against the live health endpoint to surface
-            any configuration or connectivity issues.
-          </div>
-          <Btn kind="ghost" onClick={runDiagnostics} disabled={doctorLoading}>
-            {doctorLoading ? 'Running diagnostics…' : 'Run diagnostics'}
-          </Btn>
+        <RSettingsSection title="Learned skills">
+          <RSkillsSection />
+        </RSettingsSection>
 
-          {/* Results — fade in */}
-          {doctorData && (
-            <div className="r-doctor-results" style={{ marginTop: 16 }}>
-              {/* Overall verdict */}
-              <div style={{ padding: '8px 14px', borderRadius: 8, marginBottom: 12,
-                fontSize: 13, fontWeight: 700,
-                background: doctorFailCount === 0
-                  ? 'rgba(6,214,160,0.09)' : 'rgba(255,152,100,0.1)',
-                color: doctorFailCount === 0
-                  ? 'var(--green-dark)' : '#c05a20',
-                border: `1px solid ${doctorFailCount === 0
-                  ? 'var(--green-dark)' : '#c05a20'}` }}>
-                {doctorFailCount === 0
-                  ? '✓ All good — no issues found'
-                  : `⚠ ${doctorFailCount} issue${doctorFailCount > 1 ? 's' : ''} found`}
-              </div>
+        <RSettingsSection title="Secrets">
+          <RSecretsSection toast={toast} />
+        </RSettingsSection>
 
-              {doctorChecks.length === 0 && (
-                <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-                  No checks returned from the health endpoint.
-                </div>
-              )}
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {doctorChecks.map((c, i) => <RCheckRow key={c.name || i} check={c} />)}
-              </div>
-            </div>
+        {/* Configuration overview — read-only from /api/settings */}
+        <RSettingsSection title="Configuration" defaultOpen={false}>
+          {loading && !data && <window.Loading />}
+          {error && !data && (
+            <window.ErrorBox message={`Could not load configuration — ${error}`} />
+          )}
+          {data && (
+            <pre style={{ margin: 0, fontFamily: 'var(--mono)', fontSize: 11.5,
+              color: 'var(--ink-2)', background: 'var(--rule-soft)', padding: 14,
+              borderRadius: 8, overflow: 'auto', maxHeight: 320, lineHeight: 1.5 }}>
+              {JSON.stringify((data && data.config) || {}, null, 2)}
+            </pre>
           )}
         </RSettingsSection>
 
