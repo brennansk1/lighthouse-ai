@@ -52,6 +52,13 @@ const rInput = {
   background: 'var(--card)', width: '100%', boxSizing: 'border-box',
 };
 
+// Semantic colors. NOTE: the design token --coral-2 is actually a BLUE in this
+// theme, so we use explicit hex for genuine danger/negative signalling to match
+// the rest of the app (ErrorBox/Toast use #c62828).
+const R_DANGER = '#c62828';
+const R_DANGER_DEEP = '#b71c1c';
+const R_WARN = '#c05a20';
+
 // Cycling top-border palette for topic cards
 const TOPIC_ACCENTS = [
   'var(--primary)', 'var(--green)', 'var(--sand)', 'var(--coral-2)',
@@ -233,9 +240,40 @@ function RToggleRow({ label, hint, value, onChange, id }) {
 function fmtDate(dateStr) {
   if (!dateStr) return null;
   try {
-    return new Date(dateStr).toLocaleDateString(undefined,
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+    return d.toLocaleDateString(undefined,
       { month: 'short', day: 'numeric', year: 'numeric' });
   } catch (e) { return String(dateStr); }
+}
+
+// Days until a date string (negative = overdue). Returns null if unparseable.
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  return Math.ceil((d.getTime() - Date.now()) / 86400000);
+}
+
+// Tier / status chip. The CSS `lh-tier-chip` classes referenced by an earlier
+// version don't exist in index.html, so we render a self-contained styled chip.
+function RChip({ children, tone = 'neutral' }) {
+  const tones = {
+    neutral: { bg: 'var(--rule-soft)', fg: 'var(--ink-2)', bd: 'var(--rule)' },
+    ok:      { bg: 'rgba(0,137,123,0.10)', fg: 'var(--green-dark)', bd: 'var(--green-dark)' },
+    warn:    { bg: 'rgba(255,213,79,0.20)', fg: R_WARN, bd: '#d98020' },
+    bad:     { bg: 'rgba(198,40,40,0.10)', fg: R_DANGER, bd: R_DANGER },
+    info:    { bg: 'var(--sky-soft)', fg: 'var(--primary-dark)', bd: 'var(--primary)' },
+  };
+  const t = tones[tone] || tones.neutral;
+  return (
+    <span style={{ display: 'inline-block', fontSize: 11, fontWeight: 700,
+      fontFamily: 'var(--sans)', letterSpacing: '0.04em', textTransform: 'uppercase',
+      padding: '2px 9px', borderRadius: 999, background: t.bg, color: t.fg,
+      border: `1px solid ${t.bd}` }}>
+      {children}
+    </span>
+  );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -340,8 +378,8 @@ function TopicsPage({ toast }) {
         <RModal title={`Delete "${confirmDel.name}"?`} onClose={() => setConfirmDel(null)} width={400}>
           <div style={{ fontSize: 14, color: 'var(--ink-2)', marginBottom: 22, lineHeight: 1.6 }}>
             Delete topic <strong style={{ color: 'var(--ink)' }}>{confirmDel.name}</strong>?
-            This won't delete existing jobs but will stop future collection for this topic.
-            This action cannot be undone.
+            This removes the topic and its configured sources and stops future
+            collection. This action cannot be undone.
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <Btn kind="ghost" onClick={() => setConfirmDel(null)}>Cancel</Btn>
@@ -354,16 +392,18 @@ function TopicsPage({ toast }) {
 }
 
 function RTopicCard({ topic: t, accent, onDelete }) {
-  const jobCount = t.job_count != null ? t.job_count : (t.source_count != null ? t.source_count : 0);
+  // Real /api/topics rows expose: id, name, mode, cadence, source_count,
+  // created_at, updated_at. (No description/query/job_count columns.)
+  const sourceCount = t.source_count != null ? t.source_count : 0;
   return (
     <div className="r-topic-card"
       style={{ ...window.card, padding: 20, display: 'flex', flexDirection: 'column', gap: 10,
-        borderTop: `3px solid ${accent}` }}>
+        minHeight: 140, borderTop: `3px solid ${accent}` }}>
       {/* Delete button — top-right, appears on card hover */}
       <button
         onClick={onDelete}
-        className="r-del-btn"
-        aria-label={`Delete topic ${t.name}`}
+        className="r-del-btn lh-focusable"
+        aria-label={`Delete topic ${t.name || 'Untitled'}`}
         title="Delete topic"
         style={{ position: 'absolute', top: 10, right: 10, background: 'none', border: 'none',
           cursor: 'pointer', fontSize: 13, color: 'var(--muted)', padding: '2px 5px',
@@ -373,48 +413,27 @@ function RTopicCard({ topic: t, accent, onDelete }) {
 
       {/* Topic name */}
       <div style={{ fontFamily: 'var(--serif)', fontSize: 17, fontWeight: 700,
-        color: 'var(--ink)', lineHeight: 1.3, paddingRight: 20 }}>
+        color: 'var(--ink)', lineHeight: 1.3, paddingRight: 20, wordBreak: 'break-word' }}>
         {t.name || 'Untitled'}
       </div>
 
-      {/* Description — 3-line clamp */}
-      {t.description && (
-        <div style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.55,
-          display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical',
-          overflow: 'hidden' }}>
-          {t.description}
+      {/* Cadence line */}
+      {t.cadence && (
+        <div style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+          Collecting <strong style={{ color: 'var(--ink)' }}>{t.cadence}</strong>
         </div>
       )}
 
-      {/* Query mono chip */}
-      {t.query && (
-        <div style={{ display: 'flex', minWidth: 0 }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 11,
-            background: 'var(--sky-soft)', color: 'var(--ink-2)',
-            padding: '3px 9px', borderRadius: 'var(--radius-sm)',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            maxWidth: '100%' }}>
-            {t.query}
-          </span>
-        </div>
-      )}
-
-      {/* Footer row: job count + mode */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+      {/* Footer row: source count + mode */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
         marginTop: 'auto', paddingTop: 4 }}>
-        {jobCount > 0 && (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700,
-            background: 'var(--primary)', color: '#fff', padding: '2px 8px',
-            borderRadius: 10 }}>
-            {jobCount} {jobCount === 1 ? 'job' : 'jobs'}
-          </span>
-        )}
-        {t.mode && (
-          <span style={{ fontSize: 11, color: 'var(--muted)',
-            textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            {t.mode}
-          </span>
-        )}
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700,
+          background: sourceCount > 0 ? 'var(--primary)' : 'var(--rule)',
+          color: sourceCount > 0 ? '#fff' : 'var(--muted)', padding: '2px 8px',
+          borderRadius: 10 }}>
+          {sourceCount} {sourceCount === 1 ? 'source' : 'sources'}
+        </span>
+        {t.mode && <RChip tone="info">{t.mode}</RChip>}
       </div>
     </div>
   );
@@ -446,8 +465,8 @@ function RAddTopicCard({ onClick }) {
 
 function RNewTopicModal({ toast, onClose, onCreated }) {
   const [name, setName] = rUseState('');
-  const [description, setDescription] = rUseState('');
-  const [query, setQuery] = rUseState('');
+  const [mode, setMode] = rUseState('Monitor');
+  const [cadence, setCadence] = rUseState('continuous');
   const [busy, setBusy] = rUseState(false);
   const [errors, setErrors] = rUseState({});
   const Btn = window.Btn;
@@ -455,7 +474,6 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
   function validate() {
     const e = {};
     if (!name.trim()) e.name = 'Name is required.';
-    if (!query.trim()) e.query = 'Query string is required.';
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -464,10 +482,11 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
     if (!validate()) return;
     setBusy(true);
     try {
+      // Backend NewTopic accepts: name, mode, cadence, sources.
       await window.apiPost('/api/topics', {
         name: name.trim(),
-        description: description.trim() || undefined,
-        query: query.trim(),
+        mode,
+        cadence,
       });
       onCreated();
     } catch (e) {
@@ -476,42 +495,43 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
     }
   }
 
+  function onSubmit(e) { e.preventDefault(); submit(); }
+
   return (
     <RModal title="New Research Topic" onClose={onClose}>
-      <RField label="Name *" error={errors.name}>
-        <input
-          value={name}
-          onChange={(e) => { setName(e.target.value); setErrors((er) => ({ ...er, name: '' })); }}
-          placeholder="e.g. EU AI Act"
-          style={{ ...rInput, borderColor: errors.name ? 'var(--coral-2)' : undefined }}
-          aria-label="Topic name"
-          autoFocus
-        />
-      </RField>
-      <RField label="Description" hint="Optional — what are you watching for?">
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={3}
-          placeholder="Regulatory developments and enforcement decisions…"
-          style={{ ...rInput, resize: 'vertical' }}
-          aria-label="Topic description"
-        />
-      </RField>
-      <RField label="Query string *" error={errors.query}
-        hint={!errors.query ? 'A keyword expression to guide collection.' : undefined}>
-        <input
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setErrors((er) => ({ ...er, query: '' })); }}
-          placeholder='e.g. AI regulation OR "foundation models"'
-          style={{ ...rInput, borderColor: errors.query ? 'var(--coral-2)' : undefined }}
-          aria-label="Topic query string"
-        />
-      </RField>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-        <Btn kind="ghost" onClick={onClose} disabled={busy}>Cancel</Btn>
-        <Btn onClick={submit} disabled={busy}>{busy ? 'Creating…' : 'Create topic'}</Btn>
-      </div>
+      <form onSubmit={onSubmit}>
+        <RField label="Name" error={errors.name}
+          hint={!errors.name ? 'What you want Lighthouse to watch.' : undefined}>
+          <input
+            value={name}
+            onChange={(e) => { setName(e.target.value); setErrors((er) => ({ ...er, name: '' })); }}
+            placeholder="e.g. EU AI Act"
+            style={{ ...rInput, borderColor: errors.name ? R_DANGER : undefined }}
+            aria-label="Topic name"
+            aria-invalid={!!errors.name}
+            autoFocus
+          />
+        </RField>
+        <RField label="Mode" hint="Monitor watches continuously; Deepdive runs one focused pass.">
+          <select value={mode} onChange={(e) => setMode(e.target.value)}
+            style={rInput} aria-label="Topic mode">
+            <option value="Monitor">Monitor</option>
+            <option value="Deepdive">Deepdive</option>
+          </select>
+        </RField>
+        <RField label="Cadence" hint="How often collection runs.">
+          <select value={cadence} onChange={(e) => setCadence(e.target.value)}
+            style={rInput} aria-label="Collection cadence">
+            <option value="continuous">Continuous</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </RField>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+          <Btn kind="ghost" onClick={onClose} disabled={busy}>Cancel</Btn>
+          <Btn type="submit" loading={busy}>{busy ? 'Creating…' : 'Create topic'}</Btn>
+        </div>
+      </form>
     </RModal>
   );
 }
@@ -519,45 +539,45 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
 // ════════════════════════════════════════════════════════════════════════════
 //  POSITIONS PAGE
 // ════════════════════════════════════════════════════════════════════════════
+// Outcome semantics: backend stores `outcome` as 1 (confirmed) / 0 (refuted) /
+// null (unresolved). A position is pending iff outcome == null.
+function rIsPending(p) { return p && p.outcome == null; }
+function rIsConfirmed(p) { return p && p.outcome != null && Number(p.outcome) === 1; }
+function rProb(p) { return p && p.confidence != null ? Number(p.confidence) : null; }
+
 function PositionsPage({ toast }) {
   const [tab, setTab] = rUseState('Pending');
-  const { data: allData, reload: reloadAll } = window.useApi('/api/positions');
-  const allPositions = (allData && allData.positions) || [];
+  // Single source of truth for both the summary and the lists, so counts and
+  // the calibration score stay consistent and we avoid double-fetching.
+  const { data, loading, error, reload } = window.useApi('/api/positions');
+  const { data: calData } = window.useApi('/api/calibration');
 
-  const resolved = allPositions.filter((p) => p.resolved || p.outcome != null);
-  const pending  = allPositions.filter((p) => !p.resolved && p.outcome == null);
+  const positions = (data && data.positions) || [];
+  const resolved = positions.filter((p) => !rIsPending(p));
+  const pending  = positions.filter(rIsPending);
+  const overdue  = pending.filter((p) => { const d = daysUntil(p.resolve_by); return d != null && d < 0; });
 
-  // Brier score over resolved positions
-  function computeBrier(positions) {
-    const valid = positions.filter(
-      (p) => p.probability != null &&
-        (p.outcome === true || p.outcome === false ||
-         p.outcome === 'confirmed' || p.outcome === 'refuted')
-    );
-    if (!valid.length) return null;
-    const sum = valid.reduce((acc, p) => {
-      const prob = Number(p.probability);
-      const out  = (p.outcome === true || p.outcome === 'confirmed') ? 1 : 0;
-      return acc + Math.pow(prob - out, 2);
-    }, 0);
-    return sum / valid.length;
+  // Prefer the server's authoritative mean Brier; fall back to client compute.
+  let brier = (calData && typeof calData.mean_brier === 'number' && calData.n > 0)
+    ? calData.mean_brier : null;
+  if (brier == null && resolved.length) {
+    const scored = resolved.filter((p) => p.brier != null);
+    if (scored.length) brier = scored.reduce((a, p) => a + Number(p.brier), 0) / scored.length;
   }
 
-  const brier = computeBrier(resolved);
-
   function brierInfo(b) {
-    if (b == null) return { label: 'No data yet',  color: 'var(--muted)' };
-    if (b < 0.1)   return { label: 'Excellent',    color: 'var(--green-dark)' };
-    if (b < 0.2)   return { label: 'Good',         color: '#0aa' };
-    if (b < 0.25)  return { label: 'Fair',         color: 'var(--sand)' };
-    return               { label: 'Needs work',    color: 'var(--coral-2)' };
+    if (b == null) return { label: 'No data yet', color: 'var(--muted)' };
+    if (b < 0.1)   return { label: 'Excellent',   color: 'var(--green-dark)' };
+    if (b < 0.2)   return { label: 'Good',        color: 'var(--green-dark)' };
+    if (b < 0.25)  return { label: 'Fair',        color: R_WARN };
+    return              { label: 'Needs work',     color: R_DANGER };
   }
   const bi = brierInfo(brier);
 
   // SSE refresh
   window.useEvents(rUseCallback((name) => {
-    if (name === 'position.resolved') reloadAll();
-  }, [reloadAll]));
+    if (name === 'position.resolved') reload();
+  }, [reload]));
 
   return (
     <div>
@@ -569,6 +589,12 @@ function PositionsPage({ toast }) {
         onTab={setTab}
       />
 
+      {error && !data && (
+        <div style={{ marginBottom: 16 }}>
+          <window.ErrorBox message={`Could not load positions — ${error}`} onRetry={reload} />
+        </div>
+      )}
+
       {/* Calibration summary — always visible */}
       <div style={{ ...window.card, padding: '16px 22px', marginBottom: 20,
         display: 'flex', gap: 36, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -577,9 +603,8 @@ function PositionsPage({ toast }) {
           <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase',
             letterSpacing: '0.07em', marginBottom: 4 }}>Brier Score</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            {/* Optionally use window.BrierScore if available */}
-            {window.BrierScore && resolved.length > 0
-              ? <window.BrierScore value={brier} />
+            {window.BrierScore && brier != null
+              ? <window.BrierScore score={brier} />
               : (
                 <span className="num"
                   style={{ fontSize: 26, fontWeight: 700, color: bi.color }}>
@@ -588,6 +613,9 @@ function PositionsPage({ toast }) {
               )
             }
             <span style={{ fontSize: 12, color: bi.color, fontWeight: 600 }}>{bi.label}</span>
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3 }}>
+            lower is better · 0 = perfect
           </div>
         </div>
 
@@ -606,48 +634,70 @@ function PositionsPage({ toast }) {
           <span className="num" style={{ fontSize: 26, fontWeight: 700,
             color: 'var(--ink)' }}>{pending.length}</span>
         </div>
+
+        {/* Overdue count — only when there are any */}
+        {overdue.length > 0 && (
+          <div>
+            <div style={{ fontSize: 10.5, color: R_DANGER, textTransform: 'uppercase',
+              letterSpacing: '0.07em', marginBottom: 4, fontWeight: 700 }}>Overdue</div>
+            <span className="num" style={{ fontSize: 26, fontWeight: 700,
+              color: R_DANGER }}>{overdue.length}</span>
+          </div>
+        )}
       </div>
 
       {tab === 'Pending'  && (
-        <RPositionList key="pending"  filterFn={(p) => !p.resolved && p.outcome == null}
-          isPending toast={toast} />
+        <RPositionList key="pending" positions={pending} loading={loading} error={error}
+          reload={reload} isPending toast={toast} />
       )}
       {tab === 'Resolved' && (
-        <RPositionList key="resolved" filterFn={(p) => p.resolved || p.outcome != null}
-          isResolved toast={toast} />
+        <RPositionList key="resolved" positions={resolved} loading={loading} error={error}
+          reload={reload} isResolved toast={toast} />
       )}
     </div>
   );
 }
 
-function RPositionList({ filterFn, isPending, isResolved, toast }) {
-  const { data, loading, error, reload } = window.useApi('/api/positions');
+function RPositionList({ positions: rawPositions, loading, error, reload, isPending, isResolved, toast }) {
   const [sel, setSel] = rUseState(null);
+  const [busyId, setBusyId] = rUseState(null);
 
-  const rawPositions = (data && data.positions) || [];
-  const positions = rawPositions.filter(filterFn);
+  // Pending: surface the most urgent (soonest / overdue) first. Resolved: keep
+  // newest-resolved order from the API.
+  const positions = isPending
+    ? rawPositions.slice().sort((a, b) => {
+        const da = daysUntil(a.resolve_by), db = daysUntil(b.resolve_by);
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return da - db;
+      })
+    : rawPositions;
 
-  // SSE
-  window.useEvents(rUseCallback((name) => {
-    if (name === 'position.resolved') { reload(); setSel(null); }
-  }, [reload]));
+  // Keep the open detail pane in sync with refreshed data (e.g. after resolve).
+  const selLive = sel ? (positions.find((p) => p.id === sel.id) || sel) : null;
 
   async function resolve(id, outcome) {
+    setBusyId(id);
     try {
       await window.apiPost(`/api/positions/${id}/resolve`, { outcome });
-      reload();
       toast.show(
-        outcome === 'defer' ? 'Position deferred 30 days' : 'Position resolved',
+        outcome === 'defer' ? 'Position deferred' : 'Position resolved',
         'success'
       );
       setSel(null);
+      reload();
     } catch (e) {
       toast.show(e.message || 'Resolve failed', 'error');
+    } finally {
+      setBusyId(null);
     }
   }
 
-  if (loading) return <RTableSkeleton rows={5} />;
-  if (error)   return <window.ErrorBox message={`Could not load positions — ${error}`} />;
+  if (loading && !rawPositions.length) return <RTableSkeleton rows={5} />;
+  if (error && !rawPositions.length) {
+    return <window.ErrorBox message={`Could not load positions — ${error}`} onRetry={reload} />;
+  }
 
   // Empty states differ for pending vs resolved
   if (!positions.length && isPending) {
@@ -676,16 +726,16 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
   }
 
   return (
-    <div style={{ display: 'grid',
-      gridTemplateColumns: sel ? '1fr minmax(320px, 380px)' : '1fr',
-      gap: 16, alignItems: 'start' }}>
-
+    <React.Fragment>
       {/* Position list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {positions.map((p) => {
-          const isSelected = sel && sel.id === p.id;
-          const prob = p.probability != null ? p.probability : p.confidence;
-          const isOpen = !p.resolved && p.outcome == null;
+          const isSelected = selLive && selLive.id === p.id;
+          const prob = rProb(p);
+          const pending = rIsPending(p);
+          const dleft = pending ? daysUntil(p.resolve_by) : null;
+          const isOverdue = dleft != null && dleft < 0;
+          const dueSoon = dleft != null && dleft >= 0 && dleft <= 7;
 
           return (
             <div
@@ -693,14 +743,15 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
               onClick={() => setSel(isSelected ? null : p)}
               role="button"
               tabIndex={0}
+              className="lh-focusable"
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') setSel(isSelected ? null : p);
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSel(isSelected ? null : p); }
               }}
-              aria-selected={isSelected}
+              aria-pressed={!!isSelected}
               style={{ ...window.card, padding: '14px 18px', cursor: 'pointer',
-                border: `1px solid ${isSelected ? 'var(--primary)' : 'transparent'}`,
-                transition: 'border-color .15s',
-                outline: 'none' }}>
+                borderColor: isSelected ? 'var(--primary)' : (isOverdue ? R_DANGER : 'var(--rule)'),
+                borderLeft: isOverdue ? `3px solid ${R_DANGER}` : undefined,
+                transition: 'border-color .15s' }}>
               {/* Claim text — 2-line clamp */}
               <div style={{ fontFamily: 'var(--serif)', fontSize: 14.5, color: 'var(--ink)',
                 lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2,
@@ -710,11 +761,9 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
 
               {/* Meta row */}
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                {prob != null && (
-                  <window.ConfidencePill
-                    phrase={p.wep_band || p.wep_phrase || ''}
-                    band={String(prob)}
-                  />
+                {p.wep_band && (
+                  <window.ConfidencePill phrase={p.wep_band}
+                    band={prob != null ? String(prob) : undefined} />
                 )}
                 {prob != null && (
                   <span className="num" style={{ fontSize: 12.5,
@@ -722,22 +771,24 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
                     {(prob * 100).toFixed(0)}%
                   </span>
                 )}
-                {p.created_at && (
-                  <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                    {fmtDate(p.created_at)}
+                {pending && p.resolve_by && (
+                  <span style={{ fontSize: 11.5, fontWeight: 700,
+                    color: isOverdue ? R_DANGER : dueSoon ? R_WARN : 'var(--muted)' }}>
+                    {isOverdue
+                      ? `overdue by ${Math.abs(dleft)}d`
+                      : dleft === 0 ? 'due today'
+                      : `due ${fmtDate(p.resolve_by)}`}
                   </span>
                 )}
-                {p.due_at && (
-                  <span style={{ fontSize: 11.5, color: 'var(--sand)', fontWeight: 600 }}>
-                    due {fmtDate(p.due_at)}
-                  </span>
-                )}
-                {!isOpen && (
+                {!pending && (
                   <span style={{ fontSize: 12, fontWeight: 700,
-                    color: (p.outcome === 'refuted' || p.outcome === false)
-                      ? 'var(--coral-2)' : 'var(--green-dark)' }}>
-                    {p.outcome === false ? 'refuted'
-                      : p.outcome === true ? 'confirmed' : p.outcome}
+                    color: rIsConfirmed(p) ? 'var(--green-dark)' : R_DANGER }}>
+                    {rIsConfirmed(p) ? 'confirmed' : 'refuted'}
+                  </span>
+                )}
+                {!pending && p.brier != null && (
+                  <span className="num" style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                    Brier {Number(p.brier).toFixed(3)}
                   </span>
                 )}
               </div>
@@ -746,116 +797,130 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
         })}
       </div>
 
-      {/* Detail pane */}
-      {sel && (
-        <RSidePane title="Position" onClose={() => setSel(null)}>
+      {/* Detail pane — SidePane is a fixed overlay, so it lives outside the list flow */}
+      {selLive && (
+        <window.SidePane title="Position" onClose={() => setSel(null)}>
           {/* Full claim text */}
           <div style={{ fontFamily: 'var(--serif)', fontSize: 15.5, color: 'var(--ink)',
             lineHeight: 1.6, marginBottom: 18 }}>
-            {sel.claim}
+            {selLive.claim || '(no claim text)'}
           </div>
 
-          {/* Probability bar */}
+          {/* Probability */}
           {(() => {
-            const prob = sel.probability != null ? sel.probability : sel.confidence;
+            const prob = rProb(selLive);
             if (prob == null) return null;
             return (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase',
-                  letterSpacing: '0.07em', marginBottom: 6 }}>Probability</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ flex: 1 }}>
-                    <window.Bar value={prob} max={1} color="var(--primary)" />
-                  </div>
-                  <span className="num" style={{ fontSize: 14, fontWeight: 700,
-                    color: 'var(--ink)', whiteSpace: 'nowrap' }}>
-                    {(prob * 100).toFixed(0)}%
-                  </span>
-                </div>
-                {/* WEP band chip */}
-                {(sel.wep_band || sel.wep_phrase) && (
+                  letterSpacing: '0.07em', marginBottom: 6 }}>Stated probability</div>
+                {window.WepBar
+                  ? <window.WepBar probability={prob} />
+                  : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ flex: 1 }}>
+                        <window.Bar value={prob} max={1} color="var(--primary)" />
+                      </div>
+                      <span className="num" style={{ fontSize: 14, fontWeight: 700,
+                        color: 'var(--ink)', whiteSpace: 'nowrap' }}>
+                        {(prob * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                  )}
+                {selLive.wep_band && (
                   <div style={{ marginTop: 8 }}>
-                    {window.WepBar
-                      ? <window.WepBar band={sel.wep_band || sel.wep_phrase} />
-                      : (
-                        <span className="wep" style={{ fontSize: 11 }}>
-                          {sel.wep_band || sel.wep_phrase}
-                        </span>
-                      )}
+                    <window.ConfidencePill phrase={selLive.wep_band} band={String(prob)} />
                   </div>
                 )}
               </div>
             );
           })()}
 
+          {/* Resolution criterion — tells the user HOW to decide the outcome */}
+          {selLive.resolution_criterion && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase',
+                letterSpacing: '0.07em', marginBottom: 6 }}>Resolution criterion</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55 }}>
+                {selLive.resolution_criterion}
+              </div>
+            </div>
+          )}
+
           {/* Resolved outcome + Brier */}
-          {(sel.resolved || sel.outcome != null) && (
+          {!rIsPending(selLive) && (
             <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 8,
-              background: (sel.outcome === false || sel.outcome === 'refuted')
-                ? 'rgba(240,80,80,0.07)' : 'rgba(6,214,160,0.07)',
-              border: `1px solid ${
-                (sel.outcome === false || sel.outcome === 'refuted')
-                  ? 'var(--coral-2)' : 'var(--green-dark)'}` }}>
+              background: rIsConfirmed(selLive) ? 'rgba(0,137,123,0.08)' : 'rgba(198,40,40,0.07)',
+              border: `1px solid ${rIsConfirmed(selLive) ? 'var(--green-dark)' : R_DANGER}` }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase',
                 letterSpacing: '0.06em', marginBottom: 3 }}>Outcome</div>
               <div style={{ fontWeight: 700, fontSize: 14,
-                color: (sel.outcome === false || sel.outcome === 'refuted')
-                  ? 'var(--coral-2)' : 'var(--green-dark)' }}>
-                {sel.outcome === false ? 'Refuted (false)'
-                  : sel.outcome === true ? 'Confirmed (true)'
-                  : String(sel.outcome)}
+                color: rIsConfirmed(selLive) ? 'var(--green-dark)' : R_DANGER }}>
+                {rIsConfirmed(selLive) ? 'Confirmed (true)' : 'Refuted (false)'}
               </div>
-              {sel.brier != null && (
+              {selLive.brier != null && (
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                  Brier score: <strong>{Number(sel.brier).toFixed(3)}</strong>
+                  Brier score: <strong>{Number(selLive.brier).toFixed(3)}</strong>
                 </div>
               )}
             </div>
           )}
 
           {/* Metadata rows */}
-          {sel.created_at && <RRow k="Created"  v={fmtDate(sel.created_at)} />}
-          {sel.due_at      && <RRow k="Due"      v={fmtDate(sel.due_at)}     />}
-          {sel.resolved_at && <RRow k="Resolved" v={fmtDate(sel.resolved_at)} />}
+          {selLive.created_at  && <RRow k="Created"  v={fmtDate(selLive.created_at)} />}
+          {selLive.resolve_by  && rIsPending(selLive) && (() => {
+            const d = daysUntil(selLive.resolve_by);
+            const od = d != null && d < 0;
+            return <RRow k="Due" v={fmtDate(selLive.resolve_by)} accent={od ? R_DANGER : undefined} />;
+          })()}
+          {selLive.resolved_at && <RRow k="Resolved" v={fmtDate(selLive.resolved_at)} />}
 
-          {/* Resolve buttons — only for pending positions */}
-          {!sel.resolved && sel.outcome == null && (
+          {/* Resolve actions — only for pending positions */}
+          {rIsPending(selLive) && (
             <div style={{ marginTop: 20 }}>
               <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase',
                 letterSpacing: '0.07em', marginBottom: 10 }}>Resolve this position</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <button
-                  onClick={() => resolve(sel.id, 'confirmed')}
-                  aria-label="Mark outcome as true"
+                  onClick={() => resolve(selLive.id, 'confirmed')}
+                  disabled={busyId === selLive.id}
+                  className="lh-focusable"
+                  aria-label="Resolve as confirmed (true)"
                   style={{ background: 'var(--green-dark)', color: '#fff', border: 'none',
-                    borderRadius: 'var(--radius)', padding: '9px 16px', cursor: 'pointer',
-                    fontSize: 13, fontWeight: 600, fontFamily: 'var(--sans)',
-                    textAlign: 'left' }}>
+                    borderRadius: 'var(--radius-sm)', padding: '9px 16px',
+                    cursor: busyId === selLive.id ? 'wait' : 'pointer',
+                    opacity: busyId === selLive.id ? 0.6 : 1,
+                    fontSize: 13, fontWeight: 600, fontFamily: 'var(--sans)', textAlign: 'left' }}>
                   ✓ True outcome — confirmed
                 </button>
                 <button
-                  onClick={() => resolve(sel.id, 'refuted')}
-                  aria-label="Mark outcome as false"
-                  style={{ background: 'var(--coral-2)', color: '#fff', border: 'none',
-                    borderRadius: 'var(--radius)', padding: '9px 16px', cursor: 'pointer',
-                    fontSize: 13, fontWeight: 600, fontFamily: 'var(--sans)',
-                    textAlign: 'left' }}>
+                  onClick={() => resolve(selLive.id, 'refuted')}
+                  disabled={busyId === selLive.id}
+                  className="lh-focusable"
+                  aria-label="Resolve as refuted (false)"
+                  style={{ background: R_DANGER, color: '#fff', border: 'none',
+                    borderRadius: 'var(--radius-sm)', padding: '9px 16px',
+                    cursor: busyId === selLive.id ? 'wait' : 'pointer',
+                    opacity: busyId === selLive.id ? 0.6 : 1,
+                    fontSize: 13, fontWeight: 600, fontFamily: 'var(--sans)', textAlign: 'left' }}>
                   ✕ False outcome — refuted
                 </button>
                 <button
-                  onClick={() => resolve(sel.id, 'defer')}
-                  aria-label="Defer this position 30 days"
-                  className="btn-ghost"
+                  onClick={() => resolve(selLive.id, 'defer')}
+                  disabled={busyId === selLive.id}
+                  aria-label="Defer this position"
+                  className="btn-ghost lh-focusable"
                   style={{ padding: '9px 16px', fontSize: 13, fontWeight: 600,
-                    textAlign: 'left' }}>
-                  — Defer 30 days
+                    cursor: busyId === selLive.id ? 'wait' : 'pointer',
+                    opacity: busyId === selLive.id ? 0.6 : 1, textAlign: 'left' }}>
+                  — Defer for now
                 </button>
               </div>
             </div>
           )}
-        </RSidePane>
+        </window.SidePane>
       )}
-    </div>
+    </React.Fragment>
   );
 }
 

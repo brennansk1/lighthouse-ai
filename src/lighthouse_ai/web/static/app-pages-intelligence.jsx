@@ -103,29 +103,24 @@ function IEmptyState({ icon, title, hint }) {
 
 // ── Reflections panel ─────────────────────────────────────────────────────────
 
-function IReflectionsPanel({ toast }) {
-  const { data, loading, error, reload } = window.useApi('/api/reflections');
+function IReflectionsPanel({ toast, data, loading, error, reload }) {
   const [acting, iSetActing] = iUseState(null); // id of reflection being acted on
-
-  window.useEvents(iUseCallback((name) => {
-    if (name === 'intelligence.acted') reload();
-  }, [reload]));
 
   async function handleAct(r) {
     iSetActing(r.id);
     try {
       const res = await window.apiPost(`/api/reflections/${r.id}/act`, {});
-      toast.show(`Job ${res.job_id} spawned`, 'success');
+      toast.show(`Research job ${res.job_id} spawned — view it on the Jobs page`, 'success');
       reload();
     } catch (e) {
-      toast.show(e.message || 'Act failed', 'error');
+      toast.show(e.message || 'Could not act on this reflection', 'error');
     } finally {
       iSetActing(null);
     }
   }
 
-  if (loading) return <div style={{ padding: 20, color: 'var(--muted)' }}>Loading reflections…</div>;
-  if (error)   return <window.ErrorBox message={`Could not load reflections — ${error}`} />;
+  if (loading && !data) return <window.Loading label="Loading reflections…" />;
+  if (error)   return <window.ErrorBox message={`Could not load reflections — ${error}`} onRetry={reload} />;
 
   const items = (data && data.reflections) || [];
   if (!items.length) {
@@ -197,29 +192,24 @@ function IReflectionsPanel({ toast }) {
 
 // ── Escalations panel ─────────────────────────────────────────────────────────
 
-function IEscalationsPanel({ toast }) {
-  const { data, loading, error, reload } = window.useApi('/api/escalations');
+function IEscalationsPanel({ toast, data, loading, error, reload }) {
   const [updating, iSetUpdating] = iUseState(null);
-
-  window.useEvents(iUseCallback((name) => {
-    if (name === 'intelligence.escalation_updated') reload();
-  }, [reload]));
 
   async function setStatus(id, status) {
     iSetUpdating(id);
     try {
       await window.apiPatch(`/api/escalations/${id}/status`, { status });
-      toast.show(`Status → ${status}`, 'success');
+      toast.show(status === 'resolved' ? 'Escalation resolved' : `Escalation ${status}`, 'success');
       reload();
     } catch (e) {
-      toast.show(e.message || 'Update failed', 'error');
+      toast.show(e.message || 'Could not update escalation', 'error');
     } finally {
       iSetUpdating(null);
     }
   }
 
-  if (loading) return <div style={{ padding: 20, color: 'var(--muted)' }}>Loading escalations…</div>;
-  if (error)   return <window.ErrorBox message={`Could not load escalations — ${error}`} />;
+  if (loading && !data) return <window.Loading label="Loading escalations…" />;
+  if (error)   return <window.ErrorBox message={`Could not load escalations — ${error}`} onRetry={reload} />;
 
   const items = (data && data.escalations) || [];
   const open   = items.filter((e) => e.status === 'open');
@@ -332,12 +322,34 @@ function IEscalationsPanel({ toast }) {
 // ── IntelligencePage ──────────────────────────────────────────────────────────
 
 window.IntelligencePage = function IntelligencePage({ toast }) {
-  const [tab, iSetTab] = iUseState('reflections');
+  // Data is owned here so the tab bar can show accurate "needs attention"
+  // badges and pick a sensible default tab. Panels render from these props.
+  const reflections = window.useApi('/api/reflections');
+  const escalations = window.useApi('/api/escalations');
+
+  // Live refresh both lists when the subconscious engine emits.
+  window.useEvents(iUseCallback((name) => {
+    if (name === 'intelligence.acted') reflections.reload();
+    if (name === 'intelligence.escalation_updated') escalations.reload();
+  }, [reflections.reload, escalations.reload]));
+
+  const escItems = (escalations.data && escalations.data.escalations) || [];
+  const openEsc = escItems.filter((e) => e.status === 'open');
+  const reflItems = (reflections.data && reflections.data.reflections) || [];
+
+  // Default to whichever surface needs the user: open escalations win.
+  const [tab, iSetTab] = iUseState(null);
+  const effectiveTab = tab || (openEsc.length > 0 ? 'escalations' : 'reflections');
+
+  const tabMeta = {
+    reflections: { label: 'Reflections', count: reflItems.length, urgent: false },
+    escalations: { label: 'Escalations', count: openEsc.length, urgent: openEsc.length > 0 },
+  };
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '32px 24px 48px' }}>
       {/* Header */}
-      <div style={{ marginBottom: 28 }}>
+      <div style={{ marginBottom: 16 }}>
         <h1 style={{ fontFamily: 'var(--serif)', fontSize: 26, fontWeight: 700,
           color: 'var(--ink)', margin: 0, letterSpacing: '-0.01em' }}>
           Intelligence
@@ -350,32 +362,64 @@ window.IntelligencePage = function IntelligencePage({ toast }) {
         </p>
       </div>
 
+      {/* "Needs your attention" summary — the obvious next step. */}
+      <div role="status" style={{ marginBottom: 20, padding: '10px 14px',
+        borderRadius: 'var(--radius-sm)', fontFamily: 'var(--sans)', fontSize: 13,
+        background: openEsc.length > 0 ? 'rgba(183,28,28,0.07)' : 'var(--rule-soft)',
+        border: openEsc.length > 0 ? '1px solid rgba(183,28,28,0.2)' : '1px solid var(--rule)',
+        color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span aria-hidden="true">{openEsc.length > 0 ? '🔔' : '✓'}</span>
+        {openEsc.length > 0
+          ? <span><strong style={{ color: 'var(--ink)' }}>{openEsc.length} open escalation{openEsc.length === 1 ? '' : 's'}</strong> need your attention.</span>
+          : <span>Nothing needs your attention. All escalations are resolved.</span>}
+      </div>
+
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20,
+      <div role="tablist" style={{ display: 'flex', gap: 4, marginBottom: 20,
         borderBottom: '1px solid var(--rule)', paddingBottom: 0 }}>
-        {['reflections', 'escalations'].map((t) => (
-          <button
-            key={t}
-            onClick={() => iSetTab(t)}
-            style={{
-              padding: '8px 18px', border: 'none', cursor: 'pointer',
-              fontFamily: 'var(--sans)', fontSize: 13, fontWeight: tab === t ? 600 : 500,
-              background: 'transparent',
-              color: tab === t ? 'var(--primary)' : 'var(--muted)',
-              borderBottom: tab === t ? '2px solid var(--primary)' : '2px solid transparent',
-              marginBottom: -1, borderRadius: 0,
-              transition: 'color .12s',
-              textTransform: 'capitalize',
-            }}
-          >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
+        {['reflections', 'escalations'].map((t) => {
+          const m = tabMeta[t];
+          const on = effectiveTab === t;
+          return (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={on}
+              onClick={() => iSetTab(t)}
+              style={{
+                padding: '8px 18px', border: 'none', cursor: 'pointer',
+                fontFamily: 'var(--sans)', fontSize: 13, fontWeight: on ? 600 : 500,
+                background: 'transparent',
+                color: on ? 'var(--primary)' : 'var(--muted)',
+                borderBottom: on ? '2px solid var(--primary)' : '2px solid transparent',
+                marginBottom: -1, borderRadius: 0,
+                transition: 'color .12s',
+                display: 'inline-flex', alignItems: 'center', gap: 7,
+              }}
+            >
+              {m.label}
+              {m.count > 0 && (
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 700,
+                  lineHeight: 1, padding: '2px 6px', borderRadius: 999,
+                  background: m.urgent ? '#b71c1c' : 'var(--rule)',
+                  color: m.urgent ? '#fff' : 'var(--muted)' }}>
+                  {m.count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Panel */}
-      {tab === 'reflections' && <IReflectionsPanel toast={toast} />}
-      {tab === 'escalations' && <IEscalationsPanel toast={toast} />}
+      {effectiveTab === 'reflections' && (
+        <IReflectionsPanel toast={toast} data={reflections.data}
+          loading={reflections.loading} error={reflections.error} reload={reflections.reload} />
+      )}
+      {effectiveTab === 'escalations' && (
+        <IEscalationsPanel toast={toast} data={escalations.data}
+          loading={escalations.loading} error={escalations.error} reload={escalations.reload} />
+      )}
     </div>
   );
 };

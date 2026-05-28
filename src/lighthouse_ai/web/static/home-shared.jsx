@@ -212,7 +212,8 @@ function LighthouseMark({ size = 28, withBeam = false, beamRotating = false, opa
   const v = variant || ctxVariant || 'capecod';
   const Renderer = ICON_RENDERERS[v] || IconCapeCod;
   return (
-    <svg width={size} height={size * (56/40)} viewBox="0 0 40 56" fill="none" style={{ opacity, flexShrink: 0 }}>
+    <svg width={size} height={size * (56/40)} viewBox="0 0 40 56" fill="none"
+      role="img" aria-label="Lighthouse" style={{ opacity, flexShrink: 0 }}>
       <Renderer withBeam={withBeam} beamRotating={beamRotating} />
     </svg>
   );

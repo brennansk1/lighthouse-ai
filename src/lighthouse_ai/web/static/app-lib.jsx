@@ -11,6 +11,32 @@
 
 const { useState, useEffect, useRef, useCallback, useLayoutEffect } = React;
 
+// ── Reduced-motion: inline `style.animation`/`transition` can't be overridden
+// by a CSS @media block (inline styles win), so components read this flag and
+// drop their entrance/spin animations when the OS requests reduced motion. ──
+function prefersReducedMotion() {
+  try {
+    return typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (e) { return false; }
+}
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(prefersReducedMotion);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = () => setReduced(mq.matches);
+    // addEventListener is the modern API; addListener is the deprecated fallback.
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', onChange);
+      else if (mq.removeListener) mq.removeListener(onChange);
+    };
+  }, []);
+  return reduced;
+}
+
 // ── Inject styles for things CSS-vars can't express (shimmer, focus, anim) ──
 (function injectLibStyles() {
   if (document.getElementById('lh-lib-styles')) return;
@@ -50,6 +76,14 @@ const { useState, useEffect, useRef, useCallback, useLayoutEffect } = React;
       position: absolute; bottom: 0; left: 0; height: 3px;
       background: rgba(255,255,255,0.35); border-radius: 0 0 var(--radius-sm) var(--radius-sm);
       animation: lh-toast-prog 3.5s linear forwards;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      /* Honor OS-level reduced-motion: kill keyframes + transitions from this
+         layer. Skeletons keep a static tint so they still read as "loading". */
+      .lh-skel { animation: none; background: var(--rule-soft); }
+      .lh-btn, .lh-tab, .lh-row-hover { transition: none; }
+      .lh-btn:active:not(:disabled) { transform: none; }
+      .lh-overlay, .lh-slide-up, .lh-toast-bar { animation: none; }
     }
   `;
   document.head.appendChild(el);
@@ -156,20 +190,37 @@ function useEvents(onEvent) {
 function useToast() {
   const [toast, setToast] = useState(null);
   const timer = useRef(null);
+  const dismiss = useCallback(() => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    setToast(null);
+  }, []);
   const show = useCallback((msg, kind = 'info') => {
     if (timer.current) clearTimeout(timer.current);
     setToast({ msg, kind, _id: Date.now() });
     timer.current = setTimeout(() => setToast(null), 3500);
   }, []);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-  return { toast, show };
+  // Backward-compatible: callers destructure { toast, show }. `dismiss` is
+  // additive — used by Toast's × button (and available to callers if wanted).
+  return { toast, show, dismiss };
 }
-function Toast({ toast }) {
-  if (!toast) return null;
+function Toast({ toast, onDismiss }) {
+  // Hooks must run unconditionally (Rules of Hooks) — keep them above any
+  // early return. `_id` may be undefined when toast is null; that's fine.
+  const toastId = toast ? toast._id : null;
+  // Sensible default: if no onDismiss is supplied, the × hides this instance
+  // locally so the affordance always works even for older callers.
+  const [closed, setClosed] = useState(false);
+  useEffect(() => { setClosed(false); }, [toastId]);
+  if (!toast || closed) return null;
   const kind = toast.kind || 'info';
   const bg = kind === 'error' ? '#c62828'
     : kind === 'success' ? 'var(--green-dark)'
     : 'var(--primary-dark)';
+  const handleDismiss = () => {
+    if (typeof onDismiss === 'function') onDismiss();
+    else setClosed(true);
+  };
   return (
     <div
       role="status"
@@ -181,21 +232,22 @@ function Toast({ toast }) {
         borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)',
         fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, maxWidth: 360,
         animation: 'lh-toast-in .22s cubic-bezier(0.22,1,0.36,1)',
-        overflow: 'hidden', position: 'fixed',
+        overflow: 'hidden',
       }}
     >
       {toast.msg}
       <button
         type="button"
-        onClick={() => {/* dismiss is handled by timer; button is cosmetic close */}}
-        aria-label="Dismiss"
+        className="lh-focusable"
+        onClick={handleDismiss}
+        aria-label="Dismiss notification"
         style={{
           position: 'absolute', top: 8, right: 10,
           background: 'none', border: 'none', cursor: 'pointer',
           color: 'rgba(255,255,255,0.8)', fontSize: 16, lineHeight: 1, padding: 2,
         }}
       >×</button>
-      <div className="lh-toast-bar" key={`bar-${toast._id}`} />
+      <div className="lh-toast-bar" key={`bar-${toast._id}`} aria-hidden="true" />
     </div>
   );
 }
@@ -272,6 +324,7 @@ function EmptyState({ icon = '◌', title, hint, action, cta }) {
 }
 
 function Loading({ label = 'Loading…' }) {
+  const reduced = useReducedMotion();
   return (
     <div role="status" aria-live="polite"
       style={{ padding: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -279,7 +332,7 @@ function Loading({ label = 'Loading…' }) {
       <span aria-hidden="true" style={{
         width: 18, height: 18, border: '2px solid var(--rule)',
         borderTopColor: 'var(--primary)', borderRadius: '50%',
-        display: 'inline-block', animation: 'lh-spin .7s linear infinite',
+        display: 'inline-block', animation: reduced ? 'none' : 'lh-spin .7s linear infinite',
       }} />
       <span>{label}</span>
     </div>
@@ -370,8 +423,10 @@ function Btn({ children, onClick, kind = 'primary', size = 'md', style, loading:
   const spinSize = size === 'sm' ? 8 : 10;
   const spinColor = kind === 'primary' || kind === 'success' ? 'rgba(255,255,255,0.5)' : 'var(--rule)';
   const spinTopColor = kind === 'primary' || kind === 'success' ? '#fff' : 'var(--primary)';
+  const reduced = useReducedMotion();
   return (
-    <button type="button" className="lh-btn" onClick={onClick} disabled={isLoading || rest.disabled}
+    <button type="button" className="lh-btn" onClick={onClick}
+      disabled={isLoading || rest.disabled} aria-busy={isLoading || undefined}
       style={{ ...base, ...(kinds[kind] || kinds.primary), ...style }} {...rest}>
       {isLoading && (
         <span aria-hidden="true" style={{
@@ -380,7 +435,7 @@ function Btn({ children, onClick, kind = 'primary', size = 'md', style, loading:
           borderTopColor: spinTopColor,
           borderRadius: '50%',
           display: 'inline-block',
-          animation: 'lh-btn-spin .65s linear infinite',
+          animation: reduced ? 'none' : 'lh-btn-spin .65s linear infinite',
           flexShrink: 0,
         }} />
       )}
@@ -421,7 +476,7 @@ function DataTable({ columns, rows, onRow, activeRow, empty, stickyHead }) {
                   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRow(r); }
                 } : undefined}
                 tabIndex={clickable ? 0 : undefined}
-                role={clickable ? 'button' : undefined}
+                aria-label={clickable && r && r._rowLabel ? r._rowLabel : undefined}
                 style={{ borderTop: '1px solid var(--rule-soft)',
                   cursor: clickable ? 'pointer' : 'default',
                   outline: 'none',
@@ -539,6 +594,7 @@ function useFocusTrap(ref, onClose) {
 function SidePane({ title, onClose, children, footer, actions }) {
   const ref = useRef(null);
   useFocusTrap(ref, onClose);
+  const reduced = useReducedMotion();
   const resolvedFooter = footer || (actions
     ? <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>{actions}</div>
     : null);
@@ -550,7 +606,7 @@ function SidePane({ title, onClose, children, footer, actions }) {
           position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, maxWidth: '90vw',
           background: 'var(--card)', borderLeft: '1px solid var(--rule)',
           boxShadow: 'var(--shadow-lg)', zIndex: 810, display: 'flex', flexDirection: 'column',
-          animation: 'lh-pane-in .2s ease', outline: 'none',
+          animation: reduced ? 'none' : 'lh-pane-in .2s ease', outline: 'none',
         }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '16px 20px', borderBottom: '1px solid var(--rule)', flexShrink: 0 }}>
@@ -577,6 +633,7 @@ function SidePane({ title, onClose, children, footer, actions }) {
 function Modal({ title, onClose, children, size = 'md', footer }) {
   const ref = useRef(null);
   useFocusTrap(ref, onClose);
+  const reduced = useReducedMotion();
   const widthMap = { sm: 380, md: 460, lg: 600, xl: 800 };
   const w = widthMap[size] || widthMap.md;
   return (
@@ -591,7 +648,7 @@ function Modal({ title, onClose, children, size = 'md', footer }) {
         onClick={(e) => e.stopPropagation()}
         style={{
           ...card, width: w, maxWidth: '100%', boxShadow: 'var(--shadow-lg)',
-          animation: 'lh-modal-in .18s ease', outline: 'none',
+          animation: reduced ? 'none' : 'lh-modal-in .18s ease', outline: 'none',
           display: 'flex', flexDirection: 'column',
         }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',

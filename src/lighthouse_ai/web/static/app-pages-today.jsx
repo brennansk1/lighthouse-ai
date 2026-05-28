@@ -281,8 +281,10 @@
   function HomePage({ toast }) {
     const { data, loading, error, reload } = useApi('/api/dashboard', { pollMs: 30000 });
     useEvents(() => reload());
+    // A persistent banner (below) covers load failure; only toast when a poll
+    // fails AFTER we already had data (transient blip), so we don't double-warn.
     useEffect(() => {
-      if (error) toast.show(`Dashboard error: ${error}`, 'error');
+      if (error && data) toast.show(`Dashboard refresh failed: ${error}`, 'error');
     }, [error]);
 
     const d = data || {};
@@ -326,6 +328,17 @@
           title={d.greeting || 'Lighthouse'}
           subtitle={dateLabel}
         />
+
+        {/* Supervisor offline / dashboard load failure — make it explicit
+            rather than silently showing empty cards. */}
+        {error && !data && (
+          <div style={{ marginBottom: GAP }}>
+            <ErrorBox
+              message={`Can't reach the supervisor — ${error}`}
+              onRetry={reload}
+            />
+          </div>
+        )}
 
         {/* Alert strip */}
         <AlertStrip alerts={alerts} />
@@ -800,13 +813,15 @@
       return () => { live = false; };
     }, [selId]);
 
+    // Only pause/resume/cancel exist server-side; approval happens on Drafts.
+    const ACT_DONE = { pause: 'Job paused', resume: 'Job resumed', cancel: 'Job cancelled' };
     async function act(id, verb) {
       setActionBusy(verb);
       try {
         await apiPost(`/api/jobs/${id}/${verb}`);
         reload();
         apiGet(`/api/jobs/${id}`).then(setDetail).catch(() => {});
-        toast.show(`Job ${verb}${verb.endsWith('e') ? 'd' : 'ed'}`, 'success');
+        toast.show(ACT_DONE[verb] || 'Done', verb === 'cancel' ? 'info' : 'success');
       } catch (err) {
         toast.show(err.message, 'error');
       } finally {
@@ -862,7 +877,7 @@
             )}
 
             {error && !data && (
-              <ErrorBox message={error} action={<Btn kind="ghost" onClick={reload}>Retry</Btn>} />
+              <ErrorBox message={error} onRetry={reload} />
             )}
 
             {!firstLoad && visibleJobs.length === 0 && (
@@ -999,20 +1014,11 @@
                   display: 'flex', gap: 8, flexWrap: 'wrap', background: 'var(--card)',
                 }}>
                   {(detail.status === 'review' || detail.status === 'staged') && (
-                    <>
-                      <Btn
-                        kind="success"
-                        disabled={actionBusy != null}
-                        aria-label="Approve this job"
-                        onClick={() => act(detail.id, 'approve')}
-                      >{actionBusy === 'approve' ? 'Approving…' : 'Approve'}</Btn>
-                      <Btn
-                        kind="danger"
-                        disabled={actionBusy != null}
-                        aria-label="Reject this job"
-                        onClick={() => act(detail.id, 'reject')}
-                      >{actionBusy === 'reject' ? 'Rejecting…' : 'Reject'}</Btn>
-                    </>
+                    <Btn
+                      kind="primary"
+                      aria-label="Review this job's draft on the Drafts page"
+                      onClick={() => { window.location.hash = 'drafts'; }}
+                    >Review draft →</Btn>
                   )}
                   {detail.status === 'running' && (
                     <Btn
@@ -1547,6 +1553,9 @@
     const [detail, setDetail] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [busy, setBusy] = useState(null);
+    const [confirmApprove, setConfirmApprove] = useState(false);
+    const [rejecting, setRejecting] = useState(false); // draft id pending a reject reason
+    const [rejectReason, setRejectReason] = useState('');
 
     useEvents((name) => { if (name && name.indexOf('draft.') === 0) reload(); });
     useEffect(() => { if (error) toast.show(`Drafts failed to load: ${error}`, 'error'); }, [error]);
@@ -1570,6 +1579,10 @@
 
     // Load draft detail when selection changes
     useEffect(() => {
+      // Reset any in-flight confirm/reject UI when switching drafts.
+      setConfirmApprove(false);
+      setRejecting(false);
+      setRejectReason('');
       if (selId == null) { setDetail(null); return; }
       let live = true;
       setDetailLoading(true);
@@ -1584,7 +1597,8 @@
       setBusy('approve');
       try {
         await apiPost(`/api/drafts/${id}/approve`);
-        toast.show('Draft approved', 'success');
+        toast.show('Draft approved — published to your library', 'success');
+        setConfirmApprove(false);
         setSelId(null);
         reload();
         setTab('approved');
@@ -1595,14 +1609,20 @@
       }
     }
 
-    async function reject(id) {
+    async function reject(id, reason) {
+      // The API requires a non-empty reason (RejectBody); guard so we never
+      // fire a 422 that would leave the user staring at a silent failure.
+      const r = (reason || '').trim();
+      if (!r) { toast.show('Please add a reason for rejecting.', 'info'); return; }
       setBusy('reject');
       try {
-        await apiPost(`/api/drafts/${id}/reject`);
+        await apiPost(`/api/drafts/${id}/reject`, { reason: r });
         toast.show('Draft rejected', 'info');
+        setRejecting(false);
+        setRejectReason('');
         setSelId(null);
         reload();
-        setTab('all');
+        setTab('rejected');
       } catch (e) {
         toast.show(e.message, 'error');
       } finally {
@@ -1610,8 +1630,34 @@
       }
     }
 
-    function exportDraft(id) {
-      window.open(`/api/drafts/${id}`, '_blank');
+    // Open a clean, printable view of the draft body in a new tab. Opening the
+    // raw JSON endpoint would dump unreadable data on the researcher, so we
+    // render the already-loaded HTML instead.
+    function exportDraft() {
+      if (!detail) { toast.show('Open a draft first.', 'info'); return; }
+      const w = window.open('', '_blank');
+      if (!w) { toast.show('Pop-up blocked — allow pop-ups to export.', 'error'); return; }
+      const esc = (s) => String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const title = esc(detail.title || `Draft ${detail.id}`);
+      const meta = [
+        detail.topic ? esc(detail.topic) : null,
+        detail.wep_phrase ? esc(detail.wep_phrase) : null,
+        detail.source_count != null ? `${detail.source_count} sources` : null,
+      ].filter(Boolean).join(' · ');
+      w.document.write(
+        `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>`
+        + `<style>body{font-family:Georgia,serif;max-width:42rem;margin:3rem auto;padding:0 1.5rem;`
+        + `line-height:1.65;color:#1a2b3a}h1{font-size:1.6rem;line-height:1.25}`
+        + `.meta{font-family:system-ui,sans-serif;font-size:.8rem;color:#667;`
+        + `text-transform:uppercase;letter-spacing:.05em;margin-bottom:1.5rem}`
+        + `a{color:#0277bd}</style></head><body>`
+        + `<h1>${title}</h1>`
+        + (meta ? `<div class="meta">${meta}</div>` : '')
+        + (detail.body_html || '<p><em>This draft has no body content.</em></p>')
+        + `</body></html>`
+      );
+      w.document.close();
     }
 
     const firstLoad = loading && !data;
@@ -1630,9 +1676,10 @@
           actions={selId != null ? (
             <Btn
               kind="ghost"
-              onClick={() => exportDraft(selId)}
-              aria-label="Export selected draft"
-            >Export…</Btn>
+              disabled={!detail}
+              onClick={exportDraft}
+              aria-label="Open a printable view of this draft"
+            >Print / Export</Btn>
           ) : null}
         />
 
@@ -1668,7 +1715,7 @@
             )}
 
             {error && !data && (
-              <ErrorBox message={error} action={<Btn kind="ghost" onClick={reload}>Retry</Btn>} />
+              <ErrorBox message={error} onRetry={reload} />
             )}
 
             {!firstLoad && visibleDrafts.length === 0 && (
@@ -1723,7 +1770,9 @@
                         }}>{d.topic}</div>
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                        <ConfidencePill phrase={d.wep_phrase} band={d.wep_band} />
+                        {(d.wep_phrase || d.wep_band != null) && (
+                          <ConfidencePill phrase={d.wep_phrase} band={d.wep_band} />
+                        )}
                         {srcs != null && (
                           <span style={{
                             fontSize: 11, color: 'var(--muted)',
@@ -1744,8 +1793,22 @@
           {/* Reader pane — 60% */}
           {selId != null && (
             <div className="lh-split-reader card" style={{ padding: 0, overflow: 'hidden' }}>
+              {/* Reader header — close affordance */}
+              <div style={{
+                display: 'flex', justifyContent: 'flex-end', padding: '8px 12px 0',
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setSelId(null)}
+                  aria-label="Close draft reader"
+                  style={{
+                    border: 'none', background: 'none', cursor: 'pointer',
+                    fontSize: 18, color: 'var(--muted)', lineHeight: 1, padding: '0 2px',
+                  }}
+                >&times;</button>
+              </div>
               {/* Reader body */}
-              <div style={{ padding: '20px 24px', overflowY: 'auto', maxHeight: 'calc(80vh - 80px)' }}>
+              <div style={{ padding: '4px 24px 20px', overflowY: 'auto', maxHeight: 'calc(80vh - 80px)' }}>
 
                 {detailLoading && !detail && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1772,20 +1835,86 @@
                 {detail && <DraftReader draft={detail} />}
               </div>
 
-              {/* Sticky footer — approve / reject for staged */}
+              {/* Sticky footer — approve / reject for staged drafts */}
               {detail && detail.status === 'staged' && (
-                <div className="lh-reader-footer">
-                  <Btn
-                    kind="ghost"
-                    disabled={busy != null}
-                    aria-label="Reject this draft"
-                    onClick={() => reject(detail.id)}
-                  >{busy === 'reject' ? 'Rejecting…' : 'Reject'}</Btn>
-                  <Btn
-                    disabled={busy != null}
-                    aria-label="Approve this draft"
-                    onClick={() => approve(detail.id)}
-                  >{busy === 'approve' ? 'Approving…' : 'Approve'}</Btn>
+                <div style={{
+                  position: 'sticky', bottom: 0, background: 'var(--card)',
+                  borderTop: '1px solid var(--rule-soft)',
+                }}>
+                  {/* Default action bar */}
+                  {!rejecting && !confirmApprove && (
+                    <div className="lh-reader-footer" style={{ alignItems: 'center' }}>
+                      <span style={{ fontSize: 11.5, color: 'var(--muted)', marginRight: 'auto' }}>
+                        Review the finding and sources, then decide.
+                      </span>
+                      <Btn
+                        kind="ghost"
+                        disabled={busy != null}
+                        aria-label="Reject this draft"
+                        onClick={() => { setRejectReason(''); setRejecting(true); }}
+                      >Reject</Btn>
+                      <Btn
+                        kind="success"
+                        disabled={busy != null}
+                        aria-label="Approve this draft"
+                        onClick={() => setConfirmApprove(true)}
+                      >Approve</Btn>
+                    </div>
+                  )}
+
+                  {/* Approve confirmation — explains what approval does */}
+                  {confirmApprove && (
+                    <div style={{ padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+                        Approving publishes this finding to your library
+                        {detail.job_id ? ' and marks its research job done' : ''}. This can&rsquo;t be undone here.
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <Btn kind="ghost" disabled={busy != null}
+                          onClick={() => setConfirmApprove(false)}
+                          aria-label="Cancel approval">Cancel</Btn>
+                        <Btn kind="success" disabled={busy != null}
+                          onClick={() => approve(detail.id)}
+                          aria-label="Confirm approval">
+                          {busy === 'approve' ? 'Publishing…' : 'Confirm & publish'}
+                        </Btn>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Reject reason — required by the API */}
+                  {rejecting && (
+                    <div style={{ padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <label htmlFor="lh-reject-reason" style={{
+                        fontSize: 11, fontWeight: 700, color: 'var(--muted)',
+                        textTransform: 'uppercase', letterSpacing: '0.06em',
+                      }}>Reason for rejecting</label>
+                      <textarea
+                        id="lh-reject-reason"
+                        autoFocus
+                        rows={2}
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); reject(detail.id, rejectReason); }
+                          if (e.key === 'Escape') { setRejecting(false); }
+                        }}
+                        placeholder="e.g. weak sourcing, off-topic, superseded by newer data…"
+                        style={{ ...inputStyle, resize: 'vertical', minHeight: 52 }}
+                        aria-label="Reason for rejecting this draft"
+                      />
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <Btn kind="ghost" disabled={busy != null}
+                          onClick={() => { setRejecting(false); setRejectReason(''); }}
+                          aria-label="Cancel rejection">Cancel</Btn>
+                        <Btn kind="danger" disabled={busy != null || !rejectReason.trim()}
+                          onClick={() => reject(detail.id, rejectReason)}
+                          aria-label="Confirm rejection">
+                          {busy === 'reject' ? 'Rejecting…' : 'Reject draft'}
+                        </Btn>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

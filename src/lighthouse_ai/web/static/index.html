@@ -291,6 +291,54 @@
     .lh-prose { max-width: 100%; }
   }
 
+  /* ── Responsive: collapse the sidebar on narrow viewports ──────
+     The sidebar is a fixed 224px sticky column; on phones/small tablets
+     it ate ~half the screen and pushed content into a cramped strip.
+     Below 720px it becomes a horizontal, scrollable top bar so the main
+     content gets full width and the layout no longer overflows. */
+  @media (max-width: 720px) {
+    .lh-page { flex-direction: column; }
+    .lh-page > main { max-height: none; }
+    .lh-side {
+      width: 100%;
+      height: auto;
+      max-height: none;
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      position: sticky;
+      top: 0;
+      box-shadow: 0 1px 0 var(--rule), 0 2px 8px rgba(10,42,68,0.05);
+    }
+    .lh-brand { margin-bottom: 0; flex-shrink: 0; }
+    .lh-nav {
+      flex-direction: row;
+      margin-top: 0;
+      gap: 2px;
+      flex-wrap: nowrap;
+    }
+    /* Group labels and the footer add vertical bulk that makes no sense
+       in a horizontal bar — hide them on small screens. */
+    .lh-nav .group, .lh-foot { display: none; }
+    .lh-nav a { white-space: nowrap; padding: 7px 10px; }
+  }
+
+  /* ── Reduced motion: honor the OS "reduce motion" setting ──────
+     Disables the decorative keyframe loops (beacon pulse, lighthouse
+     beam sweep, drift, ticker) and entrance fades so motion-sensitive
+     users get a calm, static instrument. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   /* ── lighthouse mark SVG: shared component, rendered inline ── */
 </style>
 </head>

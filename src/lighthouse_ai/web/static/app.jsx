@@ -182,7 +182,7 @@ class PageBoundary extends React.Component {
 }
 
 // ── Sidebar ─────────────────────────────────────────────────────────────
-function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
+function AppSidebar({ active, counters, theme, online = true, onToggleTheme, onHelp }) {
   const tier = counters.tier || '—';
   const budget = counters.budget || '—';
 
@@ -195,6 +195,22 @@ function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
           <div className="sub">Research instrument</div>
         </div>
       </div>
+
+      {/* Offline banner — the supervisor isn't answering. Calm, not alarming:
+          the user keeps their bearings instead of seeing each page break. */}
+      {!online && (
+        <div role="status" style={{ margin: '0 12px 10px', padding: '8px 10px',
+          borderRadius: 8, background: 'rgba(255,213,79,0.16)',
+          border: '1px solid var(--sand, #ffd54f)', display: 'flex',
+          alignItems: 'flex-start', gap: 8 }}>
+          <span aria-hidden="true" style={{ fontSize: 13, lineHeight: 1.3 }}>⚠</span>
+          <div style={{ fontSize: 11, lineHeight: 1.4, color: 'var(--ink-2)',
+            fontFamily: 'var(--sans)' }}>
+            <div style={{ fontWeight: 700, color: 'var(--ink)' }}>Supervisor offline</div>
+            Showing last-known data. Reconnecting…
+          </div>
+        </div>
+      )}
 
       <nav className="lh-nav" aria-label="Primary">
         {APP_PAGES.map((p) => {
@@ -268,12 +284,14 @@ function CommandPalette({ open, onClose, onGo }) {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
   const inputRef = useRef(null);
+  const restoreRef = useRef(null); // element focused before the palette opened
 
-  // Reset state and auto-focus + select-all when opening
+  // Reset state and auto-focus + select-all when opening; restore focus on close
   useEffect(() => {
     if (open) {
       setQ('');
       setSel(0);
+      restoreRef.current = document.activeElement;
       // Defer focus until after the render so the input is in the DOM
       requestAnimationFrame(() => {
         if (inputRef.current) {
@@ -281,6 +299,11 @@ function CommandPalette({ open, onClose, onGo }) {
           inputRef.current.select();
         }
       });
+      return () => {
+        // On close, hand focus back so keyboard users aren't stranded.
+        const el = restoreRef.current;
+        if (el && el.focus) { try { el.focus(); } catch (e) { /* noop */ } }
+      };
     }
   }, [open]);
 
@@ -379,7 +402,8 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [counters, setCounters] = useState({});
-  const { toast, show } = window.useToast();
+  const [online, setOnline] = useState(true); // supervisor reachable?
+  const { toast, show, dismiss } = window.useToast();
   const { theme, toggle } = useTheme();
 
   useEffect(() => {
@@ -416,13 +440,18 @@ function App() {
   // Sidebar counters from a light poll of health + dashboard, every 10s.
   const refreshCounters = useCallback(async () => {
     try {
+      // Probe the supervisor once; if even /api/health is unreachable we treat
+      // the instrument as offline and surface a calm banner (rather than
+      // letting every page render its own scary error in isolation).
+      let reachable = true;
       const [dash, health, drafts, pos, escs] = await Promise.all([
         window.apiGet('/api/dashboard').catch(() => ({})),
-        window.apiGet('/api/health').catch(() => ({})),
+        window.apiGet('/api/health').catch(() => { reachable = false; return {}; }),
         window.apiGet('/api/drafts?status=staged').catch(() => ({ drafts: [] })),
         window.apiGet('/api/positions?overdue=true').catch(() => ({ positions: [] })),
         window.apiGet('/api/escalations?status=open').catch(() => ({ escalations: [] })),
       ]);
+      setOnline(reachable);
       const running = (dash.jobs || []).filter((j) => j.status === 'running').length;
       const tier = (health.budget && health.budget.tier)
         || (health.hardware && health.hardware.tier) || '—';
@@ -439,7 +468,7 @@ function App() {
         tier,
         budget,
       });
-    } catch (e) { /* offline; leave counters blank */ }
+    } catch (e) { setOnline(false); /* offline; leave counters blank */ }
   }, []);
 
   useEffect(() => {
@@ -456,7 +485,7 @@ function App() {
     <div className="lh-page" style={{ display: 'flex', minHeight: '100vh' }}>
       <style dangerouslySetInnerHTML={{ __html: DARK_CSS }} />
       <window.BackgroundPattern />
-      <AppSidebar active={page} counters={counters} theme={theme}
+      <AppSidebar active={page} counters={counters} theme={theme} online={online}
         onToggleTheme={toggle} onHelp={() => setHelpOpen(true)} />
       {/* key={page} forces React to remount <main> on every navigation,
           which re-triggers the lh-main-content fade-in animation. */}
@@ -469,8 +498,10 @@ function App() {
             : <window.ErrorBox message={`Page "${pageDef.label}" failed to load.`} />}
         </PageBoundary>
       </main>
+      {/* Toast: app-lib's Toast renders the visuals + a working × wired to
+          the dismiss callback from useToast. */}
       <div aria-live="polite" aria-atomic="true">
-        <window.Toast toast={toast} />
+        <window.Toast toast={toast} onDismiss={dismiss} />
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)}
         onGo={(id) => { window.location.hash = id; }} />
