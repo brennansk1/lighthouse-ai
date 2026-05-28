@@ -23,6 +23,11 @@ from ..persistence import open_db
 def _hmac(secret: bytes, *parts: bytes) -> str:
     h = hmac.new(secret, digestmod=hashlib.sha256)
     for p in parts:
+        # Length-prefix each field so its boundaries are unambiguous. Without
+        # this, (actor="ab", event_type="c") and (actor="a", event_type="bc")
+        # hash identically, letting an attacker shift bytes across field
+        # boundaries while keeping the same HMAC.
+        h.update(len(p).to_bytes(8, "big"))
         h.update(p)
     return h.hexdigest()
 
@@ -104,10 +109,17 @@ def append_event(audit_db: Path, *, actor: str, event_type: str,
         conn.close()
 
 
-def seal_event_chain(audit_db: Path, *, secret: bytes) -> int:
-    """Compute and write HMACs for any rows lacking one. Returns # rows sealed.
+def seal_event_chain(audit_db: Path, *, secret: bytes, force: bool = False) -> int:
+    """Seal rows lacking an HMAC into the chain. Returns # rows sealed.
 
-    Useful when migrating from pre-Sprint-13 unsigned events.
+    Useful when migrating from pre-Sprint-13 unsigned events. By default this
+    only signs rows whose ``hmac`` is NULL and chains forward over already-sealed
+    rows — it must NOT re-sign a row that already carries an HMAC, because doing
+    so would let an attacker who edited a sealed row's payload "heal" the chain
+    back to clean (re-sealing and tamper-evidence would be the same code path).
+
+    ``force=True`` re-signs every row (a deliberate, destructive re-key
+    operation) and should only be used when intentionally rotating the secret.
     """
     conn = open_db(audit_db)
     n = 0
@@ -117,17 +129,20 @@ def seal_event_chain(audit_db: Path, *, secret: bytes) -> int:
             "FROM audit_events ORDER BY seq"
         ).fetchall()
         prev: str | None = None
-        for seq, ts, actor, et, pj, recorded_prev, existing in rows:
-            # Honor any pre-existing chain: take prev from the row when set.
-            effective_prev = recorded_prev if recorded_prev is not None else prev
-            new_hmac = _hmac(secret, *_row_to_bytes(seq, ts, actor, et, pj,
-                                                    effective_prev))
-            if existing != new_hmac:
-                conn.execute(
-                    "UPDATE audit_events SET prev_hmac = ?, hmac = ? WHERE seq = ?",
-                    (effective_prev, new_hmac, seq),
-                )
-                n += 1
+        for seq, ts, actor, et, pj, _recorded_prev, existing in rows:
+            if existing is not None and not force:
+                # Already sealed — never silently re-sign. Chain forward using
+                # the stored HMAC so subsequent NULL rows link correctly.
+                prev = existing
+                continue
+            # (Re)build the chain forward: link this row to the previous row's
+            # freshly-computed HMAC so a force re-key produces a consistent chain.
+            new_hmac = _hmac(secret, *_row_to_bytes(seq, ts, actor, et, pj, prev))
+            conn.execute(
+                "UPDATE audit_events SET prev_hmac = ?, hmac = ? WHERE seq = ?",
+                (prev, new_hmac, seq),
+            )
+            n += 1
             prev = new_hmac
     finally:
         conn.close()
@@ -148,12 +163,14 @@ def verify_audit_chain(audit_db: Path, *, secret: bytes) -> list[int]:
         ).fetchall()
         prev: str | None = None
         for seq, ts, actor, et, pj, recorded_prev, existing in rows:
-            if recorded_prev != prev:
-                bad.append(seq)
-                prev = existing
-                continue
-            expected = _hmac(secret, *_row_to_bytes(seq, ts, actor, et, pj, prev))
-            if expected != existing:
+            # A row is bad if EITHER its own HMAC fails to reverify over its
+            # stored prev_hmac (payload/actor/field tampering), OR the stored
+            # prev_hmac doesn't match the previous row's HMAC (insertion /
+            # reordering / deletion). Checking the own-HMAC over recorded_prev —
+            # not the running prev — means a row re-signed against a wrong prev
+            # is still caught by the linkage check.
+            expected = _hmac(secret, *_row_to_bytes(seq, ts, actor, et, pj, recorded_prev))
+            if expected != existing or recorded_prev != prev:
                 bad.append(seq)
             prev = existing
     finally:

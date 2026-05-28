@@ -88,16 +88,19 @@ def resolve_position(positions_db: Path, position_id: int, outcome: bool) -> Pos
     conn = open_db(positions_db)
     try:
         row = conn.execute(
-            "SELECT id, claim, wep_band, confidence FROM positions WHERE id = ?",
+            "SELECT id, claim, wep_band, confidence, outcome FROM positions WHERE id = ?",
             (position_id,),
         ).fetchone()
         if not row:
             raise KeyError(f"position {position_id} not found")
+        if row[4] is not None:
+            raise ValueError(f"position {position_id} already resolved")
         prob = float(row[3])
         bs = brier_score(prob, outcome)
+        # Guard the UPDATE too so two concurrent resolves can't both write.
         conn.execute(
             "UPDATE positions SET outcome = ?, brier = ?, "
-            "resolved_at = datetime('now') WHERE id = ?",
+            "resolved_at = datetime('now') WHERE id = ? AND outcome IS NULL",
             (1 if outcome else 0, bs, position_id),
         )
     finally:
@@ -113,7 +116,7 @@ def score_all(positions_db: Path) -> dict[str, float]:
     try:
         rows = conn.execute(
             "SELECT confidence, outcome, brier FROM positions "
-            "WHERE outcome IS NOT NULL"
+            "WHERE outcome IS NOT NULL AND brier IS NOT NULL"
         ).fetchall()
     finally:
         conn.close()

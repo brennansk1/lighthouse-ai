@@ -118,17 +118,28 @@ def attempt_auto_resolve(
 
 
 def _parse_resolution(text: str) -> tuple[bool | None, float, str]:
-    """Parse LLM resolution response into (outcome, confidence, rationale)."""
+    """Parse LLM resolution response into (outcome, confidence, rationale).
+
+    Accepts ``TRUE: 0.9 — rationale``, ``FALSE: 0.8 - reason`` and also the
+    rationale-less ``TRUE: 0.9`` form (the dash and trailing text are optional,
+    so a confident but terse answer is not silently dropped). The confidence
+    must be a single valid float; a malformed number degrades to 0.5 rather than
+    raising.
+    """
     import re
     text = text.strip()
-    m = re.match(r"(TRUE|FALSE):\s*([\d.]+)\s*[—\-]\s*(.+)", text, re.IGNORECASE)
+    # Number is anchored so "0.5.3" doesn't sneak through as 0.5; rationale opt.
+    m = re.match(
+        r"(TRUE|FALSE):\s*(\d+(?:\.\d+)?)\s*(?:[—\-]\s*(.+))?$",
+        text, re.IGNORECASE | re.DOTALL,
+    )
     if m:
         outcome = m.group(1).upper() == "TRUE"
         try:
             confidence = float(m.group(2))
         except ValueError:
             confidence = 0.5
-        rationale = m.group(3).strip()
+        rationale = (m.group(3) or "").strip() or "(no rationale provided)"
         return outcome, min(max(confidence, 0.0), 1.0), rationale
     return None, 0.0, "could not parse response"
 

@@ -99,6 +99,36 @@ def test_resolve_position_missing_raises(migrated_paths):
         resolve_position(migrated_paths.positions_db, 9999, outcome=True)
 
 
+def test_resolve_position_double_resolve_raises(migrated_paths):
+    pos = record_position(migrated_paths.positions_db, claim="Y", probability=0.7)
+    resolve_position(migrated_paths.positions_db, pos.id, outcome=True)
+    with pytest.raises(ValueError, match="already resolved"):
+        resolve_position(migrated_paths.positions_db, pos.id, outcome=False)
+
+
+def test_parse_resolution_without_rationale():
+    from lighthouse_ai.verification.resolver import _parse_resolution
+    outcome, conf, rationale = _parse_resolution("TRUE: 0.9")
+    assert outcome is True
+    assert conf == 0.9
+    assert rationale  # non-empty placeholder
+
+
+def test_parse_resolution_with_rationale():
+    from lighthouse_ai.verification.resolver import _parse_resolution
+    outcome, conf, rationale = _parse_resolution("FALSE: 0.8 — refuted by data")
+    assert outcome is False
+    assert conf == 0.8
+    assert "refuted" in rationale
+
+
+def test_parse_resolution_malformed_number_does_not_crash():
+    from lighthouse_ai.verification.resolver import _parse_resolution
+    # "0.5.3" must not parse as a valid confident resolution.
+    outcome, conf, _ = _parse_resolution("TRUE: 0.5.3 — bad")
+    assert outcome is None  # whole pattern rejected → unparseable
+
+
 def test_record_position_sets_resolve_by(migrated_paths):
     from datetime import datetime
 

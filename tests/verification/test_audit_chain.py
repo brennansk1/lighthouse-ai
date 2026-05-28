@@ -145,3 +145,55 @@ def test_tamper_cascades_to_later_rows(migrated_paths):
     bad = verify_audit_chain(migrated_paths.audit_db, secret=secret)
     # Row 1 is directly bad; row 2 and 3 may also be flagged due to the cascade.
     assert 1 in bad
+
+
+# ---------------------------------------------------------------------------
+# Tamper-evidence hardening (production sweep)
+# ---------------------------------------------------------------------------
+
+from lighthouse_ai.verification.audit_chain import seal_event_chain
+
+
+def test_seal_does_not_resign_already_sealed_rows(migrated_paths):
+    """A tampered, already-sealed row must NOT be healed by seal_event_chain."""
+    secret = b"reforge"
+    _append(migrated_paths, {"a": 1}, secret=secret)
+    _append(migrated_paths, {"a": 2}, secret=secret)
+
+    # Attacker edits a sealed row's payload, then tries to re-seal it clean.
+    conn = open_db(migrated_paths.audit_db)
+    try:
+        conn.execute(
+            "UPDATE audit_events SET payload_json = ? WHERE seq = 1",
+            (json.dumps({"evil": True}),),
+        )
+    finally:
+        conn.close()
+
+    sealed = seal_event_chain(migrated_paths.audit_db, secret=secret)
+    assert sealed == 0  # nothing re-signed (rows already had HMACs)
+    # Chain must still report the tamper.
+    assert 1 in verify_audit_chain(migrated_paths.audit_db, secret=secret)
+
+
+def test_field_boundary_shift_is_detected(migrated_paths):
+    """Shifting bytes across the actor/event_type boundary must break the HMAC."""
+    secret = b"framing"
+    append_event(migrated_paths.audit_db, actor="ab", event_type="c",
+                 payload={}, secret=secret)
+    # Re-write the row so actor='a', event_type='bc' (same concatenation).
+    conn = open_db(migrated_paths.audit_db)
+    try:
+        conn.execute("UPDATE audit_events SET actor='a', event_type='bc' WHERE seq=1")
+    finally:
+        conn.close()
+    assert 1 in verify_audit_chain(migrated_paths.audit_db, secret=secret)
+
+
+def test_force_reseal_rekeys_all_rows(migrated_paths):
+    """force=True intentionally re-signs every row (secret rotation)."""
+    _append(migrated_paths, {"a": 1}, secret=b"old")
+    _append(migrated_paths, {"a": 2}, secret=b"old")
+    n = seal_event_chain(migrated_paths.audit_db, secret=b"new", force=True)
+    assert n == 2
+    assert verify_audit_chain(migrated_paths.audit_db, secret=b"new") == []
