@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.lighthouse.supervisor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{supervisor_bin}</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>{path_env}</string>
+    <key>LIGHTHOUSE_DATA_DIR</key>
+    <string>{data_dir}</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Adaptive</string>
+  <key>StandardOutPath</key>
+  <string>{stdout_log}</string>
+  <key>StandardErrorPath</key>
+  <string>{stderr_log}</string>
+  <key>WorkingDirectory</key>
+  <string>{data_dir}</string>
+</dict>
+</plist>

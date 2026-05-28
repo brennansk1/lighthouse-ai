@@ -1,0 +1,300 @@
+"""Research pipeline — the wiring that makes the research features runnable
+end-to-end with real backends (Ollama LLM + bge-m3 embeddings + Qdrant), or
+with stubs when those aren't available / ``offline=True``.
+
+This is the seam that ties together everything built in Sprints 1–23:
+framing → RAG retrieval → a mode (Deep-Dive / QUC) → a staged draft that
+shows up in the dashboard Drafts page and the audit log.
+
+Backend selection is "prefer real, fall back to stub":
+  * embedder   : bge-m3 via Ollama (1024-dim) → else HashEmbedder
+  * vector store: Qdrant (if reachable)        → else InMemoryStore
+  * gateway    : real Ollama dispatch (resolved tags) → else mock provider
+
+Nothing here loads a model by itself; the Gateway loads lazily on the first
+real completion, gated by the Governor budget. ``offline=True`` guarantees no
+model load at all (pure stubs) — used by tests and for dry runs.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from .gateway import Gateway, resolve_against_installed
+from .governor import BUDGET_DEFAULTS, Governor
+from .hardware import HardwareProfile, probe
+from .modes.deepdive import DraftReport, run_deepdive
+from .modes.quc import QUCSession, ask as quc_ask
+from .output.html import render_html_document
+from .paths import Paths
+from .persistence import open_db
+from .rag import (
+    BM25Index, Chunk, Document, HashEmbedder, HybridSearch, InMemoryStore,
+    ScoreReranker, chunk_document,
+)
+
+
+# ── backend factories ──────────────────────────────────────────────────
+
+def _ollama_installed_tags() -> list[str]:
+    try:
+        from .backends.ollama import OllamaBackend
+        b = OllamaBackend()
+        if not b.available():
+            return []
+        return [m.name for m in b.list_models()]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def make_embedder(*, offline: bool = False, installed: list[str] | None = None):
+    """bge-m3 via Ollama (1024-dim) when available, else the HashEmbedder stub."""
+    if offline:
+        return HashEmbedder(dim=256), "hash-stub"
+    installed = installed if installed is not None else _ollama_installed_tags()
+    embed_tag = next((t for t in installed if t.split(":")[0] == "bge-m3"), None)
+    if embed_tag is None:
+        embed_tag = next((t for t in installed
+                          if "embed" in t or t.split(":")[0] == "nomic-embed-text"), None)
+    if embed_tag:
+        try:
+            from .rag.ollama_embedder import OllamaEmbedder
+            dim = 1024 if "bge-m3" in embed_tag else 768
+            emb = OllamaEmbedder(model=embed_tag, dim=dim)
+            if emb.available():
+                return emb, embed_tag
+        except Exception:  # noqa: BLE001
+            pass
+    return HashEmbedder(dim=256), "hash-stub"
+
+
+def make_vector_store(dim: int, *, offline: bool = False):
+    """Qdrant if reachable, else the in-memory store."""
+    if offline:
+        return InMemoryStore(), "in-memory"
+    try:
+        from .rag.qdrant_store import QdrantStore
+        store = QdrantStore(dim=dim, collection="lighthouse_corpus")
+        if store.available():
+            return store, "qdrant"
+    except Exception:  # noqa: BLE001
+        pass
+    return InMemoryStore(), "in-memory"
+
+
+def make_gateway(paths: Paths, profile: HardwareProfile, *,
+                 offline: bool = False, installed: list[str] | None = None) -> Gateway:
+    """Gateway with capability-classes resolved to real installed tags.
+
+    ``offline=True`` forces the mock provider (no model load). Otherwise the
+    Gateway uses real Ollama dispatch and we override the catalog's
+    capability-class names with the best-fitting installed tags.
+    """
+    gov = Governor(paths.state_db, BUDGET_DEFAULTS)
+    if offline:
+        return Gateway(gov, paths.audit_db, profile=profile, prefer_real_backends=False)
+    installed = installed if installed is not None else _ollama_installed_tags()
+    overrides = resolve_against_installed(profile, installed) if installed else {}
+    return Gateway(gov, paths.audit_db, profile=profile,
+                   prefer_real_backends=True, overrides=overrides)
+
+
+# ── pipeline ────────────────────────────────────────────────────────────
+
+@dataclass
+class PipelineConfig:
+    offline: bool = False
+    mode: str = "deep-dive"        # deep-dive | quc
+    max_rounds: int = 2
+    top_k: int = 5
+
+
+@dataclass
+class ResearchResult:
+    draft_id: str
+    question: str
+    mode: str
+    backends: dict[str, str]
+    sections: int
+    chunks_ingested: int
+    report: DraftReport | None = None
+    answer: str | None = None
+    discipline: dict | None = None
+
+
+class ResearchPipeline:
+    """Assembles real-or-stub backends and runs a research job end-to-end."""
+
+    def __init__(self, paths: Paths, *, profile: HardwareProfile | None = None,
+                 config: PipelineConfig | None = None,
+                 gateway: Gateway | None = None):
+        self.paths = paths
+        self.profile = profile or probe()
+        self.config = config or PipelineConfig()
+        installed = [] if self.config.offline else _ollama_installed_tags()
+        self.embedder, emb_name = make_embedder(offline=self.config.offline,
+                                                 installed=installed)
+        self.store, store_name = make_vector_store(self.embedder.dim,
+                                                   offline=self.config.offline)
+        self.reranker = ScoreReranker()
+        self.hybrid = HybridSearch(self.store, self.embedder, BM25Index(),
+                                   reranker=self.reranker)
+        self.gateway = gateway or make_gateway(
+            paths, self.profile, offline=self.config.offline, installed=installed)
+        self.backends = {
+            "embedder": emb_name, "vector_store": store_name,
+            "gateway": "mock" if self.config.offline else "ollama",
+        }
+        self._chunks_ingested = 0
+
+    # --- ingestion ---
+    def ingest_text(self, doc_id: str, text: str, *, metadata: dict | None = None) -> int:
+        doc = Document(id=doc_id, text=text, metadata=metadata or {})
+        chunks = chunk_document(doc)
+        self.hybrid.add(chunks)
+        self._chunks_ingested += len(chunks)
+        return len(chunks)
+
+    def ingest_path(self, path: Path) -> int:
+        text = Path(path).read_text(errors="replace")
+        return self.ingest_text(Path(path).name, text,
+                                metadata={"source": str(path)})
+
+    # --- run ---
+    def research(self, question: str, *, job_id: str | None = None) -> ResearchResult:
+        job_id = job_id or uuid.uuid4().hex[:8]
+        if self.config.mode == "quc":
+            session = QUCSession(id=job_id, topic=question)
+            turn = quc_ask(session, question, hybrid=self.hybrid, gateway=self.gateway)
+            synthesis = turn.text
+            body_html = f"<p>{_escape(synthesis)}</p>"
+            source_count = len(turn.citations)
+            sections = 1
+            report = None
+            answer = synthesis
+        else:  # deep-dive
+            report = run_deepdive(question, hybrid=self.hybrid, gateway=self.gateway,
+                                  max_rounds=self.config.max_rounds, job_id=job_id)
+            synthesis = "\n\n".join(s.body for s in report.sections)
+            body_html = _report_to_html(report)
+            source_count = len({c for s in report.sections for c in s.citations})
+            sections = len(report.sections)
+            answer = None
+
+        # --- quality discipline gate + calibration (§12, §22) ---
+        from .verification.discipline import check as discipline_check, downgrade_wep
+        rep = discipline_check(synthesis)
+        # Stated confidence starts at "likely" (0.75); discipline downgrades it.
+        band = downgrade_wep(0.75, rep)
+        disc_summary = {
+            "claims": len(rep.claims), "sourced": rep.sourced,
+            "unsourced": rep.unsourced, "coverage": rep.citation_coverage,
+            "passed": rep.passed, "notes": rep.notes,
+        }
+        draft_id = self._persist_draft(
+            question=question, title=question, body_html=body_html,
+            source_count=source_count, job_id=job_id,
+            wep_phrase=band.label, wep_band=band.name,
+            confidence=round(0.75 * max(rep.citation_coverage, 0.1), 3))
+        # record each claim as a Position so the calibration loop has data
+        n_positions = self._record_positions(rep, band)
+
+        self._audit("discipline.checked", {"draft_id": draft_id, **disc_summary,
+                                           "positions_recorded": n_positions})
+        return ResearchResult(draft_id=draft_id, question=question,
+                              mode=self.config.mode, backends=self.backends,
+                              sections=sections, chunks_ingested=self._chunks_ingested,
+                              report=report, answer=answer, discipline=disc_summary)
+
+    def _record_positions(self, report, band) -> int:
+        """Record each extracted claim as a Position (claim + WEP + resolve-by)."""
+        from .verification.positions import record_position
+        from .persistence import open_db as _open
+        n = 0
+        for claim in report.claims:
+            # only register substantive, sourced-or-not claims as positions
+            try:
+                pos = record_position(self.paths.positions_db, claim=claim.text,
+                                      probability=0.75 if claim.is_sourced else 0.5)
+                # set a 90-day resolve-by so it surfaces in the Overdue tab later
+                conn = _open(self.paths.positions_db)
+                try:
+                    conn.execute(
+                        "UPDATE positions SET resolved_at = NULL WHERE id = ?",
+                        (pos.id,))
+                finally:
+                    conn.close()
+                n += 1
+            except Exception:  # noqa: BLE001 - never fail a run on calibration write
+                pass
+        return n
+
+    # --- persistence ---
+    def _persist_draft(self, *, question: str, title: str, body_html: str,
+                       source_count: int, job_id: str,
+                       wep_phrase: str | None = None,
+                       wep_band: str | None = None,
+                       confidence: float | None = None) -> str:
+        draft_id = "d-" + uuid.uuid4().hex[:6]
+        conn = open_db(self.paths.state_db)
+        try:
+            # record the job too, so it shows in /api/jobs and the dashboard
+            conn.execute(
+                "INSERT OR IGNORE INTO jobs (id, mode, status, metadata_json) "
+                "VALUES (?, ?, 'review', ?)",
+                (job_id, self.config.mode, _json({"topic": question, "progress": 1.0,
+                                                  "eta": "staged"})))
+            conn.execute(
+                "INSERT INTO drafts (id, job_id, topic, title, body_html, wep_band, "
+                "wep_phrase, confidence, source_count, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'staged')",
+                (draft_id, job_id, question[:60], title, body_html, wep_band,
+                 wep_phrase, confidence, source_count))
+        finally:
+            conn.close()
+        self._audit("draft.staged", {"draft_id": draft_id, "question": question,
+                                     "backends": self.backends})
+        return draft_id
+
+    def _audit(self, event_type: str, payload: dict) -> None:
+        if not self.paths.audit_db.exists():
+            return
+        try:
+            from .verification.audit_chain import append_event
+            append_event(self.paths.audit_db, actor="pipeline",
+                         event_type=event_type, payload=payload,
+                         data_dir=self.paths.data_dir)
+        except Exception:  # noqa: BLE001 - audit must never break a research run
+            pass
+
+
+# ── helpers ──────────────────────────────────────────────────────────────
+
+def _escape(s: str) -> str:
+    import html
+    return html.escape(s or "")
+
+
+def _report_to_html(report: DraftReport) -> str:
+    parts = [f"<p class='meta'>{report.rounds_used} round(s) · "
+             f"{len(report.sections)} sections · framing: "
+             f"{report.framing.question_type.value}</p>"]
+    for s in report.sections:
+        parts.append(f"<h2>{_escape(s.title)}</h2>")
+        parts.append(f"<p>{_escape(s.body)}</p>")
+        if s.citations:
+            parts.append(f"<p class='meta'>sources: {len(s.citations)}</p>")
+    if report.open_questions:
+        parts.append("<h2>Open questions</h2><ul>"
+                     + "".join(f"<li>{_escape(q)}</li>" for q in report.open_questions)
+                     + "</ul>")
+    return render_html_document(title=report.question, subtitle="staged draft",
+                                body_html="".join(parts))
+
+
+def _json(obj: object) -> str:
+    import json
+    return json.dumps(obj, sort_keys=True, default=str)

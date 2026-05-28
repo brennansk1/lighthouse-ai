@@ -1,0 +1,1017 @@
+"""``lighthouse`` CLI — typer + rich, talks to a running supervisor over HTTP.
+
+Sprint 1 commands:
+  init    Create ~/.lighthouse/, write config + service files + Litestream yml.
+  start   Load the launchd plist (macOS) or enable+start the systemd unit (Linux).
+  stop    Unload / stop.
+  status  Hit /health on the control plane.
+  doctor  Run all readiness checks; non-zero exit on any failure.
+  pause   Toggle supervisor_state.status (soft|hard).
+  resume  Set status back to 'running'.
+
+Process lifecycle is delegated to launchd/systemd. The CLI just wraps
+``launchctl`` / ``systemctl --user``.
+"""
+
+from __future__ import annotations
+
+import getpass
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import httpx
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from . import __version__
+from . import litestream as ls
+from .hardware import load_profile, probe, write_profile
+from .paths import Paths, make_paths
+from .persistence import integrity_check, open_db
+from .schema import kinds_for, migrate_all
+from .templates import write_rendered
+
+app = typer.Typer(help="Lighthouse — local-first research instrument.", no_args_is_help=True)
+console = Console()
+err_console = Console(stderr=True)
+
+DEFAULT_PORT = 8765
+
+
+def _paths_from_env() -> Paths:
+    from .paths import paths_from_env
+    return paths_from_env()
+
+
+# ---------------------------------------------------------------- init --
+
+@app.command()
+def init(
+    data_dir: str = typer.Option(None, help="Override default ~/.lighthouse"),
+    force: bool = typer.Option(False, help="Overwrite existing config files"),
+    install_service: bool = typer.Option(True, help="Install launchd/systemd unit"),
+) -> None:
+    """Create the Lighthouse data directory and OS service unit."""
+    paths = make_paths(data_dir) if data_dir else make_paths()
+    paths.ensure()
+    console.print(f"[bold]Data dir:[/bold] {paths.data_dir}")
+
+    profile = probe()
+    write_profile(profile, paths.hardware_file)
+    console.print(f"Hardware: {profile.platform}/{profile.arch} "
+                  f"{profile.total_ram_gb} GB RAM → tier [bold]{profile.suggested_tier}[/bold]")
+
+    cfg_dest = paths.config_file
+    if cfg_dest.exists() and not force:
+        console.print(f"  [yellow]skip[/yellow] {cfg_dest} (exists; pass --force)")
+    else:
+        write_rendered(
+            "config.toml", cfg_dest,
+            data_dir=paths.data_dir, detected_tier=profile.suggested_tier,
+            total_ram_gb=profile.total_ram_gb, litestream_config=paths.litestream_config,
+        )
+        console.print(f"  [green]wrote[/green] {cfg_dest}")
+
+    ls_dest = paths.litestream_config
+    if ls_dest.exists() and not force:
+        console.print(f"  [yellow]skip[/yellow] {ls_dest} (exists; pass --force)")
+    else:
+        ls.write_litestream_config(paths)
+        console.print(f"  [green]wrote[/green] {ls_dest}")
+
+    migrated = migrate_all(kinds_for(paths))
+    for kind, ids in migrated.items():
+        if ids:
+            console.print(f"  migrated [cyan]{kind}.db[/cyan] {ids}")
+
+    if install_service:
+        _install_service(paths, force=force)
+
+    console.print("\n[bold green]lighthouse init complete.[/bold green]")
+    if not ls.litestream_installed():
+        console.print(f"[yellow]warning:[/yellow] {ls.install_hint()}")
+
+
+def _install_service(paths: Paths, *, force: bool) -> None:
+    supervisor_bin = shutil.which("lighthouse-supervisor") or "lighthouse-supervisor"
+    path_env = os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+    stdout_log = str(paths.logs_dir / "supervisor.out.log")
+    stderr_log = str(paths.logs_dir / "supervisor.err.log")
+
+    if sys.platform == "darwin":
+        dest = Path.home() / "Library" / "LaunchAgents" / "com.lighthouse.supervisor.plist"
+        if dest.exists() and not force:
+            console.print(f"  [yellow]skip[/yellow] {dest} (exists; pass --force)")
+            return
+        write_rendered(
+            "com.lighthouse.supervisor.plist", dest,
+            supervisor_bin=supervisor_bin, path_env=path_env,
+            data_dir=paths.data_dir, stdout_log=stdout_log, stderr_log=stderr_log,
+        )
+        console.print(f"  [green]wrote[/green] {dest}")
+        console.print("    load with: [cyan]launchctl load -w "
+                      f"{dest}[/cyan]")
+    elif sys.platform.startswith("linux"):
+        dest = Path.home() / ".config" / "systemd" / "user" / "lighthouse.service"
+        if dest.exists() and not force:
+            console.print(f"  [yellow]skip[/yellow] {dest} (exists; pass --force)")
+            return
+        write_rendered(
+            "lighthouse.service", dest,
+            supervisor_bin=supervisor_bin, data_dir=paths.data_dir,
+            stdout_log=stdout_log, stderr_log=stderr_log,
+        )
+        console.print(f"  [green]wrote[/green] {dest}")
+        console.print("    enable with: [cyan]systemctl --user daemon-reload && "
+                      "systemctl --user enable --now lighthouse[/cyan]")
+    else:
+        console.print(f"  [yellow]warning:[/yellow] auto-install not supported on {sys.platform}")
+
+
+# ----------------------------------------------------- start / stop --
+
+def _launchctl(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["launchctl", *args], capture_output=True, text=True, check=False)
+
+
+def _systemctl(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["systemctl", "--user", *args], capture_output=True, text=True,
+                          check=False)
+
+
+@app.command()
+def start() -> None:
+    """Start the supervisor via launchd/systemd."""
+    if sys.platform == "darwin":
+        plist = Path.home() / "Library" / "LaunchAgents" / "com.lighthouse.supervisor.plist"
+        r = _launchctl("load", "-w", str(plist))
+        if r.returncode:
+            err_console.print(f"[red]launchctl load failed:[/red] {r.stderr.strip()}")
+            raise typer.Exit(r.returncode)
+        console.print("[green]supervisor loaded.[/green]")
+    elif sys.platform.startswith("linux"):
+        _systemctl("daemon-reload")
+        r = _systemctl("start", "lighthouse")
+        if r.returncode:
+            err_console.print(f"[red]systemctl start failed:[/red] {r.stderr.strip()}")
+            raise typer.Exit(r.returncode)
+        console.print("[green]supervisor started.[/green]")
+    else:
+        err_console.print(f"[red]unsupported platform:[/red] {sys.platform}")
+        raise typer.Exit(2)
+
+
+@app.command()
+def stop() -> None:
+    """Stop the supervisor via launchd/systemd."""
+    if sys.platform == "darwin":
+        plist = Path.home() / "Library" / "LaunchAgents" / "com.lighthouse.supervisor.plist"
+        r = _launchctl("unload", str(plist))
+        if r.returncode:
+            err_console.print(f"[red]launchctl unload failed:[/red] {r.stderr.strip()}")
+            raise typer.Exit(r.returncode)
+        console.print("[green]supervisor unloaded.[/green]")
+    elif sys.platform.startswith("linux"):
+        r = _systemctl("stop", "lighthouse")
+        if r.returncode:
+            err_console.print(f"[red]systemctl stop failed:[/red] {r.stderr.strip()}")
+            raise typer.Exit(r.returncode)
+        console.print("[green]supervisor stopped.[/green]")
+    else:
+        err_console.print(f"[red]unsupported platform:[/red] {sys.platform}")
+        raise typer.Exit(2)
+
+
+# --------------------------------------------------------- status --
+
+@app.command()
+def status(port: int = DEFAULT_PORT, json_out: bool = typer.Option(False, "--json")) -> None:
+    """Query /health on the control plane."""
+    try:
+        r = httpx.get(f"http://127.0.0.1:{port}/health", timeout=3.0)
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        err_console.print(f"[red]control plane unreachable on :{port}:[/red] {exc}")
+        raise typer.Exit(1) from None
+    data = r.json()
+    if json_out:
+        console.print_json(data=data)
+        return
+    sup = data["supervisor"]
+    console.print(f"[bold]Lighthouse[/bold] v{data['version']} — "
+                  f"uptime {data['uptime_seconds']}s — supervisor [bold]{sup['status']}[/bold] "
+                  f"(pid {sup.get('pid')})")
+    table = Table("db", "present", "integrity", "size", show_lines=False)
+    for kind, info in data["databases"].items():
+        if not info.get("present"):
+            table.add_row(kind, "no", "-", "-")
+        else:
+            table.add_row(kind, "yes", str(info.get("integrity_check", "?")),
+                          str(info.get("size_bytes", "-")))
+    console.print(table)
+    lit = data["litestream"]
+    if lit.get("present"):
+        ltable = Table("replica", "lag (s)")
+        for name, info in lit.get("replicas", {}).items():
+            ltable.add_row(name, str(info.get("lag_seconds", "-")))
+        console.print(ltable)
+
+
+# --------------------------------------------------------- doctor --
+
+@app.command()
+def doctor() -> None:
+    """Run readiness checks; exit non-zero on failure."""
+    paths = _paths_from_env()
+    issues: list[str] = []
+
+    # Section: hardware
+    profile = probe()
+    console.rule("[bold]hardware[/bold]")
+    console.print(f"  platform: {profile.platform} {profile.arch}")
+    console.print(f"  ram: {profile.total_ram_gb} GB total, {profile.free_ram_gb} GB free")
+    console.print(f"  cpu: {profile.cpu_cores_physical}p/{profile.cpu_cores_logical}l")
+    if profile.gpu:
+        for g in profile.gpu:
+            console.print(f"  gpu: {g.name} {g.vram_gb} GB ({g.vendor})")
+    console.print(f"  backends: {', '.join(profile.available_backends)}")
+    console.print(f"  suggested tier: [bold]{profile.suggested_tier}[/bold]")
+
+    # Section: package versions
+    console.rule("[bold]packages[/bold]")
+    console.print(f"  lighthouse-ai: {__version__}")
+    console.print(f"  python: {sys.version.split()[0]}")
+    for tool in ("ollama", "docker", "bwrap", "sandbox-exec", "litestream"):
+        path = shutil.which(tool)
+        mark = "[green]✓[/green]" if path else "[yellow]missing[/yellow]"
+        console.print(f"  {tool}: {mark} {path or ''}")
+
+    # Section: directory structure
+    console.rule("[bold]directories[/bold]")
+    for name in ("data_dir", "corpus_dir", "staging_dir", "quarantine_dir",
+                 "worm_dir", "skills_dir", "logs_dir", "run_dir", "replicas_dir"):
+        d = getattr(paths, name)
+        if d.exists():
+            console.print(f"  [green]✓[/green] {name}: {d}")
+        else:
+            console.print(f"  [yellow]-[/yellow] {name}: {d} (not created; run init)")
+
+    # Section: sqlite integrity
+    console.rule("[bold]databases[/bold]")
+    for kind, p in kinds_for(paths).items():
+        if not p.exists():
+            console.print(f"  [yellow]-[/yellow] {kind}.db not yet created")
+            continue
+        try:
+            conn = open_db(p)
+            try:
+                check = integrity_check(conn)
+            finally:
+                conn.close()
+            if check == "ok":
+                console.print(f"  [green]✓[/green] {kind}.db integrity ok")
+            else:
+                console.print(f"  [red]✗[/red] {kind}.db integrity: {check}")
+                issues.append(f"{kind}.db integrity: {check}")
+        except Exception as exc:
+            console.print(f"  [red]✗[/red] {kind}.db open failed: {exc!r}")
+            issues.append(f"{kind}.db open failed")
+
+    # Section: litestream
+    console.rule("[bold]litestream[/bold]")
+    if not ls.litestream_installed():
+        console.print(f"  [yellow]missing:[/yellow] {ls.install_hint().splitlines()[0]}")
+    else:
+        console.print(f"  [green]✓[/green] {ls.litestream_version() or 'installed'}")
+    for lag in ls.replica_lags(paths):
+        if lag.lag_seconds is None:
+            console.print(f"  [yellow]-[/yellow] {lag.name}: no snapshot yet")
+        elif lag.lag_seconds > 10:
+            console.print(f"  [red]✗[/red] {lag.name}: lag {lag.lag_seconds}s (>10s)")
+            issues.append(f"litestream {lag.name} lag {lag.lag_seconds}s")
+        else:
+            console.print(f"  [green]✓[/green] {lag.name}: lag {lag.lag_seconds}s")
+
+    # Section: external services (optional; missing is a hint, not an error)
+    console.rule("[bold]external services[/bold]")
+    try:
+        from .backends.ollama import OllamaBackend
+        ollama_ok = OllamaBackend().available()
+    except Exception:
+        ollama_ok = False
+    if ollama_ok:
+        console.print("  [green]✓[/green] ollama at 127.0.0.1:11434")
+    else:
+        console.print("  [yellow]-[/yellow] ollama not reachable "
+                      "(start Ollama.app or `ollama serve` to enable real LLM)")
+    try:
+        from .rag.qdrant_store import QdrantStore
+        qdrant_ok = QdrantStore(dim=8).available()
+    except Exception:
+        qdrant_ok = False
+    if qdrant_ok:
+        console.print("  [green]✓[/green] qdrant at 127.0.0.1:6333")
+    else:
+        console.print("  [yellow]-[/yellow] qdrant not reachable "
+                      "(boot via scripts/lh-stack.docker-compose.yml)")
+
+    # Section: audit chain integrity
+    console.rule("[bold]audit chain[/bold]")
+    if paths.audit_db.exists():
+        try:
+            from .verification.audit_chain import resolve_secret, verify_audit_chain
+            try:
+                secret = resolve_secret(None, data_dir=paths.data_dir)
+                bad = verify_audit_chain(paths.audit_db, secret=secret)
+                if bad:
+                    console.print(f"  [red]✗[/red] chain broken at seq(s): {bad}")
+                    issues.append(f"audit chain broken: {bad}")
+                else:
+                    console.print("  [green]✓[/green] chain intact")
+            except Exception as exc:
+                console.print(f"  [yellow]-[/yellow] could not verify: {exc!r}")
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Section: outbox depth
+    console.rule("[bold]outbox[/bold]")
+    if paths.intents_db.exists():
+        try:
+            from .intents import outbox_depth
+            depth = outbox_depth(paths.intents_db)
+            if depth < 100:
+                console.print(f"  [green]✓[/green] depth = {depth}")
+            elif depth < 1000:
+                console.print(f"  [yellow]warn[/yellow] depth = {depth} (>100)")
+            else:
+                console.print(f"  [red]✗[/red] depth = {depth} (>1000)")
+                issues.append(f"outbox depth {depth}")
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"  [yellow]-[/yellow] could not read: {exc!r}")
+
+    # Section: model selection (budget fit + paging) + fingerprint drift
+    console.rule("[bold]models[/bold]")
+    try:
+        from .gateway import budget_report
+        rep = budget_report(profile)
+        console.print(f"  budget: [bold]{rep['budget_gb']} GB[/bold] "
+                      f"(tier {profile.suggested_tier})")
+        for role, info in rep["roles"].items():
+            mark = "[yellow]pages SSD[/yellow]" if info["pages_from_ssd"] else "[green]fits[/green]"
+            console.print(f"    {role:12} {info['model']:20} {info['footprint_gb']}G  {mark}")
+        if rep["paging"]:
+            console.print(f"  [yellow]note:[/yellow] {', '.join(rep['paging'])} "
+                          f"page from SSD on this RAM — slower but functional.")
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"  [yellow]-[/yellow] could not compute budget: {exc!r}")
+
+    chosen = paths.data_dir / "chosen_models.yaml"
+    if chosen.exists():
+        try:
+            from .gateway import check_drift
+            drift = check_drift(chosen, allow_drift=True)
+            if drift:
+                for d in drift:
+                    console.print(f"  [yellow]drift[/yellow] {d['model']}: "
+                                  f"recorded {d['recorded'][:12]} != installed {d['installed'][:12]}")
+            else:
+                console.print("  [green]✓[/green] no fingerprint drift")
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"  [yellow]-[/yellow] could not check drift: {exc!r}")
+
+    console.rule()
+    if issues:
+        console.print(f"[red]{len(issues)} issue(s):[/red]")
+        for i in issues:
+            console.print(f"  • {i}")
+        raise typer.Exit(1)
+    console.print("[bold green]all green.[/bold green]")
+
+
+# ---------------------------------------------------- pause / resume --
+
+@app.command()
+def pause(hard: bool = typer.Option(False, "--hard", help="Hard pause (drain in-flight)")) -> None:
+    """Pause the supervisor (soft by default; hard drains intents)."""
+    paths = _paths_from_env()
+    if not paths.state_db.exists():
+        err_console.print("[red]state.db missing; run `lighthouse init` first[/red]")
+        raise typer.Exit(1)
+    new_status = "paused_hard" if hard else "paused_soft"
+    conn = open_db(paths.state_db)
+    try:
+        conn.execute("UPDATE supervisor_state SET status = ?, updated_at = datetime('now') "
+                     "WHERE id = 1", (new_status,))
+    finally:
+        conn.close()
+    console.print(f"[yellow]supervisor → {new_status}[/yellow]")
+
+
+@app.command()
+def resume() -> None:
+    """Resume the supervisor (clears pause state)."""
+    paths = _paths_from_env()
+    if not paths.state_db.exists():
+        err_console.print("[red]state.db missing; run `lighthouse init` first[/red]")
+        raise typer.Exit(1)
+    conn = open_db(paths.state_db)
+    try:
+        conn.execute("UPDATE supervisor_state SET status = 'running', "
+                     "updated_at = datetime('now') WHERE id = 1")
+    finally:
+        conn.close()
+    console.print("[green]supervisor → running[/green]")
+
+
+@app.command()
+def version() -> None:
+    """Print the installed Lighthouse version."""
+    console.print(__version__)
+
+
+# --------------------------------------------------- research --
+
+@app.command()
+def research(
+    question: str = typer.Argument(..., help="The research question."),
+    doc: list[Path] = typer.Option(None, "--doc", "-d",
+                                   help="File(s) to ingest into the corpus first."),
+    arxiv: str = typer.Option(None, "--arxiv", help="arXiv query to ingest abstracts."),
+    openalex: str = typer.Option(None, "--openalex", help="OpenAlex query to ingest."),
+    sources: int = typer.Option(5, help="Max papers per source query."),
+    mode: str = typer.Option("deep-dive", help="deep-dive | quc"),
+    rounds: int = typer.Option(2, help="Deep-dive refinement rounds."),
+    offline: bool = typer.Option(False, "--offline",
+                                 help="Use stub backends — no model load."),
+) -> None:
+    """Run the research pipeline end-to-end and stage a draft.
+
+    Builds a corpus from --doc files and/or live --arxiv / --openalex queries,
+    runs framing → retrieval → synthesis, enforces the citation-discipline
+    gate, records each claim as a calibration Position, and stages a draft.
+    Uses real Ollama + bge-m3 when available; --offline forces stubs.
+    """
+    paths = _paths_from_env()
+    paths.ensure()
+    from .schema import kinds_for, migrate_all
+    migrate_all(kinds_for(paths))
+    from .pipeline import PipelineConfig, ResearchPipeline
+
+    console.print(f"[bold]Researching:[/bold] {question}")
+    if offline:
+        console.print("[yellow]offline mode[/yellow] — stub backends, no model load.")
+    pipe = ResearchPipeline(paths, config=PipelineConfig(
+        offline=offline, mode=mode, max_rounds=rounds))
+    console.print(f"  backends: embedder={pipe.backends['embedder']} · "
+                  f"store={pipe.backends['vector_store']} · "
+                  f"gateway={pipe.backends['gateway']}")
+
+    ingested = 0
+    for d in (doc or []):
+        if not d.exists():
+            err_console.print(f"[red]no such file:[/red] {d}")
+            raise typer.Exit(1)
+        ingested += pipe.ingest_path(d)
+    if arxiv:
+        from .sources.arxiv import search_arxiv
+        try:
+            docs = search_arxiv(arxiv, max_results=sources)
+            for dd in docs:
+                ingested += pipe.ingest_text(dd.id, dd.text, metadata=dd.metadata)
+            console.print(f"  arXiv '{arxiv}': ingested {len(docs)} paper(s)")
+        except Exception as exc:  # noqa: BLE001
+            err_console.print(f"[yellow]arXiv fetch failed:[/yellow] {exc}")
+    if openalex:
+        from .sources.openalex import search_openalex
+        try:
+            docs = search_openalex(openalex, max_results=sources)
+            for dd in docs:
+                ingested += pipe.ingest_text(dd.id, dd.text, metadata=dd.metadata)
+            console.print(f"  OpenAlex '{openalex}': ingested {len(docs)} work(s)")
+        except Exception as exc:  # noqa: BLE001
+            err_console.print(f"[yellow]OpenAlex fetch failed:[/yellow] {exc}")
+    if ingested:
+        console.print(f"  corpus: {ingested} chunk(s)")
+
+    try:
+        result = pipe.research(question)
+    except Exception as exc:  # noqa: BLE001
+        err_console.print(f"[red]research failed:[/red] {exc}")
+        raise typer.Exit(1) from None
+
+    d = result.discipline or {}
+    console.print(f"\n[green]staged draft {result.draft_id}[/green] "
+                  f"({result.mode}, {result.sections} section(s), "
+                  f"{result.chunks_ingested} corpus chunks)")
+    if d:
+        verdict = "[green]passed[/green]" if d.get("passed") else "[yellow]flagged[/yellow]"
+        console.print(f"  discipline: {verdict} — {d.get('sourced', 0)}/{d.get('claims', 0)} "
+                      f"claims sourced ({d.get('coverage', 0):.0%} coverage); "
+                      f"{d.get('claims', 0)} claim(s) recorded as calibration positions")
+    console.print("  review it: dashboard → Drafts, or `lighthouse status`")
+
+
+@app.command()
+def export(
+    draft_id: str = typer.Argument(..., help="Draft id to export."),
+    logseq: Path = typer.Option(..., "--logseq", help="Logseq graph directory."),
+) -> None:
+    """Export a staged/published draft to a Logseq graph (filesystem markdown)."""
+    paths = _paths_from_env()
+    conn = open_db(paths.state_db)
+    try:
+        rows = conn.execute(
+            "SELECT id, topic, title, body_html, wep_phrase, source_count "
+            "FROM drafts WHERE id=?", (draft_id,)).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        err_console.print(f"[red]no draft {draft_id}[/red]")
+        raise typer.Exit(1)
+    _id, topic, title, body_html, wep_phrase, source_count = rows[0]
+    from .targets.logseq import export_draft
+    page = export_draft(logseq, draft_id=_id, title=title, body_html=body_html,
+                        topic=topic, wep_phrase=wep_phrase,
+                        source_count=source_count or 0)
+    console.print(f"[green]wrote Logseq page →[/green] {page.path}")
+
+
+@app.command("positions-due")
+def positions_due() -> None:
+    """List positions awaiting resolution (the calibration to-do)."""
+    paths = _paths_from_env()
+    from .verification.positions import _ensure_extras
+    _ensure_extras(paths.positions_db)
+    conn = open_db(paths.positions_db)
+    try:
+        rows = conn.execute(
+            "SELECT id, claim, wep_band, confidence FROM positions "
+            "WHERE outcome IS NULL ORDER BY created_at DESC LIMIT 50").fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        console.print("[green]no positions awaiting resolution.[/green]")
+        return
+    table = Table("id", "confidence", "claim")
+    for pid, claim, band, conf in rows:
+        table.add_row(str(pid), f"{band} ({conf})", claim[:80])
+    console.print(table)
+
+
+# --------------------------------------------------- cost / budget --
+
+cost_app = typer.Typer(help="Cost and budget commands.", no_args_is_help=True)
+budget_app = typer.Typer(help="Budget management.", no_args_is_help=True)
+app.add_typer(cost_app, name="cost")
+app.add_typer(budget_app, name="budget")
+
+
+@cost_app.command("report")
+def cost_report(json_out: bool = typer.Option(False, "--json")) -> None:
+    """Print remaining budget per dimension × period and the degradation tier."""
+    from .governor import BUDGET_DEFAULTS, Governor
+    paths = _paths_from_env()
+    g = Governor(paths.state_db, BUDGET_DEFAULTS)
+    report = g.cost_report()
+    if json_out:
+        console.print_json(data=report)
+        return
+    console.print(f"[bold]Tier:[/bold] {report['tier']}")
+    table = Table("dimension", "monthly", "weekly", "daily")
+    for dim, periods in report["remaining"].items():
+        table.add_row(dim, str(periods["monthly"]), str(periods["weekly"]),
+                      str(periods["daily"]))
+    console.print(table)
+
+
+@budget_app.command("reset")
+def budget_reset(confirm: bool = typer.Option(False, "--confirm",
+                                              help="Required for safety.")) -> None:
+    """Clear all governor buckets — typed confirmation required."""
+    if not confirm:
+        err_console.print("[red]refusing without --confirm[/red]")
+        raise typer.Exit(2)
+    from .governor import BUDGET_DEFAULTS, Governor
+    paths = _paths_from_env()
+    g = Governor(paths.state_db, BUDGET_DEFAULTS)
+    n = g.reset()
+    console.print(f"[green]reset {n} bucket(s).[/green]")
+
+
+# --------------------------------------------------- models --
+
+models_app = typer.Typer(help="Local model management (Ollama).", no_args_is_help=True)
+app.add_typer(models_app, name="models")
+
+
+def _ollama_backend():
+    from .backends.ollama import OllamaBackend, OllamaUnavailable
+    return OllamaBackend(), OllamaUnavailable
+
+
+@models_app.command("list")
+def models_list() -> None:
+    """List models known to the local Ollama daemon."""
+    backend, OllamaUnavailable = _ollama_backend()
+    try:
+        models = backend.list_models()
+    except Exception as exc:
+        err_console.print(f"[red]ollama unreachable:[/red] {exc}")
+        raise typer.Exit(1) from None
+    if not models:
+        console.print("[yellow]no models pulled.[/yellow]")
+        return
+    table = Table("name", "size (GB)", "digest")
+    for m in models:
+        table.add_row(m.name, f"{m.size_bytes / 1e9:.2f}", m.digest[:16])
+    console.print(table)
+
+
+def _ollama_models_dir() -> Path:
+    """Where Ollama stores downloaded weights (the volume we must protect)."""
+    env = os.environ.get("OLLAMA_MODELS")
+    return Path(env) if env else (Path.home() / ".ollama" / "models")
+
+
+@models_app.command("pull")
+def models_pull(
+    model: str = typer.Argument(...),
+    force: bool = typer.Option(False, "--force", "-f",
+                               help="Bypass the disk-safety preflight."),
+    yes: bool = typer.Option(False, "--yes", "-y",
+                             help="Skip the confirmation prompt for large pulls."),
+) -> None:
+    """Pull a model via Ollama, with a disk-safety preflight.
+
+    A pull writes weights to disk; on a near-full volume that can wedge the
+    OS. We refuse pulls that would leave less than the safety margin free
+    (override with --force). The pull never loads weights into RAM — that
+    happens lazily at inference, gated by the Governor.
+    """
+    import shutil as _shutil
+    from .gateway import (
+        LARGE_PULL_GB, MIN_DISK_HEADROOM_GB, budget_report, model_pages,
+        preflight_pull,
+    )
+
+    # --- disk-safety preflight ---
+    models_dir = _ollama_models_dir()
+    probe_dir = models_dir if models_dir.exists() else Path.home()
+    free_gb = _shutil.disk_usage(probe_dir).free / 1e9
+    pf = preflight_pull(model, free_disk_gb=free_gb)
+
+    size_str = (f"~{pf.estimated_download_gb:.1f} GB" if pf.estimated_download_gb
+                else "unknown size")
+    console.print(f"Pull [bold]{model}[/bold] ({size_str}) — "
+                  f"{pf.free_disk_gb:.1f} GB free on {probe_dir.anchor or probe_dir}")
+
+    if not pf.ok and not force:
+        err_console.print(f"[red]refusing:[/red] {pf.reason}")
+        err_console.print("  Free up disk space, or re-run with [bold]--force[/bold] "
+                          "if you understand the risk.")
+        raise typer.Exit(1)
+    if not pf.ok and force:
+        console.print(f"[yellow]--force:[/yellow] proceeding despite: {pf.reason}")
+
+    # --- runtime RAM advisory (pull is disk; this warns about later use) ---
+    try:
+        rep = budget_report(probe())
+        if model_pages(model, rep["budget_gb"]):
+            console.print(f"[yellow]note:[/yellow] at runtime this model pages from "
+                          f"SSD on your {rep['budget_gb']:.1f} GB budget — it will run, "
+                          f"but slower. Pulling does not load it into RAM.")
+    except Exception:  # noqa: BLE001 - advisory only
+        pass
+
+    # --- confirmation for large downloads ---
+    if pf.is_large and not yes and not force:
+        if not typer.confirm(f"This downloads {size_str}. Continue?"):
+            console.print("aborted.")
+            raise typer.Exit(0)
+
+    backend, OllamaUnavailable = _ollama_backend()
+    last_status = ""
+
+    def _cb(msg: dict) -> None:
+        nonlocal last_status
+        status = msg.get("status", "")
+        if status != last_status:
+            console.print(f"  {status}")
+            last_status = status
+
+    try:
+        backend.pull(model, progress_cb=_cb)
+    except Exception as exc:
+        err_console.print(f"[red]pull failed:[/red] {exc}")
+        raise typer.Exit(1) from None
+    after = _shutil.disk_usage(probe_dir).free / 1e9
+    console.print(f"[green]pulled {model}.[/green] {after:.1f} GB free remaining.")
+
+
+@models_app.command("info")
+def models_info(model: str = typer.Argument(...)) -> None:
+    """Show fingerprint info for a model."""
+    from .gateway import fingerprint_ollama
+    fp = fingerprint_ollama(model)
+    if fp is None:
+        err_console.print(f"[red]ollama not available or model {model!r} missing[/red]")
+        raise typer.Exit(1)
+    console.print(f"model: [bold]{fp.model_string}[/bold]")
+    console.print(f"digest: {fp.registry_digest_sha256}")
+    console.print(f"backend: {fp.backend}")
+    if fp.runtime_version:
+        console.print(f"runtime: {fp.runtime_version}")
+
+
+@models_app.command("prune")
+def models_prune(model: str = typer.Argument(...)) -> None:
+    """Delete a local model from Ollama."""
+    backend, OllamaUnavailable = _ollama_backend()
+    try:
+        backend.delete(model)
+    except Exception as exc:
+        err_console.print(f"[red]prune failed:[/red] {exc}")
+        raise typer.Exit(1) from None
+    console.print(f"[green]pruned {model}.[/green]")
+
+
+@models_app.command("bind")
+def models_bind() -> None:
+    """Resolve the catalog's capability classes to real installed Ollama tags
+    and pin them in chosen_models.yaml (the design's 'resolve tag at install').
+    """
+    from .gateway import resolve_against_installed
+    from .hardware import probe as _probe
+    paths = _paths_from_env()
+    paths.ensure()
+    backend, _ = _ollama_backend()
+    try:
+        installed = [m.name for m in backend.list_models()]
+    except Exception as exc:
+        err_console.print(f"[red]ollama unreachable:[/red] {exc}")
+        raise typer.Exit(1) from None
+    profile = _probe()
+    resolved = resolve_against_installed(profile, installed)
+    if not resolved:
+        err_console.print("[yellow]no installed models matched the catalog roles. "
+                          "Pull one first, e.g. `lighthouse models pull qwen3:14b`.[/yellow]")
+        raise typer.Exit(1)
+    # Write chosen_models.yaml using these real tags as overrides.
+    import time as _time
+
+    import yaml as _yaml
+
+    from .gateway import bindings_for_tier, fingerprint
+    bindings = bindings_for_tier(profile.suggested_tier)
+    for role, tag in resolved.items():
+        if role in bindings:
+            b = bindings[role]
+            from .gateway import ModelBinding
+            backend_name = "native" if role in ("embedding", "reranker") else "ollama"
+            bindings[role] = ModelBinding(role=role, model=tag, backend=backend_name,
+                                          sampling=b.sampling)
+    now = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime())
+    fps: dict = {}
+    roles_out: dict = {}
+    for role, b in bindings.items():
+        fp = fingerprint(b.model, b.backend)
+        fps[b.model] = {**fp.to_dict(), "pulled_at": now}
+        roles_out[role] = {"model": b.model, "backend": b.backend, "sampling": b.sampling}
+    doc = {"version": 1, "hardware_tier": profile.suggested_tier,
+           "detected_at": now, "resolved_from_installed": True,
+           "fingerprints": fps, "roles": roles_out}
+    dest = paths.data_dir / "chosen_models.yaml"
+    dest.write_text(_yaml.safe_dump(doc, sort_keys=False))
+    console.print(f"[green]bound {len(resolved)} role(s) to installed tags →[/green] {dest}")
+    for role, tag in resolved.items():
+        console.print(f"  {role:13} {tag}")
+
+
+# --------------------------------------------------- quarantine --
+
+quarantine_app = typer.Typer(help="Sandbox quarantine browser.", no_args_is_help=True)
+app.add_typer(quarantine_app, name="quarantine")
+
+
+def _open_quarantine():
+    paths = _paths_from_env()
+    from .sandbox import Quarantine
+    return Quarantine(paths.data_dir / "quarantine.db",
+                      paths.data_dir / "quarantine")
+
+
+@quarantine_app.command("list")
+def quarantine_list(verdict: str = typer.Option(None, help="Filter by verdict")) -> None:
+    """List quarantined artifacts."""
+    q = _open_quarantine()
+    rows = q.list(verdict=verdict, limit=200)
+    if not rows:
+        console.print("[yellow]quarantine empty.[/yellow]")
+        return
+    table = Table("sha256", "verdict", "filename", "size", "seen")
+    for r in rows:
+        table.add_row(r["sha256"][:12], r["verdict"], r["filename"] or "—",
+                      str(r["bytes_size"]), r["seen_at"])
+    console.print(table)
+
+
+@quarantine_app.command("restore")
+def quarantine_restore(sha: str = typer.Argument(...),
+                       dest: Path = typer.Argument(...)) -> None:
+    """Copy a quarantined artifact out to ``dest``."""
+    q = _open_quarantine()
+    try:
+        out = q.restore(sha, dest)
+    except FileNotFoundError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
+    console.print(f"[green]restored to {out}[/green]")
+
+
+@quarantine_app.command("purge")
+def quarantine_purge(verdict: str = typer.Option("quarantine"),
+                     confirm: bool = typer.Option(False, "--confirm")) -> None:
+    """Delete every artifact with the given verdict. Typed confirmation required."""
+    if not confirm:
+        err_console.print("[red]refusing without --confirm[/red]")
+        raise typer.Exit(2)
+    q = _open_quarantine()
+    n = q.purge(verdict)
+    console.print(f"[green]purged {n} artifact(s).[/green]")
+
+
+# --------------------------------------------------- audit --
+
+audit_app = typer.Typer(help="Audit log inspection.", no_args_is_help=True)
+app.add_typer(audit_app, name="audit")
+
+
+@audit_app.command("verify")
+def audit_verify() -> None:
+    """Re-compute every audit HMAC and report any breakage."""
+    from .verification.audit_chain import resolve_secret, verify_audit_chain
+    paths = _paths_from_env()
+    try:
+        secret = resolve_secret(None, data_dir=paths.data_dir)
+    except Exception as exc:
+        err_console.print(f"[red]could not resolve audit secret:[/red] {exc}")
+        raise typer.Exit(1) from None
+    bad = verify_audit_chain(paths.audit_db, secret=secret)
+    if bad:
+        err_console.print(f"[red]chain broken at seq(s): {bad}[/red]")
+        raise typer.Exit(1)
+    console.print("[green]audit chain ok.[/green]")
+
+
+# --------------------------------------------------- sandbox --
+
+sandbox_app = typer.Typer(help="Sandbox redteam + diagnostics.", no_args_is_help=True)
+app.add_typer(sandbox_app, name="sandbox")
+
+
+@sandbox_app.command("redteam")
+def sandbox_redteam() -> None:
+    """Feed the canonical hostile payloads through the broker; assert blocked."""
+    import io
+    import zipfile
+    from .sandbox import Verdict
+    from .sandbox.broker import build_default_broker
+    from .sandbox.scanners import EICAR_SIGNATURE
+    paths = _paths_from_env()
+    paths.ensure()
+    broker = build_default_broker(paths.data_dir)
+
+    def _zip_bomb() -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+            for i in range(120):
+                zf.writestr(f"f{i}.txt", b"A" * (10 * 1024 * 1024))
+        return buf.getvalue()
+
+    cases = [
+        ("eicar.bin",   EICAR_SIGNATURE,                              "text/plain",       Verdict.REJECT),
+        ("bomb.zip",    _zip_bomb(),                                  "application/zip",  Verdict.REJECT),
+        ("xss.html",    b"<script>alert(1)</script>",                 "text/html",        Verdict.QUARANTINE),
+        ("jspdf.pdf",   b"%PDF-1.4\n/OpenAction << /S /JavaScript /JS (a) >>\n",
+         "application/pdf", Verdict.QUARANTINE),
+    ]
+    failed: list[str] = []
+    for name, payload, ct, expected in cases:
+        out = broker.admit(payload, filename=name, content_type=ct)
+        symbol = "[green]✓[/green]" if out.verdict is expected else "[red]✗[/red]"
+        console.print(f"  {symbol} {name}: expected {expected.value}, got {out.verdict.value}")
+        if out.verdict is not expected:
+            failed.append(name)
+    if failed:
+        err_console.print(f"[red]{len(failed)} payload(s) not blocked: {failed}[/red]")
+        raise typer.Exit(1)
+    console.print("[green]redteam ok — all hostile payloads blocked.[/green]")
+
+
+# --------------------------------------------------- secrets --
+
+secrets_app = typer.Typer(help="Manage Lighthouse secrets (keychain + TOML).",
+                          no_args_is_help=True)
+app.add_typer(secrets_app, name="secrets")
+
+
+@secrets_app.command("set")
+def secrets_set(key: str, value: str = typer.Argument(..., help="Value to store")) -> None:
+    from .secrets import SecretStore
+    paths = _paths_from_env()
+    backend = SecretStore(paths.data_dir).put(key, value)
+    console.print(f"[green]stored {key} (backend={backend}).[/green]")
+
+
+@secrets_app.command("get")
+def secrets_get(key: str) -> None:
+    from .secrets import SecretStore
+    paths = _paths_from_env()
+    v = SecretStore(paths.data_dir).get(key)
+    if v is None:
+        err_console.print(f"[red]{key}: not found[/red]")
+        raise typer.Exit(1)
+    console.print(v)
+
+
+@secrets_app.command("list")
+def secrets_list() -> None:
+    from .secrets import SecretStore
+    paths = _paths_from_env()
+    keys = SecretStore(paths.data_dir).list()
+    if not keys:
+        console.print("[yellow](file-store empty; keyring keys not enumerable)[/yellow]")
+        return
+    for k in keys:
+        console.print(f"  {k}")
+
+
+@secrets_app.command("rm")
+def secrets_rm(key: str) -> None:
+    from .secrets import SecretStore
+    paths = _paths_from_env()
+    if SecretStore(paths.data_dir).delete(key):
+        console.print(f"[green]removed {key}.[/green]")
+    else:
+        err_console.print(f"[yellow]{key}: not present[/yellow]")
+        raise typer.Exit(1)
+
+
+# --------------------------------------------------- monitor --
+
+monitor_app = typer.Typer(help="Mode A — Monitor.", no_args_is_help=True)
+app.add_typer(monitor_app, name="monitor")
+
+
+@monitor_app.command("run")
+def monitor_run(
+    source_url: str = typer.Option(..., help="Feed URL (RSS or Atom)"),
+    topic: str = typer.Option(..., help="Topic label for the report"),
+    out_dir: Path = typer.Option(None, help="Override staging dir for the HTML"),
+) -> None:
+    """One Mode A polling cycle. Fetches the feed, sandbox-admits the body,
+    classifies items, writes a Tufte-CSS HTML report to staging/.
+    """
+    paths = _paths_from_env()
+    paths.ensure()
+    from .modes.monitor import run_monitor
+    from .output.html import render_monitor_html
+    from .sandbox.broker import build_default_broker
+    from .sources.rss import fetch_feed
+    broker = build_default_broker(paths.data_dir)
+    try:
+        items = fetch_feed(source_url, broker=broker)
+    except Exception as exc:
+        err_console.print(f"[red]fetch failed:[/red] {exc}")
+        raise typer.Exit(1) from None
+    if not items:
+        console.print("[yellow]feed produced no items (or sandbox rejected).[/yellow]")
+        raise typer.Exit(0)
+    report = run_monitor(topic, items)
+    html = render_monitor_html(report)
+    dest = (out_dir or paths.staging_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    safe_topic = "".join(c if c.isalnum() else "-" for c in topic).strip("-")
+    fname = dest / f"monitor-{safe_topic}-{report.generated_at.replace(':', '')}.html"
+    fname.write_text(html)
+    console.print(f"[green]wrote {fname}[/green]")
+    console.print(f"  [bold]{len(report.alerts)}[/bold] alert(s), "
+                  f"[bold]{len(report.digest)}[/bold] digest, "
+                  f"{report.suppressed_duplicates} duplicate(s) suppressed.")
+
+
+@app.command()
+def tui(port: int = DEFAULT_PORT) -> None:
+    """Launch the terminal dashboard (Textual)."""
+    from .tui.app import LighthouseTUI
+    from .tui.client import LighthouseClient
+    LighthouseTUI(client=LighthouseClient(f"http://127.0.0.1:{port}")).run()
+
+
+if __name__ == "__main__":  # pragma: no cover
+    app()

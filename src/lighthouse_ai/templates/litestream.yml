@@ -1,0 +1,29 @@
+# Lighthouse Litestream config — per design §26.2.
+# S3 replicas are opt-in: set LIGHTHOUSE_S3_BUCKET to enable mirroring beyond
+# the local replica path. Audit replicas have longer retention than state.
+dbs:
+  - path: {state_db}
+    replicas:
+      - path: {replicas_dir}/state-db
+        retention: 24h
+        snapshot-interval: 1h
+  - path: {audit_db}
+    replicas:
+      - path: {replicas_dir}/audit-db
+        retention: 90d
+        snapshot-interval: 1h
+  - path: {intents_db}
+    replicas:
+      - path: {replicas_dir}/intents-db
+        retention: 24h
+        snapshot-interval: 1h
+  - path: {positions_db}
+    replicas:
+      - path: {replicas_dir}/positions-db
+        retention: 24h
+        snapshot-interval: 1h
+  - path: {hypotheses_db}
+    replicas:
+      - path: {replicas_dir}/hypotheses-db
+        retention: 24h
+        snapshot-interval: 1h

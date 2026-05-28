@@ -1,0 +1,256 @@
+/* ========================================================================
+   LIGHTHOUSE — design tokens
+   Seaside palette · editorial type · calm density
+   ======================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300..700;1,8..60,300..700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Seaside palette — Option 0 */
+  --paper:        #f4f1ea;          /* warm cream (page) */
+  --paper-2:      #ede7d8;          /* sand tint (panels) */
+  --paper-3:      #fbfaf7;          /* near-white (cards in dense surfaces) */
+  --ink:          #0b2335;          /* deepest navy (text) */
+  --navy:         #0e3a5f;          /* primary navy */
+  --teal:         #2d7a9e;          /* mid-sea */
+  --sky:          #7ab5c9;          /* sky / hover-glow */
+  --sand:         #e8d9a8;          /* sand accent */
+  --beacon:       #c44536;          /* lighthouse red — alerts / CTAs */
+  --beam:         #f0c75e;          /* warm beam yellow */
+  --algae:        #4a8a6e;          /* positive / resolved-correct */
+  --kelp:         #2f5d4e;          /* deeper positive */
+  --fog:          #d8cfb8;          /* hairlines */
+  --fog-2:        #ccc0a3;          /* stronger hairlines */
+  --mute:         #6c7c8b;          /* muted text */
+  --mute-2:       #97a4b3;          /* tertiary text */
+
+  /* WEP bands — ICD-203, tinted toward seaside */
+  --wep-almost-no:   #1b3a52;        /* almost no chance */
+  --wep-very-unlikely:#2f6b88;
+  --wep-unlikely:    #5a9aa8;
+  --wep-roughly-even:#a6a297;
+  --wep-likely:      #c9a050;
+  --wep-very-likely: #d97742;
+  --wep-almost-cert: #a8412c;
+
+  /* Type */
+  --font-serif: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
+  --font-grot:  'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-mono:  'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  /* Scale — generous, editorial */
+  --t-12: 12px;
+  --t-13: 13px;
+  --t-14: 14px;
+  --t-15: 15px;
+  --t-16: 16px;
+  --t-17: 17px;
+  --t-18: 18px;
+  --t-20: 20px;
+  --t-22: 22px;
+  --t-26: 26px;
+  --t-32: 32px;
+  --t-40: 40px;
+  --t-52: 52px;
+
+  /* Density (overridable) */
+  --pad-card: 28px;
+  --pad-section: 40px;
+  --row-h: 44px;
+  --gap: 24px;
+
+  --radius: 4px;
+  --radius-lg: 8px;
+
+  --shadow-card: 0 1px 0 rgba(11,35,53,0.04), 0 8px 24px -16px rgba(11,35,53,0.12);
+  --shadow-pop: 0 12px 40px -16px rgba(11,35,53,0.25);
+}
+
+/* Density variants — body[data-density] */
+body[data-density="dense"] {
+  --pad-card: 16px;
+  --pad-section: 22px;
+  --row-h: 32px;
+  --gap: 14px;
+}
+body[data-density="balanced"] {
+  --pad-card: 20px;
+  --pad-section: 28px;
+  --row-h: 38px;
+  --gap: 18px;
+}
+
+/* ===== Base ===== */
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: var(--t-16);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button, input, select, textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+/* ===== Reusable classes ===== */
+.eyebrow {
+  font-family: var(--font-grot);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.h-display {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.08;
+}
+.h-grot {
+  font-family: var(--font-grot);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.mono { font-family: var(--font-mono); font-feature-settings: "tnum" 1, "zero" 1; }
+.num  { font-variant-numeric: tabular-nums; }
+.hair { border: 0; border-top: 1px solid var(--fog); margin: 0; }
+
+/* Card shells */
+.card {
+  background: var(--paper-3);
+  border: 1px solid var(--fog);
+  border-radius: var(--radius);
+  padding: var(--pad-card);
+}
+.card-flush {
+  background: transparent;
+  border-top: 1px solid var(--fog);
+  padding: var(--pad-card) 0;
+}
+
+/* WEP band pill */
+.wep {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-grot);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px 3px 6px;
+  border-radius: 2px;
+  color: white;
+}
+.wep::before {
+  content: "";
+  width: 6px; height: 6px;
+  background: rgba(255,255,255,0.85);
+  display: inline-block;
+}
+.wep-almost-no    { background: var(--wep-almost-no); }
+.wep-very-unlikely{ background: var(--wep-very-unlikely); }
+.wep-unlikely     { background: var(--wep-unlikely); }
+.wep-roughly-even { background: var(--wep-roughly-even); color: #1b1a16; }
+.wep-likely       { background: var(--wep-likely); color:#241a08; }
+.wep-very-likely  { background: var(--wep-very-likely); }
+.wep-almost-cert  { background: var(--wep-almost-cert); }
+
+/* Source tier chip */
+.tier {
+  display: inline-block;
+  font-family: var(--font-grot);
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+.tier-1 { color: var(--kelp); }
+.tier-2 { color: var(--teal); }
+.tier-3 { color: var(--mute); }
+.tier-4 { color: var(--beacon); }
+
+/* Tag */
+.tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--teal);
+  background: rgba(45,122,158,0.08);
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+.tag-warn { color: var(--beacon); background: rgba(196,69,54,0.07); }
+.tag-ok   { color: var(--kelp);   background: rgba(74,138,110,0.10); }
+
+/* Status dot */
+.dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.dot-live { background: var(--algae); box-shadow: 0 0 0 0 rgba(74,138,110,0.5); animation: pulse 2s infinite; }
+.dot-pause{ background: var(--mute-2); }
+.dot-warn { background: var(--beam); }
+.dot-stop { background: var(--beacon); }
+
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0   rgba(74,138,110,0.45); }
+  70%  { box-shadow: 0 0 0 7px rgba(74,138,110,0);    }
+  100% { box-shadow: 0 0 0 0   rgba(74,138,110,0);    }
+}
+
+/* Buttons */
+.btn {
+  font-family: var(--font-grot);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  padding: 8px 14px;
+  border-radius: 3px;
+  border: 1px solid var(--fog-2);
+  background: var(--paper-3);
+  color: var(--ink);
+  cursor: pointer;
+  transition: all .14s ease;
+}
+.btn:hover { border-color: var(--navy); }
+.btn-primary {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: var(--paper);
+}
+.btn-primary:hover { background: var(--ink); border-color: var(--ink); }
+.btn-beacon {
+  background: var(--beacon);
+  border-color: var(--beacon);
+  color: white;
+}
+.btn-ghost { background: transparent; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+
+/* Tiny utility */
+.row { display: flex; align-items: center; gap: 10px; }
+.col { display: flex; flex-direction: column; }
+.spread { display:flex; justify-content:space-between; align-items:center; }
+.muted { color: var(--mute); }
+.muted-2{ color: var(--mute-2); }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* Scrollbar (subtle) */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--fog-2); border-radius: 10px; border: 2px solid var(--paper); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* Focus */
+:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }

@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Lighthouse — Research Instrument</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,400&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Spectral:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Crimson+Pro:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400&family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600;700&family=Work+Sans:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=Public+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&family=Fira+Code:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* Sunny coastal · bright SaaS palette */
+    --paper: #eaf4fb;            /* page bg, sky tint */
+    --paper-2: #dbe9f4;          /* sidebar bg, slightly deeper */
+    --card: #ffffff;             /* card surfaces */
+    --ink: #0a2a44;              /* primary text, deep navy */
+    --ink-2: #2a5a85;            /* secondary text */
+    --primary: #0288d1;          /* Salesforce cerulean */
+    --primary-dark: #01579b;
+    --sea: #0288d1;              /* alias */
+    --sky: #4ec3f7;              /* bright sky highlight */
+    --sky-soft: #b3e5fc;         /* soft sky fill */
+    --sand: #ffd54f;             /* sunshine */
+    --sand-2: #fff3c4;           /* sunshine soft */
+    --coral: #0a1929;            /* (formerly red) deep near-black navy — accent */
+    --coral-2: #01579b;          /* (formerly red-2) primary-dark blue — accent emphasis */
+    --green: #06d6a0;            /* success / turquoise */
+    --green-dark: #00897b;
+    --muted: #6a8aa6;
+    --rule: #d4e2ed;
+    --rule-soft: #eaf2f8;
+    --shadow-sm: 0 1px 2px rgba(10,42,68,0.06);
+    --shadow: 0 1px 3px rgba(10,42,68,0.08), 0 4px 12px rgba(10,42,68,0.05);
+    --shadow-lg: 0 4px 8px rgba(10,42,68,0.08), 0 12px 32px rgba(10,42,68,0.08);
+    --radius: 10px;
+    --radius-sm: 6px;
+    --radius-lg: 14px;
+    --serif: 'Source Serif 4', Georgia, serif;
+    --sans: 'Inter', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  html, body { margin: 0; background: #0a2a44; font-family: var(--sans); }
+  * { box-sizing: border-box; }
+
+  /* ── shared atoms ─────────────────────────────────────── */
+  .lh-page {
+    width: 100%; height: 100%; position: relative; overflow: hidden;
+    background: linear-gradient(180deg, #eaf4fb 0%, #dff0fa 100%);
+    color: var(--ink);
+  }
+  .lh-bg-mark { position: absolute; pointer-events: none; }
+
+  .num { font-family: var(--mono); font-feature-settings: "tnum"; }
+  .serif { font-family: var(--serif); }
+  .small-caps {
+    font-family: var(--sans); font-weight: 700; font-size: 10.5px;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary);
+  }
+  .hairline { height: 1px; background: var(--rule); }
+
+  /* Card surface — universal */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* WEP confidence chip — Duolingo-style rounded pills */
+  .wep {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--sans); font-size: 11px; font-weight: 600;
+    padding: 3px 10px; border-radius: 999px;
+    background: var(--sky-soft); color: var(--primary-dark);
+  }
+  .wep::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .wep.likely { color: #00695c; background: rgba(6,214,160,0.18); }
+  .wep.high   { color: #2e7d32; background: rgba(76,175,80,0.16); }
+  .wep.even   { color: var(--muted); background: rgba(106,138,166,0.14); }
+  .wep.unlikely { color: var(--coral-2); background: rgba(10,25,41,0.10); }
+
+  /* Status pills — clean white with shadow */
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 600; padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--card); color: var(--ink-2);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--rule);
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .pill.running .dot { background: var(--green); box-shadow: 0 0 0 0 rgba(6,214,160,0.7); animation: pulse 1.8s infinite; }
+  .pill.running { color: var(--green-dark); }
+  .pill.queued .dot { background: var(--sand); }
+  .pill.queued { color: #b8860b; }
+  .pill.review .dot { background: var(--coral); }
+  .pill.review { color: var(--coral-2); }
+  .pill.paused .dot { background: var(--muted); }
+
+  /* Primary action button — Salesforce-style cerulean */
+  .btn-primary {
+    background: var(--primary); color: #fff;
+    border: none; padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    font-family: var(--sans); font-weight: 600; font-size: 13px;
+    cursor: pointer; box-shadow: 0 1px 2px rgba(2,136,209,0.25);
+    transition: background 0.15s ease;
+  }
+  .btn-primary:hover { background: var(--primary-dark); }
+
+  .btn-ghost {
+    background: var(--card); color: var(--primary);
+    border: 1px solid var(--rule); padding: 7px 14px;
+    border-radius: var(--radius-sm);
+    font-family: var(--sans); font-weight: 600; font-size: 13px;
+    cursor: pointer;
+  }
+
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(6,214,160,0.55); }
+    70% { box-shadow: 0 0 0 6px rgba(6,214,160,0); }
+    100% { box-shadow: 0 0 0 0 rgba(6,214,160,0); }
+  }
+
+  @keyframes beam {
+    0% { transform: rotate(-18deg); opacity: 0.0; }
+    20% { opacity: 0.7; }
+    50% { transform: rotate(18deg); opacity: 0.0; }
+    100% { transform: rotate(-18deg); opacity: 0.0; }
+  }
+
+  @keyframes drift {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+
+  @keyframes tick {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  /* Sidebar (shared) — white surface w/ subtle elevation */
+  .lh-side {
+    width: 224px; height: 100%; padding: 24px 16px 20px;
+    background: var(--card);
+    box-shadow: 1px 0 0 var(--rule), 2px 0 8px rgba(10,42,68,0.03);
+    display: flex; flex-direction: column; gap: 4px;
+    position: relative; z-index: 2;
+  }
+  .lh-brand { display: flex; align-items: center; gap: 11px; margin-bottom: 24px; padding: 4px 8px; }
+  .lh-brand .word {
+    font-family: var(--serif); font-size: 21px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink);
+  }
+  .lh-brand .sub { font-family: var(--sans); font-size: 9.5px; color: var(--primary); letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; margin-top: 2px; }
+  .lh-nav { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
+  .lh-nav .group { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; margin: 16px 0 4px 10px; }
+  .lh-nav a {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; border-radius: 8px;
+    font-size: 13.5px; font-weight: 500; color: var(--ink-2); text-decoration: none;
+    transition: background 0.12s ease;
+  }
+  .lh-nav a:hover { background: var(--rule-soft); }
+  .lh-nav a.active {
+    background: linear-gradient(135deg, var(--primary) 0%, #039be5 100%);
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(2,136,209,0.3);
+  }
+  .lh-nav a.active .count { color: #fff; opacity: 0.85; }
+  .lh-nav a .count {
+    font-family: var(--mono); font-size: 11px; opacity: 0.7;
+    background: rgba(106,138,166,0.12); padding: 1px 7px; border-radius: 999px;
+  }
+  .lh-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 11px; color: var(--muted); }
+  .lh-foot .row { display: flex; justify-content: space-between; padding: 4px 4px; }
+  .lh-foot .row .num { color: var(--ink-2); font-weight: 500; }
+
+  /* ── lighthouse mark SVG: shared component, rendered inline ── */
+</style>
+</head>
+<body>
+
+<!-- React + Babel -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- The real Lighthouse dashboard. The original Claude Design handoff
+     canvas (3 home variants + tweaks panel) lives at /ui/design.html. -->
+<script type="text/babel" src="home-shared.jsx"></script>       <!-- LighthouseMark, BackgroundPattern -->
+<script type="text/babel" src="app-lib.jsx"></script>            <!-- primitives + hooks -->
+<script type="text/babel" src="app-pages-today.jsx"></script>    <!-- HomePage, JobsPage, DraftsPage -->
+<script type="text/babel" src="app-pages-rest.jsx"></script>     <!-- TopicsPage, PositionsPage, HealthPage, SettingsPage -->
+<script type="text/babel" src="app.jsx"></script>
+<div id="root"></div>
+</body>
+</html>

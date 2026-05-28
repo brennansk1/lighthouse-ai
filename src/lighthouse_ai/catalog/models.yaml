@@ -1,0 +1,91 @@
+# Five-tier hardware-adaptive model table (design §5.3) — 2026 MoE-centric.
+#
+# IMPORTANT: the names below are CAPABILITY CLASSES, not stable tags. The
+# Qwen3.5/3.6 generation churned fast in spring 2026 and blogs disagree on
+# the exact label for a given weight class. Do NOT hardcode a tag from here —
+# resolve the current tag at install and pin its SHA-256 digest (§6/§27).
+# The durable decision is the capability class (9B dense / 27B dense /
+# 35B-A3B MoE / V4-Flash / V4-Pro); the precise tag is a lookup.
+#
+# Two structural facts drive the table:
+#   1. Inference is memory-BANDWIDTH-bound, not compute-bound — judge a tier
+#      by GB/s, not chip generation or core count.
+#   2. Fine-grained MoE (35B total / 3B active) runs at ~3B speed with ~mid
+#      dense quality, and pages experts from SSD (mmap) so it loads in less
+#      resident RAM than its full weights. This collapses the old "big model
+#      needs a big machine" rule — the mid tiers default to an MoE.
+#
+# Budget math (§5.2): budget_gb = total_ram - os_reserve(6 macOS / 4 other)
+#   - 1.5(emb) - 0.8(qdrant) - 2(buffer). Dense models must fit; MoE models
+#   are allowed to page (slower) when over budget.
+version: 1
+
+tiers:
+  T1:
+    name: Mini
+    ram_floor_gb: 16          # 16 GB Mac / 8-12 GB VRAM
+    default_reasoning: qwen3.5-9b
+    inference: ollama
+  T2:
+    name: Workstation
+    ram_floor_gb: 24          # 24-32 GB unified / 24 GB VRAM (3090/4090)
+    default_reasoning: qwen3.6-35b-a3b
+    inference: ollama
+  T3:
+    name: Studio
+    ram_floor_gb: 48          # 48-64 GB unified / 32 GB VRAM (5090)
+    default_reasoning: qwen3.6-35b-a3b
+    inference: mlx
+  T4:
+    name: Workstation+
+    ram_floor_gb: 96          # 128 GB unified / 2x 24 GB VRAM
+    default_reasoning: qwen3.6-35b-a3b
+    inference: mlx
+  T5:
+    name: Ultra
+    ram_floor_gb: 256         # 256 GB+ unified / multi-GPU H100/H200/GB300
+    default_reasoning: deepseek-v4-pro
+    inference: vllm
+
+# Per-tier role bindings (design §5.3, 2026 table).
+#   planner/researcher favor the fast MoE; synthesizer favors the
+#   highest-quality model that fits (dense 27B at T3, V4-Flash at T4).
+#   aux_context is the small/fast classifier-and-lint role.
+roles:
+  T1:
+    planner: qwen3.5-9b
+    researcher: qwen3.5-9b
+    synthesizer: qwen3.5-9b        # extended-thinking mode for synthesis
+    aux_context: phi-4-mini        # 3.8B MIT, 128K ctx; frees the 9B
+  T2:
+    planner: qwen3.6-35b-a3b
+    researcher: qwen3.6-35b-a3b
+    synthesizer: qwen3.6-35b-a3b
+    aux_context: qwen3.5-9b
+  T3:
+    planner: qwen3.6-35b-a3b
+    researcher: qwen3.6-35b-a3b
+    synthesizer: qwen3.6-27b        # dense Q6/Q8 — reasoning/coding sweet spot
+    aux_context: qwen3.5-9b
+  T4:
+    planner: qwen3.6-35b-a3b        # Q8 at this tier
+    researcher: qwen3.6-35b-a3b
+    synthesizer: deepseek-v4-flash  # 284B/13B active; practical at 128 GB
+    aux_context: qwen3.5-9b
+  T5:
+    planner: deepseek-v4-pro        # 1.6T/49B active (datacenter)
+    researcher: deepseek-v4-pro
+    synthesizer: deepseek-v4-pro    # reasoning mode
+    aux_context: qwen3.5-9b         # local, cheap
+
+# Always-on auxiliary models (unchanged from v1.0).
+fixed_roles:
+  embedding: bge-m3                # ~1.2 GB, 1024-dim, multilingual (§14.1)
+  reranker: qwen3-reranker-0.6b    # ~0.6 GB, runs alongside (§14.1)
+
+# Sampling defaults per role; chosen_models.yaml can override.
+sampling:
+  planner: { temperature: 0.2, top_p: 0.9, max_tokens: 4096 }
+  researcher: { temperature: 0.3, top_p: 0.9, max_tokens: 4096 }
+  synthesizer: { temperature: 0.3, top_p: 0.9, max_tokens: 8192 }
+  aux_context: { temperature: 0.1, top_p: 0.9, max_tokens: 1024 }

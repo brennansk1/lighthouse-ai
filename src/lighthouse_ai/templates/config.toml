@@ -1,0 +1,29 @@
+# Lighthouse user config — see design §30.
+[lighthouse]
+version = "0.1.0"
+data_dir = "{data_dir}"
+log_level = "info"
+
+[hardware]
+detected_tier = "{detected_tier}"
+backend_preference = ["mlx", "ollama"]
+total_ram_gb = {total_ram_gb}
+
+[runtime]
+max_concurrent_jobs = 3
+checkpoint_every_node = true
+
+[depth]
+default_preset = "standard"
+
+[litestream]
+config_path = "{litestream_config}"
+
+[reproducibility]
+require_digest_match = true
+allow_drift_with_flag = true
+
+[notifications]
+desktop_enabled = true
+email_enabled = false
+events = ["draft_ready", "monitor_alert_high", "budget_warn", "budget_trip"]

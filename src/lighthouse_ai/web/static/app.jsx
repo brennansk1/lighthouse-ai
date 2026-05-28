@@ -1,0 +1,332 @@
+// app.jsx — production Lighthouse dashboard shell. Mounts into #root.
+// Owns: 7-item sidebar, hash router, command palette (Cmd-K), shortcut
+// overlay (?), React error boundary, light/dark theme toggle, live-region
+// toasts from the SSE channel, and the page background. All page components
+// (HomePage … SettingsPage) and primitives/hooks come from sibling files
+// hung on window.* (no bundler — one shared browser global scope).
+//
+// The whole file is wrapped in an IIFE so its top-level declarations
+// (the React-hook destructure, App, AppSidebar, …) stay function-scoped and
+// do NOT collide with the identical `const {useState}=React` in app-lib.jsx
+// when the browser executes every <script> in the same global scope.
+
+(function () {
+const { useState, useEffect, useCallback, useRef } = React;
+
+// Seven-item nav (design webapp_tui_design.md §0.3). Counters only where the
+// user must act: Jobs (running), Drafts (staged), Positions (overdue).
+const APP_PAGES = [
+  { id: 'home',      label: 'Home',      get C() { return window.HomePage; } },
+  { id: 'jobs',      label: 'Jobs',      counter: 'jobs_running',      get C() { return window.JobsPage; } },
+  { id: 'drafts',    label: 'Drafts',    counter: 'drafts_staged',     get C() { return window.DraftsPage; } },
+  { id: 'topics',    label: 'Topics',    get C() { return window.TopicsPage; } },
+  { id: 'positions', label: 'Positions', counter: 'positions_overdue', get C() { return window.PositionsPage; } },
+  { id: 'health',    label: 'Health',    get C() { return window.HealthPage; } },
+  { id: 'settings',  label: 'Settings',  get C() { return window.SettingsPage; } },
+];
+
+function currentPage() {
+  const h = (window.location.hash || '#home').replace('#', '').replace('/', '');
+  return APP_PAGES.find((p) => p.id === h) ? h : 'home';
+}
+
+// ── Dark theme: a deep-navy variant of the coastal palette, injected as a
+// data-theme override block so the <head> <style> stays untouched. ─────────
+const DARK_CSS = `
+[data-theme="dark"] {
+  --paper: #0a1f33;
+  --paper-2: #0c2540;
+  --card: #102d4a;
+  --ink: #e7f1fa;
+  --ink-2: #a9c6e0;
+  --primary: #4ec3f7;
+  --primary-dark: #0288d1;
+  --sea: #4ec3f7;
+  --sky: #4ec3f7;
+  --sky-soft: #16395c;
+  --sand: #ffd54f;
+  --sand-2: #3a3618;
+  --coral: #4ec3f7;
+  --coral-2: #4ec3f7;
+  --green: #06d6a0;
+  --green-dark: #2fe0b6;
+  --muted: #7fa3c4;
+  --rule: #1d3f63;
+  --rule-soft: #16334f;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.35);
+  --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.35);
+  --shadow-lg: 0 4px 8px rgba(0,0,0,0.45), 0 12px 32px rgba(0,0,0,0.45);
+}
+html[data-theme="dark"], [data-theme="dark"] body { background: #061322; }
+[data-theme="dark"] .lh-page {
+  background: linear-gradient(180deg, #0a1f33 0%, #08182a 100%);
+}
+[data-theme="dark"] .lh-side {
+  box-shadow: 1px 0 0 var(--rule), 2px 0 8px rgba(0,0,0,0.4);
+}`;
+
+function useTheme() {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('lh-theme') || 'light'; } catch (e) { return 'light'; }
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('lh-theme', theme); } catch (e) {}
+  }, [theme]);
+  const toggle = useCallback(() => setTheme((t) => (t === 'dark' ? 'light' : 'dark')), []);
+  return { theme, toggle };
+}
+
+// ── Error boundary: one crashing page shows a friendly fallback. ───────────
+class PageBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { /* surfaced in fallback; console retains stack */
+    console.error('Page crashed:', error, info); }
+  componentDidUpdate(prev) {
+    if (prev.pageKey !== this.props.pageKey && this.state.error) this.setState({ error: null });
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div role="alert" style={{ ...window.card, padding: '40px 28px', maxWidth: 560,
+          margin: '40px auto', textAlign: 'center' }}>
+          <div style={{ fontSize: 30, marginBottom: 10, opacity: 0.6 }}>⚠</div>
+          <div style={{ fontFamily: 'var(--serif)', fontSize: 19, color: 'var(--ink)' }}>
+            This page hit a snag.
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 8 }}>
+            {String(this.state.error && this.state.error.message || this.state.error)}
+          </div>
+          <div style={{ marginTop: 18 }}>
+            <button className="btn-ghost" onClick={() => this.setState({ error: null })}>
+              Try again
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ── Sidebar ─────────────────────────────────────────────────────────────
+function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
+  return (
+    <aside className="lh-side">
+      <div className="lh-brand">
+        <window.LighthouseMark size={26} />
+        <div>
+          <div className="word">Lighthouse</div>
+          <div className="sub">Research instrument</div>
+        </div>
+      </div>
+      <nav className="lh-nav" aria-label="Primary">
+        {APP_PAGES.map((p) => {
+          const count = p.counter ? counters[p.counter] : null;
+          const isActive = p.id === active;
+          return (
+            <a key={p.id} href={`#${p.id}`} className={isActive ? 'active' : ''}
+              aria-current={isActive ? 'page' : undefined}>
+              <span>{p.label}</span>
+              {count ? <span className="count">{count}</span> : null}
+            </a>
+          );
+        })}
+      </nav>
+      <div className="lh-foot">
+        <div className="row"><span>Tier</span><span className="num">{counters.tier || '—'}</span></div>
+        <div className="row"><span>Budget</span><span className="num">{counters.budget || '—'}</span></div>
+        <div className="row" style={{ marginTop: 6, gap: 8 }}>
+          <button onClick={onToggleTheme} className="btn-ghost" style={{ flex: 1, padding: '5px 8px',
+            fontSize: 11.5 }} aria-label="Toggle light or dark theme" aria-pressed={theme === 'dark'}>
+            {theme === 'dark' ? '☾ Dark' : '☀ Light'}
+          </button>
+          <button onClick={onHelp} className="btn-ghost" style={{ padding: '5px 10px', fontSize: 11.5 }}
+            aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ── Command palette (Cmd-K): fuzzy page jump. ──────────────────────────────
+function fuzzy(query, label) {
+  const q = query.toLowerCase().replace(/\s+/g, '');
+  const l = label.toLowerCase();
+  if (!q) return true;
+  if (l.includes(q)) return true;
+  let i = 0;
+  for (const ch of l) { if (ch === q[i]) i++; if (i === q.length) return true; }
+  return i === q.length;
+}
+
+function CommandPalette({ open, onClose, onGo }) {
+  const [q, setQ] = useState('');
+  const [sel, setSel] = useState(0);
+  useEffect(() => { if (open) { setQ(''); setSel(0); } }, [open]);
+  const matches = APP_PAGES.filter((p) => fuzzy(q, p.label));
+  useEffect(() => { setSel(0); }, [q]);
+  if (!open) return null;
+  const commit = (id) => { if (id) { onGo(id); } onClose(); };
+  const onKeyDown = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, matches.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); commit(matches[sel] && matches[sel].id); }
+    else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+  };
+  return (
+    <div onClick={onClose} role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 600,
+      background: 'rgba(10,42,68,0.3)', display: 'flex', justifyContent: 'center', paddingTop: 120 }}>
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true"
+        aria-label="Command palette" style={{ ...window.card, width: 420, height: 'fit-content',
+        boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}>
+        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKeyDown}
+          placeholder="Go to page…" aria-label="Search pages"
+          style={{ width: '100%', border: 'none', padding: '14px 16px', fontSize: 15,
+            fontFamily: 'var(--sans)', outline: 'none', color: 'var(--ink)', background: 'var(--card)' }} />
+        <div style={{ borderTop: '1px solid var(--rule)' }} role="listbox">
+          {matches.length === 0 && (
+            <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--muted)',
+              fontFamily: 'var(--sans)' }}>No matches</div>
+          )}
+          {matches.map((p, i) => (
+            <div key={p.id} role="option" aria-selected={i === sel}
+              onMouseEnter={() => setSel(i)} onClick={() => commit(p.id)}
+              style={{ padding: '10px 16px', cursor: 'pointer', fontSize: 13,
+                fontFamily: 'var(--sans)', color: 'var(--ink)',
+                background: i === sel ? 'var(--rule-soft)' : 'transparent' }}>
+              {p.label}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Shortcut overlay (?). ──────────────────────────────────────────────────
+const SHORTCUTS = [
+  ['⌘K / Ctrl-K', 'Open command palette'],
+  ['?', 'Show this shortcut overlay'],
+  ['Esc', 'Close palette / overlay'],
+  ['↑ ↓ / Enter', 'Navigate & jump in palette'],
+];
+
+function ShortcutOverlay({ open, onClose }) {
+  if (!open) return null;
+  return (
+    <div onClick={onClose} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts"
+      style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(10,42,68,0.3)',
+        display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: 140 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ ...window.card, width: 380,
+        boxShadow: 'var(--shadow-lg)', padding: '18px 20px' }}>
+        <div style={{ fontFamily: 'var(--serif)', fontSize: 17, fontWeight: 700,
+          color: 'var(--ink)', marginBottom: 12 }}>Keyboard shortcuts</div>
+        {SHORTCUTS.map(([k, d]) => (
+          <div key={k} style={{ display: 'flex', justifyContent: 'space-between',
+            padding: '6px 0', fontSize: 13, fontFamily: 'var(--sans)', color: 'var(--ink-2)' }}>
+            <span>{d}</span>
+            <kbd className="num" style={{ background: 'var(--rule-soft)', padding: '2px 8px',
+              borderRadius: 6, fontSize: 11.5, color: 'var(--ink)' }}>{k}</kbd>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [page, setPage] = useState(currentPage());
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [counters, setCounters] = useState({});
+  const { toast, show } = window.useToast();
+  const { theme, toggle } = useTheme();
+
+  useEffect(() => {
+    const onHash = () => setPage(currentPage());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  // Keyboard: Cmd-K / Ctrl-K palette, ? overlay, Esc closes both.
+  useEffect(() => {
+    const onKey = (e) => {
+      const typing = /input|textarea|select/i.test(e.target.tagName) || e.target.isContentEditable;
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault(); setHelpOpen(false); setPaletteOpen((o) => !o);
+      } else if (e.key === 'Escape') {
+        setPaletteOpen(false); setHelpOpen(false);
+      } else if (e.key === '?' && !typing) {
+        e.preventDefault(); setPaletteOpen(false); setHelpOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Live region: surface a toast on draft.staged / governor.tripped.
+  window.useEvents(useCallback((name, data) => {
+    if (name === 'draft.staged') {
+      show(`New draft staged${data && data.title ? `: ${data.title}` : ''}`, 'info');
+    } else if (name === 'governor.tripped') {
+      show(`Governor tripped${data && data.reason ? `: ${data.reason}` : ' — work paused'}`, 'error');
+    }
+  }, [show]));
+
+  // Sidebar counters from a light poll of health + dashboard, every 10s.
+  const refreshCounters = useCallback(async () => {
+    try {
+      const [dash, health, drafts, pos] = await Promise.all([
+        window.apiGet('/api/dashboard').catch(() => ({})),
+        window.apiGet('/api/health').catch(() => ({})),
+        window.apiGet('/api/drafts?status=staged').catch(() => ({ drafts: [] })),
+        window.apiGet('/api/positions?overdue=true').catch(() => ({ positions: [] })),
+      ]);
+      const running = (dash.jobs || []).filter((j) => j.status === 'running').length;
+      setCounters({
+        jobs_running: running || null,
+        drafts_staged: (drafts.drafts || []).length || null,
+        positions_overdue: (pos.positions || []).length || null,
+        tier: (health.hardware && health.hardware.tier) || (health.budget && health.budget.tier) || '—',
+        budget: health.budget ? `$${health.budget.usd.used}/$${health.budget.usd.cap}` : '—',
+      });
+    } catch (e) { /* offline; leave counters blank */ }
+  }, []);
+  useEffect(() => {
+    refreshCounters();
+    const id = setInterval(refreshCounters, 10000);
+    return () => clearInterval(id);
+  }, [refreshCounters]);
+
+  const pageDef = APP_PAGES.find((p) => p.id === page) || APP_PAGES[0];
+  const PageComp = pageDef.C;
+  const pageProps = { toast: { show } };
+
+  return (
+    <div className="lh-page" style={{ display: 'flex', minHeight: '100vh' }}>
+      <style dangerouslySetInnerHTML={{ __html: DARK_CSS }} />
+      <window.BackgroundPattern />
+      <AppSidebar active={page} counters={counters} theme={theme}
+        onToggleTheme={toggle} onHelp={() => setHelpOpen(true)} />
+      <main style={{ flex: 1, padding: '28px 36px', position: 'relative',
+        overflow: 'auto', maxHeight: '100vh' }}>
+        <PageBoundary pageKey={page}>
+          {PageComp ? <PageComp {...pageProps} />
+            : <window.ErrorBox message={`Page "${pageDef.label}" failed to load.`} />}
+        </PageBoundary>
+      </main>
+      <div aria-live="polite" aria-atomic="true">
+        <window.Toast toast={toast} />
+      </div>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)}
+        onGo={(id) => { window.location.hash = id; }} />
+      <ShortcutOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+})();

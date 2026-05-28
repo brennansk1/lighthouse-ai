@@ -1,0 +1,17 @@
+[Unit]
+Description=Lighthouse research supervisor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={supervisor_bin}
+Environment=LIGHTHOUSE_DATA_DIR={data_dir}
+Restart=always
+RestartSec=5
+WorkingDirectory={data_dir}
+StandardOutput=append:{stdout_log}
+StandardError=append:{stderr_log}
+
+[Install]
+WantedBy=default.target

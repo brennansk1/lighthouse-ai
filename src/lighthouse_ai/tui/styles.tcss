@@ -1,0 +1,174 @@
+/* Lighthouse TUI styles. Coastal-inspired palette.
+
+   Color tokens come from the app's registered themes (see app.py:
+   `coastal-light` / `coastal-dark`). Here we reference the standard
+   Textual design-system variables ($primary, $panel, $surface, …) which
+   each theme remaps to the coastal hues, so a single stylesheet works in
+   both light and dark.  Mirrors web/static/tokens.css.
+*/
+
+Screen {
+    layout: horizontal;
+    background: $background;
+    color: $foreground;
+}
+
+/* ───────────────────────────── sidebar ───────────────────────────── */
+#sidebar {
+    width: 24;
+    background: $panel;
+    border-right: solid $primary;
+}
+
+#sidebar .brand {
+    padding: 1 2;
+    text-style: bold;
+    color: $primary;
+}
+
+Sidebar {
+    height: 1fr;
+}
+
+Sidebar ListView {
+    height: 1fr;
+    background: $panel;
+}
+
+Sidebar ListItem {
+    padding: 0 2;
+    background: $panel;
+}
+
+Sidebar ListItem.-highlight {
+    background: $primary 20%;
+}
+
+Sidebar .nav-counter {
+    color: $warning;
+    text-style: bold;
+}
+
+/* ────────────────────────────── main ─────────────────────────────── */
+#main {
+    width: 1fr;
+    padding: 1 2;
+}
+
+/* ──────────────────────────── status bar ─────────────────────────── */
+StatusBar {
+    dock: bottom;
+    height: 1;
+    background: $primary;
+    color: $text-primary;
+    padding: 0 1;
+    text-style: bold;
+}
+
+StatusBar.-offline {
+    background: $error;
+    color: $text-error;
+}
+
+/* ───────────────────────────── widgets ───────────────────────────── */
+WepBadge {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    text-style: bold;
+}
+
+Sparkline.spark {
+    width: auto;
+    height: 1;
+    color: $accent;
+}
+
+/* ─────────────────────────────── pages ───────────────────────────── */
+_Page {
+    height: 1fr;
+}
+
+TabbedContent {
+    height: 1fr;
+}
+
+DataTable {
+    height: 1fr;
+}
+
+#home-body {
+    padding: 0 1;
+}
+
+.page-foot {
+    dock: bottom;
+    height: 1;
+    color: $text-muted;
+    background: $surface;
+    padding: 0 1;
+}
+
+/* two-pane layouts (Drafts, Topics) */
+#drafts-list, #topics-table {
+    width: 40%;
+    border-right: solid $primary 40%;
+}
+
+#draft-detail, #topic-detail {
+    width: 1fr;
+    padding: 0 2;
+}
+
+.card {
+    border: round $primary 50%;
+    padding: 1 2;
+    margin: 0 0 1 0;
+}
+
+/* ───────────────────────────── modals ────────────────────────────── */
+ModalScreen {
+    align: center middle;
+}
+
+#modal-box {
+    width: 56;
+    height: auto;
+    padding: 1 2;
+    background: $panel;
+    border: thick $primary;
+}
+
+#modal-box Label {
+    text-style: bold;
+    padding: 0 0 1 0;
+}
+
+#modal-box Input {
+    margin: 0 0 1 0;
+}
+
+#modal-box Horizontal {
+    height: auto;
+    align: right middle;
+}
+
+#modal-box Button {
+    margin: 0 0 0 2;
+}
+
+/* ───────────────────────────── help ──────────────────────────────── */
+#help-box {
+    width: 64;
+    height: auto;
+    max-height: 80%;
+    padding: 1 2;
+    background: $panel;
+    border: thick $accent;
+}
+
+#help-box .help-title {
+    text-style: bold;
+    color: $accent;
+    padding: 0 0 1 0;
+}
