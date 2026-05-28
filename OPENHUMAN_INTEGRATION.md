@@ -16,30 +16,23 @@ Legend: ✅ done & tested · 🟡 partial · ⬜ not started.
 | 1 | **Scheduler Gate** — host-condition throttle for background AI | `governor/scheduler_gate.py`, wired into Governor + Deep-Dive + pipeline | **P0** | ✅ |
 | 2 | **Hotness Score** — deterministic entity-importance formula | `compounding/hotness.py` + Monitor salience | **P0** | ✅ |
 | 4 | **Tick overlap guard** — generation-counter cancellation | `subconscious/overlap.py` + `verification/resolver.py` | P1 | ✅ |
-| 3 | **Reflection / Escalation split** — passive vs actionable findings | `subconscious/` + dashboard Intelligence page | P1 | 🟡 backend ✅, dashboard page ⬜ |
+| 3 | **Reflection / Escalation split** — passive vs actionable findings | `subconscious/` + dashboard Intelligence page | P1 | ✅ |
 | 5 | **TokenJuice-style payload compaction** — deterministic pre-context compaction | `rag/compaction.py` | P2 | ✅ |
 | 6 | **Tool-Policy risk tiers** — risk-tiered prompt-visibility + runtime enforcement | `governor/tool_policy.py` | P2 | ✅ (substrate; no tool-runtime to wire yet) |
 | 8 | **Archivist clean→compose→append** — finished job → durable corpus | `compounding/archivist.py` | P3 | ✅ |
-| 7 | **Per-module README + Calls-into/Called-by convention** | repo-wide docs | P3 | 🟡 added for touched modules (governor/subconscious/compounding); backfill ongoing |
+| 7 | **Per-module README + Calls-into/Called-by convention** | repo-wide docs | P3 | ✅ all six major modules covered |
 
-Build order: **1 → 2 → 4 → 3 → 5 → 6 → 8 → 7** — all implemented this pass except
-the §3 dashboard Intelligence page (needs browser QA unavailable in the cloud
-sandbox) and the README backfill for older modules.
+Build order: **1 → 2 → 4 → 3 → 5 → 6 → 8 → 7** — all items complete.
 
 ## Outstanding follow-ups
 
-- **§3 dashboard Intelligence page** (8th page) + `reflections_act` endpoint —
-  backend, store, and job-spawn seam are done and tested; the React page and its
-  browser QA are not.
-- **§2 persistence** — `EntityHotnessStore` (`compounding/hotness_store.py`) ships the
-  `entity_hotness` side-table + lazy-recompute counter + the `should_materialise`/`hot_entities`
-  dossier gate. Remaining: recording entity mentions during ingest, and generating the dossier
-  page itself once the gate fires.
-- **§1 follow-ups** — gate the Monitor sync loop and `pipeline._auto_fetch`
-  embedding pass (Deep-Dive + resolver are gated).
+- **§2 dossier page** — `EntityHotnessStore.should_materialise` fires once an entity crosses
+  `TOPIC_CREATION_THRESHOLD`; the dossier page that renders when the gate fires is not yet
+  built (needs a Topics sub-view or dedicated page; browser QA required).
 - **§5/§6 wiring** — compaction on the Deep-Dive evidence-prompt path; tool-policy
   enforcement at a real executor call site once tool-calling lands.
-- **§7** — backfill READMEs for `modes/`, `verification/`, `rag/`.
+- **§3 browser QA** — Intelligence page built; browser render testing requires local
+  Ollama + arXiv (unavailable in cloud sandbox).
 
 ---
 

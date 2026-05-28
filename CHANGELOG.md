@@ -20,8 +20,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Reflection / Escalation split** (`subconscious/`, OpenHuman §3): passive
   reflections (provenance, never auto-post, cap of 5/tick, acting spawns a fresh job)
   vs actionable escalations (status + priority). WAL store, tick engine (scheduler-gated
-  + overlap-guarded), and a stale-position escalation producer. Dashboard Intelligence
-  page still to build.
+  + overlap-guarded), stale-position escalation producer, **Intelligence dashboard page**
+  (8th page — reflections + escalations tabs, Act button → job, status transitions),
+  `GET /api/reflections`, `GET /api/escalations`, `POST /api/reflections/{id}/act`,
+  `PATCH /api/escalations/{id}/status` endpoints, `escalations_open` sidebar counter.
 - **Payload compaction** (`rag/compaction.py`, OpenHuman §5): deterministic, LLM-free
   pre-context compaction with a builtin<user<project rule overlay, grapheme-safe
   transforms, and token-savings stats; wired into `ingest_text` for HTML payloads.
@@ -45,6 +47,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   decay, and a `HotnessBreakdown` that decomposes every score into five named terms for the
   "why salient" tooltip. `distinct_sources` uses *independent*-source semantics (matches the
   discipline layer). Available as a Monitor salience scorer via `make_hotness_salience`.
+  `EntityHotnessStore` persistence: `entity_hotness` SQLite side-table, `record_mention`
+  (set-based source dedup), `should_materialise`/`hot_entities` dossier gate; wired into
+  `ResearchPipeline.ingest_text` and `research()` via `track_entity()`.
 - **`lighthouse eval` CLI**: runs the golden-set retrieval eval and reports
   precision@k / recall@k / MRR. Uses real backends (bge-m3 via Ollama, FlagReranker)
   when available, falling back to test-tier stubs otherwise; `--offline`, `--json`,
