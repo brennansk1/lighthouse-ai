@@ -20,6 +20,7 @@ from .hotness import (
     recency_decay,
 )
 from .hotness_store import EntityHotnessStore
+from .logseq_sync import SyncResult, pending_count, sync_drafts
 
 __all__ = [
     "TOPIC_CREATION_THRESHOLD",
@@ -27,6 +28,7 @@ __all__ = [
     "EntityHotnessStore",
     "EntityStats",
     "HotnessBreakdown",
+    "SyncResult",
     "archive_conversation",
     "archive_report",
     "clean_turns",
@@ -34,6 +36,8 @@ __all__ = [
     "hotness",
     "hotness_at",
     "hotness_breakdown",
+    "pending_count",
     "recency_decay",
     "report_to_markdown",
+    "sync_drafts",
 ]

@@ -503,18 +503,27 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
 
     @app.get("/api/settings/logseq", tags=["settings"])
     def logseq_status() -> dict[str, Any]:
-        """Return Logseq integration status."""
+        """Return Logseq integration status and pending sync count."""
         try:
             import tomllib
         except ImportError:
             import tomli as tomllib  # type: ignore
-        if not paths.config_file.exists():
-            return {"enabled": False, "graph_dir": None}
-        with paths.config_file.open("rb") as fh:
-            cfg = tomllib.load(fh).get("logseq", {})
+        cfg: dict[str, Any] = {}
+        if paths.config_file.exists():
+            with paths.config_file.open("rb") as fh:
+                cfg = tomllib.load(fh).get("logseq", {})
+        pending = 0
+        if cfg.get("enabled") and paths.state_db.exists():
+            try:
+                from ..compounding.logseq_sync import pending_count
+                pending = pending_count(paths)
+            except Exception:
+                pass
         return {
             "enabled": cfg.get("enabled", False),
             "graph_dir": cfg.get("graph_dir"),
+            "sync_interval_hours": cfg.get("sync_interval_hours", 24),
+            "pending_sync": pending,
         }
 
     # ========================= INTELLIGENCE (§3) ===================

@@ -115,6 +115,24 @@ def _start_subconscious_loop(paths: Paths, *, interval_s: float = 60.0) -> threa
     return thread
 
 
+def _start_logseq_sync_loop(paths: Paths, *, graph_dir: Path, interval_s: float = 86400.0) -> threading.Thread:
+    """Start a daemon thread that syncs published drafts to Logseq every interval_s seconds."""
+    from .compounding.logseq_sync import sync_drafts
+
+    def _loop() -> None:
+        while True:
+            time.sleep(interval_s)
+            try:
+                result = sync_drafts(paths, graph_dir)
+                log.info("logseq_sync.tick", synced=result.synced, failed=result.failed)
+            except Exception as exc:
+                log.warning("logseq_sync.tick_error", error=str(exc))
+
+    thread = threading.Thread(target=_loop, daemon=True, name="logseq-sync-loop")
+    thread.start()
+    return thread
+
+
 def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
           port: int = 8765, run: bool = True) -> uvicorn.Server:
     """Boot the supervisor. ``run=False`` returns the Server for tests."""
@@ -147,6 +165,24 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
 
     if run:
         _start_subconscious_loop(p)
+        # Start Logseq sync loop if configured
+        try:
+            import tomllib as _tomllib
+        except ImportError:
+            import tomli as _tomllib  # type: ignore
+        try:
+            if p.config_file.exists():
+                with p.config_file.open("rb") as _fh:
+                    _lcfg = _tomllib.load(_fh).get("logseq", {})
+                if _lcfg.get("enabled") and _lcfg.get("graph_dir"):
+                    from pathlib import Path as _Path
+                    _graph_dir = _Path(_lcfg["graph_dir"]).expanduser()
+                    _interval = float(_lcfg.get("sync_interval_hours", 24)) * 3600
+                    if _interval > 0:
+                        _start_logseq_sync_loop(p, graph_dir=_graph_dir, interval_s=_interval)
+                        log.info("logseq_sync.scheduled", interval_hours=_lcfg.get("sync_interval_hours", 24))
+        except Exception as _exc:
+            log.warning("logseq_sync.setup_failed", error=str(_exc))
         signal.signal(signal.SIGTERM, _on_signal)
         signal.signal(signal.SIGINT, _on_signal)
         try:

@@ -44,10 +44,11 @@ events = ["draft_ready", "monitor_alert_high", "budget_warn", "budget_trip"]
 # telegram_chat_id = ""     # your chat/group id
 
 [logseq]
-# Set to your Logseq graph's pages directory to enable automatic page export
-# when drafts are approved.
-# graph_dir = "~/Documents/logseq/pages"
+# Set graph_dir to your Logseq graph's root directory (not the pages/ subdirectory).
+# Lighthouse writes to <graph_dir>/pages/ automatically.
+# graph_dir = "~/Documents/logseq"
 enabled = false
+sync_interval_hours = 24   # hours between automatic syncs; 0 = sync once on startup only
 
 [sources]
 # SearXNG self-hosted meta-search engine (used for CRAG mid-loop web fetch)

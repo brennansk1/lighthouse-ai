@@ -1376,6 +1376,79 @@ def resolver_run(
         console.print(f"  • {r.claim[:60]}… → {outcome_str} (conf={r.confidence:.2f}, Brier={r.brier:.3f})")
 
 
+# ------------------------------------------------------- logseq ----
+
+logseq_app = typer.Typer(name="logseq", no_args_is_help=True)
+app.add_typer(logseq_app, name="logseq")
+
+
+@logseq_app.command("sync")
+def logseq_sync(
+    force: bool = typer.Option(False, "--force", "-f",
+                               help="Re-export all published drafts, not just unsynced ones."),
+    graph_dir: Path = typer.Option(None, "--graph-dir",
+                                   help="Logseq graph directory. Falls back to config.toml [logseq] graph_dir."),
+) -> None:
+    """Sync published drafts to the Logseq graph directory."""
+    paths = _paths_from_env()
+    _graph_dir = graph_dir
+    if _graph_dir is None:
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore
+        if paths.config_file.exists():
+            with paths.config_file.open("rb") as fh:
+                _graph_dir_str = tomllib.load(fh).get("logseq", {}).get("graph_dir")
+            if _graph_dir_str:
+                _graph_dir = Path(_graph_dir_str).expanduser()
+    if _graph_dir is None:
+        err_console.print("[red]no Logseq graph dir: pass --graph-dir or set [logseq] graph_dir in config.toml[/red]")
+        raise typer.Exit(1)
+    from .compounding.logseq_sync import sync_drafts
+    result = sync_drafts(paths, _graph_dir, force=force)
+    console.print(f"[green]synced {result.synced} draft(s)[/green]", end="")
+    if result.skipped:
+        console.print(f", {result.skipped} already up-to-date", end="")
+    if result.failed:
+        console.print(f", [red]{result.failed} failed[/red]", end="")
+    console.print()
+    for draft_id, err in result.errors:
+        err_console.print(f"  [red]✗[/red] {draft_id}: {err}")
+
+
+@logseq_app.command("status")
+def logseq_status_cmd() -> None:
+    """Show Logseq sync status: configuration and pending draft count."""
+    paths = _paths_from_env()
+    try:
+        import tomllib
+    except ImportError:
+        import tomli as tomllib  # type: ignore
+    cfg: dict = {}
+    if paths.config_file.exists():
+        with paths.config_file.open("rb") as fh:
+            cfg = tomllib.load(fh).get("logseq", {})
+    enabled = cfg.get("enabled", False)
+    graph_dir = cfg.get("graph_dir")
+    interval = cfg.get("sync_interval_hours", 24)
+    console.rule("[bold]logseq sync[/bold]")
+    if not enabled:
+        console.print("  [yellow]disabled[/yellow] — set [logseq] enabled = true in config.toml")
+        return
+    if not graph_dir:
+        console.print("  [yellow]enabled but no graph_dir set[/yellow]")
+        return
+    console.print(f"  [green]✓[/green] enabled, graph dir: {graph_dir}")
+    console.print(f"  sync interval: every {interval}h")
+    from .compounding.logseq_sync import pending_count
+    pending = pending_count(paths)
+    if pending:
+        console.print(f"  [yellow]{pending} draft(s) pending sync[/yellow] — run: lighthouse logseq sync")
+    else:
+        console.print("  [green]✓[/green] all drafts synced")
+
+
 # --------------------------------------------------- subconscious --
 
 subconscious_app = typer.Typer(name="subconscious", no_args_is_help=True)
