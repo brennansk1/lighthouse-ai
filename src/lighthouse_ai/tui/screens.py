@@ -1,4 +1,4 @@
-"""The seven TUI page panes plus their detail/modal screens.
+"""The eight TUI page panes plus their detail/modal screens.
 
 Each page is a Container swapped into the main area by the app's
 ContentSwitcher. Pages load data from ``self.app.client`` on mount and on
