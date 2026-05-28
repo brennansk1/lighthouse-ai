@@ -90,6 +90,21 @@ def _fake() -> FakeClient:
         "/api/perspectives": {"perspectives": [
             {"name": "steelman", "stance": "best case"}]},
         "/api/secrets": {"secrets": {"audit.chain": "***"}},
+        "/api/reflections": {"reflections": [
+            {"id": "r1", "kind": "stale_position",
+             "body": "Position P1 may be stale after new data.",
+             "proposed_action": "Re-run verification job",
+             "source_refs": ["src-A", "src-B"],
+             "created_at": "2026-05-28T10:00:00+00:00"},
+        ]},
+        "/api/escalations": {"escalations": [
+            {"id": "e1", "kind": "stale_position", "priority": "high",
+             "status": "open",
+             "body": "Position P1 depends on retracted source.",
+             "source_refs": ["src-A"],
+             "created_at": "2026-05-28T10:01:00+00:00",
+             "updated_at": "2026-05-28T10:01:00+00:00"},
+        ]},
     })
 
 
@@ -163,18 +178,19 @@ async def test_home_shows_alert_and_digest():
         assert "EU AI ACT" in body
 
 
-async def test_digit_keys_switch_all_seven_pages():
+async def test_digit_keys_switch_all_eight_pages():
     app = LighthouseTUI(client=_fake())
     async with app.run_test() as pilot:
         for key, page in [("2", "jobs"), ("3", "drafts"), ("4", "topics"),
                           ("5", "positions"), ("6", "health"),
-                          ("7", "settings"), ("1", "home")]:
+                          ("7", "settings"), ("8", "intelligence"),
+                          ("1", "home")]:
             await pilot.press(key)
             await pilot.pause()
             assert app.query_one("#main").current == page
 
 
-async def test_all_seven_pages_exist():
+async def test_all_eight_pages_exist():
     app = LighthouseTUI(client=_fake())
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -415,11 +431,51 @@ async def test_offline_status_bar():
 async def test_offline_all_pages_no_crash():
     app = LighthouseTUI(client=_Offline())
     async with app.run_test() as pilot:
-        for key in "234567":
+        for key in "23456781":
             await pilot.press(key)
             await pilot.pause()
         # If we got here without an exception, the app stayed alive.
         assert app.query_one("#main") is not None
+
+
+# ──────────────────────────── intelligence page ────────────────────────────
+async def test_intelligence_reflections_table_populated():
+    app = LighthouseTUI(client=_fake())
+    async with app.run_test() as pilot:
+        await pilot.press("8")
+        await pilot.pause()
+        from textual.widgets import DataTable
+        t = app.query_one("#intel-refl-table", DataTable)
+        assert t.row_count == 1
+
+
+async def test_intelligence_escalations_table_populated():
+    app = LighthouseTUI(client=_fake())
+    async with app.run_test() as pilot:
+        await pilot.press("8")
+        await pilot.pause()
+        from textual.widgets import DataTable
+        t = app.query_one("#intel-esc-table", DataTable)
+        assert t.row_count == 1
+
+
+async def test_intelligence_sidebar_counter_open_escalations():
+    app = LighthouseTUI(client=_fake())
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        from lighthouse_ai.tui.widgets import Sidebar
+        assert app.query_one(Sidebar)._counters.get("intelligence", 0) == 1
+
+
+async def test_intelligence_offline_degrades_gracefully():
+    app = LighthouseTUI(client=_Offline())
+    async with app.run_test() as pilot:
+        await pilot.press("8")
+        await pilot.pause()
+        from textual.widgets import DataTable
+        # Tables should still render (with a placeholder row), no crash.
+        assert app.query_one("#intel-refl-table", DataTable) is not None
+        assert app.query_one("#intel-esc-table", DataTable) is not None
 
 
 # ──────────────────────────── theme ────────────────────────────
