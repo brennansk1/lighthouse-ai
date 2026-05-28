@@ -53,6 +53,18 @@ class Quarantine:
         finally:
             conn.close()
 
+    def _under_root(self, path: Path) -> bool:
+        """Whether ``path`` resolves to a location inside the quarantine root.
+
+        ``saved_path`` comes from the DB and is treated as untrusted: a row that
+        was tampered (or written by a buggy caller) must not let ``restore`` read
+        or ``purge`` unlink files outside the quarantine tree.
+        """
+        try:
+            return path.resolve().is_relative_to(self.root.resolve())
+        except (OSError, ValueError):
+            return False
+
     @staticmethod
     def hash_bytes(payload: bytes) -> str:
         return hashlib.sha256(payload).hexdigest()
@@ -137,6 +149,10 @@ class Quarantine:
         if not row or not row[0]:
             raise FileNotFoundError(f"no quarantine record for {sha256}")
         src = Path(row[0])
+        if not self._under_root(src):
+            raise ValueError(
+                f"quarantine record {sha256} points outside the quarantine root; refusing restore"
+            )
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(src.read_bytes())
         return dest
@@ -146,8 +162,13 @@ class Quarantine:
         rows = self.list(verdict=verdict, limit=10_000)
         for r in rows:
             if r["saved_path"]:
+                p = Path(r["saved_path"])
+                # Only unlink files that live under the quarantine root; never
+                # follow a tampered saved_path to an arbitrary location.
+                if not self._under_root(p):
+                    continue
                 try:
-                    Path(r["saved_path"]).unlink()
+                    p.unlink()
                 except FileNotFoundError:
                     pass
         conn = open_db(self.db_path)

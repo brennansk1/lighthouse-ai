@@ -183,6 +183,11 @@ class InjectionGate:
         if not text:
             return InjectionVerdict(score=0.0, blocked=False, threshold=self._threshold)
 
+        # Defeat evasion before matching: fold homoglyphs/fullwidth to canonical
+        # form (NFKC) and strip zero-width / bidi controls that an attacker
+        # interleaves to break up keywords (e.g. "i​gnore previous").
+        text = _strip_invisible(normalize_unicode(text))
+
         total = 0.0
         reasons: list[str] = []
         for pat in self._patterns:
@@ -293,3 +298,17 @@ def normalize_unicode(text: str) -> str:
     """
 
     return unicodedata.normalize("NFKC", text)
+
+
+# Zero-width and bidirectional-control characters carry no visible meaning but
+# are interleaved by attackers to split keywords past the regexes
+# ("i​gnore previous instructions"). Stripped before scoring.
+_INVISIBLE_RE = re.compile(
+    "[​‌‍⁠﻿‎‏"
+    "‪‫‬‭‮⁦⁧⁨⁩]"
+)
+
+
+def _strip_invisible(text: str) -> str:
+    """Remove zero-width / bidi-control characters used to evade detection."""
+    return _INVISIBLE_RE.sub("", text)

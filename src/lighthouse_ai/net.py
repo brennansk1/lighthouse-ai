@@ -118,7 +118,11 @@ class EgressGuardedClient:
             raise EgressBlocked(decision.reason)
 
         started = time.monotonic()
-        response = self._client.get(url)
+        # Force no auto-redirect even if an injected client enabled it: a 3xx to
+        # a non-allowlisted host would otherwise be followed WITHOUT re-checking
+        # the policy, leaking to an unvetted destination. The caller receives the
+        # 3xx and must re-issue the redirect target through this same gate.
+        response = self._client.get(url, follow_redirects=False)
         duration_ms = (time.monotonic() - started) * 1000.0
 
         request_bytes = len(response.request.content) if response.request is not None else 0

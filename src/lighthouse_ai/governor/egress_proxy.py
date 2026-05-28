@@ -87,11 +87,17 @@ def extract_host(url_or_host: str) -> str:
     """
 
     candidate = url_or_host.strip()
-    if "://" in candidate:
-        netloc = urlsplit(candidate).netloc
-    else:
-        # ``urlsplit`` needs a scheme to populate ``netloc``; add a dummy one.
-        netloc = urlsplit("//" + candidate).netloc
+    # ``urlsplit`` raises ValueError on malformed input (e.g. an unterminated
+    # IPv6 literal ``http://[::1``). A policy oracle must never raise on hostile
+    # input: return "" so ``check`` fails closed ("no resolvable host" → deny).
+    try:
+        if "://" in candidate:
+            netloc = urlsplit(candidate).netloc
+        else:
+            # ``urlsplit`` needs a scheme to populate ``netloc``; add a dummy one.
+            netloc = urlsplit("//" + candidate).netloc
+    except ValueError:
+        return ""
     # Drop userinfo and port.
     if "@" in netloc:
         netloc = netloc.rsplit("@", 1)[-1]
@@ -158,6 +164,21 @@ class EgressProxy:
         binding constraint (a private query must never egress even to an
         allowlisted host). Allowlisted public requests are permitted.
         """
+
+        # Reject exotic schemes before anything else. file://, gopher://, ftp://,
+        # data:, etc. are SSRF/exfil surface and are never legitimate egress here;
+        # only http(s) is allowed. Bare hosts (no scheme) are fine — they only
+        # arise from internal allowlist checks.
+        candidate = url_or_host.strip()
+        if "://" in candidate:
+            scheme = candidate.split("://", 1)[0].lower()
+            if scheme not in ("http", "https"):
+                return EgressDecision(
+                    allowed=False,
+                    host="",
+                    tier=tier,
+                    reason=f"scheme {scheme!r} not permitted (http/https only)",
+                )
 
         host = extract_host(url_or_host)
 

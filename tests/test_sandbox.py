@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+import pytest
 from pathlib import Path
 
 from lighthouse_ai.sandbox import (
@@ -188,3 +189,48 @@ def test_build_default_broker_works(tmp_path):
     b = build_default_broker(tmp_path)
     out = b.admit(b"<p>hello</p>", filename="x.html", content_type="text/html")
     assert out.verdict is Verdict.ADMIT
+
+
+# --- quarantine path containment (production sweep) ---
+
+def test_restore_refuses_path_outside_root(tmp_path):
+    """A tampered saved_path pointing outside the quarantine root must not be restored."""
+    import sqlite3
+    from lighthouse_ai.persistence import open_db
+    q = Quarantine(tmp_path / "q.db", tmp_path / "Q")
+    # Create a secret file outside the quarantine root.
+    secret = tmp_path / "secret.txt"
+    secret.write_text("top secret")
+    # Insert a row whose saved_path points at the external secret.
+    conn = open_db(q.db_path)
+    try:
+        conn.execute(
+            "INSERT INTO quarantine (sha256, url, filename, content_type, verdict, "
+            "reasons_json, bytes_size, saved_path) VALUES "
+            "('deadbeef', NULL, 'x', 'text/plain', 'quarantine', '[]', 10, ?)",
+            (str(secret),),
+        )
+    finally:
+        conn.close()
+    with pytest.raises(ValueError, match="outside the quarantine root"):
+        q.restore("deadbeef", tmp_path / "out.txt")
+
+
+def test_purge_skips_path_outside_root(tmp_path):
+    """purge must not unlink files outside the quarantine root."""
+    from lighthouse_ai.persistence import open_db
+    q = Quarantine(tmp_path / "q.db", tmp_path / "Q")
+    secret = tmp_path / "keep.txt"
+    secret.write_text("do not delete")
+    conn = open_db(q.db_path)
+    try:
+        conn.execute(
+            "INSERT INTO quarantine (sha256, url, filename, content_type, verdict, "
+            "reasons_json, bytes_size, saved_path) VALUES "
+            "('cafe', NULL, 'x', 'text/plain', 'quarantine', '[]', 10, ?)",
+            (str(secret),),
+        )
+    finally:
+        conn.close()
+    q.purge("quarantine")
+    assert secret.exists()  # external file survived the purge

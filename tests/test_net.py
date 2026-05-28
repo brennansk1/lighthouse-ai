@@ -240,3 +240,50 @@ def test_context_manager_fetches_and_closes(tmp_path: Path) -> None:
     with EgressGuardedClient(_proxy(tmp_path)) as client:
         client.get("https://arxiv.org/cm")
     assert len(_records(tmp_path)) == 1
+
+
+# --- Security hardening regression tests (production sweep) ---
+
+def test_extract_host_malformed_ipv6_fails_closed():
+    """A malformed IPv6 URL must yield '' (deny), never raise."""
+    from lighthouse_ai.governor.egress_proxy import extract_host
+    assert extract_host("http://[::1") == ""
+
+
+def test_check_malformed_url_denied(tmp_path: Path):
+    proxy = _proxy(tmp_path)
+    decision = proxy.check("http://[::1", PrivacyTier.PUBLIC_OK)
+    assert decision.allowed is False
+
+
+def test_check_rejects_file_scheme(tmp_path: Path):
+    proxy = _proxy(tmp_path)
+    decision = proxy.check("file:///etc/passwd", PrivacyTier.PUBLIC_OK)
+    assert decision.allowed is False
+    assert "scheme" in decision.reason
+
+
+def test_check_rejects_gopher_scheme(tmp_path: Path):
+    proxy = _proxy(tmp_path)
+    decision = proxy.check("gopher://arxiv.org/x", PrivacyTier.PUBLIC_OK)
+    assert decision.allowed is False
+
+
+@respx.mock
+def test_redirect_not_auto_followed_even_with_injected_client(tmp_path: Path):
+    """An injected redirect-following client must not bypass the allowlist:
+    the guard forces follow_redirects=False, so a 3xx is returned as-is."""
+    # arxiv.org is allowlisted; it 302s to a NON-allowlisted evil host.
+    respx.get("https://arxiv.org/paper").mock(
+        return_value=httpx.Response(302, headers={"location": "https://evil.example/x"})
+    )
+    evil = respx.get("https://evil.example/x").mock(
+        return_value=httpx.Response(200, text="leaked")
+    )
+    client = httpx.Client(follow_redirects=True)  # deliberately unsafe client
+    guard = EgressGuardedClient(_proxy(tmp_path), client=client)
+    resp = guard.get("https://arxiv.org/paper")
+    # We get the 302 back; the evil host was never contacted.
+    assert resp.status_code == 302
+    assert not evil.called
+    client.close()

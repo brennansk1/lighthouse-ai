@@ -179,3 +179,24 @@ def test_property_remaining_never_negative(amounts):
     for dim_map in rem.values():
         for v in dim_map.values():
             assert v >= 0.0
+
+
+# --- tier reflects most-exhausted dimension (production sweep) ---
+
+def test_tier_degrades_on_token_exhaustion_not_just_usd(migrated_paths):
+    """Burning ~all monthly tokens should degrade the tier even if USD is healthy."""
+    from lighthouse_ai.governor.buckets import BudgetConfig
+    # Equal token ceilings across periods so one spend can drive monthly down,
+    # while USD ceilings stay generous (so USD headroom remains ~100%).
+    cfg = BudgetConfig(
+        monthly_usd=1000.0, weekly_usd=1000.0, daily_usd=1000.0,
+        monthly_tokens=10_000, weekly_tokens=10_000, daily_tokens=10_000,
+        monthly_tool_calls=10_000, weekly_tool_calls=10_000, daily_tool_calls=10_000,
+    )
+    gov = Governor(migrated_paths.state_db, cfg)
+    assert gov.tier() == "green"
+    # Spend 95% of tokens (fits within every period ceiling), trivial USD.
+    dec = gov.try_spend(tokens=9_500, usd=0.01)
+    assert dec.allowed
+    # USD remaining ~100%, but tokens remaining ~5% → tier must not be green.
+    assert gov.tier() != "green"

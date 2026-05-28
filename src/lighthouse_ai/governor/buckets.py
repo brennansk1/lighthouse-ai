@@ -166,10 +166,20 @@ class Governor:
         return out
 
     def tier(self) -> str:
-        """Current degradation tier (based on monthly USD remaining)."""
-        rem = self.remaining()["usd"]["monthly"]
-        pct = (rem / self.config.monthly_usd) * 100 if self.config.monthly_usd > 0 else 0
-        return degradation_tier(pct)
+        """Current degradation tier from the *most* exhausted monthly dimension.
+
+        Headroom is the minimum remaining-percentage across usd / tool_calls /
+        tokens — exhausting any one of them should degrade the tier, not just
+        the dollar budget (a job can burn its token allowance while USD looks
+        healthy and vice-versa).
+        """
+        remaining = self.remaining()
+        pcts: list[float] = []
+        for dim in DIMENSIONS:
+            ceiling = self.config.ceiling(dim, "monthly")
+            if ceiling > 0:
+                pcts.append((remaining[dim]["monthly"] / ceiling) * 100)
+        return degradation_tier(min(pcts) if pcts else 0.0)
 
     # --- atomic spend ---
     def try_spend(self, *, usd: float = 0.0, tool_calls: int = 0,
