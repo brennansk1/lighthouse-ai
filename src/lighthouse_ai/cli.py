@@ -1620,5 +1620,98 @@ def notify_test(
         console.print("  [yellow]no channels delivered — check your config or event subscription[/yellow]")
 
 
+# ------------------------------------------------------- telegram bot ----
+
+telegram_app = typer.Typer(name="telegram", no_args_is_help=True,
+                           help="Telegram bot command interface.")
+app.add_typer(telegram_app, name="telegram")
+
+
+def _load_telegram_bot_cfg() -> tuple[str, str, bool]:
+    """Return (bot_token, chat_id, commands_enabled) from config.toml."""
+    try:
+        paths = _paths_from_env()
+        if not paths.config_file.exists():
+            return "", "", False
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore
+        with paths.config_file.open("rb") as fh:
+            cfg = tomllib.load(fh)
+        notif = cfg.get("notifications", {})
+        bot_cfg = cfg.get("telegram_bot", {})
+        return (
+            notif.get("telegram_bot_token", ""),
+            notif.get("telegram_chat_id", ""),
+            bool(bot_cfg.get("commands_enabled", False)),
+        )
+    except Exception:
+        return "", "", False
+
+
+@telegram_app.command("status")
+def telegram_bot_status() -> None:
+    """Show Telegram bot command interface configuration."""
+    token, chat_id, enabled = _load_telegram_bot_cfg()
+    console.rule("[bold]telegram bot commands[/bold]")
+    if token and chat_id:
+        masked = token[:6] + "…" + token[-4:] if len(token) > 10 else "***"
+        console.print(f"  Bot token:  [green]{masked}[/green]")
+        console.print(f"  Chat ID:    {chat_id}")
+        if enabled:
+            console.print("  Commands:   [green]✓ enabled[/green] (supervisor starts bot on boot)")
+        else:
+            console.print("  Commands:   [yellow]disabled[/yellow] "
+                          "(set [telegram_bot] commands_enabled = true to enable)")
+    else:
+        console.print("  [yellow]Not configured.[/yellow]")
+        console.print("  Add to config.toml:")
+        console.print("    [notifications]")
+        console.print("    telegram_bot_token = \"<token>\"")
+        console.print("    telegram_chat_id   = \"<chat_id>\"")
+        console.print("    [telegram_bot]")
+        console.print("    commands_enabled = true")
+
+    console.print()
+    console.rule("[bold]available bot commands[/bold]")
+    from .notify.telegram_bot import _COMMANDS
+    for cmd, desc in _COMMANDS.items():
+        console.print(f"  [bold]{cmd}[/bold]  {desc}")
+
+
+@telegram_app.command("serve")
+def telegram_bot_serve(
+    token: str = typer.Option(None, "--token",
+                              help="Bot token (overrides config.toml)."),
+    chat: str = typer.Option(None, "--chat",
+                             help="Chat ID (overrides config.toml)."),
+) -> None:
+    """Run the Telegram bot command interface in the foreground.
+
+    Useful for debugging or running standalone (without the full supervisor).
+    The bot polls for messages and processes commands until Ctrl-C.
+    """
+    _token, _chat, _ = _load_telegram_bot_cfg()
+    bot_token = token or _token
+    chat_id = chat or _chat
+    if not bot_token:
+        err_console.print("[red]No bot token — pass --token or set telegram_bot_token in config.toml[/red]")
+        raise typer.Exit(1)
+    if not chat_id:
+        err_console.print("[red]No chat ID — pass --chat or set telegram_chat_id in config.toml[/red]")
+        raise typer.Exit(1)
+
+    paths = _paths_from_env()
+    paths.ensure()
+    console.print(f"[green]Starting Telegram bot[/green] (chat_id={chat_id})")
+    console.print("  Send /help to your bot to get started.  Ctrl-C to stop.")
+    from .notify.telegram_bot import serve as _tg_serve
+    try:
+        _tg_serve(bot_token, chat_id, paths)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Bot stopped.[/yellow]")
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()

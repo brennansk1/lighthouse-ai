@@ -53,6 +53,12 @@ events = ["draft_ready", "draft_approved", "monitor_alert_high", "budget_warn", 
 # Useful to keep Telegram quiet for low-priority events.
 # telegram_events = ["draft_approved", "monitor_alert_high", "budget_trip", "escalation_raised"]
 
+[telegram_bot]
+# Set commands_enabled = true to let the Telegram bot accept CLI commands.
+# Requires telegram_bot_token + telegram_chat_id in [notifications] above.
+# Only the configured chat_id can issue commands — all other origins are ignored.
+commands_enabled = false
+
 [logseq]
 # Set graph_dir to your Logseq graph's root directory (not the pages/ subdirectory).
 # Lighthouse writes to <graph_dir>/pages/ automatically.

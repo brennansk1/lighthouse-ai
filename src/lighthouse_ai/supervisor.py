@@ -183,6 +183,21 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
                         log.info("logseq_sync.scheduled", interval_hours=_lcfg.get("sync_interval_hours", 24))
         except Exception as _exc:
             log.warning("logseq_sync.setup_failed", error=str(_exc))
+        # Start Telegram bot command loop if configured
+        try:
+            if p.config_file.exists():
+                with p.config_file.open("rb") as _fh2:
+                    _full_cfg = _tomllib.load(_fh2)
+                _notif = _full_cfg.get("notifications", {})
+                _tg_token = _notif.get("telegram_bot_token", "")
+                _tg_chat = _notif.get("telegram_chat_id", "")
+                _bot_enabled = _full_cfg.get("telegram_bot", {}).get("commands_enabled", False)
+                if _bot_enabled and _tg_token and _tg_chat:
+                    from .notify.telegram_bot import start_in_thread as _tg_start
+                    _tg_start(_tg_token, _tg_chat, p)
+                    log.info("telegram_bot.scheduled", chat_id=_tg_chat)
+        except Exception as _exc2:
+            log.warning("telegram_bot.setup_failed", error=str(_exc2))
         signal.signal(signal.SIGTERM, _on_signal)
         signal.signal(signal.SIGINT, _on_signal)
         try:
