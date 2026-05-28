@@ -18,9 +18,12 @@ model load at all (pure stubs) — used by tests and for dry runs.
 
 from __future__ import annotations
 
+import importlib
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+import structlog
 
 from .gateway import Gateway, resolve_against_installed
 from .governor import BUDGET_DEFAULTS, Governor
@@ -41,6 +44,8 @@ from .rag import (
     make_reranker,
 )
 
+_log = structlog.get_logger(__name__)
+
 # ── backend factories ──────────────────────────────────────────────────
 
 def _ollama_installed_tags() -> list[str]:
@@ -55,9 +60,13 @@ def _ollama_installed_tags() -> list[str]:
 
 
 def make_embedder(*, offline: bool = False, installed: list[str] | None = None):
-    """bge-m3 via Ollama (1024-dim) when available, else the HashEmbedder stub."""
+    """bge-m3 via Ollama (1024-dim) when available, else the HashEmbedder stub.
+
+    Returns a 3-tuple: (embedder, name, warns).
+    """
+    warns: list[str] = []
     if offline:
-        return HashEmbedder(dim=256), "hash-stub"
+        return HashEmbedder(dim=256), "hash-stub", warns
     installed = installed if installed is not None else _ollama_installed_tags()
     embed_tag = next((t for t in installed if t.split(":")[0] == "bge-m3"), None)
     if embed_tag is None:
@@ -69,24 +78,37 @@ def make_embedder(*, offline: bool = False, installed: list[str] | None = None):
             dim = 1024 if "bge-m3" in embed_tag else 768
             emb = OllamaEmbedder(model=embed_tag, dim=dim)
             if emb.available():
-                return emb, embed_tag
-        except Exception:
-            pass
-    return HashEmbedder(dim=256), "hash-stub"
+                return emb, embed_tag, warns
+        except Exception as exc:
+            msg = f"embedder fallback to hash-stub: {exc!r}"
+            warns.append(msg)
+            _log.warning(msg)
+    if not embed_tag:
+        msg = "no embedding model found in Ollama; falling back to hash-stub (retrieval will be non-semantic)"
+        warns.append(msg)
+        _log.warning(msg)
+    return HashEmbedder(dim=256), "hash-stub", warns
 
 
 def make_vector_store(dim: int, *, offline: bool = False):
-    """Qdrant if reachable, else the in-memory store."""
+    """Qdrant if reachable, else the in-memory store.
+
+    Returns a 3-tuple: (store, name, warns).
+    """
+    warns: list[str] = []
     if offline:
-        return InMemoryStore(), "in-memory"
+        return InMemoryStore(), "in-memory", warns
     try:
         from .rag.qdrant_store import QdrantStore
         store = QdrantStore(dim=dim, collection="lighthouse_corpus")
         if store.available():
-            return store, "qdrant"
+            return store, "qdrant", warns
     except Exception:
         pass
-    return InMemoryStore(), "in-memory"
+    msg = "Qdrant not reachable; falling back to in-memory store (not persistent across restarts)"
+    warns.append(msg)
+    _log.warning(msg)
+    return InMemoryStore(), "in-memory", warns
 
 
 def make_gateway(paths: Paths, profile: HardwareProfile, *,
@@ -114,6 +136,8 @@ class PipelineConfig:
     mode: str = "deep-dive"        # deep-dive | quc
     max_rounds: int = 3            # TTD-DR iterates a few rounds; 3 is the floor
     top_k: int = 5
+    auto_fetch_sources: bool = True    # auto-fetch from arXiv/OpenAlex when corpus is empty
+    auto_fetch_max_results: int = 5    # max papers per source
 
 
 @dataclass
@@ -127,6 +151,7 @@ class ResearchResult:
     report: DraftReport | None = None
     answer: str | None = None
     discipline: dict | None = None
+    warnings: list[str] = field(default_factory=list)
 
 
 class ResearchPipeline:
@@ -139,10 +164,10 @@ class ResearchPipeline:
         self.profile = profile or probe()
         self.config = config or PipelineConfig()
         installed = [] if self.config.offline else _ollama_installed_tags()
-        self.embedder, emb_name = make_embedder(offline=self.config.offline,
-                                                 installed=installed)
-        self.store, store_name = make_vector_store(self.embedder.dim,
-                                                   offline=self.config.offline)
+        self.embedder, emb_name, emb_warns = make_embedder(offline=self.config.offline,
+                                                            installed=installed)
+        self.store, store_name, store_warns = make_vector_store(self.embedder.dim,
+                                                                offline=self.config.offline)
         # Real cross-encoder (BAAI/bge-reranker-v2-m3) when FlagEmbedding is
         # installed; otherwise a score-passthrough that preserves fusion order.
         # `available()` probes via find_spec, so this never imports torch or
@@ -156,6 +181,7 @@ class ResearchPipeline:
             "embedder": emb_name, "vector_store": store_name,
             "gateway": "mock" if self.config.offline else "ollama",
         }
+        self._backend_warnings: list[str] = emb_warns + store_warns
         self._chunks_ingested = 0
         self._blocked_chunks = 0
         from .governor import InjectionGate
@@ -188,9 +214,45 @@ class ResearchPipeline:
         return self.ingest_text(Path(path).name, text,
                                 metadata={"source": str(path)})
 
+    def _auto_fetch(self, question: str) -> None:
+        """Fetch from arXiv and OpenAlex when the corpus is empty.
+
+        Each source is tried independently. Uses dynamic import so these deps
+        are only loaded when actually needed. Failed fetches are logged and
+        counted in backend warnings, not raised.
+        """
+        n = self.config.auto_fetch_max_results
+        fetched = 0
+        for source_name, module_path, fn_name in [
+            ("arxiv",    "lighthouse_ai.sources.arxiv",    "search_arxiv"),
+            ("openalex", "lighthouse_ai.sources.openalex",  "search_openalex"),
+        ]:
+            try:
+                mod = importlib.import_module(module_path)
+                fn = getattr(mod, fn_name)
+                docs = fn(question, max_results=n)
+                for doc in docs:
+                    self.ingest_text(doc.id, doc.text, metadata=doc.metadata)
+                fetched += len(docs)
+                _log.info("auto_fetch.done", source=source_name, n=len(docs))
+            except Exception as exc:
+                _log.warning("auto_fetch.failed", source=source_name, error=repr(exc))
+        if fetched == 0:
+            msg = (
+                "corpus was empty and auto-fetch returned 0 documents "
+                f"(question: {question[:60]!r}); LLM will draw on parametric memory"
+            )
+            self._backend_warnings.append(msg)
+
     # --- run ---
     def research(self, question: str, *, job_id: str | None = None) -> ResearchResult:
         job_id = job_id or uuid.uuid4().hex[:8]
+        # Auto-fetch from academic sources when corpus is empty and not in offline mode.
+        # The `not offline` gate is the test isolation guarantee — all tests use offline=True.
+        if (self._chunks_ingested == 0
+                and not self.config.offline
+                and self.config.auto_fetch_sources):
+            self._auto_fetch(question)
         if self.config.mode == "quc":
             session = QUCSession(id=job_id, topic=question)
             turn = quc_ask(session, question, hybrid=self.hybrid, gateway=self.gateway)
@@ -221,12 +283,17 @@ class ResearchPipeline:
         from .verification.discipline import check as discipline_check
         from .verification.discipline import downgrade_wep
         rep = discipline_check(synthesis)
+        # source diversity — how many independent source domains were cited
+        from .verification.discipline import check_source_diversity as _check_div
+        _evidence = getattr(report, "evidence_chunks", []) if report is not None else []
+        distinct_sources = _check_div(_evidence)
         # Stated confidence starts at "likely" (0.75); discipline downgrades it.
         band = downgrade_wep(0.75, rep)
         disc_summary = {
             "claims": len(rep.claims), "sourced": rep.sourced,
             "unsourced": rep.unsourced, "coverage": rep.citation_coverage,
             "passed": rep.passed, "notes": rep.notes,
+            "distinct_sources": distinct_sources,
         }
         draft_id = self._persist_draft(
             question=question, title=question, body_html=body_html,
@@ -241,26 +308,18 @@ class ResearchPipeline:
         return ResearchResult(draft_id=draft_id, question=question,
                               mode=self.config.mode, backends=self.backends,
                               sections=sections, chunks_ingested=self._chunks_ingested,
-                              report=report, answer=answer, discipline=disc_summary)
+                              report=report, answer=answer, discipline=disc_summary,
+                              warnings=self._backend_warnings)
 
     def _record_positions(self, report, band) -> int:
         """Record each extracted claim as a Position (claim + WEP + resolve-by)."""
-        from .persistence import open_db as _open
         from .verification.positions import record_position
         n = 0
         for claim in report.claims:
             # only register substantive, sourced-or-not claims as positions
             try:
-                pos = record_position(self.paths.positions_db, claim=claim.text,
-                                      probability=0.75 if claim.is_sourced else 0.5)
-                # set a 90-day resolve-by so it surfaces in the Overdue tab later
-                conn = _open(self.paths.positions_db)
-                try:
-                    conn.execute(
-                        "UPDATE positions SET resolved_at = NULL WHERE id = ?",
-                        (pos.id,))
-                finally:
-                    conn.close()
+                record_position(self.paths.positions_db, claim=claim.text,
+                                probability=0.75 if claim.is_sourced else 0.5)
                 n += 1
             except Exception:
                 pass

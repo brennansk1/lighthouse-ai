@@ -146,6 +146,30 @@ OPENALEX_JSON = {
 }
 
 
+def test_check_source_diversity_counts_distinct_domains():
+    from lighthouse_ai.rag.chunker import Chunk
+    from lighthouse_ai.rag.hybrid import HybridResult
+    from lighthouse_ai.verification.discipline import check_source_diversity
+    def _hr(doc_id, source):
+        c = Chunk(id=f"{doc_id}:0", document_id=doc_id, text="text",
+                  position=0, metadata={"source": source})
+        return HybridResult(chunk=c, score=1.0, dense_rank=1, sparse_rank=1)
+    results = [_hr("a1", "arxiv"), _hr("a2", "arxiv"), _hr("p1", "pubmed")]
+    assert check_source_diversity(results) == 2
+
+def test_check_source_diversity_empty():
+    from lighthouse_ai.verification.discipline import check_source_diversity
+    assert check_source_diversity([]) == 0
+
+def test_check_source_diversity_falls_back_to_document_id():
+    from lighthouse_ai.rag.chunker import Chunk
+    from lighthouse_ai.rag.hybrid import HybridResult
+    from lighthouse_ai.verification.discipline import check_source_diversity
+    c = Chunk(id="d:0", document_id="my_doc", text="x", position=0, metadata={})
+    r = HybridResult(chunk=c, score=1.0, dense_rank=1, sparse_rank=1)
+    assert check_source_diversity([r]) == 1
+
+
 @respx.mock
 def test_openalex_search_reconstructs_abstract():
     from lighthouse_ai.sources.openalex import search_openalex

@@ -99,6 +99,24 @@ def test_resolve_position_missing_raises(migrated_paths):
         resolve_position(migrated_paths.positions_db, 9999, outcome=True)
 
 
+def test_record_position_sets_resolve_by(migrated_paths):
+    from datetime import datetime
+
+    from lighthouse_ai.verification.positions import record_position
+    pos = record_position(migrated_paths.positions_db, claim="X will happen", probability=0.8)
+    assert pos.resolve_by is not None
+    due = datetime.fromisoformat(pos.resolve_by)
+    diff = abs((due - datetime.now()).days - 90)
+    assert diff <= 1
+
+
+def test_record_position_custom_resolve_by(migrated_paths):
+    from lighthouse_ai.verification.positions import record_position
+    pos = record_position(migrated_paths.positions_db, claim="Y", probability=0.7,
+                          resolve_by="2099-01-01T00:00:00")
+    assert pos.resolve_by == "2099-01-01T00:00:00"
+
+
 # --- Audit chain ---
 
 def test_append_and_verify_chain(migrated_paths):

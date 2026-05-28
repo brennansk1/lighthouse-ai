@@ -557,6 +557,9 @@ def research(
         err_console.print(f"[red]research failed:[/red] {exc}")
         raise typer.Exit(1) from None
 
+    for w in result.warnings:
+        err_console.print(f"[yellow]⚠ backend warning:[/yellow] {w}")
+
     d = result.discipline or {}
     console.print(f"\n[green]staged draft {result.draft_id}[/green] "
                   f"({result.mode}, {result.sections} section(s), "

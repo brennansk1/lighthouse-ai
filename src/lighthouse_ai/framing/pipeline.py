@@ -9,6 +9,7 @@ system has the contract right. Production swaps in:
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -215,12 +216,98 @@ def load_bearing_subquestions(subs: list[str]) -> list[str]:
 
 # --- Top-level driver -------------------------------------------
 
-def run_framing(question: str) -> FramedQuestion:
+def _run_framing_deterministic(question: str) -> FramedQuestion:
     qtype = classify_question(question)
     critique = critique_question(question)
     framings = multiply_frames(question, qtype)
     chosen = frame_question(framings, qtype)
     subs = decompose(chosen.statement, qtype)
+    return FramedQuestion(
+        original=question, question_type=qtype, critique=critique,
+        framings=framings, chosen=chosen,
+        sub_questions=subs, load_bearing=load_bearing_subquestions(subs),
+    )
+
+
+def run_framing(question: str, *, gateway=None, job_id: str | None = None) -> FramedQuestion:
+    """Frame a research question, optionally using the planner LLM.
+
+    Falls back to deterministic keyword/template baseline when gateway is
+    None, or when the LLM response cannot be parsed — so tests and offline
+    mode are unaffected.
+    """
+    if gateway is not None:
+        try:
+            return _run_framing_llm(question, gateway=gateway, job_id=job_id)
+        except Exception:
+            pass
+    return _run_framing_deterministic(question)
+
+
+def _run_framing_llm(question: str, *, gateway, job_id: str | None) -> FramedQuestion:
+    """Use the planner role to classify, frame, and decompose the question.
+
+    The planner is instructed to return JSON matching the FramedQuestion schema.
+    Any failure (network, bad JSON, empty fields) propagates to let the
+    caller fall back to the deterministic baseline.
+    """
+    prompt = (
+        "You are a research question analyst. Analyze this research question and "
+        "respond with ONLY valid JSON (no markdown, no commentary) matching this schema:\n\n"
+        "{\n"
+        '  "question_type": "factual_lookup | comparative | causal_explanation | '
+        'predictive_forecast | decision_support | exploratory_survey | '
+        'controversy_resolution | methodology_evaluation",\n'
+        '  "critique": {\n'
+        '    "well_formed": true,\n'
+        '    "is_compound": false,\n'
+        '    "has_presupposition": false,\n'
+        '    "is_underspecified": false,\n'
+        '    "implicit_utility": false,\n'
+        '    "notes": []\n'
+        '  },\n'
+        '  "framings": [\n'
+        '    {"label": "F1-label", "statement": "reframed question", "rationale": "why"}\n'
+        '  ],\n'
+        '  "chosen_label": "F1-label",\n'
+        '  "sub_questions": ["sub-question 1", "sub-question 2"]\n'
+        "}\n\n"
+        f"Research question: {question}"
+    )
+    resp = gateway.complete("planner", prompt, job_id=job_id)
+    raw = resp.text.strip()
+    # Strip markdown code fences that some models add
+    if raw.startswith("```"):
+        lines = raw.split("\n")
+        # drop first line (```json or ```) and last line (```)
+        inner = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        raw = inner.strip()
+    data = json.loads(raw)  # raises on bad JSON
+    qtype = QuestionType(data["question_type"])
+    cd = data["critique"]
+    critique = QuestionCritique(
+        well_formed=bool(cd.get("well_formed", True)),
+        is_compound=bool(cd.get("is_compound", False)),
+        has_presupposition=bool(cd.get("has_presupposition", False)),
+        is_underspecified=bool(cd.get("is_underspecified", False)),
+        implicit_utility=bool(cd.get("implicit_utility", False)),
+        notes=list(cd.get("notes", [])),
+    )
+    framings = [
+        Framing(
+            label=str(f["label"]),
+            statement=str(f["statement"]),
+            rationale=str(f.get("rationale", "")),
+        )
+        for f in data.get("framings", [])
+    ]
+    if not framings:
+        raise ValueError("planner returned no framings")
+    chosen_label = data.get("chosen_label", framings[0].label)
+    chosen = next((f for f in framings if f.label == chosen_label), framings[0])
+    subs = [str(s) for s in data.get("sub_questions", [])]
+    if not subs:
+        raise ValueError("planner returned no sub_questions")
     return FramedQuestion(
         original=question, question_type=qtype, critique=critique,
         framings=framings, chosen=chosen,

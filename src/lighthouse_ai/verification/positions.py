@@ -8,6 +8,7 @@ by Brier and the running calibration curve updated.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..persistence import open_db
@@ -23,12 +24,16 @@ class Position:
     confidence: float
     outcome: bool | None = None
     brier: float | None = None
+    resolve_by: str | None = None
+    resolution_criterion: str | None = None
 
 
 _EXTRA_COLUMNS_SQL = """
 ALTER TABLE positions ADD COLUMN outcome INTEGER;
 ALTER TABLE positions ADD COLUMN brier REAL;
 ALTER TABLE positions ADD COLUMN resolved_at TEXT;
+ALTER TABLE positions ADD COLUMN resolve_by TEXT;
+ALTER TABLE positions ADD COLUMN resolution_criterion TEXT;
 """
 
 
@@ -43,6 +48,10 @@ def _ensure_extras(positions_db: Path) -> None:
             statements.append("ALTER TABLE positions ADD COLUMN brier REAL")
         if "resolved_at" not in cols:
             statements.append("ALTER TABLE positions ADD COLUMN resolved_at TEXT")
+        if "resolve_by" not in cols:
+            statements.append("ALTER TABLE positions ADD COLUMN resolve_by TEXT")
+        if "resolution_criterion" not in cols:
+            statements.append("ALTER TABLE positions ADD COLUMN resolution_criterion TEXT")
         for s in statements:
             conn.execute(s)
     finally:
@@ -50,8 +59,12 @@ def _ensure_extras(positions_db: Path) -> None:
 
 
 def record_position(positions_db: Path, *, claim: str, probability: float,
-                    band: str | None = None) -> Position:
+                    band: str | None = None,
+                    resolve_by: str | None = None,
+                    resolution_criterion: str | None = None) -> Position:
     _ensure_extras(positions_db)
+    if resolve_by is None:
+        resolve_by = (datetime.now() + timedelta(days=90)).isoformat()
     if band is None:
         wep = band_for_probability(probability)
     else:
@@ -59,13 +72,15 @@ def record_position(positions_db: Path, *, claim: str, probability: float,
     conn = open_db(positions_db)
     try:
         cur = conn.execute(
-            "INSERT INTO positions (claim, wep_band, confidence) "
-            "VALUES (?, ?, ?) RETURNING id", (claim, wep.name, probability),
+            "INSERT INTO positions (claim, wep_band, confidence, resolve_by, resolution_criterion) "
+            "VALUES (?, ?, ?, ?, ?) RETURNING id",
+            (claim, wep.name, probability, resolve_by, resolution_criterion),
         )
         rid = cur.fetchone()[0]
     finally:
         conn.close()
-    return Position(id=rid, claim=claim, wep_band=wep.name, confidence=probability)
+    return Position(id=rid, claim=claim, wep_band=wep.name, confidence=probability,
+                    resolve_by=resolve_by, resolution_criterion=resolution_criterion)
 
 
 def resolve_position(positions_db: Path, position_id: int, outcome: bool) -> Position:

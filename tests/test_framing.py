@@ -128,3 +128,80 @@ def test_router_long_query_uses_agentic():
     r = AdaptiveRouter().classify(long_q)
     # Long query could be GRAPH (relational) or AGENTIC depending on which rule wins.
     assert r.kind in {RouteKind.AGENTIC, RouteKind.GRAPH, RouteKind.RECENCY}
+
+
+# --- Sprint 29 Step 6: LLM-powered framing pipeline ---
+
+import json
+from unittest.mock import MagicMock
+
+
+def _mock_gw(question_type="factual_lookup", sub_questions=None, framings=None):
+    """Build a MagicMock gateway returning valid planner JSON."""
+    framings = framings or [{"label": "F1", "statement": "Q?", "rationale": "default"}]
+    sub_questions = sub_questions or ["What is established?", "What is disputed?"]
+    payload = {
+        "question_type": question_type,
+        "critique": {"well_formed": True, "is_compound": False,
+                     "has_presupposition": False, "is_underspecified": False,
+                     "implicit_utility": False, "notes": []},
+        "framings": framings,
+        "chosen_label": framings[0]["label"],
+        "sub_questions": sub_questions,
+    }
+    gw = MagicMock()
+    gw.complete.return_value = MagicMock(text=json.dumps(payload))
+    return gw
+
+
+def test_run_framing_with_gateway_calls_planner():
+    gw = _mock_gw(question_type="comparative",
+                  sub_questions=["What is the evidence?", "On what criteria differ?"])
+    fq = run_framing("X vs Y", gateway=gw)
+    called_role = gw.complete.call_args[0][0]
+    assert called_role == "planner"
+    assert fq.question_type == QuestionType.COMPARATIVE
+    assert len(fq.sub_questions) == 2
+
+
+def test_run_framing_falls_back_on_gateway_exception():
+    gw = MagicMock()
+    gw.complete.side_effect = RuntimeError("gateway down")
+    fq = run_framing("Will AI replace coders by 2030?", gateway=gw)
+    # Keyword fallback should detect PREDICTIVE_FORECAST
+    assert fq.question_type == QuestionType.PREDICTIVE_FORECAST
+
+
+def test_run_framing_falls_back_on_bad_json():
+    gw = MagicMock()
+    gw.complete.return_value = MagicMock(text="not valid json at all!!")
+    fq = run_framing("What is quantum entanglement?", gateway=gw)
+    assert fq.question_type == QuestionType.FACTUAL_LOOKUP
+    assert fq.sub_questions  # deterministic fallback still produces sub-questions
+
+
+def test_run_framing_strips_markdown_fence():
+    """LLMs sometimes wrap JSON in ```json ... ```."""
+    payload = {
+        "question_type": "causal_explanation",
+        "critique": {"well_formed": True, "is_compound": False,
+                     "has_presupposition": False, "is_underspecified": False,
+                     "implicit_utility": False, "notes": []},
+        "framings": [{"label": "F1", "statement": "Why X?", "rationale": "r"}],
+        "chosen_label": "F1",
+        "sub_questions": ["What is the proximate cause?", "What are distal causes?"],
+    }
+    gw = MagicMock()
+    gw.complete.return_value = MagicMock(
+        text=f"```json\n{json.dumps(payload)}\n```"
+    )
+    fq = run_framing("Why did X happen?", gateway=gw)
+    assert fq.question_type == QuestionType.CAUSAL_EXPLANATION
+    assert len(fq.sub_questions) == 2
+
+
+def test_run_framing_no_gateway_still_works():
+    """Existing API (no gateway kwarg) must be unchanged."""
+    fq = run_framing("Compare Python vs Rust for systems programming")
+    assert fq.question_type == QuestionType.COMPARATIVE
+    assert fq.sub_questions

@@ -45,6 +45,7 @@ class DraftReport:
     open_questions: list[str] = field(default_factory=list)
     ruled_out: list[str] = field(default_factory=list)
     rounds_used: int = 0
+    evidence_chunks: list[HybridResult] = field(default_factory=list)
 
 
 @dataclass
@@ -120,15 +121,65 @@ def _discovery_progress(evidence_rounds: list[list[HybridResult]]) -> float:
     return len(new) / len(latest)
 
 
-def _denoise(sections: list[Section]) -> list[Section]:
-    """Merge step. In production: a synthesizer pass that resolves
-    contradictions and fills cross-section references. Here we just dedupe
-    citation lists per section."""
-    from dataclasses import replace
+def _parse_synthesizer_sections(text: str, originals: list[Section]) -> list[Section]:
+    """Parse synthesizer output back into Section objects by matching ### headings."""
+    import re
+    from dataclasses import replace as dc_replace
+    heading_re = re.compile(r"^###\s+(.+)$", re.MULTILINE)
+    parts = heading_re.split(text)
+    title_to_body: dict[str, str] = {}
+    i = 1
+    while i + 1 < len(parts):
+        title_to_body[parts[i].strip()] = parts[i + 1].strip()
+        i += 2
     out: list[Section] = []
-    for s in sections:
-        out.append(replace(s, citations=list(dict.fromkeys(s.citations))))
+    for orig in originals:
+        body = title_to_body.get(orig.title)
+        if body is None:
+            for t, b in title_to_body.items():
+                if orig.title[:30] in t or t[:30] in orig.title:
+                    body = b
+                    break
+        out.append(dc_replace(orig, body=body) if body is not None else orig)
     return out
+
+
+def _denoise(
+    sections: list[Section],
+    *,
+    gateway: Gateway | None,
+    job_id: str | None,
+) -> list[Section]:
+    """Merge step — dedupes citations (stub) or uses synthesizer LLM (real)."""
+    from dataclasses import replace as dc_replace
+
+    # Stub path: gateway absent (tests, offline mode)
+    if gateway is None:
+        return [dc_replace(s, citations=list(dict.fromkeys(s.citations))) for s in sections]
+
+    # Build synthesizer prompt
+    section_texts = "\n\n".join(
+        f"### {s.title}\n{s.body or '[empty]'}" for s in sections
+    )
+    prompt = (
+        "You are a research synthesis assistant. Below are draft research sections.\n\n"
+        f"{section_texts}\n\n"
+        "Tasks:\n"
+        "1. Note cross-section contradictions with [CONTRADICTION].\n"
+        "2. Note content gaps with [GAP].\n"
+        "3. Merge overlapping content into the most relevant section.\n"
+        "4. Return ALL sections in this exact format (preserve titles exactly):\n"
+        "### <original title>\n<revised body>\n\n"
+        "Do not add new sections or change section titles."
+    )
+    try:
+        resp = gateway.complete("synthesizer", prompt, job_id=job_id)
+        revised = _parse_synthesizer_sections(resp.text, sections)
+    except Exception:
+        revised = sections
+
+    return [dc_replace(s, citations=list(dict.fromkeys(s.citations)))
+            for s in revised]
 
 
 def run_deepdive(
@@ -158,7 +209,7 @@ def run_deepdive(
                                            rerank_candidates=rerank_candidates)
             new_sections.append(sec2)
             round_evidence.extend(evid)
-        sections = _denoise(new_sections)
+        sections = _denoise(new_sections, gateway=gateway, job_id=job_id)
         evidence_rounds.append(round_evidence)
         rounds_used = round_idx
         if on_round:
@@ -175,10 +226,12 @@ def run_deepdive(
 
     # Anything with an empty body remains an open question.
     open_questions = [s.sub_question for s in sections if not s.body.strip()]
+    all_evidence: list[HybridResult] = [e for rnd in evidence_rounds for e in rnd]
     return DraftReport(
         question=question, framing=framed, sections=sections,
         open_questions=open_questions, ruled_out=[],
         rounds_used=rounds_used,
+        evidence_chunks=all_evidence,
     )
 
 

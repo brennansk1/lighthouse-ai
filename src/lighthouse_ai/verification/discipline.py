@@ -43,6 +43,7 @@ class DisciplineReport:
     citation_coverage: float          # fraction of claims with >=1 citation
     passed: bool                      # meets the configured floor
     notes: list[str] = field(default_factory=list)
+    distinct_sources: int = 0
 
 
 def extract_claims(text: str) -> list[Claim]:
@@ -93,6 +94,22 @@ def check(text: str, *, min_coverage: float = 0.6,
     return DisciplineReport(claims=claims, sourced=sourced, unsourced=unsourced,
                             two_sourced=two, citation_coverage=round(coverage, 3),
                             passed=passed, notes=notes)
+
+
+def check_source_diversity(evidence_chunks) -> int:
+    """Count distinct source domains from evidence chunk metadata.
+
+    Each element of evidence_chunks should be a HybridResult (has .chunk attribute)
+    or a raw Chunk. Uses chunk.metadata.get("source") as the domain key,
+    falling back to chunk.document_id if "source" metadata is absent.
+    """
+    domains: set[str] = set()
+    for r in evidence_chunks:
+        chunk = getattr(r, "chunk", r)
+        meta = getattr(chunk, "metadata", {})
+        domain = meta.get("source") or getattr(chunk, "document_id", "unknown")
+        domains.add(str(domain))
+    return len(domains)
 
 
 def downgrade_wep(probability: float, report: DisciplineReport) -> WEPBand:

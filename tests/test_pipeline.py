@@ -28,15 +28,35 @@ def _profile(ram=25.77, tier="T2") -> HardwareProfile:
 # --- factories (offline) ---
 
 def test_make_embedder_offline_is_hash():
-    emb, name = make_embedder(offline=True)
+    emb, name, warns = make_embedder(offline=True)
     assert name == "hash-stub"
     assert emb.embed(["hello world"])  # works
 
 
 def test_make_vector_store_offline_is_inmemory():
-    store, name = make_vector_store(64, offline=True)
+    store, name, warns = make_vector_store(64, offline=True)
     assert name == "in-memory"
     assert store.count() == 0
+
+
+def test_make_embedder_fallback_returns_warning():
+    _emb, name, warns = make_embedder(offline=False, installed=[])
+    assert name == "hash-stub"
+    assert len(warns) >= 1
+    assert any("hash-stub" in w or "embedding" in w or "Ollama" in w for w in warns)
+
+
+def test_make_embedder_offline_returns_no_warning():
+    _emb, name, warns = make_embedder(offline=True)
+    assert name == "hash-stub"
+    assert warns == []
+
+
+def test_research_result_has_warnings_field(migrated_paths):
+    pipe = ResearchPipeline(migrated_paths, config=PipelineConfig(offline=True))
+    result = pipe.research("test question")
+    assert hasattr(result, "warnings")
+    assert isinstance(result.warnings, list)
 
 
 # --- resolver ---
@@ -247,3 +267,63 @@ def test_pipeline_picks_reranker(migrated_paths, monkeypatch):
     assert isinstance(pipe_real.reranker, FlagReranker), (
         "online pipeline with FlagEmbedding available should use FlagReranker"
     )
+
+
+# --- Sprint 29 Step 4: auto web retrieval when corpus is empty ---
+
+import httpx
+import respx
+
+ARXIV_XML_ONE = b'''<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2401.auto01</id>
+    <title>Auto Fetch Test Paper</title>
+    <summary>This is a test abstract for auto-fetching. It contains enough words.</summary>
+    <published>2024-01-01T00:00:00Z</published>
+    <author><name>Test Author</name></author>
+  </entry>
+</feed>'''
+
+OPENALEX_EMPTY = {"results": [], "meta": {"count": 0}}
+
+
+@respx.mock
+def test_pipeline_auto_fetches_when_corpus_empty(migrated_paths):
+    """Auto-fetch fires when corpus is empty and not offline."""
+    respx.get(url__regex=r"export\.arxiv\.org").mock(
+        return_value=httpx.Response(200, content=ARXIV_XML_ONE))
+    respx.get(url__regex=r"api\.openalex\.org").mock(
+        return_value=httpx.Response(200, json=OPENALEX_EMPTY))
+
+    pipe = ResearchPipeline(migrated_paths,
+                            config=PipelineConfig(offline=True, auto_fetch_sources=True))
+    # Temporarily flip offline so _auto_fetch runs but the gateway stays mock
+    pipe.config = PipelineConfig(offline=False, auto_fetch_sources=True)
+    pipe._auto_fetch("quantum computing")
+    assert pipe._chunks_ingested >= 1
+
+
+def test_pipeline_no_auto_fetch_when_offline(migrated_paths):
+    """offline=True must never trigger auto-fetch."""
+    pipe = ResearchPipeline(migrated_paths,
+                            config=PipelineConfig(offline=True, auto_fetch_sources=True))
+    result = pipe.research("quantum computing")
+    assert result.chunks_ingested == 0
+
+
+def test_pipeline_no_auto_fetch_when_corpus_nonempty(migrated_paths):
+    """Auto-fetch skipped when documents were pre-ingested."""
+    pipe = ResearchPipeline(migrated_paths, config=PipelineConfig(offline=True))
+    pipe.ingest_text("d1", "Quantum computing uses qubits for computation.")
+    assert pipe._chunks_ingested > 0
+    result = pipe.research("quantum computing")
+    assert result.chunks_ingested >= 1
+
+
+def test_pipeline_auto_fetch_disabled_by_flag(migrated_paths):
+    """auto_fetch_sources=False prevents any auto-fetch even with empty corpus."""
+    pipe = ResearchPipeline(migrated_paths,
+                            config=PipelineConfig(offline=True, auto_fetch_sources=False))
+    result = pipe.research("some question")
+    assert result.chunks_ingested == 0

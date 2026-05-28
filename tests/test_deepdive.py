@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 from lighthouse_ai.modes.deepdive import (
     DraftReport,
     _discovery_progress,
@@ -105,3 +107,42 @@ def test_deepdive_new_defaults():
     r = run_deepdive("What is decoherence?", hybrid=hs)
     assert r.rounds_used >= 1
     assert r.rounds_used <= 3
+
+
+def test_draftreport_has_evidence_chunks_field():
+    hs = _hybrid_with_docs()
+    r = run_deepdive("Compare classical and quantum computing", hybrid=hs, max_rounds=1)
+    assert hasattr(r, "evidence_chunks")
+    assert isinstance(r.evidence_chunks, list)
+
+
+def test_denoise_stub_path_dedupes_citations():
+    from lighthouse_ai.modes.deepdive import Section, _denoise
+    secs = [Section(title="S1", sub_question="q1", body="body",
+                    citations=["c1", "c2", "c1"])]
+    result = _denoise(secs, gateway=None, job_id=None)
+    assert result[0].citations == ["c1", "c2"]
+
+
+def test_denoise_llm_path_falls_back_on_exception():
+    from lighthouse_ai.modes.deepdive import Section, _denoise
+    mock_gw = MagicMock()
+    mock_gw.complete.side_effect = RuntimeError("LLM unavailable")
+    secs = [Section(title="S1", sub_question="q1", body="original body",
+                    citations=["c1"])]
+    result = _denoise(secs, gateway=mock_gw, job_id="j1")
+    assert result[0].body == "original body"
+    assert result[0].citations == ["c1"]
+
+
+def test_denoise_llm_path_calls_synthesizer_role():
+    from lighthouse_ai.modes.deepdive import Section, _denoise
+    mock_gw = MagicMock()
+    mock_gw.complete.return_value = MagicMock(
+        text="### Section 1: test\nRevised body content.\n"
+    )
+    secs = [Section(title="Section 1: test", sub_question="q", body="original")]
+    result = _denoise(secs, gateway=mock_gw, job_id=None)
+    called_role = mock_gw.complete.call_args[0][0]
+    assert called_role == "synthesizer"
+    assert "Revised" in result[0].body
