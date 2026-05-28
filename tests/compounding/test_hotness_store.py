@@ -46,8 +46,10 @@ def test_materialisation_gate_fires_only_past_threshold(tmp_path) -> None:
     s.record_mention("cold", source="a", now_ms=NOW)
     assert s.should_materialise("cold", now_ms=NOW) is False
     # Hot: many independent sources + query hits clears 10.0.
+    # Math: ln(7)+0.5×6+recency(1.0)+2×3 ≈ 1.95+3.0+1.0+6.0 = 11.95
     for src in ("a", "b", "c", "d", "e", "f"):
         s.record_mention("hot", source=src, now_ms=NOW)
+    s.record_query_hit("hot")
     s.record_query_hit("hot")
     s.record_query_hit("hot")
     assert s.hotness_of("hot", now_ms=NOW) >= TOPIC_CREATION_THRESHOLD
@@ -59,8 +61,14 @@ def test_hot_entities_lists_only_threshold_crossers_sorted(tmp_path) -> None:
     s.record_mention("cold", source="a", now_ms=NOW)
     for src in ("a", "b", "c", "d", "e", "f", "g"):
         s.record_mention("warm", source=src, now_ms=NOW)
+    # warm: ln(8)+0.5×7+1.0+2×2 ≈ 2.08+3.5+1.0+4.0 = 10.58
+    s.record_query_hit("warm")
+    s.record_query_hit("warm")
     for src in ("a", "b", "c", "d", "e", "f", "g", "h", "i", "j"):
         s.record_mention("blazing", source=src, now_ms=NOW)
+    # blazing: ln(11)+0.5×10+1.0+2×2 ≈ 2.40+5.0+1.0+4.0 = 12.40
+    s.record_query_hit("blazing")
+    s.record_query_hit("blazing")
     hot = s.hot_entities(now_ms=NOW)
     ids = [eid for eid, _ in hot]
     assert "cold" not in ids
