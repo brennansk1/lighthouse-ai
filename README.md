@@ -61,19 +61,28 @@ entire run tamper-evident.
 - **Citation source diversity**: distinct source domains counted per report
 - **CI**: GitHub Actions, ruff clean, pytest
 
-## What is not yet wired
+## Known limitations / not yet wired
 
-- SearXNG mid-loop CRAG fetch — seam is in place, SearXNG integration pending
-- Litestream replication — config written, binary optional
-- Zotero integration — adapter pending. **Logseq + Telegram are wired**: Logseq
-  renders all 7 artifact types to graph pages; Telegram sends per-artifact
-  review pings (honoring `[ui].notify_enabled`)
-- Deep-tier recursive engine is built + tested; full dispatch wiring with
-  per-node grounded research is in progress
-- `minicheck` PyPI package does not exist yet — entailment gate degrades gracefully
-- FedRAMP / HIPAA compliance one-pager — planned Sprint 32
-- RAPTOR long-document tree — planned
-- LangGraph — plain Python for-loop (intentional; LangGraph deferred)
+**Affects a new user most:**
+- **Corpus auto-fetch into the dispatcher is not wired.** Corpus-backed modes
+  (Investigate / Ask / Survey / Reconstruct) ground on documents you attach; with
+  an empty corpus they run but have little to cite. Auto-fetch (arXiv/OpenAlex,
+  behind the sandbox) is the next functional priority.
+- **No document-ingestion UI yet.** Survey/Reconstruct need documents fed in;
+  today that's a CLI/programmatic path, not a dashboard upload.
+
+**Smaller gaps / planned:**
+- Deep-tier recursive runs are **not checkpointed** — an interrupted multi-hour
+  run restarts (resume is planned).
+- `minicheck` is not on PyPI — the entailment gate degrades gracefully to the
+  citation-coverage check when it's absent.
+- SearXNG mid-loop CRAG fetch — seam in place, integration pending.
+- Litestream replication — config written, binary optional.
+- Zotero integration — adapter pending. (**Logseq + Telegram are wired.**)
+- RAPTOR long-document tree, LangGraph backbone — deferred by design.
+
+Status: **pre-alpha**. See [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md)
+for the path to a distributable release.
 
 ## Quick start
 
