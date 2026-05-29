@@ -60,6 +60,14 @@ better:
    outputs can't be reproduced.
 7. **Structured instruments.** Matrix / timeline / PRISMA evidence-table /
    verdict-with-named-crux — research objects, not chat answers.
+8. **Unbounded professional-grade depth.** Claude and Gemini deep research
+   **time-box** to ~10–20 minutes. We don't. A "Professional" depth tier runs a
+   *recursive question tree* — sub-questions decompose into sub-sub-questions,
+   each researched to grounded resolution or an explicit known-unknown — bounded
+   only by a user budget (wall-clock or node count), checkpointed and resumable
+   so an hours-long run survives sleep/restart. This is safe on local hardware
+   precisely because it's one bounded, RAM-gated step at a time (long ≠ heavy):
+   the depth a professional reaches over days, done overnight, fully grounded.
 
 ### Measurable bar (Investigate is the flagship; others adapt)
 A real-backend Investigate artifact is "better than frontier" only when:
@@ -174,6 +182,9 @@ P1.5 Mode loops with no corpus (validate real LLM fast)   -> #35 Decide, #36 Adj
 P1.7 Research-quality stack (the competitive thesis):
        - Adversarial claim-refutation pass                -> #45
        - Coverage/completeness critic pass                -> #46
+P1.8 Unbounded professional-grade depth (beats time-box):
+       - Exhaustive recursive question-tree engine        -> #51
+       - Long-run checkpoint / resume / progress          -> #52
 P2   Substantive grounding (corpus retrieval/auto-fetch)  -> #28
 P2.5 Trust layer:
        - Source triangulation + contradiction surfacing   -> #47
