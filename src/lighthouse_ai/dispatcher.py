@@ -21,6 +21,7 @@ from heuristics, so the dispatcher is fully testable without an LLM.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import html as _html
 import json
 import uuid
@@ -33,6 +34,10 @@ from .governor.scheduler_gate import SchedulerGate
 from .modes.registry import canonical, load_engine, resolve
 from .paths import Paths
 from .persistence import open_db
+
+#: Bumped when artifact body_json schemas change; recorded in every provenance
+#: manifest so an artifact says which engine produced it (reproducibility).
+ENGINE_VERSION = "1.0.0"
 
 
 @dataclass(frozen=True)
@@ -449,6 +454,63 @@ def _notify_staged(paths: Paths, *, artifact_type: str, summary: dict) -> None:
         pass
 
 
+def _provenance_manifest(*, mode_key: str, meta: dict, summary: dict,
+                         gateway: Gateway | None, backends: dict) -> dict:
+    """Build a deterministic provenance manifest for an artifact.
+
+    Records how the artifact was produced — mode, depth/budget, the backend that
+    actually served it (real ``ollama`` vs ``mock`` fallback vs offline stub),
+    the per-role models, source count, any quality metrics the engine surfaced,
+    and a content hash of the body. Deterministic given fixed inputs (no
+    wall-clock inside), so the same corpus + question reproduces the same
+    manifest — the property frontier tools can't offer. The draft row carries
+    its own ``created_at`` separately.
+    """
+    body = summary.get("body_json")
+    body = body if isinstance(body, dict) else {}
+
+    if gateway is None:
+        backend = "offline-stub"
+    elif backends.get("ollama"):
+        backend = "ollama"
+    elif backends:
+        backend = "mock"
+    else:
+        backend = "none"
+
+    models: dict[str, str] = {}
+    if gateway is not None:
+        for role in ("planner", "researcher", "synthesizer", "aux_context"):
+            try:
+                b = gateway.binding(role)
+                if b is not None:
+                    models[role] = b.model
+            except Exception:
+                pass
+
+    metrics: dict[str, Any] = {}
+    for key in ("citation_coverage", "entailment_coverage", "rounds_used",
+                "nodes_resolved", "coverage"):
+        if key in body:
+            metrics[key] = body[key]
+
+    payload = {
+        "engine_version": ENGINE_VERSION,
+        "mode": mode_key,
+        "depth": meta.get("depth"),
+        "budget": meta.get("budget"),
+        "backend": backend,
+        "backends": backends or None,
+        "models": models or None,
+        "source_count": summary.get("source_count", 0),
+        "metrics": metrics or None,
+    }
+    digest = hashlib.sha256(
+        json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()
+    payload["content_sha256"] = digest[:16]
+    return payload
+
+
 def run_job(paths: Paths, job: ClaimedJob, *,
             gateway: Gateway | None = None,
             gate: SchedulerGate | None = None,
@@ -477,9 +539,26 @@ def run_job(paths: Paths, job: ClaimedJob, *,
             bus.publish("job.status", {"id": job.id, "status": "failed"})
         return None
 
+    backends: dict = {}
     try:
         summary = adapter(job.meta, gateway=gateway, gate=gate, job_id=job.id,
                           positions_db=paths.positions_db)
+        # Drain the backend tally BEFORE persisting so the provenance manifest
+        # can record which backend actually served the job.
+        if gateway is not None:
+            try:
+                backends = gateway.drain_backends()
+            except Exception:
+                backends = {}
+        # Attach a deterministic provenance manifest to the artifact body.
+        try:
+            body = summary.get("body_json")
+            if isinstance(body, dict):
+                body["provenance"] = _provenance_manifest(
+                    mode_key=mode_key, meta=job.meta, summary=summary,
+                    gateway=gateway, backends=backends)
+        except Exception:
+            pass
         draft_id = _persist_artifact(
             paths.state_db, job_id=job.id, mode_key=mode_key,
             artifact_type=spec.artifact_type.value, summary=summary)
@@ -495,15 +574,10 @@ def run_job(paths: Paths, job: ClaimedJob, *,
     meta["draft_id"] = draft_id
     # Record which backend actually served this job so a "mock masquerade" (a
     # real-gateway run that silently degraded to the mock) is visible downstream.
-    if gateway is not None:
-        try:
-            counts = gateway.drain_backends()
-            if counts:
-                real = counts.get("ollama", 0)
-                meta["backends"] = counts
-                meta["backend"] = "ollama" if real else "mock"
-        except Exception:
-            pass
+    if backends:
+        real = backends.get("ollama", 0)
+        meta["backends"] = backends
+        meta["backend"] = "ollama" if real else "mock"
     _set_status(paths.state_db, job.id, "review", meta=meta)
     _audit(paths, "job.review",
            {"job_id": job.id, "draft_id": draft_id, "mode": mode_key,

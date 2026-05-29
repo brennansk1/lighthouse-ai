@@ -353,6 +353,39 @@ def test_run_job_records_backend_used(migrated_paths):
     assert meta.get("backends", {}).get("mock", 0) >= 1
 
 
+# ── provenance manifest (offline) ───────────────────────────────────────────
+
+def test_provenance_manifest_present_and_complete(migrated_paths):
+    _insert_job(migrated_paths.state_db, "j1", "decide",
+                {**_decide_meta(), "depth": "Standard"})
+    draft_id = dispatch_once(migrated_paths)  # gateway=None → offline stub
+    body = json.loads(_draft_row(migrated_paths.state_db, draft_id)[1])
+    prov = body.get("provenance")
+    assert prov is not None
+    assert prov["engine_version"]
+    assert prov["mode"] == "decide"
+    assert prov["depth"] == "Standard"
+    assert prov["backend"] == "offline-stub"   # gateway=None
+    assert "content_sha256" in prov and len(prov["content_sha256"]) == 16
+
+
+def test_provenance_manifest_is_deterministic(migrated_paths, tmp_path):
+    """Same mode + meta → same content hash (reproducibility property)."""
+    from lighthouse_ai.paths import make_paths
+    from lighthouse_ai.schema import kinds_for, migrate_all
+
+    hashes = []
+    for i in range(2):
+        p = make_paths(str(tmp_path / f"d{i}"), str(tmp_path / f"d{i}_rep"))
+        p.ensure()
+        migrate_all(kinds_for(p))
+        _insert_job(p.state_db, "j1", "decide", _decide_meta())
+        draft_id = dispatch_once(p)
+        body = json.loads(_draft_row(p.state_db, draft_id)[1])
+        hashes.append(body["provenance"]["content_sha256"])
+    assert hashes[0] == hashes[1]
+
+
 # --- staged-artifact Telegram notification wiring (task #42) ------------------
 
 
