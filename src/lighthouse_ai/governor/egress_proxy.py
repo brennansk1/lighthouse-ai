@@ -60,6 +60,19 @@ DEFAULT_ALLOWED_DOMAINS: frozenset[str] = frozenset(
         "www.imf.org",
         "archive.org",
         "web.archive.org",
+        # Seed research-skills sources (skills narrow their reach to these via
+        # SkillContext; declaring a domain here is the platform ceiling, not a
+        # grant the skill can widen). See lighthouse_ai/skills/.
+        "wikipedia.org",
+        "en.wikipedia.org",
+        "wikimedia.org",
+        "youtube.com",
+        "www.youtube.com",
+        "youtubei.googleapis.com",
+        "googleapis.com",
+        "semanticscholar.org",
+        "sec.gov",
+        "courtlistener.com",
     }
 )
 

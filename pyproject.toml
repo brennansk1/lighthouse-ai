@@ -47,6 +47,28 @@ reranker = ["FlagEmbedding>=1.3"]
 # MiniCheck (lytang/MiniCheck-Flan-T5-Large) must be installed separately
 # from source if not yet on PyPI: pip install git+https://github.com/Liyan06/MiniCheck
 faithfulness = ["sentence-transformers>=2.0"]
+# --- Acquisition stack (audit Part B). All lazy-imported; absent → graceful
+# fallback to the stdlib paths. Install the extras a deployment actually needs. ---
+# Article/PDF/office extraction. trafilatura is the primary HTML extractor;
+# pdfplumber/docling improve PDF + structured-doc fidelity over the pypdf
+# fallback. NB: PyMuPDF is AGPL-3.0 and lives in the separate `pdf-fast` extra
+# below — never a default for an MIT project.
+extraction = ["trafilatura>=1.8", "pdfplumber>=0.11", "docling>=2.0"]
+# AGPL-3.0, opt-in only: faster/Markdown PDF extraction. Distribution hazard.
+pdf-fast = ["pymupdf>=1.24"]
+# Politeness layer for net.py: robots.txt (protego), URL canonicalization +
+# crawl-delay (courlan), per-domain token-bucket budgets (pyrate-limiter).
+politeness = ["protego>=0.3", "courlan>=1.3", "pyrate-limiter>=3.6"]
+# Learned prompt-injection classifier (ProtectAI deberta-v3) behind the regex
+# gate. ONNX-runnable via Optimum; absent → regex-only gate.
+injection-ml = ["transformers>=4.40", "optimum[onnxruntime]>=1.20"]
+# Sandbox hardening: YARA signatures + deeper PDF inspection (pikepdf, MPL-2.0).
+sandbox-hardening = ["yara-python>=4.4", "pikepdf>=9.0"]
+# YouTube captions path (official API + public-caption endpoints only, no
+# evasion). yt-dlp is Unlicense; youtube-transcript-api is MIT.
+youtube = ["yt-dlp>=2024.0", "youtube-transcript-api>=1.0"]
+# Tier-B in-process JS rendering (declared; not built in this pass). No evasion.
+js-render = ["playwright>=1.44"]
 
 [project.scripts]
 lighthouse = "lighthouse_ai.cli:app"
