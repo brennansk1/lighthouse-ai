@@ -134,7 +134,7 @@ def _llm_score(gateway: Gateway, question: str, option: str, criterion: str,
     )
     try:
         with gate_ctx(gate):
-            resp = gateway.complete("researcher", prompt, job_id=job_id)
+            resp = gateway.complete_structured(prompt, job_id=job_id)
         for token in resp.text.replace(",", " ").split():
             try:
                 val = float(token)

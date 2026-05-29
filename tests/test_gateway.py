@@ -130,6 +130,25 @@ def test_gateway_unknown_role_raises(migrated_paths, stub_profile):
         gw.complete("not_a_role", "hi")
 
 
+def test_complete_structured_uses_aux_when_bound(migrated_paths, stub_profile):
+    g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
+    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile)
+    resp = gw.complete_structured("score this", job_id="j1")
+    # aux_context is bound in the tier catalog → structured calls route to it,
+    # keeping extraction/scoring off the heavy reasoner.
+    assert resp.role == "aux_context"
+    assert "[mock" in resp.text
+
+
+def test_complete_structured_falls_back_to_researcher(migrated_paths, stub_profile):
+    g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
+    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile)
+    # Simulate a gateway with no aux binding → must fall back, not raise.
+    gw._bindings.pop("aux_context", None)
+    resp = gw.complete_structured("score this")
+    assert resp.role == "researcher"
+
+
 def test_gateway_with_chosen_models_uses_recorded_bindings(
         tmp_path, migrated_paths, stub_profile):
     from lighthouse_ai.gateway import recommend_models

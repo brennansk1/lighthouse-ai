@@ -382,7 +382,7 @@ def _llm_screen(gateway: Gateway, question: str, doc: Document,
     )
     try:
         with gate_ctx(gate):
-            resp = gateway.complete("researcher", prompt, job_id=job_id)
+            resp = gateway.complete_structured(prompt, job_id=job_id)
         text = resp.text.strip()
         included = text.upper().lstrip().startswith("INCLUDE")
         reason = text.split("\n", 1)[0][:200]
@@ -406,7 +406,7 @@ def _llm_extract(gateway: Gateway, doc: Document, attr: AttributeSpec, *,
     )
     try:
         with gate_ctx(gate):
-            resp = gateway.complete("researcher", prompt, job_id=job_id)
+            resp = gateway.complete_structured(prompt, job_id=job_id)
         val = resp.text.strip()
         return "" if val.upper() in {"N/A", "NONE", ""} else val
     except Exception:

@@ -634,6 +634,17 @@ class Gateway:
             raise KeyError(f"no model bound for role {role!r}")
         return self._bindings[role]
 
+    def complete_structured(self, prompt: str, *, job_id: str | None = None,
+                            allow_drift: bool = True) -> CompletionResponse:
+        """Complete a low-creativity *structured* task (scoring, extraction,
+        date/field parsing) on the fast ``aux_context`` model when one is bound,
+        falling back to ``researcher``. This keeps extraction/scoring off the
+        heavy reasoning model (whose thinking traces make such calls slow) while
+        reserving the reasoner for synthesis. Offline output is unchanged (the
+        mock provider ignores role)."""
+        role = "aux_context" if "aux_context" in self._bindings else "researcher"
+        return self.complete(role, prompt, job_id=job_id, allow_drift=allow_drift)
+
     def complete(self, role: str, prompt: str, *, job_id: str | None = None,
                  allow_drift: bool = True) -> CompletionResponse:
         b = self.binding(role)

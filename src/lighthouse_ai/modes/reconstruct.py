@@ -281,7 +281,7 @@ def _llm_extract(gateway: Gateway, question: str, doc: Document, *,
     )
     try:
         with gate_ctx(gate):
-            resp = gateway.complete("researcher", prompt, job_id=job_id)
+            resp = gateway.complete_structured(prompt, job_id=job_id)
         pairs: list[tuple[str, str]] = []
         for line in resp.text.splitlines():
             if "|" in line:
