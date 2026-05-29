@@ -130,5 +130,54 @@ state instead of silently going quiet.
 
 ---
 
+## 8. Usability — the "5/5 for both audiences" push
+
+External critique pass on getting to a flawless rating for general-public AND researcher usability.
+Each item is weighed (pro / con) and only the on-mission ones are adopted.
+
+### Public — lower the barrier from infrastructure to one click
+- **One-click desktop app (ADOPT).** A Tauri/Electron wrapper that silently bundles + supervises a
+  *local* Ollama + Qdrant, so there's no Docker/terminal. *Pro:* eliminates the biggest non-technical
+  barrier; stays fully local-first. *Con:* packaging/signing/auto-update work per-OS (already a Phase-4
+  item) + bundle size. **On-mission — this is the right public on-ramp.**
+- **Onboarding API-key wizard (ADOPT).** A Settings flow to paste/toggle the free source keys
+  (FRED/BEA/BLS/Census/Guardian/Congress/GitHub) into the existing keyring/secrets store, with
+  "skip / add later" and per-source enable. *Pro:* removes config.toml hand-editing; pairs with the
+  trust matrix; secrets infra already exists. *Con:* minor. **Adopt — UI over existing keyring.**
+- **Intent templates / "recipes" (ADOPT, reframed).** Plain-intent starting points
+  ("Draft a literature review", "Fact-check this claim", "Build a timeline") that pre-fill
+  mode + depth + recommended sources behind the scenes via the existing framing classifier. *Pro:*
+  big cognitive-load win for newcomers. *Con:* the critique's premise ("choosing raw scripts like
+  `ask_store.py`") is a misread — users already pick plain-language modes; the real value is the
+  preset bundles. **Adopt as recipe presets, not a re-architecture.**
+- **Cloud-hosted SaaS (DECLINE).** *Con:* directly violates the local-first / regulated-industry moat
+  (HIPAA/ABA/ITAR — the corpus never leaves the user's hardware). A hosted multitenant version would
+  forfeit the entire wedge. **Declined on principle** — the desktop app above is the abstraction layer
+  instead.
+
+### Researcher — deeper extensibility, transparency, reproducibility
+- **Skill scaffolding generator + author guide (ADOPT).** `lighthouse skill new <id>` boilerplate
+  generator + a documented base contract + loading skills from a user/out-of-tree directory (not just
+  the in-tree library). *Pro:* the framework already supports drop-in folders + the import guard +
+  community tag — this is the natural last mile for niche/proprietary sources. *Con:* none material.
+  **Strong adopt — highest-leverage researcher win, small build on existing machinery.**
+- **Granular steerability for reproducibility (ADOPT).** Expose per-role seed / temperature / top-p in
+  config + UI and let a run "lock" them; record them in the provenance manifest so an experiment is
+  byte-reproducible. *Pro:* directly serves the determinism/reproducibility pillar that is already a
+  core differentiator; the gateway already runs temp-0 + fingerprinting, so this surfaces existing
+  knobs. *Con:* minor. **Strong adopt.**
+- **Graph-RAG + entity/relation extraction (ADOPT, scoped).** A *local* knowledge graph built over the
+  corpus (entity + relation extraction → graph store; the Adaptive-RAG router already has a GRAPH
+  route, and the Wikidata skill yields structured entities) so a researcher can see how variables/
+  entities interact, not just where a fact came from. *Pro:* a real research frontier; composes with
+  existing pieces. *Con:* full *causal inference* is research-grade and easy to overclaim, and a
+  citation-graph that needs an external API/OpenAlex dump risks local-first — so **scope to local
+  corpus Graph-RAG + relation extraction; treat causal inference as a clearly-labeled stretch**, not a
+  promised feature.
+- **MkDocs/Sphinx docs site + advanced tutorials (ADOPT, lower priority).** A built docs site with
+  end-to-end tutorials (e.g. precision-oncology pipeline, policy-shift timeline, custom-skill authoring,
+  reproducible-experiment setup). *Pro:* adoption + credibility; the `docs/` content is already rich.
+  *Con:* mostly content work, not differentiating engineering. **Adopt as a documentation track.**
+
 *This is a menu, not a commitment. Pull an item into a sprint when a real user keeps hitting its
 absence.*
