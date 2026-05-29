@@ -52,6 +52,33 @@ def test_adjudicate_quick_promoted_to_standard(client):
     assert meta["depth"] == "standard"   # Quick adjudication is not allowed
 
 
+_EXPORT_MODES = [
+    ("decide", {"topic": "A vs B?", "options": ["A", "B"],
+                "criteria": [{"label": "cost", "weight": 1.0}]}, "matrix"),
+    ("adjudicate", {"topic": "Is X true?"}, "verdict"),
+    ("investigate", {"topic": "Why did Y happen?"}, "report"),
+    ("survey", {"topic": "Trials of Z"}, "table"),
+    ("reconstruct", {"topic": "History of W"}, "timeline"),
+    ("ask", {"topic": "What is V?"}, "transcript"),
+    ("watch", {"topic": "topic U"}, "digest"),
+]
+
+
+@pytest.mark.parametrize("mode,meta,artifact_type", _EXPORT_MODES)
+def test_export_all_artifact_types(migrated_paths, client, mode, meta, artifact_type):
+    """Every artifact type dispatches offline and exports as md/csv/json."""
+    from lighthouse_ai.dispatcher import dispatch_once
+    client.post("/api/jobs", json={"mode": mode, **meta})
+    draft_id = dispatch_once(migrated_paths)  # offline
+    assert draft_id is not None
+    for fmt in ("json", "md", "csv"):
+        r = client.get(f"/api/library/{draft_id}/export?format={fmt}")
+        assert r.status_code == 200, f"{mode}/{fmt} -> {r.status_code}"
+        assert r.text, f"{mode}/{fmt} empty"
+    detail = client.get(f"/api/library/{draft_id}").json()
+    assert detail.get("artifact_type") == artifact_type
+
+
 def test_job_get_404(client):
     assert client.get("/api/jobs/nope").status_code == 404
 
