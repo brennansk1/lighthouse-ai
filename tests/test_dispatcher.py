@@ -295,3 +295,59 @@ def test_build_runtime_gateway_real_when_tags_present(migrated_paths, monkeypatc
     monkeypatch.setattr(pl, "_ollama_installed_tags", lambda: ["llama3.1:8b"])
     gw = build_runtime_gateway(migrated_paths)
     assert isinstance(gw, Gateway)
+
+
+# ── RAM-safety guard (offline; no real LLM call) ────────────────────────────
+
+def test_runtime_ram_ok_defers_below_floor(monkeypatch):
+    """Below the free-RAM floor, the loop must defer (runtime_ram_ok False)."""
+    import lighthouse_ai.dispatcher as d
+    import lighthouse_ai.hardware as hw
+
+    class _Low:
+        free_ram_gb = 1.0
+    monkeypatch.setattr(hw, "probe", lambda: _Low())
+    assert d.runtime_ram_ok(min_resident_gb=4.0) is False
+
+
+def test_runtime_ram_ok_runs_with_headroom(monkeypatch):
+    import lighthouse_ai.dispatcher as d
+    import lighthouse_ai.hardware as hw
+
+    class _High:
+        free_ram_gb = 64.0
+    monkeypatch.setattr(hw, "probe", lambda: _High())
+    assert d.runtime_ram_ok(min_resident_gb=4.0) is True
+
+
+def test_budget_override_picks_model_that_fits_free_ram():
+    """A tight live-RAM budget must drop the reasoning pick to a smaller model."""
+    from lighthouse_ai.gateway import resolve_against_installed
+    from lighthouse_ai.hardware import probe
+
+    profile = probe()
+    installed = ["mistral-small:24b", "qwen2.5:14b", "llama3.1:8b"]
+    roomy = resolve_against_installed(profile, installed, budget_gb=100.0)
+    tight = resolve_against_installed(profile, installed, budget_gb=8.0)
+    assert roomy["planner"] == "mistral-small:24b"   # largest fits 100 GB
+    assert tight["planner"] == "llama3.1:8b"          # only the 8B fits 8 GB
+
+
+def test_run_job_records_backend_used(migrated_paths):
+    """A run under a (mock) gateway records meta['backend'] for masquerade checks."""
+    from lighthouse_ai.hardware import probe
+    from lighthouse_ai.pipeline import make_gateway
+
+    gw = make_gateway(migrated_paths, probe(), offline=True)  # mock provider
+    _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
+    dispatch_once(migrated_paths, gateway=gw)
+    conn = open_db(migrated_paths.state_db)
+    try:
+        mj = conn.execute(
+            "SELECT metadata_json FROM jobs WHERE id=?", ("j1",)).fetchone()[0]
+    finally:
+        conn.close()
+    meta = json.loads(mj)
+    # decide calls the gateway to score cells → backend recorded as mock here.
+    assert meta.get("backend") == "mock"
+    assert meta.get("backends", {}).get("mock", 0) >= 1

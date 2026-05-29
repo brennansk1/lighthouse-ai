@@ -121,18 +121,24 @@ def make_vector_store(dim: int, *, offline: bool = False):
 
 
 def make_gateway(paths: Paths, profile: HardwareProfile, *,
-                 offline: bool = False, installed: list[str] | None = None) -> Gateway:
+                 offline: bool = False, installed: list[str] | None = None,
+                 budget_gb: float | None = None) -> Gateway:
     """Gateway with capability-classes resolved to real installed tags.
 
     ``offline=True`` forces the mock provider (no model load). Otherwise the
     Gateway uses real Ollama dispatch and we override the catalog's
     capability-class names with the best-fitting installed tags.
+
+    ``budget_gb`` (optional) constrains model selection to a RAM budget tighter
+    than total capacity — the live dispatch loop passes free-RAM-minus-margin so
+    it picks a model that actually fits available memory.
     """
     gov = Governor(paths.state_db, BUDGET_DEFAULTS)
     if offline:
         return Gateway(gov, paths.audit_db, profile=profile, prefer_real_backends=False)
     installed = installed if installed is not None else _ollama_installed_tags()
-    overrides = resolve_against_installed(profile, installed) if installed else {}
+    overrides = (resolve_against_installed(profile, installed, budget_gb=budget_gb)
+                 if installed else {})
     return Gateway(gov, paths.audit_db, profile=profile,
                    prefer_real_backends=True, overrides=overrides)
 

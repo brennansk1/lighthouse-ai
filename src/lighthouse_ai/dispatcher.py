@@ -463,9 +463,21 @@ def run_job(paths: Paths, job: ClaimedJob, *,
     meta = dict(job.meta)
     meta["progress"] = 1.0
     meta["draft_id"] = draft_id
+    # Record which backend actually served this job so a "mock masquerade" (a
+    # real-gateway run that silently degraded to the mock) is visible downstream.
+    if gateway is not None:
+        try:
+            counts = gateway.drain_backends()
+            if counts:
+                real = counts.get("ollama", 0)
+                meta["backends"] = counts
+                meta["backend"] = "ollama" if real else "mock"
+        except Exception:
+            pass
     _set_status(paths.state_db, job.id, "review", meta=meta)
     _audit(paths, "job.review",
-           {"job_id": job.id, "draft_id": draft_id, "mode": mode_key})
+           {"job_id": job.id, "draft_id": draft_id, "mode": mode_key,
+            "backend": meta.get("backend")})
     if bus is not None:
         bus.publish("job.status", {"id": job.id, "status": "review"})
         bus.publish("job.progress", {"id": job.id, "progress": 1.0})
@@ -481,6 +493,11 @@ def dispatch_once(paths: Paths, *, gateway: Gateway | None = None,
     return run_job(paths, job, gateway=gateway, gate=gate, bus=bus)
 
 
+#: Smallest reasoning model we will bother to load, plus headroom. Below this
+#: much free RAM the dispatch loop defers real work rather than thrash/mock.
+MIN_REASONING_RESIDENT_GB = 4.0
+
+
 def build_runtime_gateway(paths: Paths) -> Gateway | None:
     """Best-effort real Ollama gateway for the live dispatch loop.
 
@@ -490,17 +507,42 @@ def build_runtime_gateway(paths: Paths) -> Gateway | None:
     Returns ``None`` when Ollama is unavailable so the dispatcher degrades to its
     offline-deterministic stub path instead of failing jobs. Never raises.
 
+    Model selection is constrained to **live-free RAM** (free minus a safety
+    margin), not total capacity — so on a busy box we pick a model that actually
+    fits and produces real output, instead of a too-big pick that would only
+    ever degrade to the low-memory mock.
+
     Built ONCE at dispatch-loop start, not per tick (probing shells out to
     Ollama). The default offline test suite never calls this — tests drive
     ``dispatch_once`` with ``gateway=None`` directly.
     """
     try:
+        from .gateway import RUNTIME_RAM_MARGIN_GB
         from .hardware import probe
         from .pipeline import _ollama_installed_tags, make_gateway
 
         tags = _ollama_installed_tags()
         if not tags:
             return None
-        return make_gateway(paths, probe(), offline=False, installed=tags)
+        profile = probe()
+        budget = max(0.0, profile.free_ram_gb - RUNTIME_RAM_MARGIN_GB)
+        return make_gateway(paths, profile, offline=False, installed=tags,
+                            budget_gb=budget)
     except Exception:
         return None
+
+
+def runtime_ram_ok(*, min_resident_gb: float = MIN_REASONING_RESIDENT_GB) -> bool:
+    """True if there is enough live-free RAM to run a real reasoning model.
+
+    The dispatch loop checks this before claiming a job for a *real* gateway: if
+    free RAM cannot fit even the smallest reasoning model plus margin, it skips
+    the tick (transient defer) so the job waits for headroom instead of running
+    straight into the low-memory mock. Returns True when RAM cannot be measured
+    (never block on a measurement failure)."""
+    try:
+        from .gateway import RUNTIME_RAM_MARGIN_GB
+        from .hardware import probe
+        return probe().free_ram_gb >= (min_resident_gb + RUNTIME_RAM_MARGIN_GB)
+    except Exception:
+        return True

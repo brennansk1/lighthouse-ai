@@ -156,7 +156,12 @@ def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0) -> threading.
     inherited through ``Gateway.complete`` — no second queue here. Stuck
     ``running`` jobs from a previous process are re-queued once at startup.
     """
-    from .dispatcher import build_runtime_gateway, dispatch_once, reap_stuck_jobs
+    from .dispatcher import (
+        build_runtime_gateway,
+        dispatch_once,
+        reap_stuck_jobs,
+        runtime_ram_ok,
+    )
     from .governor.scheduler_gate import Policy
 
     gate_cfg = SchedulerGateConfig.from_config_file(paths.config_file)
@@ -181,6 +186,13 @@ def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0) -> threading.
             try:
                 policy, _ = gate.policy()
                 if policy is Policy.PAUSED:
+                    continue
+                # Real-gateway runs need RAM headroom for a reasoning model;
+                # if free RAM is below the floor, defer this tick (leave the job
+                # queued) rather than thrash or silently degrade to the mock.
+                # Offline (stub) dispatch is cheap and always proceeds.
+                if gateway is not None and not runtime_ram_ok():
+                    log.info("dispatch.deferred", reason="low_free_ram")
                     continue
                 dispatch_once(paths, gateway=gateway, gate=gate)
             except Exception as exc:

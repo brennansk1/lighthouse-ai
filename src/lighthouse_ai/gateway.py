@@ -396,17 +396,23 @@ def _first_installed(prefs: list[str], installed: list[str]) -> str | None:
 
 
 def resolve_against_installed(profile: HardwareProfile, installed: list[str],
-                              catalog: dict[str, Any] | None = None
+                              catalog: dict[str, Any] | None = None,
+                              *, budget_gb: float | None = None
                               ) -> dict[str, str]:
     """Map each role to a real installed Ollama tag, fitting the RAM budget.
 
     Returns role→tag for roles we could satisfy from ``installed``. Roles with
     no installed match are omitted (caller falls back to the catalog class or
-    a stub). Reasoning picks respect the §5.2 budget — the largest preference
-    whose footprint (best-effort) fits resident, else the smallest installed.
+    a stub). Reasoning picks respect the budget — the largest preference whose
+    footprint (best-effort) fits resident, else the smallest installed.
+
+    ``budget_gb`` overrides the static §5.2 capacity budget. The live dispatch
+    loop passes ``free_ram - margin`` here so it selects a model that fits
+    *currently available* RAM (not total capacity), avoiding a too-big pick that
+    would only ever degrade to the low-memory mock.
     """
     from .hardware import llm_budget_gb
-    budget = llm_budget_gb(profile)
+    budget = llm_budget_gb(profile) if budget_gb is None else budget_gb
     out: dict[str, str] = {}
 
     # Reasoning: walk preference, prefer ones that fit the budget.
@@ -593,6 +599,12 @@ class Gateway:
         from .governor.ollama_queue import AdmissionConfig
         self._ollama_lock = self.audit_db.parent / "ollama.lock"
         self._admission = AdmissionConfig.from_env()
+        # Per-instance tally of which backend actually served each completion
+        # ("ollama" real vs "mock"/"mock-lowmem" fallback). The dispatcher drains
+        # this per job to detect a "mock masquerade" — a real-gateway run that
+        # silently degraded to the mock because RAM was tight.
+        from collections import Counter
+        self._backend_counts: Counter = Counter()
 
     # --- backend access (lazy) ---
     def _get_ollama(self):
@@ -691,8 +703,19 @@ class Gateway:
             usd=0.0,  # local calls are free; cloud pricing TBD when escalation lands
             fingerprint=fp,
         )
+        self._backend_counts[backend_used] += 1
         self._record(resp, job_id=job_id, prompt=prompt, backend_used=backend_used)
         return resp
+
+    def drain_backends(self) -> dict[str, int]:
+        """Return and reset the per-backend completion tally since the last drain.
+
+        The dispatcher calls this after each job to record which backend served
+        it. Keys are ``"ollama"`` (real) and ``"mock"``/``"mock-lowmem"``
+        (fallback). An all-mock tally under a real gateway is a masquerade."""
+        counts = dict(self._backend_counts)
+        self._backend_counts.clear()
+        return counts
 
     def _need_gb(self, ollama, model: str) -> float:
         """New resident RAM ``model`` will add: 0 if already loaded or SSD-paging.
