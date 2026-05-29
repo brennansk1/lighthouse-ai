@@ -34,6 +34,17 @@ def test_job_create_list_get(client):
     assert "model_calls" in detail
 
 
+def test_job_create_persists_depth_and_budget(client):
+    r = client.post("/api/jobs", json={
+        "mode": "investigate", "topic": "Deep dive on X",
+        "depth": "deep", "budget": "overnight"})
+    assert r.status_code == 200
+    jid = r.json()["id"]
+    meta = client.get(f"/api/jobs/{jid}").json()["metadata"]
+    assert meta["depth"] == "deep"
+    assert meta["budget"] == "overnight"
+
+
 def test_job_get_404(client):
     assert client.get("/api/jobs/nope").status_code == 404
 

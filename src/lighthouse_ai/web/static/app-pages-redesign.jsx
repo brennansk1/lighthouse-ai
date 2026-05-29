@@ -59,6 +59,77 @@ const MODE_OUTCOME = {
 // accepts source_urls today, so this is safe to send.
 const URL_MODES = new Set(['watch', 'investigate', 'adjudicate']);
 
+// Modes where research depth meaningfully changes the work done. (Decide is
+// bounded by options×criteria; Watch depth = source breadth, handled separately.)
+const DEPTH_MODES = new Set(['investigate', 'ask', 'survey', 'reconstruct']);
+
+// The four depth tiers (see docs/research_depth_matrix.md). Display-layer only.
+const DEPTH_TIERS = [
+  { key: 'quick', label: 'Quick', time: '~1–3 min',
+    blurb: 'A fast, grounded scan. Fewer rounds, top findings only.' },
+  { key: 'standard', label: 'Standard', time: '~5–10 min',
+    blurb: 'Balanced. Multi-round with coverage check. ≈ frontier deep research.' },
+  { key: 'thorough', label: 'Thorough', time: '~20–60 min',
+    blurb: 'Doing it properly: more rounds, adversarial refutation, triangulation.' },
+  { key: 'deep', label: 'Deep', time: 'hours (budgeted)',
+    blurb: 'Overnight. Recursive question-tree to exhaustion — depth frontier tools can’t reach.' },
+];
+const DEPTH_INVARIANT = 'Depth scales coverage and confidence, never trust — every tier stays grounded.';
+const DEEP_BUDGETS = [
+  { key: '30m', label: '30 min' }, { key: '1h', label: '1 hour' },
+  { key: '2h', label: '2 hours' }, { key: 'overnight', label: 'Overnight' },
+];
+
+// Depth selector: four tier cards + (for Deep) a required budget. Honors the
+// invariant tooltip and Adjudicate's Standard-minimum rule is enforced server-side.
+function DepthSelector({ depth, setDepth, budget, setBudget }) {
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}
+        title={DEPTH_INVARIANT}>{DEPTH_INVARIANT}</div>
+      <div style={{ display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+        {DEPTH_TIERS.map((t) => {
+          const on = depth === t.key;
+          return (
+            <button key={t.key} onClick={() => setDepth(t.key)} aria-pressed={on}
+              style={{ ...card, textAlign: 'left', padding: '10px 12px', cursor: 'pointer',
+                border: on ? '2px solid var(--primary)' : '1px solid var(--rule)',
+                background: on ? 'var(--rule-soft)' : 'var(--card)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between',
+                alignItems: 'baseline', gap: 6 }}>
+                <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink)' }}>{t.label}</span>
+                <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{t.time}</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4,
+                lineHeight: 1.4 }}>{t.blurb}</div>
+            </button>
+          );
+        })}
+      </div>
+      {depth === 'deep' && (
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8,
+          flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }}>
+            Budget (required):</span>
+          {DEEP_BUDGETS.map((b) => (
+            <button key={b.key} onClick={() => setBudget(b.key)}
+              aria-pressed={budget === b.key}
+              style={{ ...card, padding: '4px 10px', cursor: 'pointer', fontSize: 12,
+                border: budget === b.key ? '2px solid var(--primary)' : '1px solid var(--rule)',
+                background: budget === b.key ? 'var(--rule-soft)' : 'var(--card)' }}>
+              {b.label}
+            </button>
+          ))}
+          <span style={{ fontSize: 11, color: 'var(--muted)', flexBasis: '100%' }}>
+            Deep runs for up to this long, then stops. It pauses if you go off AC power.
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────── Research (wizard) ───────────────────────────
 //
 // A three-step launcher driven by GET /api/modes:
@@ -190,12 +261,15 @@ function ResearchPage({ toast }) {
   const [options, setOptions] = useState(['', '']);
   const [criteria, setCriteria] = useState([{ label: '', weight: 1.0 }]);
   const [urls, setUrls] = useState('');
+  const [depth, setDepth] = useState('standard');
+  const [budget, setBudget] = useState('1h');
   const [busy, setBusy] = useState(false);
 
   const modes = (data && Array.isArray(data.modes)) ? data.modes : [];
   const sel = modes.find((m) => m.key === selected) || null;
   const isDecide = sel && sel.key === 'decide';
   const wantsUrls = sel && URL_MODES.has(sel.key);
+  const wantsDepth = sel && DEPTH_MODES.has(sel.key);
 
   const cleanOptions = options.map((o) => o.trim()).filter(Boolean);
   const cleanCriteria = criteria.filter((c) => c.label.trim() && c.weight > 0);
@@ -204,6 +278,7 @@ function ResearchPage({ toast }) {
   function reset() {
     setStep(1); setSelected(null); setTopic('');
     setOptions(['', '']); setCriteria([{ label: '', weight: 1.0 }]); setUrls('');
+    setDepth('standard'); setBudget('1h');
   }
 
   function chooseMode(key) {
@@ -236,6 +311,10 @@ function ResearchPage({ toast }) {
         body.options = cleanOptions;
         body.criteria = cleanCriteria;
       }
+      if (wantsDepth) {
+        body.depth = depth;
+        if (depth === 'deep') body.budget = budget;
+      }
       if (wantsUrls && cleanUrls.length) body.source_urls = cleanUrls;
       const r = await apiPost('/api/jobs', body);
       toast.show(`Started ${sel.label}. Track it in Activity (run ${r.id}).`, 'success');
@@ -257,7 +336,11 @@ function ResearchPage({ toast }) {
       ? `, comparing ${cleanOptions.length} option${cleanOptions.length === 1 ? '' : 's'} `
         + `across ${cleanCriteria.length} criteri${cleanCriteria.length === 1 ? 'on' : 'a'}`
       : '';
-    reviewSentence = `You are about to run ${sel.label} on "${topic.trim()}". `
+    const depthTail = wantsDepth
+      ? ` at ${(DEPTH_TIERS.find((t) => t.key === depth) || {}).label || depth} depth`
+        + (depth === 'deep' ? ` (budget: ${(DEEP_BUDGETS.find((b) => b.key === budget) || {}).label || budget})` : '')
+      : '';
+    reviewSentence = `You are about to run ${sel.label} on "${topic.trim()}"${depthTail}. `
       + `This produces ${outcome}${decideTail}.`;
   }
 
@@ -351,6 +434,14 @@ function ResearchPage({ toast }) {
                       border: '1px solid var(--rule)', borderRadius: 7, fontSize: 13,
                       boxSizing: 'border-box', fontFamily: 'var(--mono, monospace)',
                       resize: 'vertical' }} />
+                </WizardField>
+              )}
+
+              {wantsDepth && (
+                <WizardField label="Research depth"
+                  hint="How far the run goes. Quick for a fast answer; Deep runs overnight on a recursive question-tree.">
+                  <DepthSelector depth={depth} setDepth={setDepth}
+                    budget={budget} setBudget={setBudget} />
                 </WizardField>
               )}
 

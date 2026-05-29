@@ -31,6 +31,7 @@ class NewJob(BaseModel):
     mode: str
     topic: str
     depth: str = "Standard"
+    budget: str | None = None  # Deep-tier wall-clock/node budget (30m/1h/2h/overnight)
     options: list[str] = []
     criteria: list[dict[str, Any]] = []
     source_urls: list[str] = []
@@ -176,6 +177,8 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         jid = uuid.uuid4().hex[:6]
         meta = {"topic": body.topic, "progress": 0.0, "depth": body.depth,
                 "eta": "queued"}
+        if body.budget:
+            meta["budget"] = body.budget
         if body.options:
             meta["options"] = body.options
         if body.criteria:
