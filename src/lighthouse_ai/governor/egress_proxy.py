@@ -79,6 +79,32 @@ DEFAULT_ALLOWED_DOMAINS: frozenset[str] = frozenset(
         "ghoapi.azureedge.net",
         "wikidata.org",
         "query.wikidata.org",
+        # SL5 U.S. federal
+        "federalregister.gov",
+        "regulations.gov",
+        "govinfo.gov",
+        "congress.gov",
+        # SL8 economic data (api.stlouisfed.org already above)
+        "bea.gov",
+        "bls.gov",
+        "worldbank.org",
+        "oecd.org",
+        "census.gov",
+        # SL9 engineering package registries (github already above)
+        "pypi.org",
+        "npmjs.org",
+        "crates.io",
+        # SL11 news outlets (per-outlet free RSS / Open Platform)
+        "reuters.com",
+        "apnews.com",
+        "ap.org",
+        "bbci.co.uk",
+        "bbc.co.uk",
+        "bbc.com",
+        "npr.org",
+        "theguardian.com",
+        "guardianapis.com",
+        "propublica.org",
     }
 )
 

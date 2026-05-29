@@ -1,0 +1,44 @@
+id          = "github"
+name        = "GitHub"
+description = "GitHub REST API v3: search repos, fetch READMEs, list releases/issues, get dependency graphs, licenses, security advisories (GHSA), and commit history. Watchable for new releases, issues, and commits."
+category    = "engineering"
+version     = "0.1.0"
+
+# --- fetch policy ---
+# api.github.com and github.com are on the DEFAULT Lighthouse platform allowlist.
+# No `lighthouse trust add` is required.
+# Auth: `lighthouse config set github.token <PAT>` raises rate limit from 60/hr (unauth)
+# to 5,000/hr (auth). Unauthenticated use is functional but heavily rate-limited.
+tier        = "A"
+base_url    = "https://api.github.com"
+allowed_domains = ["api.github.com", "github.com", "raw.githubusercontent.com"]
+rate_limit_per_sec = 1.0
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"
+license       = "public-api"
+signed        = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "factual_lookup",
+    "exploratory_survey",
+    "comparative",
+    "methodology_evaluation",
+    "provenance",
+]
+topics = ["engineering", "software", "open_source", "security", "academic_cs_ml",
+          "supply_chain", "devops"]
+modes_natural_fit  = ["investigate", "survey", "decide", "watch"]
+modes_weak_fit     = ["ask"]
+output_shape       = "enumerable"
+temporal_tools     = true
+perspective_lens   = "primary_source"
+authority          = "primary"
+domains            = ["engineering", "academic_cs_ml", "security"]
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_releases", "list_recent_issues", "get_commit_history"]

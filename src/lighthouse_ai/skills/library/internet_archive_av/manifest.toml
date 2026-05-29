@@ -1,0 +1,58 @@
+id          = "internet_archive_av"
+name        = "Internet Archive — Audio/Video Collections"
+description = """\
+Search and retrieve audio/video items from archive.org's publicly accessible \
+collections: public-domain films, Creative Commons recordings, archived radio \
+and TV (including the Television News Archive), oral histories, and government \
+footage. Distinct from the Wayback skill (web snapshots) — this skill targets \
+the media catalogue via the Internet Archive advancedsearch and metadata APIs. \
+Supports transcript retrieval when caption files are present. \
+Domains: archive.org / web.archive.org.\
+"""
+category    = "media"
+version     = "0.1.0"
+tier        = "A"
+
+allowed_domains = ["archive.org", "web.archive.org"]
+
+base_url            = "https://archive.org"
+rate_limit_per_sec  = 1.0
+robots_policy       = "obey"
+
+# Provenance
+default_grade       = "B"
+license             = "varies"
+signed              = true
+enabled_by_default  = true
+
+# Recommender scoring surface
+supported_question_types = [
+    "factual_lookup",
+    "exploratory",
+    "temporal_reconstruction",
+    "primary_source_retrieval",
+]
+topics = [
+    "media",
+    "film",
+    "radio",
+    "television",
+    "oral_history",
+    "public_domain",
+    "news_archive",
+    "pop_culture",
+    "history",
+]
+
+modes_natural_fit = ["investigate", "reconstruct"]
+modes_weak_fit    = ["survey"]
+output_shape      = "enumerable"
+temporal_tools    = true
+
+perspective_lens  = ""
+authority         = "archive"
+
+domains = ["media", "journalism", "pop_culture", "history"]
+
+# Optional: watchable declared for future collection-monitoring expansion.
+watchable = false

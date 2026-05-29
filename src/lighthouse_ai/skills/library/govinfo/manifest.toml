@@ -1,0 +1,45 @@
+id          = "govinfo"
+name        = "GovInfo"
+description = "GovInfo API (api.govinfo.gov): search GPO collections including CFR, U.S. Code, Congressional Record, GAO reports, and public laws; fetch individual documents; retrieve specific CFR and U.S. Code sections; watch collections for new publications."
+category    = "legal"
+version     = "0.1.0"
+
+# --- fetch policy ---
+# NOTE: api.govinfo.gov is NOT on the default platform allowlist.
+# The skill degrades gracefully (returns [] + logged note) until the user runs:
+#   lighthouse trust add api.govinfo.gov
+tier        = "A"
+base_url    = "https://api.govinfo.gov"
+allowed_domains = ["api.govinfo.gov", "www.govinfo.gov", "govinfo.gov"]
+rate_limit_per_sec = 1.0
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"   # GPO is the authoritative publisher; these are primary legal texts
+license       = "public-domain"
+signed        = true
+enabled_by_default = false   # requires trust add + API key to unlock
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "factual_lookup",
+    "causal_explanation",
+    "methodology_evaluation",
+    "exploratory_survey",
+    "comparative",
+    "procedural",
+    "statutory_interpretation",
+]
+topics = ["policy", "legal", "regulatory", "government", "administrative_law",
+          "statutory_law", "congressional_record", "gao_reports", "journalism",
+          "rulemaking", "cfr", "uscode"]
+modes_natural_fit  = ["investigate", "survey", "reconstruct"]
+modes_weak_fit     = ["ask", "decide"]
+output_shape       = "enumerable"
+temporal_tools     = true
+perspective_lens   = "regulatory"
+authority          = "regulatory_primary"
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_recent_in_collection"]

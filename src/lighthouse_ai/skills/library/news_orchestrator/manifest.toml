@@ -1,0 +1,95 @@
+id          = "news_orchestrator"
+name        = "News Orchestrator"
+description = """\
+Cross-outlet news coordinator. Aggregates Reuters, AP, BBC, NPR, The Guardian, \
+and ProPublica in a single call with per-document AllSides bias tags. Tools: \
+search_news (fan-out across trusted outlets), compare_coverage (side-by-side \
+per-outlet grouping), register_custom_outlet (ephemeral user RSS), \
+validate_outlet_access (reachability check), get_bias_overlay (AllSides map). \
+The bias overlay is always attached to results so Adjudicate mode sees \
+perspective diversity across the full fetch.\
+"""
+category    = "news"
+version     = "0.1.0"
+
+# --- fetch policy (union of all six outlet domains) ---
+tier        = "A"
+base_url    = "https://feeds.reuters.com"
+allowed_domains = [
+    # Reuters
+    "feeds.reuters.com",
+    "www.reuters.com",
+    "reuters.com",
+    # AP
+    "apnews.com",
+    "www.apnews.com",
+    "storage.googleapis.com",
+    "feeds.apnews.com",
+    # BBC
+    "feeds.bbci.co.uk",
+    "www.bbc.co.uk",
+    "www.bbc.com",
+    "bbc.co.uk",
+    "bbc.com",
+    # NPR
+    "feeds.npr.org",
+    "www.npr.org",
+    "npr.org",
+    "media.npr.org",
+    # Guardian
+    "content.guardianapis.com",
+    "www.theguardian.com",
+    "theguardian.com",
+    # ProPublica
+    "www.propublica.org",
+    "propublica.org",
+    "projects.propublica.org",
+    "api.propublica.org",
+    "data.propublica.org",
+]
+rate_limit_per_sec = 1.0
+robots_policy      = "obey"
+
+# --- provenance ---
+default_grade      = "A"
+license            = "composite-outlet-terms"
+signed             = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "current_events",
+    "trend_analysis",
+    "exploratory",
+    "list_enumeration",
+    "fact_lookup",
+    "investigative",
+    "causal_explanation",
+    "comparative",
+]
+topics = [
+    "news", "journalism", "current_events", "world_news",
+    "politics", "finance", "business", "technology", "investigative",
+    "media_bias", "cross_outlet_coverage",
+]
+modes_natural_fit = ["watch", "investigate", "survey", "adjudicate"]
+modes_weak_fit    = []
+output_shape      = "enumerable"
+temporal_tools    = true
+perspective_lens  = "popular"
+authority         = "multi_outlet_composite"
+
+# Bias-overlay note: each returned Document is tagged with its outlet's
+# AllSides rating via metadata["allsides_rating"].  Adjudicate mode uses
+# this tag for perspective-diversity scoring across the fetch set.
+audit_tags = [
+    "bias-overlay:allsides",
+    "meta-skill:news",
+    "news:orchestrator",
+]
+
+domains = ["journalism", "politics", "finance", "world_affairs", "investigative"]
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["search_news"]

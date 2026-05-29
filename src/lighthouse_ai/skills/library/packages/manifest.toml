@@ -1,0 +1,57 @@
+id          = "packages"
+name        = "PyPI / npm / crates.io"
+description = "Three package registries under one skill: PyPI (Python), npm (JavaScript/Node.js), crates.io (Rust). Tools: search, fetch metadata, list versions, get dependencies, get dependents, watch recent releases. Primary for supply-chain research, dependency auditing, and library evaluation."
+category    = "engineering"
+version     = "0.1.0"
+
+# --- fetch policy ---
+# pypi.org, registry.npmjs.org, and crates.io must be on the egress allowlist.
+# These are NOT on the DEFAULT allowlist and require:
+#   lighthouse trust add pypi.org
+#   lighthouse trust add registry.npmjs.org
+#   lighthouse trust add crates.io
+# The skill degrades gracefully (returns [] + logged note) until unlocked.
+tier        = "A"
+base_url    = "https://pypi.org"
+allowed_domains = [
+    "pypi.org",
+    "files.pythonhosted.org",
+    "registry.npmjs.org",
+    "www.npmjs.com",
+    "crates.io",
+    "static.crates.io",
+]
+rate_limit_per_sec = 2.0
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"
+license       = "public-api"
+signed        = true
+enabled_by_default = false   # requires trust add for each registry
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "factual_lookup",
+    "exploratory_survey",
+    "comparative",
+    "methodology_evaluation",
+    "provenance",
+]
+topics = ["engineering", "software", "open_source", "security", "supply_chain",
+          "devops", "python", "javascript", "rust"]
+modes_natural_fit  = ["investigate", "survey", "decide", "watch"]
+modes_weak_fit     = ["ask"]
+output_shape       = "enumerable"
+temporal_tools     = true
+perspective_lens   = "primary_source"
+authority          = "primary"
+domains            = ["engineering", "security"]
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = [
+    "pypi_list_recent_releases_for_package",
+    "npm_list_recent_releases_for_package",
+    "crates_list_recent_releases_for_package",
+]

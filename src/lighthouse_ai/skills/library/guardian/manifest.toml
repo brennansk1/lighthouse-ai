@@ -1,0 +1,57 @@
+id          = "guardian"
+name        = "The Guardian"
+description = """\
+The Guardian — UK/international investigative and progressive daily \
+newspaper. Uses the Guardian Open Platform API (free tier; API key \
+optional but increases rate limits) plus granular tag-based article \
+discovery. Returns articles with rich metadata.\
+"""
+category    = "news"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://content.guardianapis.com"
+allowed_domains = [
+    "content.guardianapis.com",
+    "www.theguardian.com",
+    "theguardian.com",
+]
+rate_limit_per_sec = 0.5
+robots_policy      = "obey"
+
+# --- provenance ---
+default_grade      = "A"
+license            = "guardian-open-platform"
+signed             = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "current_events",
+    "trend_analysis",
+    "exploratory",
+    "list_enumeration",
+    "investigative",
+    "causal_explanation",
+]
+topics = [
+    "news", "journalism", "investigative", "current_events",
+    "uk_news", "world_news", "environment", "politics",
+    "technology", "science", "culture", "society",
+]
+modes_natural_fit = ["watch", "investigate", "survey", "adjudicate"]
+modes_weak_fit    = []
+output_shape      = "enumerable"
+temporal_tools    = true
+perspective_lens  = "popular"
+authority         = "newspaper"
+
+# Adjudicate diversity — AllSides media bias rating
+audit_tags = ["allsides:left", "news:newspaper"]
+
+domains = ["journalism", "uk_politics", "world_affairs", "environment", "investigative"]
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_recent_in_topic"]

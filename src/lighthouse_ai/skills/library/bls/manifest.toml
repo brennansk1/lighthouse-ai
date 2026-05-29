@@ -1,0 +1,42 @@
+id          = "bls"
+name        = "BLS (Bureau of Labor Statistics)"
+description = "BLS Public Data API: employment, unemployment, CPI, PPI, productivity, wages, and occupational data. Authoritative U.S. source for labor market and price statistics."
+category    = "economics"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://api.bls.gov"
+allowed_domains = ["api.bls.gov", "data.bls.gov", "www.bls.gov"]
+rate_limit_per_sec = 1.0
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"   # BLS is the primary source for U.S. labor and price statistics
+license       = "public-domain"
+signed        = true
+enabled_by_default = false   # requires trust add; api_key recommended for higher quota
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "factual_lookup",
+    "causal_explanation",
+    "exploratory_survey",
+    "comparative",
+    "time_series",
+]
+topics = ["economics", "policy", "employment", "unemployment", "cpi", "inflation",
+          "wages", "productivity", "labor_market", "occupations", "prices"]
+domains = ["economics", "policy", "labor_research", "journalism"]
+primary_for = ["economics", "labor_research"]
+secondary_for = ["policy", "journalism"]
+modes_natural_fit  = ["investigate", "survey", "reconstruct", "watch"]
+modes_weak_fit     = ["ask", "decide"]
+output_shape       = "enumerable"
+temporal_tools     = true
+perspective_lens   = "empirical"
+authority          = "primary_statistical"
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_releases"]

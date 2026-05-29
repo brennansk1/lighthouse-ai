@@ -1,0 +1,55 @@
+id          = "reuters"
+name        = "Reuters"
+description = """\
+Reuters wire service — global breaking news and analysis. Fetches the \
+Reuters RSS feeds (world, business, technology, science, markets) and \
+the Reuters Open Platform API where available. Returns recent articles \
+as Documents for research, investigation, and Watch monitoring.\
+"""
+category    = "news"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://feeds.reuters.com"
+allowed_domains = [
+    "feeds.reuters.com",
+    "www.reuters.com",
+    "reuters.com",
+]
+rate_limit_per_sec = 1.0
+robots_policy      = "obey"
+
+# --- provenance ---
+default_grade      = "A"
+license            = "reuters-terms"
+signed             = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "current_events",
+    "trend_analysis",
+    "exploratory",
+    "list_enumeration",
+    "fact_lookup",
+]
+topics = [
+    "news", "journalism", "current_events", "world_news",
+    "business", "finance", "politics", "technology", "science",
+]
+modes_natural_fit = ["watch", "investigate", "survey"]
+modes_weak_fit    = ["adjudicate"]
+output_shape      = "enumerable"
+temporal_tools    = true
+perspective_lens  = "popular"
+authority         = "wire_service"
+
+# Adjudicate diversity — AllSides media bias rating
+audit_tags = ["allsides:center", "news:wire"]
+
+domains = ["journalism", "politics", "finance", "business", "world_affairs"]
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_recent_in_topic"]

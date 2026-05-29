@@ -1,0 +1,56 @@
+id          = "bbc_news"
+name        = "BBC News"
+description = """\
+BBC News — international public-service broadcaster with strong UK and \
+global coverage. Fetches BBC RSS feeds across world, UK, technology, \
+science, business, and health topics. Returns articles as Documents.\
+"""
+category    = "news"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://feeds.bbci.co.uk"
+allowed_domains = [
+    "feeds.bbci.co.uk",
+    "www.bbc.co.uk",
+    "www.bbc.com",
+    "bbc.co.uk",
+    "bbc.com",
+]
+rate_limit_per_sec = 1.0
+robots_policy      = "obey"
+
+# --- provenance ---
+default_grade      = "A"
+license            = "bbc-terms"
+signed             = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "current_events",
+    "trend_analysis",
+    "exploratory",
+    "list_enumeration",
+    "fact_lookup",
+]
+topics = [
+    "news", "journalism", "current_events", "uk_news",
+    "world_news", "technology", "science", "business", "health",
+]
+modes_natural_fit = ["watch", "investigate", "survey"]
+modes_weak_fit    = ["adjudicate"]
+output_shape      = "enumerable"
+temporal_tools    = true
+perspective_lens  = "popular"
+authority         = "public_broadcaster"
+
+# Adjudicate diversity — AllSides media bias rating
+audit_tags = ["allsides:lean_left", "news:public_broadcaster"]
+
+domains = ["journalism", "world_affairs", "uk_politics", "technology", "science"]
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_recent_in_topic"]

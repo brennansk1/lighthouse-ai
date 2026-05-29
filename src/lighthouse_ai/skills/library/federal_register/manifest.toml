@@ -1,0 +1,43 @@
+id          = "federal_register"
+name        = "Federal Register"
+description = "FederalRegister.gov API v1: search rules, notices, and executive orders; fetch individual documents; list recent agency publications (watchable); track NPRM-to-final rulemaking timelines."
+category    = "regulatory"
+version     = "0.1.0"
+
+# --- fetch policy ---
+# NOTE: federalregister.gov is NOT on the default platform allowlist.
+# The skill degrades gracefully (returns [] + logged note) until the user runs:
+#   lighthouse trust add federalregister.gov
+tier        = "A"
+base_url    = "https://www.federalregister.gov"
+allowed_domains = ["federalregister.gov", "www.federalregister.gov"]
+rate_limit_per_sec = 1.0
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"   # authoritative primary government publications
+license       = "public-domain"
+signed        = true
+enabled_by_default = false   # requires trust add to unlock
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "factual_lookup",
+    "causal_explanation",
+    "methodology_evaluation",
+    "exploratory_survey",
+    "comparative",
+    "procedural",
+]
+topics = ["policy", "legal", "regulatory", "government", "executive_orders",
+          "administrative_law", "rulemaking", "journalism"]
+modes_natural_fit  = ["investigate", "survey", "reconstruct", "watch"]
+modes_weak_fit     = ["ask", "decide"]
+output_shape       = "enumerable"
+temporal_tools     = true
+perspective_lens   = "regulatory"
+authority          = "regulatory_primary"
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_recent_in_agency"]

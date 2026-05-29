@@ -1,0 +1,62 @@
+id          = "propublica"
+name        = "ProPublica"
+description = """\
+ProPublica — U.S. nonprofit investigative journalism with strong emphasis \
+on accountability reporting. Fetches ProPublica RSS and searches propublica.org. \
+Provides access to the ProPublica open data repository (Congress API, \
+Campaign Finance, Nonprofit Explorer) via search_data_repo.\
+"""
+category    = "news"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://www.propublica.org"
+allowed_domains = [
+    "www.propublica.org",
+    "propublica.org",
+    "projects.propublica.org",
+    "api.propublica.org",
+    "data.propublica.org",
+]
+rate_limit_per_sec = 1.0
+robots_policy      = "obey"
+
+# --- provenance ---
+default_grade      = "A"
+license            = "creative-commons-cc-by-nc-nd"
+signed             = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "current_events",
+    "investigative",
+    "causal_explanation",
+    "methodology_evaluation",
+    "exploratory",
+    "list_enumeration",
+]
+topics = [
+    "news", "journalism", "investigative", "accountability",
+    "us_politics", "government", "health", "environment",
+    "criminal_justice", "education", "open_data",
+]
+modes_natural_fit = ["investigate", "survey", "watch", "reconstruct"]
+modes_weak_fit    = []
+output_shape      = "enumerable"
+temporal_tools    = true
+perspective_lens  = "popular"
+authority         = "investigative_nonprofit"
+
+# Adjudicate diversity — AllSides media bias rating
+audit_tags = ["allsides:lean_left", "news:investigative"]
+
+domains = [
+    "journalism", "investigative", "us_politics",
+    "government_accountability", "health", "criminal_justice",
+]
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_recent_in_topic"]

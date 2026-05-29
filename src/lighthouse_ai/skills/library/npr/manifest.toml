@@ -1,0 +1,58 @@
+id          = "npr"
+name        = "NPR"
+description = """\
+NPR (National Public Radio) — U.S. public radio with strong in-depth \
+reporting on politics, arts, science, and health. Fetches NPR RSS feeds \
+and searches npr.org. Optionally integrates audio transcript extraction \
+via sources/transcript.py for NPR podcast/show segments.\
+"""
+category    = "news"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://feeds.npr.org"
+allowed_domains = [
+    "feeds.npr.org",
+    "www.npr.org",
+    "npr.org",
+    "media.npr.org",
+]
+rate_limit_per_sec = 1.0
+robots_policy      = "obey"
+
+# --- provenance ---
+default_grade      = "A"
+license            = "npr-terms"
+signed             = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "current_events",
+    "trend_analysis",
+    "exploratory",
+    "list_enumeration",
+    "fact_lookup",
+    "causal_explanation",
+]
+topics = [
+    "news", "journalism", "current_events", "us_news",
+    "politics", "science", "health", "arts", "culture", "education",
+    "public_radio", "audio_transcript",
+]
+modes_natural_fit = ["watch", "investigate", "survey"]
+modes_weak_fit    = ["adjudicate"]
+output_shape      = "enumerable"
+temporal_tools    = true
+perspective_lens  = "popular"
+authority         = "public_broadcaster"
+
+# Adjudicate diversity — AllSides media bias rating
+audit_tags = ["allsides:lean_left", "news:public_radio"]
+
+domains = ["journalism", "us_politics", "science", "arts_culture", "public_health"]
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_recent_in_topic"]

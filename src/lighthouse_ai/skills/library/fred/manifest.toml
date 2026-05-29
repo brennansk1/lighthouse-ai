@@ -1,0 +1,42 @@
+id          = "fred"
+name        = "FRED (St. Louis Fed)"
+description = "FRED API: search and fetch U.S. macro time series (GDP, unemployment, inflation, interest rates, etc.), list data releases (watchable), get point-in-time revision vintages, and compare multiple series."
+category    = "economics"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://api.stlouisfed.org"
+allowed_domains = ["api.stlouisfed.org", "fred.stlouisfed.org"]
+rate_limit_per_sec = 2.0
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"   # FRED redistributes official government series; grade A for redistributed macro data
+license       = "public-domain"
+signed        = true
+enabled_by_default = false   # requires api_key + trust add
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "factual_lookup",
+    "causal_explanation",
+    "exploratory_survey",
+    "comparative",
+    "time_series",
+]
+topics = ["economics", "finance", "policy", "monetary_policy", "macro",
+          "gdp", "inflation", "unemployment", "interest_rates"]
+domains = ["economics", "finance", "policy"]
+primary_for = ["economics"]
+secondary_for = ["finance", "policy"]
+modes_natural_fit  = ["investigate", "survey", "reconstruct", "watch"]
+modes_weak_fit     = ["ask", "decide"]
+output_shape       = "enumerable"
+temporal_tools     = true
+perspective_lens   = "empirical"
+authority          = "primary_statistical"
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_releases"]
