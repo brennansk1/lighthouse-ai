@@ -1,0 +1,134 @@
+# Lighthouse — Future Features Roadmap
+
+> Candidate features beyond the v1.0 bundle (skill framework + 36-source library + mode↔skill
+> integration + frontier-gap core). Companion to `SKILL_LIBRARY_V1.md` §5/§6 (deferred skills +
+> composing pattern) and `MODE_SKILL_INTEGRATION.md` §9 (open work). Nothing here is committed scope;
+> each item is gated by the same bar as v1: a real user need, a lawful/free access path, and no
+> duplication of shipped capability.
+
+---
+
+## 1. Watch v2 — user-defined website monitors with scrapability verification
+
+**The ask.** Let a user point Watch at an arbitrary website (not just a v1 skill or an RSS feed),
+have Lighthouse *verify it can actually be scraped lawfully and reliably*, and then set explicit
+**trigger criteria** that decide when a change becomes an alert.
+
+**Flow:**
+1. **Add source.** User pastes a URL in Watch → "Monitor a website". Plain-language: "Paste a page or
+   site you want to keep an eye on."
+2. **Scrapability pre-flight (the new capability).** Before accepting the monitor, run a one-time
+   check and show the user a clear verdict:
+   - robots.txt allows fetching this path (reuse `net_politeness.RobotsPolicy`); show the declared
+     crawl-delay.
+   - The page is reachable through the egress guard (host allowlisted, or offer a one-click
+     `trust add <domain>` with the reason recorded).
+   - **Extractability tier:** does the static fetch + trafilatura yield real content (≥N tokens)? If
+     not, flag that it needs Tier-B JS rendering (see §3) and whether that's enabled.
+   - **Change-detectability:** does the page expose a feed (RSS/Atom/sitemap `lastmod`), an
+     `ETag`/`Last-Modified` header, or must we diff rendered content? Pick the cheapest reliable
+     signal.
+   - Verdict surfaced as: ✓ "Good to monitor (feed available)", ◐ "Monitorable, but needs JS
+     rendering / content-diff (heavier)", ✗ "Can't monitor — robots disallows / paywall / not
+     reachable" with the reason. Visibility-with-reason, never silent failure.
+3. **Set trigger criteria.** The user chooses what counts as an alert, in plain language:
+   - **Any change** to the page/section (content hash diff).
+   - **New items** match keywords / a topic (interest-relative salience, reuse Watch's gateway
+     salience from `modes/monitor.py`).
+   - **A specific element changed** (CSS/XPath selector the user picks, or "the price", "the version
+     number", "the headline list") — a guided selector, not raw XPath for non-technical users.
+   - **Threshold** triggers ("number above/below X", "date passed", "status changed to Y").
+   - **Cadence** (how often to check) + quiet-hours, reusing `SchedulerGate`.
+4. **Run + escalate.** Each tick: politeness → broker → extract → diff against the stored snapshot →
+   evaluate trigger → reflection (passive) vs escalation (actionable), reusing the existing
+   dedup/hotness/escalation pipeline and `monitor_session` persistence.
+
+**Where it plugs in (mostly reuse):** a new `skills/library/web_monitor/` watchable skill +
+`run_watchable(ctx, query, *, since)`; a `verify_scrapable(ctx, url) -> Verdict` tool composing
+`net_politeness` (robots/crawl-delay), the egress guard, the extractor chain, and a header/feed
+probe; per-monitor snapshot state in `state.db`; trigger evaluation as a small rule engine. The
+content-diff + selector + threshold logic and the scrapability pre-flight are the genuinely new
+parts; everything else is existing Watch machinery.
+
+**Guardrails:** robots-respecting by default; Tier-C never auto-engaged (only via explicit
+`trust add`); every monitored fetch audit-logged; per-domain rate budget enforced; a monitor that
+starts failing (robots changed, paywall added, layout broke the selector) self-reports an unreachable
+state instead of silently going quiet.
+
+---
+
+## 2. Smarter recommender + framing (learned, not just heuristic)
+
+- **Telemetry-learned recommender (V2).** Learn per-user/per-domain skill weights from accept/dismiss
+  signals on the source picker; warm-start a Question Library of past framings.
+- **Skill profiles persistence backend.** v1 persists picker choices to localStorage only — add a
+  real settings store + `PATCH /api/sources` so per-domain profiles (baseline/boosted/excluded
+  skills) and per-source trust survive restarts and sync across the CLI/TUI/web.
+- **Trained framing/route classifiers.** Replace the LLM-few-shot + keyword fallback with a small
+  fine-tuned DistilBERT-class classifier for question typing and Adaptive-RAG routing (the documented
+  upgrade path in `framing/`), for speed + determinism without a gateway.
+
+---
+
+## 3. Acquisition tiers — actually build Tier-B and gate Tier-C
+
+- **Tier-B in-process JS rendering.** Wire Crawl4AI / Playwright behind `general_web.fetch_url_js`
+  (currently a documented stub): real-browser, no fingerprint evasion, scheduler-gated, browser-pool
+  RAM cap, chunks tagged `fetch_backend="js"` with the existing extra WEP downgrade. Unlocks SPA-only
+  pages and the Watch-v2 content-diff path for JS sites.
+- **Tier-C fingerprint browsers.** Patchright / Camoufox / nodriver, only behind
+  `lighthouse trust add <domain> --reason`, `#anti-bot-bypass`-tagged + WEP-downgraded — for the rare
+  case a user lawfully needs a site that blocks plain automation. Half-life measured in weeks; ship as
+  opt-in with a clear staleness warning.
+- **Per-source health endpoint.** `/api/sources/health` (last successful fetch, error rate,
+  rate-limit budget remaining, robots freshness) to make the Health dashboard live and power
+  `lighthouse doctor sources`.
+
+---
+
+## 4. v1.1 skills (gap-report-driven, per SKILL_LIBRARY_V1 §5)
+
+- **Community sources:** Reddit, Hacker News, Stack Exchange — with `community` tags + WEP downgrade.
+- **Bluesky** (open API; the most credible social v1.1 candidate).
+- **Patents:** USPTO / EPO / Google Patents (narrow audience, high value when needed).
+- **State/local government** data (per-state legislatures, agencies).
+- **Podcast platforms** via the shared audio-transcript pipeline (Spotify/Apple), where lawful.
+- **NYT / Fox** as optional metadata-tier adapters (already shown ◐ in the trust matrix).
+
+## 5. Composing capabilities (SKILL_LIBRARY_V1 §6)
+
+- **ID resolver** (DOI ↔ PMID ↔ arXiv-id ↔ OpenAlex ↔ Semantic-Scholar) — consolidate per-skill
+  resolvers into one composing utility.
+- **AllSides / Ad Fontes bias overlay** promoted out of the News Orchestrator into a composing
+  capability usable by RSS + user-added outlets.
+- **ORCID resolver** (author identity, called by OpenAlex/Crossref/arXiv).
+- **OpenCorporates resolver** (company identity, called by SEC EDGAR/News/ProPublica).
+
+---
+
+## 6. Depth, calibration, and long-horizon work
+
+- **Deep-tier checkpoint/resume wiring.** `modes/exhaustive.py` already exposes serializable tree
+  state (`to_state`/`from_state`); wire dispatcher-level checkpoints to `state.db` so a multi-hour
+  Deep run survives a crash/close and resumes from the last node.
+- **Calibration auto-resolver — full loop in the UI.** The resolver + Brier loop ship; surface
+  per-skill and per-mode calibration trends in Track over time, and let users review/override
+  machine resolutions.
+- **VOI tuning from outcomes.** Learn the value-of-information weights in the Deep tree from which
+  branches actually changed final answers.
+
+---
+
+## 7. Reach and collaboration
+
+- **Multi-modal ingestion.** Images (chart/figure OCR + caption), audio/video beyond transcripts
+  (the shared `sources/transcript.py` is the seam), spreadsheets/datasets as first-class evidence.
+- **Export + sharing.** One-click export of an artifact (report/table/timeline/matrix) to
+  PDF/DOCX/Markdown with the full provenance manifest; shareable read-only artifact links.
+- **Remote / mobile access** to running jobs and digests (the supervisor already serves an API).
+- **Collaborative research** — multiple users on a shared corpus with per-claim attribution.
+
+---
+
+*This is a menu, not a commitment. Pull an item into a sprint when a real user keeps hitting its
+absence.*
