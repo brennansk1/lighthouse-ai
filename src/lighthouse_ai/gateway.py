@@ -23,7 +23,6 @@ the mock provider serves the call.
 from __future__ import annotations
 
 import hashlib
-import json
 import shutil
 import subprocess
 import time
@@ -37,7 +36,6 @@ import yaml
 from .governor import Governor
 from .governor.mock_provider import MockProvider
 from .hardware import HardwareProfile, probe
-from .persistence import open_db
 
 Role = Literal["planner", "researcher", "synthesizer", "aux_context",
                "embedding", "reranker", "escalation"]
@@ -589,6 +587,12 @@ class Gateway:
         self._prefer_real = prefer_real_backends
         from .governor import LoopDetector
         self._loop_detector = LoopDetector()
+        # Cross-process, RAM-aware admission for real Ollama calls: serialise
+        # model calls across all Lighthouse processes so two of them can't both
+        # load a model and exhaust RAM. The lock lives beside the audit DB.
+        from .governor.ollama_queue import AdmissionConfig
+        self._ollama_lock = self.audit_db.parent / "ollama.lock"
+        self._admission = AdmissionConfig.from_env()
 
     # --- backend access (lazy) ---
     def _get_ollama(self):
@@ -622,8 +626,8 @@ class Gateway:
                  allow_drift: bool = True) -> CompletionResponse:
         b = self.binding(role)
         # Loop guard (§24.6): count calls per job/role; a runaway loop trips
-        # the per-job (default 1500) or per-node (25) cap and raises before we
-        # burn budget on an obviously stuck job.
+        # the per-job (default 1500) or per-node (25) cap and raises before an
+        # obviously stuck job spins forever.
         if job_id is not None:
             decision = self._loop_detector.record_call(job_id, node=role)
             if not decision.allowed:
@@ -645,31 +649,31 @@ class Gateway:
         completion_tokens: int
         if b.backend == "ollama":
             ollama = self._get_ollama()
-            # Runtime RAM guard: if the model isn't already resident and won't
-            # fit available RAM, fall back to mock rather than force a swap.
-            if ollama is not None and not self._fits_ram(ollama, b.model):
-                ollama = None
-                backend_used = "mock-lowmem"
+            chat_ok = False
             if ollama is not None:
-                try:
-                    chat_resp = ollama.chat(b.model, prompt, sampling=b.sampling)
-                    text = chat_resp.text
-                    prompt_tokens = chat_resp.prompt_tokens
-                    completion_tokens = chat_resp.completion_tokens
-                    # Local inference: USD is zero, but still charge tokens + 1 call.
-                    self.governor.spend(usd=0.0, tool_calls=1,
-                                        tokens=prompt_tokens + completion_tokens,
-                                        job_id=job_id)
-                except Exception:
-                    backend_used = "mock"
-                    mock_resp = self._mock.complete(prompt, job_id=job_id)
-                    text, prompt_tokens, completion_tokens = (
-                        mock_resp.text, mock_resp.prompt_tokens, mock_resp.completion_tokens,
-                    )
+                # Cross-process, RAM-aware admission: reserve the new resident
+                # RAM this call needs (0 if the model is already hot or pages
+                # from SSD) against live-available memory. Yields False if
+                # headroom never appears → fall back to the low-memory mock
+                # rather than force a swap.
+                from .governor.ollama_queue import ollama_slot
+                with ollama_slot(self._ollama_lock, b.model,
+                                 need_gb_fn=lambda m: self._need_gb(ollama, m),
+                                 cfg=self._admission) as admitted:
+                    if not admitted:
+                        backend_used = "mock-lowmem"
+                    else:
+                        try:
+                            chat_resp = ollama.chat(b.model, prompt, sampling=b.sampling)
+                            text = chat_resp.text
+                            prompt_tokens = chat_resp.prompt_tokens
+                            completion_tokens = chat_resp.completion_tokens
+                            chat_ok = True
+                        except Exception:
+                            backend_used = "mock"
             else:
-                # Keep 'mock-lowmem' if the RAM guard set it; else plain mock.
-                if backend_used != "mock-lowmem":
-                    backend_used = "mock"
+                backend_used = "mock"
+            if not chat_ok:
                 mock_resp = self._mock.complete(prompt, job_id=job_id)
                 text, prompt_tokens, completion_tokens = (
                     mock_resp.text, mock_resp.prompt_tokens, mock_resp.completion_tokens,
@@ -690,15 +694,23 @@ class Gateway:
         self._record(resp, job_id=job_id, prompt=prompt, backend_used=backend_used)
         return resp
 
-    def _fits_ram(self, ollama, model: str) -> bool:
-        """True if ``model`` is already loaded (free) or fits available RAM."""
+    def _need_gb(self, ollama, model: str) -> float:
+        """New resident RAM ``model`` will add: 0 if already loaded or SSD-paging.
+
+        The admission queue reserves this against live-available RAM. A resident
+        model (Ollama keeps it hot) or a fine-grained MoE that pages experts
+        from disk adds no new resident footprint, so it reserves nothing and is
+        admitted with no locking; a fresh load reserves its estimated weights.
+        """
         try:
             loaded = getattr(ollama, "loaded_models", None)
             if callable(loaded) and model in (loaded() or []):
-                return True
+                return 0.0
         except Exception:
             pass
-        return enough_ram_for(model)
+        if model in PAGEABLE_MOE:
+            return 0.0
+        return estimate_resident_gb(model)
 
     def _record(self, resp: CompletionResponse, *, job_id: str | None, prompt: str,
                 backend_used: str | None = None) -> None:
@@ -713,12 +725,7 @@ class Gateway:
             "job_id": job_id,
             "backend_used": backend_used,
         }
-        conn = open_db(self.audit_db)
-        try:
-            conn.execute(
-                "INSERT INTO audit_events (actor, event_type, payload_json) "
-                "VALUES (?, 'model_call', ?)",
-                (f"gateway:{resp.role}", json.dumps(payload, sort_keys=True)),
-            )
-        finally:
-            conn.close()
+        from .verification.audit_chain import append_event
+        append_event(self.audit_db, actor=f"gateway:{resp.role}",
+                     event_type="model_call", payload=payload,
+                     data_dir=self.audit_db.parent)

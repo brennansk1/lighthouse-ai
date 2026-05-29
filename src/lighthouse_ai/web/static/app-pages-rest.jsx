@@ -238,6 +238,46 @@ function fmtDate(dateStr) {
   } catch (e) { return String(dateStr); }
 }
 
+// Translate the /api/health payload into a uniform list of { name, ok, detail }
+// pass/fail rows. The endpoint reports database integrity, external service
+// reachability, the audit chain, and outbox depth as separate fields; this turns
+// them into plain rows a researcher can scan. Shared by the Health page and the
+// Settings → Doctor diagnostics.
+function buildHealthChecks(h) {
+  if (!h) return [];
+  const out = [];
+  const dbs = h.databases || {};
+  Object.entries(dbs).forEach(([name, status]) => {
+    const ok = status === 'ok';
+    out.push({ name: `${name} database`, ok, detail: ok ? null : `Integrity: ${status}` });
+  });
+  const ext = h.external || {};
+  const EXT_LABELS = {
+    ollama: 'Local model service (Ollama)',
+    qdrant: 'Vector search (Qdrant)',
+    litestream: 'Backup streaming (Litestream)',
+  };
+  Object.entries(ext).forEach(([name, up]) => {
+    out.push({ name: EXT_LABELS[name] || name, ok: !!up, detail: up ? null : 'Not reachable' });
+  });
+  if (h.audit_chain_ok != null) {
+    out.push({
+      name: 'Audit chain integrity',
+      ok: h.audit_chain_ok !== false,
+      detail: h.audit_chain_ok === false ? 'Chain verification failed' : null,
+    });
+  }
+  if (h.outbox_depth != null) {
+    const ok = h.outbox_depth < 100;
+    out.push({
+      name: 'Outbox queue',
+      ok,
+      detail: ok ? null : `${h.outbox_depth} items pending — queue is backing up`,
+    });
+  }
+  return out;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  TOPICS PAGE
 // ════════════════════════════════════════════════════════════════════════════
@@ -267,14 +307,27 @@ function TopicsPage({ toast }) {
   return (
     <div>
       <window.PageHeader
-        title="Research Topics"
-        subtitle="Monitor named topics across sources"
+        title="Watch"
+        subtitle="Define topics to follow over time, then schedule sessions that collect new material from your sources."
         actions={
-          <Btn onClick={() => setShowNew(true)} aria-label="Create a new topic">
-            + New Topic
+          <Btn onClick={() => setShowNew(true)} aria-label="Add a topic to monitor">
+            + Add topic
           </Btn>
         }
       />
+
+      {/* What this tab is for — shown only when the researcher has topics,
+          so the empty state can carry the explanation otherwise. */}
+      {!loading && !error && topics.length > 0 && (
+        <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6,
+          marginBottom: 22, maxWidth: '70ch' }}>
+          A topic is a subject you want to keep an eye on — an entity, an issue, or a
+          question. Each topic carries a query that guides what gets collected. Use the
+          scheduler below to run a time-bounded session against specific sources.
+        </div>
+      )}
+
+      <RMonitorSessions toast={toast} />
 
       {/* Loading skeleton grid */}
       {loading && (
@@ -298,10 +351,10 @@ function TopicsPage({ toast }) {
       {/* Empty state */}
       {!loading && !error && topics.length === 0 && (
         <window.EmptyState
-          icon="🗂"
-          title="No research topics yet"
-          hint="Add your first topic to start monitoring."
-          action={<Btn onClick={() => setShowNew(true)}>+ Add Topic</Btn>}
+          icon="◎"
+          title="No topics yet"
+          hint="A topic is a subject you want to follow over time — an entity, an issue, or a question. Add one to start collecting material from your sources as it appears."
+          action={<Btn onClick={() => setShowNew(true)}>+ Add your first topic</Btn>}
         />
       )}
 
@@ -412,7 +465,7 @@ function RTopicCard({ topic: t, accent, onDelete }) {
         {t.mode && (
           <span style={{ fontSize: 11, color: 'var(--muted)',
             textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            {t.mode}
+            {window.modeLabel ? window.modeLabel(t.mode) : t.mode}
           </span>
         )}
       </div>
@@ -477,7 +530,12 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
   }
 
   return (
-    <RModal title="New Research Topic" onClose={onClose}>
+    <RModal title="Add a topic" onClose={onClose}>
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.55,
+        marginBottom: 16 }}>
+        Name the subject you want to follow, then give a query that tells Lighthouse
+        what to collect for it.
+      </div>
       <RField label="Name *" error={errors.name}>
         <input
           value={name}
@@ -498,8 +556,8 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
           aria-label="Topic description"
         />
       </RField>
-      <RField label="Query string *" error={errors.query}
-        hint={!errors.query ? 'A keyword expression to guide collection.' : undefined}>
+      <RField label="Query *" error={errors.query}
+        hint={!errors.query ? 'Keywords that decide what gets collected. Combine terms with OR, and quote exact phrases.' : undefined}>
         <input
           value={query}
           onChange={(e) => { setQuery(e.target.value); setErrors((er) => ({ ...er, query: '' })); }}
@@ -511,6 +569,207 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
         <Btn kind="ghost" onClick={onClose} disabled={busy}>Cancel</Btn>
         <Btn onClick={submit} disabled={busy}>{busy ? 'Creating…' : 'Create topic'}</Btn>
+      </div>
+    </RModal>
+  );
+}
+
+// ── Event sessions (time-bounded monitors) ─────────────────────────────────
+
+const SESSION_STATUS_COLORS = {
+  active: 'var(--primary)',
+  paused: 'var(--muted)',
+  ended: 'var(--ink-2)',
+};
+
+function RMonitorSessions({ toast }) {
+  const { data, loading, reload } = window.useApi('/api/monitor/sessions', { pollMs: 30000 });
+  const [showNew, setShowNew] = rUseState(false);
+  const sessions = (data && data.sessions) || [];
+  const Btn = window.Btn;
+
+  async function stop(s) {
+    try {
+      await window.apiPost(`/api/monitor/sessions/${s.id}/stop`, {});
+      reload();
+      toast.show('Session stopped', 'info');
+    } catch (e) {
+      toast.show(e.message || 'Stop failed', 'error');
+    }
+  }
+
+  return (
+    <div style={{ ...window.card, padding: 20, marginBottom: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Scheduled sessions</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+            A session checks a set of sources on a fixed interval. It ends at a time you set,
+            or stops on its own once the sources go quiet.
+          </div>
+        </div>
+        <Btn onClick={() => setShowNew(true)} aria-label="Schedule a new session">
+          + Schedule session
+        </Btn>
+      </div>
+
+      {loading && <RSkeleton h={14} mb={8} />}
+
+      {!loading && sessions.length === 0 && (
+        <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>
+          No sessions scheduled. Schedule one to collect from a set of sources over a
+          fixed window — useful for following a hearing, a release, or a developing story.
+        </div>
+      )}
+
+      {!loading && sessions.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {sessions.map((s) => (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12,
+              padding: '10px 12px', border: '1px solid var(--rule)', borderRadius: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                background: SESSION_STATUS_COLORS[s.status] || 'var(--muted)' }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {s.label}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
+                  {s.source_urls.length} source{s.source_urls.length === 1 ? '' : 's'}
+                  {' · '}{s.cycles} cycle{s.cycles === 1 ? '' : 's'}
+                  {s.ends_at ? ` · ends ${s.ends_at}` : ' · auto-stop'}
+                  {s.ended_reason ? ` · ${s.ended_reason}` : ''}
+                </div>
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+                letterSpacing: '0.05em', color: SESSION_STATUS_COLORS[s.status] || 'var(--muted)' }}>
+                {s.status}
+              </span>
+              {s.status === 'active' && (
+                <Btn kind="ghost" onClick={() => stop(s)} aria-label={`Stop ${s.label}`}>Stop</Btn>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showNew && (
+        <RNewSessionModal
+          toast={toast}
+          onClose={() => setShowNew(false)}
+          onCreated={() => { setShowNew(false); reload(); toast.show('Session created', 'success'); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RNewSessionModal({ toast, onClose, onCreated }) {
+  const [label, setLabel] = rUseState('');
+  const [urls, setUrls] = rUseState('');
+  const [mode, setMode] = rUseState('auto'); // 'auto' | 'time'
+  const [endsAt, setEndsAt] = rUseState('');
+  const [pollMin, setPollMin] = rUseState(5);
+  const [busy, setBusy] = rUseState(false);
+  const [errors, setErrors] = rUseState({});
+  const Btn = window.Btn;
+
+  function validate() {
+    const e = {};
+    if (!label.trim()) e.label = 'Label is required.';
+    if (!urls.trim()) e.urls = 'At least one source URL is required.';
+    if (mode === 'time' && !endsAt.trim()) e.endsAt = 'End time is required for a timed session.';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
+  async function submit() {
+    if (!validate()) return;
+    setBusy(true);
+    const sourceUrls = urls.split(/[\n,]+/).map((u) => u.trim()).filter(Boolean);
+    try {
+      await window.apiPost('/api/monitor/sessions', {
+        label: label.trim(),
+        source_urls: sourceUrls,
+        ends_at: mode === 'time' ? new Date(endsAt).toISOString() : null,
+        auto_stop: mode === 'auto',
+        poll_interval_s: Math.max(60, Math.round(pollMin * 60)),
+      });
+      onCreated();
+    } catch (e) {
+      toast.show(e.message || 'Create failed', 'error');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <RModal title="Schedule a session" onClose={onClose}>
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.55,
+        marginBottom: 16 }}>
+        Point a session at one or more source feeds. Lighthouse checks them on the
+        interval you set and stops at the end time, or once the feeds go quiet.
+      </div>
+      <RField label="Label *" error={errors.label}>
+        <input
+          value={label}
+          onChange={(e) => { setLabel(e.target.value); setErrors((er) => ({ ...er, label: '' })); }}
+          placeholder="e.g. Pam Bondi confirmation hearing"
+          style={{ ...rInput, borderColor: errors.label ? 'var(--coral-2)' : undefined }}
+          aria-label="Session label"
+          autoFocus
+        />
+      </RField>
+      <RField label="Source URLs *" error={errors.urls}
+        hint={!errors.urls ? 'One RSS/Atom feed per line (or comma-separated).' : undefined}>
+        <textarea
+          value={urls}
+          onChange={(e) => { setUrls(e.target.value); setErrors((er) => ({ ...er, urls: '' })); }}
+          rows={3}
+          placeholder="https://example.com/feed.xml"
+          style={{ ...rInput, resize: 'vertical',
+            borderColor: errors.urls ? 'var(--coral-2)' : undefined }}
+          aria-label="Source URLs"
+        />
+      </RField>
+      <RField label="Stop condition">
+        <div style={{ display: 'flex', gap: 16, fontSize: 13, color: 'var(--ink-2)' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input type="radio" name="stopmode" checked={mode === 'auto'}
+              onChange={() => setMode('auto')} />
+            Auto-stop when quiet
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input type="radio" name="stopmode" checked={mode === 'time'}
+              onChange={() => setMode('time')} />
+            End at a set time
+          </label>
+        </div>
+      </RField>
+      {mode === 'time' && (
+        <RField label="End time *" error={errors.endsAt}>
+          <input
+            type="datetime-local"
+            value={endsAt}
+            onChange={(e) => { setEndsAt(e.target.value); setErrors((er) => ({ ...er, endsAt: '' })); }}
+            style={{ ...rInput, borderColor: errors.endsAt ? 'var(--coral-2)' : undefined }}
+            aria-label="End time"
+          />
+        </RField>
+      )}
+      <RField label="Poll interval (minutes)" hint="How often to check the sources.">
+        <input
+          type="number"
+          min={1}
+          value={pollMin}
+          onChange={(e) => setPollMin(Number(e.target.value) || 1)}
+          style={{ ...rInput, width: 120 }}
+          aria-label="Poll interval in minutes"
+        />
+      </RField>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+        <Btn kind="ghost" onClick={onClose} disabled={busy}>Cancel</Btn>
+        <Btn onClick={submit} disabled={busy}>{busy ? 'Creating…' : 'Create session'}</Btn>
       </div>
     </RModal>
   );
@@ -562,16 +821,26 @@ function PositionsPage({ toast }) {
   return (
     <div>
       <window.PageHeader
-        title="Calibration"
-        subtitle="Track predictions and measure forecasting accuracy"
+        title="Track"
+        subtitle="Review the predictions Lighthouse has made and see how accurate they turn out to be."
         tabs={['Pending', 'Resolved']}
         activeTab={tab}
         onTab={setTab}
       />
 
+      {/* Plain-language primer */}
+      <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6,
+        marginBottom: 18, maxWidth: '72ch' }}>
+        A position is a forecast about a claim, stated as a probability. It stays
+        <strong> pending</strong> until the real outcome is known, then you mark it
+        <strong> resolved</strong> as confirmed or refuted. Over many resolved positions,
+        the Brier score below measures how well the stated probabilities matched reality —
+        lower is better.
+      </div>
+
       {/* Calibration summary — always visible */}
       <div style={{ ...window.card, padding: '16px 22px', marginBottom: 20,
-        display: 'flex', gap: 36, alignItems: 'center', flexWrap: 'wrap' }}>
+        display: 'flex', gap: 36, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* Brier score */}
         <div>
           <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase',
@@ -589,6 +858,9 @@ function PositionsPage({ toast }) {
             }
             <span style={{ fontSize: 12, color: bi.color, fontWeight: 600 }}>{bi.label}</span>
           </div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, maxWidth: '24ch' }}>
+            0 is perfect; lower means better-calibrated forecasts.
+          </div>
         </div>
 
         {/* Resolved count */}
@@ -597,6 +869,9 @@ function PositionsPage({ toast }) {
             letterSpacing: '0.07em', marginBottom: 4 }}>Resolved</div>
           <span className="num" style={{ fontSize: 26, fontWeight: 700,
             color: 'var(--ink)' }}>{resolved.length}</span>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+            Outcome recorded
+          </div>
         </div>
 
         {/* Pending count */}
@@ -605,6 +880,9 @@ function PositionsPage({ toast }) {
             letterSpacing: '0.07em', marginBottom: 4 }}>Pending</div>
           <span className="num" style={{ fontSize: 26, fontWeight: 700,
             color: 'var(--ink)' }}>{pending.length}</span>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+            Awaiting outcome
+          </div>
         </div>
       </div>
 
@@ -670,80 +948,131 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
       <window.EmptyState
         icon="◎"
         title="No resolved positions yet"
-        hint="Resolve a prediction and it will appear here with its outcome and scoring."
+        hint="Once you mark a pending position as confirmed or refuted, it moves here with its outcome and its contribution to the Brier score."
       />
     );
   }
+
+  // ── Render one position card. Reused across all groups. ──────────────────
+  function renderCard(p) {
+    const isSelected = sel && sel.id === p.id;
+    const prob = p.probability != null ? p.probability : p.confidence;
+    const isOpen = !p.resolved && p.outcome == null;
+
+    return (
+      <div
+        key={p.id}
+        onClick={() => setSel(isSelected ? null : p)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') setSel(isSelected ? null : p);
+        }}
+        aria-selected={isSelected}
+        style={{ ...window.card, padding: '14px 18px', cursor: 'pointer',
+          border: `1px solid ${isSelected ? 'var(--primary)' : 'transparent'}`,
+          transition: 'border-color .15s',
+          outline: 'none' }}>
+        {/* Claim text — 2-line clamp */}
+        <div style={{ fontFamily: 'var(--serif)', fontSize: 14.5, color: 'var(--ink)',
+          lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: 9 }}>
+          {p.claim || '(no claim text)'}
+        </div>
+
+        {/* Meta row */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {prob != null && (
+            <window.ConfidencePill
+              phrase={p.wep_band || p.wep_phrase || ''}
+              band={String(prob)}
+            />
+          )}
+          {prob != null && (
+            <span className="num" style={{ fontSize: 12.5,
+              color: 'var(--ink-2)', fontWeight: 600 }}>
+              {(prob * 100).toFixed(0)}%
+            </span>
+          )}
+          {p.created_at && (
+            <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+              {fmtDate(p.created_at)}
+            </span>
+          )}
+          {p.due_at && (
+            <span style={{ fontSize: 11.5, color: 'var(--sand)', fontWeight: 600 }}>
+              due {fmtDate(p.due_at)}
+            </span>
+          )}
+          {!isOpen && (
+            <span style={{ fontSize: 12, fontWeight: 700,
+              color: (p.outcome === 'refuted' || p.outcome === false)
+                ? 'var(--coral-2)' : 'var(--green-dark)' }}>
+              {p.outcome === false ? 'refuted'
+                : p.outcome === true ? 'confirmed' : p.outcome}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Group positions into ordered sections. Pending → by timeline
+  //    (Overdue / Due soon / Upcoming); Resolved → by outcome. ─────────────
+  function buildGroups() {
+    if (isResolved) {
+      const buckets = { Confirmed: [], Refuted: [], Other: [] };
+      for (const p of positions) {
+        if (p.outcome === true || p.outcome === 'confirmed') buckets.Confirmed.push(p);
+        else if (p.outcome === false || p.outcome === 'refuted') buckets.Refuted.push(p);
+        else buckets.Other.push(p);
+      }
+      return [
+        { key: 'Confirmed', label: 'Confirmed', color: 'var(--green-dark)', items: buckets.Confirmed },
+        { key: 'Refuted',   label: 'Refuted',   color: 'var(--coral-2)',    items: buckets.Refuted },
+        { key: 'Other',     label: 'Other',     color: 'var(--muted)',      items: buckets.Other },
+      ];
+    }
+    const now = Date.now();
+    const soonMs = 7 * 24 * 3600 * 1000;
+    const buckets = { Overdue: [], Soon: [], Upcoming: [] };
+    for (const p of positions) {
+      const due = p.due_at ? new Date(p.due_at).getTime() : null;
+      if (due != null && due < now) buckets.Overdue.push(p);
+      else if (due != null && due - now <= soonMs) buckets.Soon.push(p);
+      else buckets.Upcoming.push(p);
+    }
+    return [
+      { key: 'Overdue',  label: 'Overdue',  color: 'var(--coral-2)', items: buckets.Overdue },
+      { key: 'Soon',     label: 'Due soon', color: 'var(--sand)',    items: buckets.Soon },
+      { key: 'Upcoming', label: 'Upcoming', color: 'var(--muted)',   items: buckets.Upcoming },
+    ];
+  }
+
+  const groups = buildGroups().filter((g) => g.items.length > 0);
 
   return (
     <div style={{ display: 'grid',
       gridTemplateColumns: sel ? '1fr minmax(320px, 380px)' : '1fr',
       gap: 16, alignItems: 'start' }}>
 
-      {/* Position list */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {positions.map((p) => {
-          const isSelected = sel && sel.id === p.id;
-          const prob = p.probability != null ? p.probability : p.confidence;
-          const isOpen = !p.resolved && p.outcome == null;
-
-          return (
-            <div
-              key={p.id}
-              onClick={() => setSel(isSelected ? null : p)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') setSel(isSelected ? null : p);
-              }}
-              aria-selected={isSelected}
-              style={{ ...window.card, padding: '14px 18px', cursor: 'pointer',
-                border: `1px solid ${isSelected ? 'var(--primary)' : 'transparent'}`,
-                transition: 'border-color .15s',
-                outline: 'none' }}>
-              {/* Claim text — 2-line clamp */}
-              <div style={{ fontFamily: 'var(--serif)', fontSize: 14.5, color: 'var(--ink)',
-                lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: 9 }}>
-                {p.claim || '(no claim text)'}
-              </div>
-
-              {/* Meta row */}
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                {prob != null && (
-                  <window.ConfidencePill
-                    phrase={p.wep_band || p.wep_phrase || ''}
-                    band={String(prob)}
-                  />
-                )}
-                {prob != null && (
-                  <span className="num" style={{ fontSize: 12.5,
-                    color: 'var(--ink-2)', fontWeight: 600 }}>
-                    {(prob * 100).toFixed(0)}%
-                  </span>
-                )}
-                {p.created_at && (
-                  <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                    {fmtDate(p.created_at)}
-                  </span>
-                )}
-                {p.due_at && (
-                  <span style={{ fontSize: 11.5, color: 'var(--sand)', fontWeight: 600 }}>
-                    due {fmtDate(p.due_at)}
-                  </span>
-                )}
-                {!isOpen && (
-                  <span style={{ fontSize: 12, fontWeight: 700,
-                    color: (p.outcome === 'refuted' || p.outcome === false)
-                      ? 'var(--coral-2)' : 'var(--green-dark)' }}>
-                    {p.outcome === false ? 'refuted'
-                      : p.outcome === true ? 'confirmed' : p.outcome}
-                  </span>
-                )}
-              </div>
+      {/* Grouped position list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+        {groups.map((g) => (
+          <div key={g.key}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: g.color,
+                textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.label}</span>
+              <span className="num" style={{ fontSize: 11, color: 'var(--muted)',
+                background: 'rgba(106,138,166,0.12)', padding: '1px 7px', borderRadius: 999 }}>
+                {g.items.length}
+              </span>
             </div>
-          );
-        })}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {g.items.map(renderCard)}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Detail pane */}
@@ -822,7 +1151,11 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
           {!sel.resolved && sel.outcome == null && (
             <div style={{ marginTop: 20 }}>
               <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase',
-                letterSpacing: '0.07em', marginBottom: 10 }}>Resolve this position</div>
+                letterSpacing: '0.07em', marginBottom: 6 }}>Record the outcome</div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5,
+                marginBottom: 10 }}>
+                Once the real result is known, mark it here. Defer if it is not yet decided.
+              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <button
                   onClick={() => resolve(sel.id, 'confirmed')}
@@ -868,24 +1201,25 @@ function HealthPage({ toast }) {
   const [reloading, setReloading] = rUseState(false);
 
   const { data, loading, error, reload } = window.useApi('/api/health');
-  const { data: govData } = window.useApi('/api/governor');
 
   const h   = data   || {};
-  const gov = govData || {};
 
   const hw     = h.hardware || {};
-  const budget = h.budget   || {};
-  const checks = h.checks   || [];
+  const models = h.chosen_models || {};
 
-  const govTier = gov.tier || budget.tier || '—';
-  const degraded = gov.degraded || govTier === 'degrade' || govTier === 'tripped';
-  const tripped  = gov.tripped  || govTier === 'tripped';
+  // Build the checks list from the live health payload (see buildHealthChecks).
+  const checks = buildHealthChecks(h);
 
-  const allOk    = checks.length > 0 && checks.every((c) => c.ok !== false && c.status !== 'fail');
-  const failCount = checks.filter((c) => c.ok === false || c.status === 'fail').length;
+  // The backend gives an overall verdict; fall back to the per-check rollup.
+  const overallGreen = h.overall ? h.overall === 'green'
+    : (checks.length > 0 && checks.every((c) => c.ok));
+  const tripped = false;
+  const degraded = data != null && !overallGreen;
 
-  const statusColor = tripped  ? 'var(--coral-2)'
-    : degraded ? '#d98020'
+  const allOk    = checks.length > 0 && checks.every((c) => c.ok);
+  const failCount = checks.filter((c) => !c.ok).length;
+
+  const statusColor = degraded ? '#d98020'
     : allOk && checks.length  ? 'var(--green-dark)'
     : 'var(--muted)';
 
@@ -929,11 +1263,12 @@ function HealthPage({ toast }) {
     <div>
       <window.PageHeader
         title="System Health"
+        subtitle="Live view of this machine's hardware, the models chosen for it, and the services Lighthouse depends on."
         actions={
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <span style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'var(--sans)' }}>
               {lastRefreshed
-                ? `Last checked: ${elapsed}s ago`
+                ? `Last checked ${elapsed}s ago`
                 : 'Checking…'}
             </span>
             <Btn kind="ghost" onClick={manualRecheck} disabled={reloading}
@@ -956,7 +1291,7 @@ function HealthPage({ toast }) {
           {allOk
             ? '✓ All systems operational'
             : failCount > 0 ? `⚠ ${failCount} check${failCount > 1 ? 's' : ''} need attention`
-            : '— Health data loading…'}
+            : '— Gathering diagnostics…'}
         </div>
       )}
 
@@ -999,88 +1334,66 @@ function HealthPage({ toast }) {
                 <span className={govChipClass(hw.tier)} style={{ fontSize: 12 }}>
                   {hw.tier}
                 </span>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.45 }}>
+                  The capability band measured for this machine. It sets which models Lighthouse can run.
+                </div>
               </div>
             )}
 
-            <RRow k="Model" v={hw.model || h.version || '—'} />
-            <RRow k="RAM"   v={hw.ram_gb != null ? `${hw.ram_gb} GB`
-              : hw.total_ram_gb != null ? `${hw.total_ram_gb} GB` : '—'} />
-            <RRow k="Version" v={h.version || '—'} />
+            <RRow k="Platform" v={hw.platform ? `${hw.platform}${hw.arch ? ` · ${hw.arch}` : ''}` : '—'} />
+            <RRow k="Processor cores"
+              v={hw.cpu_cores_logical != null
+                ? `${hw.cpu_cores_logical}${hw.cpu_cores_physical != null
+                    ? ` (${hw.cpu_cores_physical} physical)` : ''}`
+                : '—'} />
+            <RRow k="Graphics"
+              v={(hw.gpu && hw.gpu.length)
+                ? hw.gpu.map((g) => g.name + (g.vram_gb ? ` · ${g.vram_gb} GB` : '')).join(', ')
+                : '—'} />
+            <RRow k="Total RAM" v={hw.total_ram_gb != null ? `${hw.total_ram_gb} GB` : '—'} />
+            <div style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 6px' }}>
+              Physical memory installed on this machine.
+            </div>
+            <RRow k="Free RAM" v={hw.free_ram_gb != null ? `${hw.free_ram_gb} GB` : '—'} />
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+              Headroom available right now for running models.
+            </div>
           </div>
 
-          {/* ── Budget column ─────────────────────────────────────────── */}
+          {/* ── Models column ─────────────────────────────────────────── */}
           <div style={{ ...window.card, padding: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)',
-                textTransform: 'uppercase', letterSpacing: '0.08em' }}>Budget</div>
-              <span className={govChipClass(govTier)}>{govTier}</span>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)',
+              textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+              Models for this hardware
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45, marginBottom: 12 }}>
+              The local model chosen for each task, sized to fit the measured hardware.
             </div>
 
-            {budget.usd && (() => {
-              const used = Number(budget.usd.used || 0);
-              const cap  = Number(budget.usd.cap  || 0);
-              const ratio = cap > 0 ? used / cap : 0;
-              const hot = ratio > 0.85;
-              return (
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between',
-                    fontSize: 12, color: 'var(--ink-2)', marginBottom: 6 }}>
-                    <span>Cloud USD</span>
-                    <span className="num" style={{ color: hot ? 'var(--coral-2)' : 'var(--ink)' }}>
-                      ${used.toFixed(2)} / ${cap.toFixed(0)}/mo
-                    </span>
-                  </div>
-                  <window.Bar value={used} max={cap || 1}
-                    color={hot ? 'var(--coral-2)' : 'var(--primary)'} />
-                </div>
-              );
-            })()}
-
-            {budget.tokens && (() => {
-              const used = Number(budget.tokens.used || 0);
-              const cap  = Number(budget.tokens.cap  || 0);
-              const hot  = cap > 0 && used / cap > 0.85;
-              return (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between',
-                    fontSize: 12, color: 'var(--ink-2)', marginBottom: 6 }}>
-                    <span>Tokens</span>
-                    <span className="num" style={{ color: hot ? 'var(--coral-2)' : 'var(--ink)' }}>
-                      {(used / 1e6).toFixed(1)}M / {(cap / 1e6).toFixed(1)}M/day
-                    </span>
-                  </div>
-                  <window.Bar value={used} max={cap || 1}
-                    color={hot ? 'var(--coral-2)' : 'var(--primary)'} />
-                </div>
-              );
-            })()}
-
-            {gov.usd_remaining != null && (
-              <RRow k="USD remaining" v={`$${Number(gov.usd_remaining).toFixed(2)}`} />
-            )}
-            {gov.tokens_remaining != null && (
-              <RRow k="Tokens remaining"
-                v={`${(Number(gov.tokens_remaining) / 1e6).toFixed(2)}M`} />
-            )}
-
-            {!budget.usd && !budget.tokens && !gov.usd_remaining && (
+            {Object.keys(models).length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-                No budget data reported yet.
+                No model selection reported yet.
               </div>
+            ) : (
+              Object.entries(models).map(([role, name]) => (
+                <RRow key={role} k={role.replace(/_/g, ' ')} v={name} />
+              ))
             )}
           </div>
 
           {/* ── Checks column ─────────────────────────────────────────── */}
           <div style={{ ...window.card, padding: 20 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)',
-              textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>
-              Checks
+              textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+              Services and integrity
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45, marginBottom: 12 }}>
+              Databases, local services, and data integrity. Select a failing row to see the detail.
             </div>
 
             {checks.length === 0 && (
               <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-                No checks reported by backend.
+                No checks reported yet.
               </div>
             )}
 
@@ -1212,13 +1525,14 @@ function SettingsPage({ toast }) {
   if (error   && !form) return <window.ErrorBox message={`Could not load settings — ${error}`} />;
   if (!form)            return <RTableSkeleton rows={8} />;
 
-  const doctorChecks   = (doctorData && doctorData.checks)  || [];
-  const doctorFailCount = doctorChecks.filter((c) => c.ok === false || c.status === 'fail').length;
+  const doctorChecks   = buildHealthChecks(doctorData);
+  const doctorFailCount = doctorChecks.filter((c) => !c.ok).length;
 
   return (
     <div>
       <window.PageHeader
         title="Settings"
+        subtitle="Configure how Lighthouse runs on this machine — storage, privacy, backups, notifications, and appearance."
         actions={
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {/* Unsaved changes indicator */}
@@ -1242,7 +1556,7 @@ function SettingsPage({ toast }) {
         {/* ── General ──────────────────────────────────────────────────── */}
         <RSettingsSection title="General">
           {/* Data dir — read-only + copy button */}
-          <RField label="Data directory" hint="Location of the Lighthouse data folder on disk.">
+          <RField label="Data directory" hint="Where Lighthouse keeps your collected material, databases, and logs on this machine.">
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input
                 readOnly
@@ -1264,7 +1578,7 @@ function SettingsPage({ toast }) {
           </RField>
           <RToggleRow
             label="Offline mode"
-            hint="Disables all cloud model calls — uses local models only."
+            hint="Keep all work on this machine. No data leaves your hardware; only local models are used."
             value={form.offline_mode}
             onChange={(v) => patch('offline_mode', v)}
             id="s-offline"
@@ -1275,7 +1589,7 @@ function SettingsPage({ toast }) {
         <RSettingsSection title="Backup">
           <RToggleRow
             label="Enable backup"
-            hint="Stream SQLite WAL to configured replicas via Litestream."
+            hint="Continuously copy your data to the backup location you have configured, so it can be restored if needed."
             value={form.backup_enabled}
             onChange={(v) => patch('backup_enabled', v)}
             id="s-backup"
@@ -1286,7 +1600,7 @@ function SettingsPage({ toast }) {
         <RSettingsSection title="Notifications">
           <RToggleRow
             label="Enable notifications"
-            hint="Send alerts via configured channels (Telegram, etc.)."
+            hint="Send an alert through your configured channel when a monitor finds something or a session ends."
             value={form.notify_enabled}
             onChange={(v) => patch('notify_enabled', v)}
             id="s-notify"
@@ -1311,8 +1625,9 @@ function SettingsPage({ toast }) {
         {/* ── Doctor ───────────────────────────────────────────────────── */}
         <RSettingsSection title="Doctor">
           <div style={{ marginBottom: 14, fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-            Run a full diagnostics pass against the live health endpoint to surface
-            any configuration or connectivity issues.
+            Run a full check of databases, local services, and data integrity to surface
+            any configuration or connectivity issues. The same checks appear live on the
+            System Health page.
           </div>
           <Btn kind="ghost" onClick={runDiagnostics} disabled={doctorLoading}>
             {doctorLoading ? 'Running diagnostics…' : 'Run diagnostics'}

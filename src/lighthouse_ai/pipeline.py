@@ -413,14 +413,19 @@ class ResearchPipeline:
                        wep_band: str | None = None,
                        confidence: float | None = None) -> str:
         draft_id = "d-" + uuid.uuid4().hex[:6]
+        from .modes.registry import canonical
+        try:
+            mode_key = canonical(self.config.mode)
+        except KeyError:
+            mode_key = self.config.mode
         conn = open_db(self.paths.state_db)
         try:
             # record the job too, so it shows in /api/jobs and the dashboard
             conn.execute(
                 "INSERT OR IGNORE INTO jobs (id, mode, status, metadata_json) "
                 "VALUES (?, ?, 'review', ?)",
-                (job_id, self.config.mode, _json({"topic": question, "progress": 1.0,
-                                                  "eta": "staged"})))
+                (job_id, mode_key, _json({"topic": question, "progress": 1.0,
+                                          "eta": "staged"})))
             conn.execute(
                 "INSERT INTO drafts (id, job_id, topic, title, body_html, wep_band, "
                 "wep_phrase, confidence, source_count, status) "

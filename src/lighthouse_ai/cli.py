@@ -1332,7 +1332,7 @@ def subconscious_tick() -> None:
     """Manually trigger a single subconscious tick (debug)."""
     paths = _paths_from_env()
     paths.ensure()
-    from .subconscious import SubconsciousEngine, stale_position_escalations, ReflectionStore
+    from .subconscious import ReflectionStore, SubconsciousEngine, stale_position_escalations
     from .subconscious.engine import TickResult
     store = ReflectionStore(paths.reflections_db)
     engine = SubconsciousEngine(

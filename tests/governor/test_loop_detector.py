@@ -10,9 +10,7 @@ import pytest
 
 from lighthouse_ai.governor.loop_detector import (
     DEFAULT_RECURSION_DEPTH,
-    DEFAULT_SEMANTIC_THRESHOLD,
     LoopConfig,
-    LoopDecision,
     LoopDetector,
     cosine_similarity,
     normalize_query,

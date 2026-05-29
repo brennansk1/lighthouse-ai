@@ -11,8 +11,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
-
 # Ensure the conftest at the tests/ root is found.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -21,7 +19,6 @@ from lighthouse_ai.verification.audit_chain import (
     append_event,
     verify_audit_chain,
 )
-
 
 # Re-use the shared migrated_paths fixture from the root conftest.
 # (pytest auto-discovers conftest.py files up the directory tree.)

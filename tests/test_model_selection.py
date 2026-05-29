@@ -214,13 +214,17 @@ def test_gateway_falls_back_to_mock_when_lowmem(migrated_paths):
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
     gw = Gateway(g, migrated_paths.audit_db, profile=_profile(25.77, tier="T1"),
                  ollama=_Fake(), overrides={"planner": "llama3.1:8b"})
+    from lighthouse_ai.governor.ollama_queue import AdmissionConfig
+    gw._admission = AdmissionConfig(wait_timeout_s=0.0)  # refuse now, don't poll
     import lighthouse_ai.gateway as gmod
-    orig = gmod.enough_ram_for
-    gmod.enough_ram_for = lambda model, **kw: False
+    orig = gmod.estimate_resident_gb
+    # Model isn't resident and would need more RAM than the host has → the
+    # admission queue refuses it and the gateway falls back to the low-mem mock.
+    gmod.estimate_resident_gb = lambda model: 1_000_000.0
     try:
         resp = gw.complete("planner", "hi")
     finally:
-        gmod.enough_ram_for = orig
+        gmod.estimate_resident_gb = orig
     assert "[mock" in resp.text
 
 

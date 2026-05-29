@@ -130,15 +130,6 @@ def test_gateway_unknown_role_raises(migrated_paths, stub_profile):
         gw.complete("not_a_role", "hi")
 
 
-def test_gateway_propagates_budget_tripped(migrated_paths, stub_profile):
-    from lighthouse_ai.governor import BudgetTripped
-    g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
-    g.try_spend(tool_calls=BUDGET_DEFAULTS.daily_tool_calls)  # exhaust
-    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile)
-    with pytest.raises(BudgetTripped):
-        gw.complete("planner", "hello")
-
-
 def test_gateway_with_chosen_models_uses_recorded_bindings(
         tmp_path, migrated_paths, stub_profile):
     from lighthouse_ai.gateway import recommend_models

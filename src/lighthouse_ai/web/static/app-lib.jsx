@@ -11,6 +11,21 @@
 
 const { useState, useEffect, useRef, useCallback, useLayoutEffect } = React;
 
+// ── Mode display names ──────────────────────────────────────────────────────
+// Internal mode ids (sent to / stored by the backend) are kept stable; these
+// are the user-facing labels shown in the UI. Unknown ids pass through as-is.
+window.MODE_LABELS = {
+  'Deep-Dive': 'Deep Research',
+  'QUC': 'Quick Answer',
+  'Monitor': 'Event Monitor',
+  'Debate': 'Debate',
+  'Digest': 'Digest',
+};
+window.modeLabel = function modeLabel(mode) {
+  if (!mode) return 'Job';
+  return window.MODE_LABELS[mode] || mode;
+};
+
 // ── Inject styles for things CSS-vars can't express (shimmer, focus, anim) ──
 (function injectLibStyles() {
   if (document.getElementById('lh-lib-styles')) return;

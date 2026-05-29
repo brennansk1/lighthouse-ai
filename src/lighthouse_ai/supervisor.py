@@ -34,7 +34,7 @@ from .governor.scheduler_gate import SchedulerGate, SchedulerGateConfig
 from .paths import Paths, make_paths
 from .persistence import open_db
 from .schema import kinds_for, migrate_all
-from .subconscious import SubconsciousEngine, stale_position_escalations, ReflectionStore
+from .subconscious import ReflectionStore, SubconsciousEngine, stale_position_escalations
 
 log = structlog.get_logger(__name__)
 
@@ -115,6 +115,82 @@ def _start_subconscious_loop(paths: Paths, *, interval_s: float = 60.0) -> threa
     return thread
 
 
+def _start_monitor_loop(paths: Paths, *, interval_s: float = 60.0) -> threading.Thread:
+    """Daemon thread that sweeps due event-monitor sessions every interval_s.
+
+    Heuristic salience only (no LLM, no gateway), so the sweep is cheap. It is
+    still gated by the SchedulerGate: while the host is paused/offline we skip
+    the tick entirely rather than poll the network.
+    """
+    from .governor.scheduler_gate import Policy
+    from .modes.monitor_session import due_sessions, run_session_cycle
+
+    gate_cfg = SchedulerGateConfig.from_config_file(paths.config_file)
+    gate = SchedulerGate(gate_cfg)
+
+    def _loop() -> None:
+        while True:
+            time.sleep(interval_s)
+            try:
+                policy, _ = gate.policy()
+                if policy is Policy.PAUSED:
+                    continue
+                for s in due_sessions(paths.state_db):
+                    try:
+                        run_session_cycle(paths.state_db, s.id)
+                    except Exception as exc:
+                        log.warning("monitor.cycle.error", session=s.id, exc=str(exc))
+            except Exception as exc:
+                log.warning("monitor.sweep.error", exc=str(exc))
+
+    thread = threading.Thread(target=_loop, daemon=True, name="monitor-loop")
+    thread.start()
+    return thread
+
+
+def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0) -> threading.Thread:
+    """Daemon thread that runs one queued job per tick.
+
+    Mirrors the monitor loop: a single daemon thread, one job per tick, gated by
+    the SchedulerGate so a paused host stops claiming work. RAM admission is
+    inherited through ``Gateway.complete`` — no second queue here. Stuck
+    ``running`` jobs from a previous process are re-queued once at startup.
+    """
+    from .dispatcher import build_runtime_gateway, dispatch_once, reap_stuck_jobs
+    from .governor.scheduler_gate import Policy
+
+    gate_cfg = SchedulerGateConfig.from_config_file(paths.config_file)
+    gate = SchedulerGate(gate_cfg)
+
+    # Resolve a real Ollama gateway once (RAM-gated via Gateway.complete's
+    # ollama_slot). Falls back to None — offline-deterministic stubs — when
+    # Ollama is unreachable, so a paused/absent backend never fails jobs.
+    gateway = build_runtime_gateway(paths)
+    log.info("dispatch.gateway", backend="ollama" if gateway is not None else "offline")
+
+    try:
+        requeued = reap_stuck_jobs(paths.state_db)
+        if requeued:
+            log.info("dispatch.reaped", jobs=requeued)
+    except Exception as exc:
+        log.warning("dispatch.reap.error", exc=str(exc))
+
+    def _loop() -> None:
+        while True:
+            time.sleep(interval_s)
+            try:
+                policy, _ = gate.policy()
+                if policy is Policy.PAUSED:
+                    continue
+                dispatch_once(paths, gateway=gateway, gate=gate)
+            except Exception as exc:
+                log.warning("dispatch.tick.error", exc=str(exc))
+
+    thread = threading.Thread(target=_loop, daemon=True, name="dispatch-loop")
+    thread.start()
+    return thread
+
+
 def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
           port: int = 8765, run: bool = True) -> uvicorn.Server:
     """Boot the supervisor. ``run=False`` returns the Server for tests."""
@@ -147,6 +223,8 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
 
     if run:
         _start_subconscious_loop(p)
+        _start_monitor_loop(p)
+        _start_dispatch_loop(p)
         signal.signal(signal.SIGTERM, _on_signal)
         signal.signal(signal.SIGINT, _on_signal)
         try:

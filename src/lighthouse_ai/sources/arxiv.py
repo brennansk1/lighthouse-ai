@@ -13,7 +13,7 @@ import httpx
 
 from ..rag.chunker import Document
 
-_API = "http://export.arxiv.org/api/query"
+_API = "https://export.arxiv.org/api/query"
 _NS = {"atom": "http://www.w3.org/2005/Atom"}
 
 
@@ -47,7 +47,7 @@ def search_arxiv(query: str, *, max_results: int = 5,
     params = {"search_query": f"all:{query}", "start": 0,
               "max_results": max_results,
               "sortBy": "relevance", "sortOrder": "descending"}
-    with httpx.Client(timeout=timeout) as c:
+    with httpx.Client(timeout=timeout, follow_redirects=True) as c:
         r = c.get(_API, params=params, headers={"User-Agent": "Lighthouse/0.1"})
     r.raise_for_status()
     return _parse(r.content)
