@@ -1,0 +1,46 @@
+id          = "pubmed"
+name        = "PubMed"
+description = "PubMed: authoritative index for biomedical and life-science literature (~36M citations). Supports MeSH vocabulary and publication-type filtering (RCT, meta-analysis, review, clinical trial). The clinical-evidence wedge depends on this skill being used correctly — MeSH + pub-type filtering separates signal from noise."
+category    = "academic"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://pubmed.ncbi.nlm.nih.gov"
+allowed_domains = ["pubmed.ncbi.nlm.nih.gov", "eutils.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov"]
+rate_limit_per_sec = 3.0   # NCBI allows 3 req/s without API key; 10 req/s with key
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"
+license       = "NCBI public domain"
+signed        = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "causal_explanation",
+    "methodology_evaluation",
+    "exploratory_survey",
+    "factual_lookup",
+    "comparative",
+]
+topics = [
+    "clinical",
+    "public_health",
+    "academic_biomedical",
+    "pharmacology",
+    "epidemiology",
+    "genetics",
+    "neuroscience",
+]
+modes_natural_fit  = ["investigate", "survey"]
+modes_weak_fit     = ["decide", "watch"]
+output_shape       = "enumerable"
+temporal_tools     = false
+perspective_lens   = "primary"
+authority          = "peer_reviewed"
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_recent_by_mesh"]

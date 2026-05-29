@@ -1,0 +1,50 @@
+id          = "rss"
+name        = "RSS / Atom Feeds"
+description = """\
+User-extensibility channel: monitor any RSS 2.0 or Atom 1.0 feed URL the \
+user registers. Fetches + parses feed items into Documents via the platform's \
+sources/rss adapter (stdlib XML only, no feedparser dependency). Per-feed \
+grade and bias-rating are set at registration time. The skill's value is \
+monitoring user-added feeds; run() accepts feed URL(s) embedded in the \
+question/context and returns their current items. run_watchable() returns \
+items newer than the supplied since= checkpoint for continuous Watch coverage.\
+"""
+category    = "channel"
+version     = "0.1.0"
+tier        = "A"
+
+# RSS feeds may live on any allowlisted host — the user registers the URL.
+# The platform egress allowlist is the actual ceiling; declaring [] here means
+# the skill reaches whatever the platform already permits (all-pass within the
+# allowlist), which is the correct behaviour for a "point at any feed" skill.
+allowed_domains = []
+
+rate_limit_per_sec  = 1.0
+robots_policy       = "obey"
+
+# Provenance — per-feed grade is overridden at registration; default B here.
+default_grade  = "B"
+license        = "varies"
+signed         = true
+enabled_by_default = true
+
+# Recommender scoring surface
+supported_question_types = [
+    "current_events",
+    "trend_analysis",
+    "exploratory",
+    "list_enumeration",
+]
+topics = ["news", "current_events", "rss", "feeds", "monitoring"]
+
+modes_natural_fit = ["watch", "investigate", "survey"]
+modes_weak_fit    = ["adjudicate"]
+output_shape      = "stream"
+temporal_tools    = true
+
+perspective_lens  = ""
+authority         = "feed_source"
+
+# Watch (Pattern-2) — fetch_feed accepts since= for incremental filtering
+watchable       = true
+watchable_tools = ["fetch_feed"]

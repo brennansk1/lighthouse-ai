@@ -1,0 +1,57 @@
+id          = "sec_edgar"
+name        = "SEC EDGAR"
+description = "U.S. corporate filings: 10-K annual reports, 10-Q quarterly reports, 8-K current reports, DEF 14A proxy statements, and Form 4 insider transactions. High-value specialty tools extract Item 1A (Risk Factors) and Item 7 (MD&A) sections from 10-K filings. Requires a descriptive User-Agent with contact address per SEC policy."
+category    = "financial"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://efts.sec.gov"
+allowed_domains = ["sec.gov", "www.sec.gov"]
+rate_limit_per_sec = 0.1   # SEC requests respectful access; 10s spacing
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "B"
+license       = "public domain (U.S. government works)"
+signed        = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "factual_lookup",
+    "comparative",
+    "causal_explanation",
+    "exploratory_survey",
+    "risk_assessment",
+]
+topics = [
+    "corporate filings",
+    "annual reports",
+    "10-K",
+    "10-Q",
+    "8-K",
+    "proxy statement",
+    "insider transactions",
+    "risk factors",
+    "MD&A",
+    "management discussion",
+    "executive compensation",
+    "mergers and acquisitions",
+    "SEC disclosures",
+]
+modes_natural_fit  = ["investigate", "survey", "decide"]
+modes_weak_fit     = ["watch"]
+output_shape       = "enumerable"
+temporal_tools     = true
+perspective_lens   = "primary"
+authority          = "regulatory"
+
+# --- domain tags ---
+domains = ["finance", "corporate_intelligence", "regulatory"]
+primary_for = ["finance", "corporate_intelligence"]
+secondary_for = ["regulatory"]
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_recent_for_cik"]

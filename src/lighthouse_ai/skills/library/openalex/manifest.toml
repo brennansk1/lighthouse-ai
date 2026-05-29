@@ -1,0 +1,47 @@
+id          = "openalex"
+name        = "OpenAlex"
+description = "OpenAlex open academic graph: 250M+ peer-reviewed works with citation counts, institutional affiliations, and concept taxonomy. Search by keyword, author, institution, or concept. Affiliation metadata is a key signal for source independence (papers from the same lab are not independent)."
+category    = "academic"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://api.openalex.org"
+allowed_domains = ["openalex.org", "api.openalex.org"]
+rate_limit_per_sec = 10.0   # polite pool with mailto param; unauthenticated ~10 req/s
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"
+license       = "CC0"
+signed        = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "comparative",
+    "causal_explanation",
+    "methodology_evaluation",
+    "exploratory_survey",
+    "factual_lookup",
+]
+topics = [
+    "academic_cs_ml",
+    "clinical",
+    "policy",
+    "economics",
+    "public_health",
+    "engineering",
+    "social_science",
+    "humanities",
+]
+modes_natural_fit  = ["investigate", "survey"]
+modes_weak_fit     = ["decide", "watch"]
+output_shape       = "enumerable"
+temporal_tools     = false
+perspective_lens   = "primary"
+authority          = "peer_reviewed"
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_recent_in_concept"]

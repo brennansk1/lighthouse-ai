@@ -1,0 +1,45 @@
+id          = "retraction_watch"
+name        = "Retraction Watch"
+description = "Retraction Watch lookup utility: check whether a scholarly work has been retracted, had an expression of concern issued, or has a correction notice, by DOI, PMID, or arXiv ID. Uses Crossref Labs retraction data (DOI 10.13003/c23rw1d9). Not a destination skill — compose into arXiv, OpenAlex, PubMed, and Crossref workflows for integrity checks."
+category    = "utility"
+version     = "0.1.0"
+
+# --- composing intent: not a destination skill ---
+# composing_skill=true is not a recognized SkillManifest field (schema is strict).
+# Composing intent is expressed via:
+#   audit_tags = ["composing"]  (machine-readable)
+#   category = "utility"        (planner-readable)
+#   SKILL.md                    (planner guide)
+audit_tags = ["composing", "integrity-check"]
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://api.crossref.org"
+allowed_domains = ["api.crossref.org", "crossref.org", "doi.org"]
+rate_limit_per_sec = 1.0
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"
+license       = "Retraction Watch / CC BY 4.0"
+signed        = true
+enabled_by_default = false   # composing utility; not user-facing by default
+
+# --- recommender scoring surface ---
+# Not a destination; minimal scoring surface
+supported_question_types = ["factual_lookup"]
+topics = [
+    "academic_cs_ml",
+    "clinical",
+    "public_health",
+    "engineering",
+    "social_science",
+]
+modes_natural_fit  = ["investigate", "survey"]
+modes_weak_fit     = ["decide", "watch"]
+output_shape       = "enumerable"
+temporal_tools     = false
+perspective_lens   = "primary"
+authority          = "peer_reviewed"
+
+watchable = false

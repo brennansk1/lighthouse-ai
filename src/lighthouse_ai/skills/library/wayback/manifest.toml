@@ -1,0 +1,49 @@
+id          = "wayback"
+name        = "Internet Archive Wayback Machine"
+description = """\
+Historical web retrieval via the Wayback CDX HTTP API — no AGPL \
+internetarchive package. Look up the closest snapshot to a target date, \
+list all snapshots of a URL, fetch a snapshot's preserved content, and \
+submit live URLs for archiving. Critical for Reconstruct mode (timeline \
+reconstruction), journalism dead-link recovery, and legal or policy \
+"what did the page say on date X" research. \
+Operates solely on archive.org / web.archive.org.\
+"""
+category    = "archive"
+version     = "0.1.0"
+tier        = "A"
+
+allowed_domains = ["archive.org", "web.archive.org"]
+
+base_url            = "https://web.archive.org"
+rate_limit_per_sec  = 1.0
+robots_policy       = "obey"
+
+# Provenance
+default_grade  = "A"
+license        = "public_domain"
+signed         = true
+enabled_by_default = true
+
+# Recommender scoring surface
+supported_question_types = [
+    "factual_lookup",
+    "causal_explanation",
+    "exploratory",
+    "temporal_reconstruction",
+    "link_rot_recovery",
+]
+topics = ["history", "archiving", "wayback", "dead_links", "temporal", "reconstruction"]
+
+modes_natural_fit = ["reconstruct", "investigate"]
+modes_weak_fit    = ["survey", "watch"]
+output_shape      = "enumerable"
+temporal_tools    = true
+
+perspective_lens  = ""
+authority         = "archive"
+
+domains = ["journalism", "legal", "policy", "history"]
+
+# Not watchable — Wayback is a historical lookup tool, not a live feed.
+watchable = false

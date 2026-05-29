@@ -1,0 +1,43 @@
+id          = "semantic_scholar"
+name        = "Semantic Scholar"
+description = "Semantic Scholar: 220M+ academic papers with citation-intent classification (supporting, contrasting, extending, background) and influential-citation signal. The citation-angle is the unique value over OpenAlex — use this when the question is about *how* a paper is received, challenged, or extended by the community."
+category    = "academic"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://api.semanticscholar.org"
+allowed_domains = ["api.semanticscholar.org", "semanticscholar.org"]
+rate_limit_per_sec = 1.0   # unauthenticated ~1 req/s; pass S2_API_KEY for higher limits
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"
+license       = "Semantic Scholar public API"
+signed        = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "comparative",
+    "causal_explanation",
+    "methodology_evaluation",
+    "exploratory_survey",
+]
+topics = [
+    "academic_cs_ml",
+    "clinical",
+    "engineering",
+    "social_science",
+    "neuroscience",
+    "public_health",
+]
+modes_natural_fit  = ["investigate", "survey"]
+modes_weak_fit     = ["decide", "watch"]
+output_shape       = "enumerable"
+temporal_tools     = false
+perspective_lens   = "primary"
+authority          = "peer_reviewed"
+
+# --- Watch (Pattern-2): not declared; S2 search is not date-ordered by default ---
+watchable       = false

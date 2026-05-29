@@ -1,0 +1,41 @@
+id          = "wikidata"
+name        = "Wikidata"
+description = "Wikidata structured knowledge graph: entity search, property lookup, and cross-source identifier resolution (ORCID, VIAF, IMDb, ISNI) via the Wikidata Action API."
+category    = "reference"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://www.wikidata.org"
+# NOTE: wikidata.org is NOT in the platform's DEFAULT_ALLOWED_DOMAINS.
+# The skill degrades gracefully (returns []) when EgressBlocked.
+# User must run: lighthouse trust add wikidata.org
+allowed_domains = ["wikidata.org", "query.wikidata.org"]
+rate_limit_per_sec = 1.0
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "B"   # structured, verifiable knowledge graph data
+license       = "CC0-1.0"
+signed        = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "identifier_resolution",
+    "factual_lookup",
+    "entity_disambiguation",
+    "cross_reference",
+    "relationship_query",
+]
+topics = ["identifier_resolution"]
+modes_natural_fit  = ["investigate", "ask"]
+modes_weak_fit     = ["survey", "reconstruct"]
+output_shape       = "graph"
+temporal_tools     = false
+perspective_lens   = "primary"
+authority          = "structured_data"
+
+# Watch is not declared: Wikidata does not have a convenient incremental
+# recent-changes endpoint suitable for topic-filtered Pattern-2 watch.
+watchable = false

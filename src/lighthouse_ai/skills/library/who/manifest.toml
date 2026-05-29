@@ -1,0 +1,43 @@
+id          = "who"
+name        = "WHO (World Health Organization)"
+description = "WHO Global Health Observatory OData API: search health indicators, fetch country data series, compare countries on mortality/morbidity/prevalence metrics, and monitor outbreak alerts."
+category    = "public_health"
+version     = "0.1.0"
+
+# --- fetch policy ---
+# NOTE: ghoapi.azureedge.net (and who.int) are NOT on the default platform
+# allowlist. The skill degrades gracefully (returns [] + logged note) until
+# the user runs:
+#   lighthouse trust add ghoapi.azureedge.net
+tier        = "A"
+base_url    = "https://ghoapi.azureedge.net"
+allowed_domains = ["ghoapi.azureedge.net", "who.int", "www.who.int",
+                   "apps.who.int"]
+rate_limit_per_sec = 1.0
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"   # primary international public health authority
+license       = "CC-BY-4.0-IGO"
+signed        = true
+enabled_by_default = false   # requires trust add to unlock
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "comparative",
+    "factual_lookup",
+    "causal_explanation",
+    "exploratory_survey",
+]
+topics = ["clinical", "public_health", "international", "global_health",
+          "epidemiology", "demographics", "policy"]
+modes_natural_fit  = ["investigate", "survey", "adjudicate"]
+modes_weak_fit     = ["ask", "watch"]
+output_shape       = "enumerable"
+temporal_tools     = false
+perspective_lens   = "regulatory"
+authority          = "international_authority"
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_outbreaks"]

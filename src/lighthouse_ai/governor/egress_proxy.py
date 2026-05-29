@@ -73,6 +73,12 @@ DEFAULT_ALLOWED_DOMAINS: frozenset[str] = frozenset(
         "semanticscholar.org",
         "sec.gov",
         "courtlistener.com",
+        # SL1–SL7 official signed skills (clinical/legal/reference seed sources).
+        "clinicaltrials.gov",
+        "who.int",
+        "ghoapi.azureedge.net",
+        "wikidata.org",
+        "query.wikidata.org",
     }
 )
 

@@ -1,0 +1,42 @@
+id          = "clinicaltrials"
+name        = "ClinicalTrials.gov"
+description = "ClinicalTrials.gov v2 REST API: search trials by condition/intervention/sponsor, fetch individual protocol records, extract pre-registered endpoints (for outcome-switching detection), and track amendment history."
+category    = "clinical"
+version     = "0.1.0"
+
+# --- fetch policy ---
+# NOTE: clinicaltrials.gov is NOT on the default platform allowlist.
+# The skill degrades gracefully (returns [] + logged note) until the user runs:
+#   lighthouse trust add clinicaltrials.gov
+tier        = "A"
+base_url    = "https://clinicaltrials.gov"
+allowed_domains = ["clinicaltrials.gov", "www.clinicaltrials.gov"]
+rate_limit_per_sec = 1.0
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"   # primary regulatory document; authoritative for trial facts
+license       = "public-domain"
+signed        = true
+enabled_by_default = false   # requires trust add to unlock
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "factual_lookup",
+    "causal_explanation",
+    "methodology_evaluation",
+    "exploratory_survey",
+    "comparative",
+]
+topics = ["clinical", "regulatory", "drug_development", "medical_devices",
+          "biomedical", "public_health"]
+modes_natural_fit  = ["investigate", "survey", "reconstruct"]
+modes_weak_fit     = ["ask", "decide"]
+output_shape       = "enumerable"
+temporal_tools     = true
+perspective_lens   = "regulatory"
+authority          = "regulatory_primary"
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["list_trials_by_condition"]

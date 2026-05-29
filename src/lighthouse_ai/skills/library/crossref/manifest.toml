@@ -1,0 +1,45 @@
+id          = "crossref"
+name        = "Crossref"
+description = "Crossref DOI registry: authoritative metadata for 155M+ DOI-registered scholarly works across all publishers. Grade A for peer-reviewed types (journal-article, proceedings-article, book-chapter); Grade B for preprints, datasets, and reports. Supports the Retraction Watch overlay via Crossref Labs — check retraction status of any DOI."
+category    = "academic"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://api.crossref.org"
+allowed_domains = ["api.crossref.org", "crossref.org", "doi.org"]
+rate_limit_per_sec = 1.0   # polite pool; declare mailto in User-Agent header
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"
+license       = "CC0"
+signed        = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "factual_lookup",
+    "comparative",
+    "methodology_evaluation",
+    "exploratory_survey",
+]
+topics = [
+    "academic_cs_ml",
+    "clinical",
+    "economics",
+    "policy",
+    "engineering",
+    "social_science",
+    "humanities",
+    "public_health",
+]
+modes_natural_fit  = ["investigate", "survey"]
+modes_weak_fit     = ["decide", "watch"]
+output_shape       = "enumerable"
+temporal_tools     = false
+perspective_lens   = "primary"
+authority          = "peer_reviewed"
+
+# --- Watch (Pattern-2): not declared; Crossref search is not date-ordered ---
+watchable       = false

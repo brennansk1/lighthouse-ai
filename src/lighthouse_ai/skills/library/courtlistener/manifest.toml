@@ -1,0 +1,56 @@
+id          = "courtlistener"
+name        = "CourtListener / RECAP"
+description = "Free Law Project federal case law, PACER docket tracking, oral arguments, and citation treatment. Strong federal coverage; state-court coverage varies by jurisdiction."
+category    = "legal"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://www.courtlistener.com"
+allowed_domains = ["courtlistener.com", "www.courtlistener.com"]
+rate_limit_per_sec = 1.0
+robots_policy = "obey"
+
+# --- provenance ---
+# Court opinions are primary legal documents (authoritative source of record).
+# Grade B: authoritative primary documents, no independent peer-review in the
+# academic sense; citation treatment is approximate (not Westlaw/Lexis-grade).
+default_grade      = "B"
+license            = "Public domain / CourtListener ToS"
+signed             = true
+enabled_by_default = false
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "factual_lookup",
+    "causal_explanation",
+    "comparative",
+    "exploratory_survey",
+    "timeline_reconstruction",
+]
+topics = [
+    "case_law",
+    "court_opinions",
+    "federal_courts",
+    "dockets",
+    "oral_arguments",
+    "citations",
+    "legal_precedent",
+    "PACER",
+    "RECAP",
+]
+
+# Domains this skill is primary/secondary for.  The recommender uses these to
+# rank the skill when the user's question touches one of these domains.
+domains = ["legal", "journalism", "policy"]
+
+modes_natural_fit  = ["investigate", "reconstruct", "survey"]
+modes_weak_fit     = ["decide", "ask"]
+output_shape       = "enumerable"
+temporal_tools     = true
+perspective_lens   = "primary"
+authority          = "primary_legal"
+
+# --- Watch (Pattern-2): track a docket for new activity ---
+watchable       = true
+watchable_tools = ["track_docket"]
