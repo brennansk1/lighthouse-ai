@@ -194,6 +194,7 @@ P2.7 Corpus mode loops (must clear the measurable bar)    -> #37 Ask, #38 Invest
        #39 Survey, #40 Reconstruct, #41 Watch
 P3   Wizard input completeness per mode                   -> #29
 P3.5 Reviewable research plan in the wizard (vs Gemini)   -> #50
+P3.5 Depth selector in Research tab (Quick→Professional)  -> #53
 P4   UX polish + artifact viewers/exports                 -> #30, #31
 P4.5 Integrations: Telegram templates + Logseq rendering  -> #42, #43
 P5   Code review + security review                         -> #32
