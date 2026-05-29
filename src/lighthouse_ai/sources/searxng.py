@@ -105,7 +105,7 @@ def search(
         SearXNGUnavailable: If SearXNG returns an error response.
     """
     base = url or _searxng_url()
-    params = {
+    params: dict[str, str | int] = {
         "q": query,
         "format": "json",
         "categories": categories,

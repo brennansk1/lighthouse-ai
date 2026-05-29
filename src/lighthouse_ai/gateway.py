@@ -564,10 +564,12 @@ class Gateway:
         self.audit_db = audit_db
         self.profile = profile or probe()
         self.chosen_models_path = chosen_models_path
+        self._chosen: dict[str, Any] | None
         if chosen_models_path is not None and chosen_models_path.exists():
             self._chosen = load_chosen_models(chosen_models_path)
         else:
             self._chosen = None
+        self._bindings: dict[str, ModelBinding]
         if self._chosen is None:
             self._bindings = bindings_for_tier(self.profile.suggested_tier)
         else:

@@ -188,7 +188,7 @@ def run_resolver_pass(
         results.append(result)
         if result.auto_resolved and not dry_run:
             # A newer pass started while we were researching → discard our writes.
-            if guard is not None and not guard.is_current(my_gen):
+            if guard is not None and my_gen is not None and not guard.is_current(my_gen):
                 break
             conn = open_db(positions_db)
             try:
@@ -308,7 +308,7 @@ def resolve_positions(
             continue
 
         # A newer pass started while we were researching → discard our writes.
-        if guard is not None and not guard.is_current(my_gen):
+        if guard is not None and my_gen is not None and not guard.is_current(my_gen):
             break
 
         resolved = positions_mod.resolve_position(positions_db, pos_id, verdict)

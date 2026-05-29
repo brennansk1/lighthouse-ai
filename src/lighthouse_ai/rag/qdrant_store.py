@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, cast
 
 from .chunker import Chunk
 from .store import SearchResult
@@ -144,7 +144,9 @@ class QdrantStore:
                 qm.FieldCondition(key=k_, match=qm.MatchValue(value=v))
                 for k_, v in filter.items()
             ]
-            qfilter = qm.Filter(must=must)
+            # Cast required: list[FieldCondition] is invariant but the qdrant
+            # Filter.must param expects list[FieldCondition | IsEmpty... | ...].
+            qfilter = qm.Filter(must=cast(Any, must))
         # Use `query_points` (current API) and fall back to `search` for older clients.
         try:
             hits = client.query_points(
@@ -186,7 +188,9 @@ class QdrantStore:
             return 0
         client.delete(
             collection_name=self.collection,
-            points_selector=qm.PointIdsList(points=ids),
+            # Cast required: list[str] is invariant; PointIdsList.points expects
+            # list[int | str | UUID] which is technically a broader union.
+            points_selector=qm.PointIdsList(points=cast(Any, ids)),
         )
         return len(ids)
 

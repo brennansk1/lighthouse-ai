@@ -244,8 +244,9 @@ class Governor:
         rem = self.remaining()
         return GovernorDecision(True, "", self._flatten(rem), self.tier())
 
-    def spend(self, **kwargs: float) -> GovernorDecision:
-        decision = self.try_spend(**kwargs)
+    def spend(self, *, usd: float = 0.0, tool_calls: int = 0,
+              tokens: int = 0, job_id: str | None = None) -> GovernorDecision:
+        decision = self.try_spend(usd=usd, tool_calls=tool_calls, tokens=tokens, job_id=job_id)
         if not decision.allowed:
             raise BudgetTripped(decision.reason)
         return decision

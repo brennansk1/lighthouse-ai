@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json as _json
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -36,6 +36,9 @@ from textual.widgets import (
 from .client import SupervisorOffline
 from .widgets import WepBadge, sparkline
 
+if TYPE_CHECKING:
+    from .app import LighthouseTUI
+
 
 # ════════════════════════════ base page ════════════════════════════
 class _Page(Container):
@@ -43,9 +46,20 @@ class _Page(Container):
 
     POLL_SECONDS = 8.0
 
+    @property
+    def _tui_app(self) -> LighthouseTUI:
+        """Return ``self.app`` narrowed to :class:`LighthouseTUI`.
+
+        All pages are composed inside ``LighthouseTUI``; the cast is safe.
+        Using a property (rather than inline ``cast`` at every call site) keeps
+        the mypy fix in one place and preserves readability.
+        """
+        from .app import LighthouseTUI  # local import avoids circular at module level
+        return cast(LighthouseTUI, self.app)
+
     def client_get(self, path: str, **params: Any) -> dict[str, Any] | None:
         try:
-            return self.app.client.get(path, **params)
+            return self._tui_app.client.get(path, **params)
         except SupervisorOffline:
             return None
         except Exception:
@@ -53,7 +67,7 @@ class _Page(Container):
 
     def client_post(self, path: str, json: dict | None = None) -> dict[str, Any] | None:
         try:
-            return self.app.client.post(path, json=json)
+            return self._tui_app.client.post(path, json=json)
         except SupervisorOffline:
             self.app.notify("Supervisor offline", severity="error")
             return None
@@ -222,7 +236,8 @@ class JobDetailScreen(ModalScreen):
         self.query_one("#jd-calls-table", DataTable).add_columns(
             "Seq", "Time", "Model", "Tokens")
         try:
-            d = self.app.client.get(f"/api/jobs/{self.job_id}")
+            from .app import LighthouseTUI  # local import — avoids circular at module level
+            d = cast(LighthouseTUI, self.app).client.get(f"/api/jobs/{self.job_id}")
         except Exception:
             d = None
         if not d:
@@ -721,7 +736,8 @@ class NewJobModal(ModalScreen):
             topic = self.query_one("#job-topic", Input).value.strip()
             mode = self.query_one("#job-mode", Input).value.strip() or "Deep-Dive"
             if topic:
-                self.app.client.post("/api/jobs", json={"mode": mode, "topic": topic})
+                from .app import LighthouseTUI  # local import — avoids circular at module level
+                cast(LighthouseTUI, self.app).client.post("/api/jobs", json={"mode": mode, "topic": topic})
                 self.app.notify("Job queued")
         self.dismiss()
 
@@ -746,7 +762,8 @@ class NewTopicModal(ModalScreen):
             mode = self.query_one("#topic-mode", Input).value.strip() or "Monitor"
             src = self.query_one("#topic-src", Input).value.strip()
             if name:
-                self.app.client.post("/api/topics", json={
+                from .app import LighthouseTUI  # local import — avoids circular at module level
+                cast(LighthouseTUI, self.app).client.post("/api/topics", json={
                     "name": name, "mode": mode,
                     "sources": [src] if src else []})
                 self.app.notify("Topic created")
@@ -773,8 +790,9 @@ class RejectModal(ModalScreen):
         if event.button.id == "ok":
             reason = self.query_one("#reason", Input).value.strip()
             if reason:
-                self.app.client.post(f"/api/drafts/{self.draft_id}/reject",
-                                     json={"reason": reason})
+                from .app import LighthouseTUI  # local import — avoids circular at module level
+                cast(LighthouseTUI, self.app).client.post(f"/api/drafts/{self.draft_id}/reject",
+                                                          json={"reason": reason})
                 self.app.notify("Rejected")
         self.dismiss()
 

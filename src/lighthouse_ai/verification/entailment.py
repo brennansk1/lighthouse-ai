@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import importlib.util
+from typing import Any
 
 MINICHECK_THRESHOLD: float = 0.5
 HHEM_THRESHOLD: float = 0.5
@@ -84,15 +85,16 @@ def score_claim(claim: str, grounding: str) -> float:
     if scorer is None or kind is None:
         return 1.0
 
+    _scorer_any: Any = scorer
     try:
         if kind == "minicheck":
-            _, scores, _, _ = scorer.score(docs=[grounding], claims=[claim])
+            _, scores, _, _ = _scorer_any.score(docs=[grounding], claims=[claim])
             return float(scores[0])
 
         if kind == "hhem":
             # sentence-transformers cosine similarity as a soft entailment proxy
             import numpy as np
-            embs = scorer.encode([claim, grounding], convert_to_numpy=True,
+            embs = _scorer_any.encode([claim, grounding], convert_to_numpy=True,
                                  normalize_embeddings=True)
             sim = float(np.dot(embs[0], embs[1]))
             # Cosine is in [-1, 1]; rescale to [0, 1]

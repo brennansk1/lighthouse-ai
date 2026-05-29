@@ -62,7 +62,8 @@ def _notify_event(event: str, title: str, body: str) -> None:
         if not cfg:
             return
         from .notify import DesktopChannel, DiscordChannel, Notifier
-        channels = [("desktop", DesktopChannel())]
+        from .notify.channels import Channel
+        channels: list[tuple[str, Channel]] = [("desktop", DesktopChannel())]
         if cfg.get("discord_webhook_url"):
             channels.append(("discord", DiscordChannel(cfg["discord_webhook_url"])))
         Notifier(cfg, channels).notify(event, title, body)
@@ -699,15 +700,15 @@ def research(
     for w in result.warnings:
         err_console.print(f"[yellow]⚠ backend warning:[/yellow] {w}")
 
-    d = result.discipline or {}
+    disc: dict = result.discipline or {}
     console.print(f"\n[green]staged draft {result.draft_id}[/green] "
                   f"({result.mode}, {result.sections} section(s), "
                   f"{result.chunks_ingested} corpus chunks)")
-    if d:
-        verdict = "[green]passed[/green]" if d.get("passed") else "[yellow]flagged[/yellow]"
-        console.print(f"  discipline: {verdict} — {d.get('sourced', 0)}/{d.get('claims', 0)} "
-                      f"claims sourced ({d.get('coverage', 0):.0%} coverage); "
-                      f"{d.get('claims', 0)} claim(s) recorded as calibration positions")
+    if disc:
+        verdict = "[green]passed[/green]" if disc.get("passed") else "[yellow]flagged[/yellow]"
+        console.print(f"  discipline: {verdict} — {disc.get('sourced', 0)}/{disc.get('claims', 0)} "
+                      f"claims sourced ({disc.get('coverage', 0):.0%} coverage); "
+                      f"{disc.get('claims', 0)} claim(s) recorded as calibration positions")
     _notify_event("draft_ready", "Draft staged",
                   f"{question[:60]} → {result.draft_id}")
     console.print("  review it: dashboard → Drafts, or `lighthouse status`")
@@ -735,12 +736,15 @@ def eval_retrieval(
         backends = {"embedder": "hash-stub", "reranker": "ScoreReranker"}
         warns: list[str] = []
     else:
+        from typing import cast
+
         from .pipeline import make_embedder, make_vector_store
         from .rag.flag_reranker import make_reranker
+        from .rag.rerank import Reranker
         embedder, emb_name, warns = make_embedder(offline=False)
         store, store_name, store_warns = make_vector_store(embedder.dim, offline=False)
         warns = warns + store_warns
-        reranker = make_reranker(prefer_real=True)
+        reranker: Reranker = cast(Reranker, make_reranker(prefer_real=True))
         hybrid = build_index(golden, embedder=embedder, store=store, reranker=reranker)
         backends = {"embedder": emb_name, "vector_store": store_name,
                     "reranker": type(reranker).__name__}
@@ -1287,7 +1291,7 @@ def replay(job_id: str = typer.Argument(..., help="Job id to replay/inspect."),
     installed: dict[str, str] = {}
     try:
         from .gateway import fingerprint
-        for m in trace.models():
+        for m in trace.models:
             installed[m] = fingerprint(m, "ollama").registry_digest_sha256
     except Exception:
         pass
@@ -1318,10 +1322,10 @@ def backup(repo: str = typer.Option(None, help="restic repo path (default: data_
     if passphrase is None:
         from .secrets import SecretStore
         passphrase = SecretStore(paths.data_dir).get_or_create("restic.passphrase")
-    rb = ResticBackup(passphrase=passphrase)
+    rb = ResticBackup()
     try:
         if init:
-            rb.init(repo)
+            rb.init(repo, passphrase)
             console.print(f"[green]initialized restic repo[/green] {repo}")
         rb.backup([paths.state_db, paths.audit_db, paths.positions_db,
                    paths.hypotheses_db, paths.intents_db,

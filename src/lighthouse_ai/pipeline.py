@@ -22,6 +22,7 @@ import importlib
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 import structlog
 
@@ -41,6 +42,7 @@ from .rag import (
     HashEmbedder,
     HybridSearch,
     InMemoryStore,
+    Reranker,
     chunk_document,
     make_reranker,
 )
@@ -187,7 +189,7 @@ class ResearchPipeline:
         # installed; otherwise a score-passthrough that preserves fusion order.
         # `available()` probes via find_spec, so this never imports torch or
         # downloads a model on its own (§Sprint 28 step 1).
-        self.reranker = make_reranker(prefer_real=True)
+        self.reranker = cast(Reranker, make_reranker(prefer_real=True))
         self.hybrid = HybridSearch(self.store, self.embedder, BM25Index(),
                                    reranker=self.reranker)
         self.gateway = gateway or make_gateway(

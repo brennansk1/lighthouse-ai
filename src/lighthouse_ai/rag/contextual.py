@@ -16,8 +16,17 @@ preamble per Anthropic's pattern. Here we provide:
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from contextlib import AbstractContextManager
+from typing import Any, Protocol, runtime_checkable
 
 from .chunker import Chunk
+
+
+@runtime_checkable
+class _HasPermit(Protocol):
+    """Minimal protocol satisfied by SchedulerGate (and any context-manager gate)."""
+
+    def permit(self) -> AbstractContextManager[Any]: ...
 
 PreambleFn = Callable[[Chunk], str]
 
@@ -53,10 +62,10 @@ def prepend_context(chunks: Iterable[Chunk], *,
 
 
 def llm_preamble_fn(
-    gateway: object,
+    gateway: Any,
     *,
     document_text: str = "",
-    gate: object | None = None,
+    gate: _HasPermit | None = None,
 ) -> PreambleFn:
     """Return a PreambleFn that generates context using the aux_context LLM role.
 
@@ -80,7 +89,7 @@ def llm_preamble_fn(
             )
             ctx = gate.permit() if gate is not None else nullcontext()
             with ctx:
-                resp = gateway.complete("aux_context", prompt)  # type: ignore[union-attr]
+                resp = gateway.complete("aux_context", prompt)
             preamble = resp.text.strip()[:200]
             if preamble:
                 return f"[Context: {preamble}] "

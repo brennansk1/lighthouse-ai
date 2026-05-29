@@ -25,6 +25,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
@@ -118,7 +120,7 @@ class RobotsPolicy:
 
     def __init__(
         self,
-        fetcher: Callable[[str], bytes] | None = None,  # noqa: F821
+        fetcher: Callable[[str], bytes] | None = None,
         *,
         user_agent: str = "LighthouseBot",
         ttl: float = 3600.0,
@@ -139,7 +141,7 @@ class RobotsPolicy:
         self._user_agent = user_agent
         self._ttl = ttl
         # host → (parsed_robot_or_None, fetched_at_monotonic)
-        self._cache: dict[str, tuple[object | None, float]] = {}
+        self._cache: dict[str, tuple[Any, float]] = {}
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -149,7 +151,7 @@ class RobotsPolicy:
     def _robots_url(self, host: str) -> str:
         return f"https://{host}/robots.txt"
 
-    def _fetch_and_parse(self, host: str) -> object | None:
+    def _fetch_and_parse(self, host: str) -> Any:
         """Fetch and parse robots.txt for *host*; returns parsed object or None."""
         if self._fetcher is None:
             return None
@@ -171,7 +173,7 @@ class RobotsPolicy:
             logger.debug("robots.txt parse failed for %s: %s", host, exc)
             return None
 
-    def _get_parsed(self, host: str) -> object | None:
+    def _get_parsed(self, host: str) -> Any:
         """Return cached or freshly fetched parsed robots object for *host*."""
         now = time.monotonic()
         with self._lock:
@@ -318,16 +320,16 @@ class RateBudget:
         self._rate = default_rate
         self._burst = default_burst
         # host → bucket (either pyrate Limiter or _PureTokenBucket)
-        self._buckets: dict[str, object] = {}
+        self._buckets: dict[str, Any] = {}
         self._lock = threading.Lock()
 
-    def _bucket_for(self, host: str) -> object:
+    def _bucket_for(self, host: str) -> Any:
         with self._lock:
             if host not in self._buckets:
                 self._buckets[host] = self._make_bucket()
             return self._buckets[host]
 
-    def _make_bucket(self) -> object:
+    def _make_bucket(self) -> Any:
         if _HAS_PYRATE:
             # pyrate-limiter ≥ 3.x API: Rate + Limiter
             rate = Rate(self._burst, Duration.SECOND * int(self._burst / self._rate))
@@ -353,7 +355,7 @@ class RateBudget:
                 except BucketFullException:
                     time.sleep(0.05)
         else:
-            bucket.acquire()  # type: ignore[union-attr]
+            bucket.acquire()
 
     def try_acquire(self, host: str) -> bool:
         """Non-blocking acquire; returns True if permitted, False if rate-limited.
@@ -371,7 +373,7 @@ class RateBudget:
             except BucketFullException:
                 return False
         else:
-            return bucket.try_acquire()  # type: ignore[union-attr]
+            return bucket.try_acquire()
 
 
 # ---------------------------------------------------------------------------

@@ -66,12 +66,12 @@ class EntityHotnessStore:
                 "WHERE entity_id=?", (entity_id,),
             ).fetchone()
             if row is None:
-                sources = [source] if source else []
+                sources: set[str] = {source} if source else set()
                 conn.execute(
                     "INSERT INTO entity_hotness (entity_id, mention_count_30d, "
                     "distinct_sources_json, last_seen_ms, last_updated_ms) "
                     "VALUES (?, 1, ?, ?, ?)",
-                    (entity_id, json.dumps(sources), now, now),
+                    (entity_id, json.dumps(sorted(sources)), now, now),
                 )
             else:
                 count = row[0] + 1

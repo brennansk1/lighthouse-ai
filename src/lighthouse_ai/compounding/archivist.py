@@ -40,8 +40,10 @@ _TOOL_FENCE_RE = re.compile(
 
 @runtime_checkable
 class _TurnLike(Protocol):
-    role: str
-    text: str
+    @property
+    def role(self) -> str: ...
+    @property
+    def text(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -130,7 +132,7 @@ def archive_report(
     """
     markdown = report_to_markdown(report, title=title)
     cid = _content_id(markdown)
-    head = title or getattr(report, "question", "report")
+    head: str = title or str(getattr(report, "question", "report") or "report")
 
     corpus_dir = Path(corpus_dir)
     corpus_dir.mkdir(parents=True, exist_ok=True)

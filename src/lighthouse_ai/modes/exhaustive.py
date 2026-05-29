@@ -395,25 +395,25 @@ def run_exhaustive(
             if len(all_nodes) >= max_nodes:
                 truncated = True
                 break
-            key = _norm(sq)
-            if not key or key in seen:
+            sq_key = _norm(sq)
+            if not sq_key or sq_key in seen:
                 continue              # dedup → guarantees termination
-            seen.add(key)
+            seen.add(sq_key)
             order += 1
             child = TreeNode(question=sq, depth=node.depth + 1,
                              status="known_unknown",
-                             load_bearing=key in load_bearing_set)
+                             load_bearing=sq_key in load_bearing_set)
             node.children.append(child)
             all_nodes.append(child)
             pending.append((child, grounded, order))
 
-    grounded = sum(1 for n in all_nodes if n.status == "grounded")
+    grounded_count = sum(1 for n in all_nodes if n.status == "grounded")
     report = ExhaustiveReport(
         root_question=question,
         root=root,
         total_nodes=len(all_nodes),
-        grounded=grounded,
-        known_unknowns=len(all_nodes) - grounded,
+        grounded=grounded_count,
+        known_unknowns=len(all_nodes) - grounded_count,
         max_depth_reached=max((n.depth for n in all_nodes), default=0),
         budget={"max_nodes": max_nodes, "max_depth": max_depth,
                 "voi_floor": voi_floor},

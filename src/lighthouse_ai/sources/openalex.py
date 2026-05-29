@@ -45,8 +45,8 @@ def _parse(data: dict) -> list[Document]:
 def search_openalex(query: str, *, max_results: int = 5,
                     timeout: float = 30.0, mailto: str | None = None) -> list[Document]:
     """Search OpenAlex works. ``mailto`` joins the polite pool (recommended)."""
-    params = {"search": query, "per_page": max_results,
-              "sort": "relevance_score:desc"}
+    params: dict[str, str | int] = {"search": query, "per_page": max_results,
+                                    "sort": "relevance_score:desc"}
     if mailto:
         params["mailto"] = mailto
     with httpx.Client(timeout=timeout) as c:

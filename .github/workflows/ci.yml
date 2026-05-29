@@ -33,9 +33,8 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check src tests
 
-      # mypy is non-blocking for now: the codebase isn't fully typed yet.
+      # mypy is a blocking gate: src/lighthouse_ai is clean (0 errors, 259 files).
       - name: Type check (mypy)
-        continue-on-error: true
         run: uv run mypy src/lighthouse_ai
 
       - name: Test (pytest)

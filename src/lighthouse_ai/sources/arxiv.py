@@ -44,9 +44,9 @@ def _parse(payload: bytes) -> list[Document]:
 def search_arxiv(query: str, *, max_results: int = 5,
                  timeout: float = 30.0) -> list[Document]:
     """Search arXiv and return up to ``max_results`` papers as Documents."""
-    params = {"search_query": f"all:{query}", "start": 0,
-              "max_results": max_results,
-              "sortBy": "relevance", "sortOrder": "descending"}
+    params: dict[str, str | int] = {"search_query": f"all:{query}", "start": 0,
+                                    "max_results": max_results,
+                                    "sortBy": "relevance", "sortOrder": "descending"}
     with httpx.Client(timeout=timeout, follow_redirects=True) as c:
         r = c.get(_API, params=params, headers={"User-Agent": "Lighthouse/0.1"})
     r.raise_for_status()

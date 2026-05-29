@@ -18,6 +18,7 @@ ever constructing or downloading the real model.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
+from typing import Any
 
 from .chunker import Chunk
 from .rerank import ScoreReranker
@@ -59,7 +60,7 @@ class FlagReranker:
         self.model = model
         self._injected_scorer = scorer
         # Lazily-constructed real model handle; ``None`` until first real use.
-        self._model = None
+        self._model: Any | None = None
 
     @staticmethod
     def _flag_embedding_importable() -> bool:
@@ -106,11 +107,15 @@ class FlagReranker:
                 ) from exc
             self._model = _FE(self.model, use_fp16=True)
 
+        # Capture the model in a local (not through self) so mypy can see it is
+        # non-None inside the closure; self._model is Any here after assignment.
+        _m: Any = self._model
+
         def _model_scorer(query: str, texts: Sequence[str]) -> Sequence[float]:
             # FlagEmbedding expects a list of [query, passage] pairs and returns
             # one score per pair.
             pairs = [[query, t] for t in texts]
-            scores = self._model.compute_score(pairs)
+            scores = _m.compute_score(pairs)
             # compute_score returns a float for a single pair; normalise to list.
             if isinstance(scores, (int, float)):
                 return [float(scores)]

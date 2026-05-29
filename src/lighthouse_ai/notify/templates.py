@@ -165,7 +165,8 @@ def _render_report(title_md: str, body: dict) -> str:
 
 
 def _render_table(title_md: str, body: dict) -> str:
-    prisma = body.get("prisma") if isinstance(body.get("prisma"), dict) else {}
+    _prisma_raw = body.get("prisma")
+    prisma: dict = _prisma_raw if isinstance(_prisma_raw, dict) else {}
     included = prisma.get("included", 0)
     identified = prisma.get("identified", 0)
     return "\n".join(
@@ -179,9 +180,9 @@ def _render_table(title_md: str, body: dict) -> str:
 
 def _render_timeline(title_md: str, body: dict) -> str:
     events = _as_list(body.get("events"))
-    dates = sorted(
-        e.get("date") for e in events
-        if isinstance(e, dict) and e.get("date")
+    dates: list[str] = sorted(
+        str(e.get("date")) for e in events
+        if isinstance(e, dict) and e.get("date") is not None and e.get("date") != ""
     )
     lines = [
         f"*Timeline:* {title_md}",
@@ -230,7 +231,8 @@ def _render_digest(title_md: str, body: dict) -> str:
     top = ""
     for c in items:
         if isinstance(c, dict):
-            item = c.get("item") if isinstance(c.get("item"), dict) else {}
+            _item_raw = c.get("item")
+            item: dict = _item_raw if isinstance(_item_raw, dict) else {}
             top = _truncate(_first_nonempty(item.get("title"), item.get("url")), 160)
             if top:
                 break

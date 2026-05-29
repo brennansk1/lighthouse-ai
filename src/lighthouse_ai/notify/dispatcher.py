@@ -49,7 +49,9 @@ class Notifier:
     @property
     def events(self) -> set[str]:
         raw = self._config.get("events", []) or []
-        return {str(e) for e in raw}  # type: ignore[union-attr]
+        if not isinstance(raw, (list, tuple, set, frozenset)):
+            return set()
+        return {str(e) for e in raw}
 
     def _channel_enabled(self, name: str) -> bool:
         cfg = self._config

@@ -133,11 +133,11 @@ def _text_of(chunk: object, *, limit: int = 240) -> str:
 
 def _to_ref(r: object, idx: int) -> ChunkRef:
     chunk = _chunk_of(r)
+    _ent = _entailment_of(chunk)
     return ChunkRef(
         chunk_id=_chunk_id_of(chunk, idx),
         skill_id=_skill_id_of(chunk),
-        entailment_score=_entailment_of(chunk) if _entailment_of(chunk) is not None
-        else 1.0,
+        entailment_score=_ent if _ent is not None else 1.0,
         text=_text_of(chunk),
     )
 

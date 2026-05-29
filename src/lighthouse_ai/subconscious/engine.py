@@ -76,12 +76,12 @@ class SubconsciousEngine:
         reflections: list[Reflection] = []
         escalations: list[Escalation] = []
         # Producers may be LLM-bound, so each runs under a host-courtesy permit.
-        for produce in self._reflection_producers:
+        for r_produce in self._reflection_producers:
             with _gate_ctx(self._gate):
-                reflections.extend(produce())
-        for produce in self._escalation_producers:
+                reflections.extend(r_produce())
+        for e_produce in self._escalation_producers:
             with _gate_ctx(self._gate):
-                escalations.extend(produce())
+                escalations.extend(e_produce())
 
         reflections = apply_cap(reflections, score=self._reflection_score)
 

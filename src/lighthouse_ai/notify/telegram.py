@@ -206,11 +206,11 @@ def request_confirmation(
         deadline = clock() + timeout_s
         offset: int | None = None
         while True:
-            params: dict[str, object] = {"timeout": 0}
+            _params: dict[str, int] = {"timeout": 0}
             if offset is not None:
-                params["offset"] = offset
+                _params["offset"] = offset
             try:
-                response = http.get(_method_url(bot_token, "getUpdates"), params=params)
+                response = http.get(_method_url(bot_token, "getUpdates"), params=_params)
             except httpx.HTTPError:
                 # A transient polling error should not abort early; keep trying
                 # until the deadline, then fall through to the timeout abort.
