@@ -40,9 +40,16 @@ better:
 2. **Adversarial depth.** After synthesis, a refutation pass attacks each key
    claim from independent perspectives; only survivors stand. Single-pass
    frontier research skips this.
-3. **Coverage critic.** An explicit "what's missing / which angle wasn't
-   searched" pass drives another round. Depth = multi-angle coverage, not
-   one-query saturation.
+3. **Coverage critic (beat Gemini's depth).** Gemini Deep Research's edge is its
+   plan → parallel-search → self-critique → deepen loop. We match it and go
+   further: an explicit research **plan** (load-bearing sub-questions from the
+   framing planner) is generated up front and shown for review; the critic then
+   checks coverage *against that plan* — every load-bearing sub-question must be
+   answered by cited evidence or it's a gap that triggers another round.
+   Termination requires BOTH plan-coverage AND evidence saturation, bounded by
+   the depth setting. Depth = multi-angle, plan-complete coverage — not
+   one-query saturation, and unlike Gemini, every filled point is grounded and
+   entailment-checked.
 4. **Measured calibration.** Forecasts become tracked Positions scored by Brier
    over time; the instrument reports its *own* historical accuracy. Chatbots
    keep no score.
@@ -175,6 +182,7 @@ P2.5 Trust layer:
 P2.7 Corpus mode loops (must clear the measurable bar)    -> #37 Ask, #38 Investigate,
        #39 Survey, #40 Reconstruct, #41 Watch
 P3   Wizard input completeness per mode                   -> #29
+P3.5 Reviewable research plan in the wizard (vs Gemini)   -> #50
 P4   UX polish + artifact viewers/exports                 -> #30, #31
 P4.5 Integrations: Telegram templates + Logseq rendering  -> #42, #43
 P5   Code review + security review                         -> #32
