@@ -358,6 +358,16 @@ def test_event_bus_drops_full_queue():
     assert size <= 2
 
 
+def test_create_app_starts_no_daemon(migrated_paths):
+    """Safety invariant: create_app() must NOT start the dispatch/monitor loops
+    (those belong to serve(run=True) only) — protects against runaway processes."""
+    import threading
+    create_app(migrated_paths)
+    names = {t.name for t in threading.enumerate()}
+    assert "dispatch-loop" not in names
+    assert "monitor-loop" not in names
+
+
 def test_api_write_publishes_event(migrated_paths):
     """A job-status change pushes onto the bus."""
     app = create_app(migrated_paths)
