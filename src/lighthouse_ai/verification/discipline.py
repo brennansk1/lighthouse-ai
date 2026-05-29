@@ -50,6 +50,7 @@ class DisciplineReport:
     triangulated: int = 0              # claims with >=2 INDEPENDENT sources (distinct docs)
     fabricated_citations: int = 0      # citation ids that map to no evidence chunk
     contradictions: list[tuple[str, str]] = field(default_factory=list)
+    distinct_skills: int = 0           # distinct skill_id values across evidence (independence)
 
 
 # Antonym pairs + negation markers for a conservative, deterministic
@@ -102,6 +103,39 @@ def _domain_by_id(evidence_chunks: list) -> dict[int, str]:
             or getattr(chunk, "id", f"chunk{idx}")
         out[idx] = str(domain)
     return out
+
+
+def _skill_by_id(evidence_chunks: list) -> dict[int, str | None]:
+    """Map 1-based citation id → producing skill_id (None if unattributed).
+
+    Skill provenance flows through every chunk (metadata.skill_id). Two chunks
+    sharing a skill_id are NOT independent sources even if their domains differ,
+    so triangulation collapses same-skill citations.
+    """
+    out: dict[int, str | None] = {}
+    for idx, r in enumerate(evidence_chunks, start=1):
+        chunk = getattr(r, "chunk", r)
+        meta = getattr(chunk, "metadata", {}) or {}
+        sid = meta.get("skill_id")
+        out[idx] = str(sid) if sid is not None else None
+    return out
+
+
+def distinct_skills(evidence_chunks) -> int:
+    """Count distinct ``skill_id`` values across evidence chunks.
+
+    Part of source-independence accounting (§6 / design §12): two chunks from the
+    same skill are not independent, regardless of domain. Chunks without a
+    ``skill_id`` in metadata are ignored (they contribute no skill-independence).
+    """
+    skills: set[str] = set()
+    for r in evidence_chunks:
+        chunk = getattr(r, "chunk", r)
+        meta = getattr(chunk, "metadata", {}) or {}
+        sid = meta.get("skill_id")
+        if sid is not None:
+            skills.add(str(sid))
+    return len(skills)
 
 
 def _significant_tokens(text: str) -> set[str]:
@@ -212,16 +246,31 @@ def check(text: str, *, min_coverage: float = 0.6,
     # --- triangulation + citation integrity (when evidence is supplied) ---
     triangulated = 0
     fabricated = 0
+    skills_count = 0
     if evidence_chunks is not None:
         dom_by_id = _domain_by_id(evidence_chunks)
+        skill_by_id = _skill_by_id(evidence_chunks)
+        skills_count = distinct_skills(evidence_chunks)
         valid_ids = set(dom_by_id)
         for c in claims:
             if not c.citation_ids:
                 continue
             if any(cid not in valid_ids for cid in c.citation_ids):
                 fabricated += 1
-            domains = {dom_by_id[cid] for cid in c.citation_ids if cid in valid_ids}
-            if len(domains) >= 2:
+            # Independence requires distinct documents AND distinct producing
+            # skills: two chunks from the same skill_id are not independent even
+            # if their domains differ.
+            cited = [cid for cid in c.citation_ids if cid in valid_ids]
+            domains = {dom_by_id[cid] for cid in cited}
+            cited_skills = {skill_by_id[cid] for cid in cited
+                            if skill_by_id[cid] is not None}
+            # If every cited chunk carries a skill_id and they all share one
+            # skill, the citations are not independent regardless of domain.
+            same_single_skill = (
+                len(cited_skills) == 1
+                and all(skill_by_id[cid] is not None for cid in cited)
+            )
+            if len(domains) >= 2 and not same_single_skill:
                 triangulated += 1
         if fabricated:
             notes.append(f"{fabricated} claim(s) cite non-existent sources "
@@ -241,7 +290,8 @@ def check(text: str, *, min_coverage: float = 0.6,
                             entailment_checked=entailment_checked,
                             triangulated=triangulated,
                             fabricated_citations=fabricated,
-                            contradictions=contradictions)
+                            contradictions=contradictions,
+                            distinct_skills=skills_count)
 
 
 def check_source_diversity(evidence_chunks) -> int:

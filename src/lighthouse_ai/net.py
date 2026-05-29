@@ -20,7 +20,9 @@ user's ``egress.jsonl`` audit trail reflects exactly what went upstream.
 
 from __future__ import annotations
 
+import logging
 import time
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 import httpx
@@ -30,6 +32,11 @@ from .governor.egress_proxy import (
     EgressProxy,
     PrivacyTier,
 )
+
+if TYPE_CHECKING:
+    from .net_politeness import PolitenessGate
+
+logger = logging.getLogger(__name__)
 
 
 class EgressBlocked(RuntimeError):
@@ -81,6 +88,7 @@ class EgressGuardedClient:
         allowed_domains: frozenset[str] | set[str] | None = None,
         client: httpx.Client | None = None,
         timeout: float = 30.0,
+        politeness: PolitenessGate | None = None,
     ) -> None:
         if proxy is not None:
             self._proxy = proxy
@@ -95,13 +103,19 @@ class EgressGuardedClient:
         # Track ownership: we must only close a client we created ourselves.
         self._owns_client = client is None
         self._client = client if client is not None else httpx.Client(timeout=timeout)
+        # Optional politeness gate (robots.txt + rate budget); None → no-op.
+        self._politeness = politeness
 
     @property
     def proxy(self) -> EgressProxy:
         return self._proxy
 
     def get(
-        self, url: str, *, privacy: PrivacyTier = PrivacyTier.PUBLIC_OK
+        self,
+        url: str,
+        *,
+        privacy: PrivacyTier = PrivacyTier.PUBLIC_OK,
+        politeness: PolitenessGate | None = None,
     ) -> httpx.Response:
         """Fetch ``url`` only if egress policy permits it.
 
@@ -110,12 +124,24 @@ class EgressGuardedClient:
         opened, so nothing leaks. On an allow verdict we perform the GET, then
         record the real host/byte/status figures to the egress audit log so the
         user can see exactly what left the machine.
+
+        The optional *politeness* parameter (or the instance-level gate set at
+        construction time) is consulted **after** the egress allowlist check and
+        **before** the socket is opened. A robots.txt disallow raises
+        :class:`EgressBlocked`; a rate-limited request blocks until capacity is
+        available. When both are ``None`` behaviour is identical to the original.
         """
 
         decision = self._proxy.check(url, privacy)
         if not decision.allowed:
             # Refuse BEFORE fetching: egress is a one-way door (§15.11).
             raise EgressBlocked(decision.reason)
+
+        # Politeness gate: prefer per-call override, fall back to instance gate.
+        active_politeness = politeness if politeness is not None else self._politeness
+        if active_politeness is not None:
+            logger.debug("net: consulting politeness gate for %s", url)
+            active_politeness.check(url)  # raises EgressBlocked or blocks
 
         started = time.monotonic()
         response = self._client.get(url)
@@ -153,6 +179,7 @@ def guarded_get(
     allowed_domains: frozenset[str] | set[str] | None = None,
     privacy: PrivacyTier = PrivacyTier.PUBLIC_OK,
     client: httpx.Client | None = None,
+    politeness: PolitenessGate | None = None,
 ) -> httpx.Response:
     """One-shot guarded GET for callers that do not hold a client.
 
@@ -160,10 +187,13 @@ def guarded_get(
     enforces the same decide-before-fetch invariant, and tears down any client
     it created. A blocked request raises :class:`EgressBlocked` and performs no
     network I/O, exactly as :meth:`EgressGuardedClient.get` does.
+
+    The optional *politeness* keyword argument is forwarded to the underlying
+    :class:`EgressGuardedClient`; see its documentation for semantics.
     """
 
     guard = EgressGuardedClient(
-        allowed_domains=allowed_domains, client=client
+        allowed_domains=allowed_domains, client=client, politeness=politeness
     )
     try:
         return guard.get(url, privacy=privacy)

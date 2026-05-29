@@ -13,6 +13,19 @@ therefore import them lazily inside ``try/except ImportError`` and fall back to
 stdlib-only extraction so the core pipeline is never blocked on a heavy,
 optional parser.
 
+PDF extraction chain (§13.1):
+  1. ``pdfplumber``  — accurate text + layout (extraction extra)
+  2. ``pypdf``       — fast, pure-Python fallback
+  3. ``pdfminer.six``— robust low-level fallback
+  4. ``docling``     — complex/structured PDFs (extraction extra, slow)
+  5. ``PyMuPDF``     — AGPL; **only** when ``LIGHTHOUSE_PDF_FAST=1`` is set
+  6. ``("", False)`` — no parser available
+
+HTML extraction chain:
+  1. ``trafilatura`` — boilerplate removal (primary)
+  2. ``docling``     — office/complex documents (docx, pptx, etc.)
+  3. stdlib regex    — always-available fallback
+
 Text is normalized per §13.14 (Unicode NFC, zero-width/control strip) so that
 downstream chunking and hashing operate on a stable, canonical form.
 """
@@ -20,6 +33,7 @@ downstream chunking and hashing operate on a stable, canonical form.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import unicodedata
 from pathlib import Path
@@ -109,19 +123,44 @@ def _looks_like_pdf(payload: bytes, content_type: str | None,
     return payload[:5].startswith(b"%PDF")
 
 
-def _html_to_text(payload: bytes) -> str:
-    """HTML → readable text.
+def _looks_like_office_doc(content_type: str | None,
+                            filename: str | None) -> bool:
+    """Return True for office/complex document MIME types and extensions."""
+    ct = (content_type or "").lower()
+    _office_mime = {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml",
+        "application/vnd.openxmlformats-officedocument.presentationml",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml",
+        "application/msword",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.ms-excel",
+    }
+    if any(m in ct for m in _office_mime):
+        return True
+    if filename:
+        return Path(filename).suffix.lower() in {
+            ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp"
+        }
+    return False
 
-    Prefer ``trafilatura`` when importable because it does real boilerplate
-    removal (nav/footer/ads). When it is absent we fall back to a stdlib regex
-    pass that strips ``<script>``/``<style>``/comments, removes the remaining
-    tags, unescapes entities, and collapses whitespace. The fallback is crude
-    but deterministic and dependency-free, which the design requires.
+
+def _html_to_text(payload: bytes, content_type: str | None = None,
+                  filename: str | None = None) -> str:
+    """HTML/office → readable text.
+
+    Chain:
+      1. ``trafilatura`` — primary for HTML (boilerplate removal)
+      2. ``docling``     — for office/complex document types (docx, pptx, …)
+      3. stdlib regex    — always-available fallback
+
+    The stdlib path is crude but deterministic and dependency-free, which the
+    design requires (§13.1).
     """
     import html as html_mod
 
     raw = payload.decode("utf-8", errors="replace")
 
+    # 1. trafilatura — primary HTML extractor
     try:
         import trafilatura  # type: ignore
     except ImportError:
@@ -132,7 +171,26 @@ def _html_to_text(payload: bytes) -> str:
         if extracted:
             return extracted
 
-    # Stdlib fallback.
+    # 2. docling — office/complex document types
+    if _looks_like_office_doc(content_type, filename):
+        try:
+            import io
+
+            from docling.document_converter import DocumentConverter  # type: ignore
+
+            converter = DocumentConverter()
+            result = converter.convert(io.BytesIO(payload))
+            if result and result.document:
+                md = result.document.export_to_markdown()
+                if md:
+                    log.debug("ingest.html_docling_ok", filename=filename)
+                    return md
+        except ImportError:
+            pass
+        except Exception as exc:
+            log.warning("ingest.html_docling_failed", error=str(exc))
+
+    # 3. Stdlib fallback.
     stripped = _SCRIPT_STYLE_RE.sub(" ", raw)
     stripped = _COMMENT_RE.sub(" ", stripped)
     # Insert breaks at block boundaries so words don't fuse across tags.
@@ -146,32 +204,94 @@ def _html_to_text(payload: bytes) -> str:
 def _pdf_to_text(payload: bytes) -> tuple[str, bool]:
     """PDF → (text, extracted_ok).
 
-    Tries ``pypdf`` then ``pdfminer.six``; both are optional. When neither is
-    importable we return ``("", False)`` so the caller can flag the Document as
-    having an unavailable extractor rather than silently producing garbage.
+    Extraction chain (§13.1, in priority order):
+      1. ``pdfplumber``  — accurate text + layout; in the ``extraction`` extra
+      2. ``pypdf``       — fast pure-Python fallback
+      3. ``pdfminer.six``— robust low-level fallback
+      4. ``docling``     — complex/structured PDFs; in the ``extraction`` extra
+      5. ``PyMuPDF``     — AGPL opt-in; only when ``LIGHTHOUSE_PDF_FAST=1``
+      6. ``("", False)`` — no parser available; caller sets the unavailable flag
+
+    All imports are lazy so this module works with zero optional deps installed.
     """
     import io
 
+    # 1. pdfplumber — most accurate text + layout extraction
+    try:
+        import pdfplumber  # type: ignore
+
+        with pdfplumber.open(io.BytesIO(payload)) as pdf:
+            parts = [(page.extract_text() or "") for page in pdf.pages]
+        text = "\n\n".join(parts)
+        log.debug("ingest.pdf_pdfplumber_ok", pages=len(parts))
+        return text, True
+    except ImportError:
+        pass
+    except Exception as exc:
+        log.warning("ingest.pdf_pdfplumber_failed", error=str(exc))
+
+    # 2. pypdf — fast pure-Python fallback
     try:
         import pypdf  # type: ignore
 
         reader = pypdf.PdfReader(io.BytesIO(payload))
         parts = [(page.extract_text() or "") for page in reader.pages]
-        return "\n\n".join(parts), True
+        text = "\n\n".join(parts)
+        log.debug("ingest.pdf_pypdf_ok", pages=len(parts))
+        return text, True
     except ImportError:
         pass
     except Exception as exc:
         log.warning("ingest.pdf_pypdf_failed", error=str(exc))
 
+    # 3. pdfminer.six — robust low-level fallback
     try:
         from pdfminer.high_level import extract_text as _pdfminer_extract  # type: ignore
 
-        return _pdfminer_extract(io.BytesIO(payload)), True
+        text = _pdfminer_extract(io.BytesIO(payload))
+        log.debug("ingest.pdf_pdfminer_ok")
+        return text, True
     except ImportError:
-        return "", False
+        pass
     except Exception as exc:
         log.warning("ingest.pdf_pdfminer_failed", error=str(exc))
-        return "", False
+
+    # 4. docling — handles complex/structured PDFs (tables, multi-column)
+    try:
+        from docling.document_converter import DocumentConverter  # type: ignore
+
+        converter = DocumentConverter()
+        result = converter.convert(io.BytesIO(payload))
+        if result and result.document:
+            md = result.document.export_to_markdown()
+            if md:
+                log.debug("ingest.pdf_docling_ok")
+                return md, True
+    except ImportError:
+        pass
+    except Exception as exc:
+        log.warning("ingest.pdf_docling_failed", error=str(exc))
+
+    # 5. PyMuPDF (fitz) — AGPL; only when explicitly opted in via env flag.
+    # Never used by default to avoid AGPL licence contamination in projects
+    # that link against Lighthouse under a permissive licence.
+    if os.environ.get("LIGHTHOUSE_PDF_FAST", "").strip() == "1":
+        try:
+            import fitz  # type: ignore  # PyMuPDF
+
+            doc = fitz.open(stream=payload, filetype="pdf")
+            parts = [page.get_text() for page in doc]
+            doc.close()
+            text = "\n\n".join(parts)
+            log.debug("ingest.pdf_pymupdf_ok", pages=len(parts))
+            return text, True
+        except ImportError:
+            pass
+        except Exception as exc:
+            log.warning("ingest.pdf_pymupdf_failed", error=str(exc))
+
+    # No parser available.
+    return "", False
 
 
 def extract_text(payload: bytes, content_type: str | None,
@@ -187,7 +307,7 @@ def extract_text(payload: bytes, content_type: str | None,
         text, _ok = _pdf_to_text(payload)
         return _normalize(text)
     if _looks_like_html(payload, content_type, filename):
-        return _normalize(_html_to_text(payload))
+        return _normalize(_html_to_text(payload, content_type, filename))
     # Plain text (or unknown binary decoded leniently).
     return _normalize(payload.decode("utf-8", errors="replace"))
 

@@ -15,6 +15,12 @@ on a fresh install, in CI, and offline, with zero download and ~no latency:
     a cheap pre-filter and an always-available fallback, *not* a replacement for
     the deBERTa pass. Per ProtectAI's caveat (§12.22) we gate retrieved content,
     never the user's own system prompt.
+  * An optional ML backend (:class:`InjectionGate` with ``use_ml=True``) that
+    lazy-loads the ProtectAI ``deberta-v3-base-prompt-injection-v2`` ONNX model
+    via ``optimum`` when the ``injection-ml`` extra is installed. When the extra
+    is absent the gate falls back transparently to the regex scorer. The ML
+    probability is combined with the regex score (maximum) so both can veto a
+    chunk independently.
   * :func:`spotlight`, implementing the three Spotlighting variants from Hines
     et al. (delimiting / datamarking / encoding). Spotlighting makes the
     trust boundary *legible to the model*: untrusted content is wrapped so the
@@ -29,9 +35,12 @@ from __future__ import annotations
 
 import base64
 import binascii
+import importlib.util
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 # Score at or above this blocks the chunk by default. Tuned conservatively: a
 # single strong signal (e.g. a verbatim "ignore previous instructions") should
@@ -150,47 +159,188 @@ class InjectionVerdict:
     threshold: float = DEFAULT_BLOCK_THRESHOLD
 
 
-class InjectionGate:
-    """Heuristic prompt-injection classifier for retrieved content (§24.8).
+_DEFAULT_ML_MODEL = "protectai/deberta-v3-base-prompt-injection-v2"
 
-    Stateless apart from its configured pattern set and threshold, so a single
-    instance is safe to share across jobs and threads. It scores text and
-    returns a verdict; it never mutates or strips the text — pairing with
-    :func:`spotlight` for that — keeping detection and transformation separate.
+# A scorer callable receives a single text string and returns a float in [0, 1]
+# representing the probability that the text is a prompt injection. This is the
+# injection point used by tests (and lightweight deployments) to exercise the
+# full score/verdict path without loading or downloading a real model.
+MLScorer = Callable[[str], float]
+
+
+def _ml_libs_available() -> bool:
+    """Return True iff both ``transformers`` and ``optimum`` are importable.
+
+    Uses ``importlib.util.find_spec`` so we probe without importing (and thus
+    without paying model-load cost or triggering side effects).
+    """
+    return (
+        importlib.util.find_spec("transformers") is not None
+        and importlib.util.find_spec("optimum") is not None
+    )
+
+
+class InjectionGate:
+    """Prompt-injection classifier for retrieved content (§24.8).
+
+    The default configuration is **regex-only**: stateless, zero-latency, no
+    extra dependencies — identical behaviour to every previous release. Passing
+    ``use_ml=True`` activates the optional ML backend (ProtectAI
+    ``deberta-v3-base-prompt-injection-v2``) which is lazy-loaded on first
+    call and gracefully falls back to the regex gate when the ``injection-ml``
+    extra is not installed.
+
+    Stateless apart from its configured pattern set, threshold, and (when
+    ``use_ml=True``) a lazily-cached model handle, so a single instance is safe
+    to share across jobs and threads. It scores text and returns a verdict; it
+    never mutates or strips the text — pair with :func:`spotlight` for that —
+    keeping detection and transformation separate.
+
+    Parameters
+    ----------
+    threshold:
+        Score at or above which content is blocked.  Default: 0.5.
+    patterns:
+        Tuple of :class:`_Pattern` objects used by the regex scorer.
+        Defaults to the module-level ``_PATTERNS`` tuple.
+    use_ml:
+        Enable the optional ML backend.  When ``False`` (the default) the gate
+        behaves byte-identically to the pre-ML implementation.
+    model_name:
+        HuggingFace model id for the ONNX classifier.  Ignored when
+        ``use_ml=False`` or when a ``scorer`` is injected.
+    scorer:
+        Injectable ``scorer(text: str) -> float`` callable.  When supplied the
+        real model is never loaded — used by tests and lightweight deployments.
+        Only meaningful when ``use_ml=True``.
     """
 
     def __init__(
         self,
         threshold: float = DEFAULT_BLOCK_THRESHOLD,
         patterns: tuple[_Pattern, ...] = _PATTERNS,
+        *,
+        use_ml: bool = False,
+        model_name: str = _DEFAULT_ML_MODEL,
+        scorer: MLScorer | None = None,
     ) -> None:
         self._threshold = threshold
         self._patterns = patterns
+        self._use_ml = use_ml
+        self._model_name = model_name
+        self._injected_scorer = scorer
+        # Lazily-constructed real model handle; ``None`` until first ML call.
+        self._ml_pipeline: Any = None
 
     @property
     def threshold(self) -> float:
         return self._threshold
 
-    def score(self, text: str) -> InjectionVerdict:
-        """Score ``text`` in [0, 1]; block when score >= threshold.
+    def available(self) -> bool:
+        """Return True iff the ML backend can score.
 
-        Scoring is additive over matched signatures and clamped to 1.0. We
-        deliberately accept some false positives on retrieved content (the user
-        can override) in exchange for not missing a real override instruction —
-        the asymmetry of harm favors caution at this boundary.
+        An injected scorer always counts as available regardless of whether the
+        heavy dependencies are installed.  When ``use_ml=False`` this always
+        returns ``False`` (the ML path is not active).
         """
+        if not self._use_ml:
+            return False
+        if self._injected_scorer is not None:
+            return True
+        return _ml_libs_available()
 
-        if not text:
-            return InjectionVerdict(score=0.0, blocked=False, threshold=self._threshold)
+    def _get_ml_scorer(self) -> MLScorer | None:
+        """Resolve the active ML scorer, loading the real pipeline lazily.
 
+        Returns ``None`` when the ML backend is unavailable so the caller can
+        degrade gracefully to the regex gate.
+        """
+        if not self._use_ml:
+            return None
+
+        if self._injected_scorer is not None:
+            return self._injected_scorer
+
+        if not _ml_libs_available():
+            return None  # pragma: no cover - env-dependent
+
+        # Lazy-load the ONNX pipeline on first actual ML call.
+        if self._ml_pipeline is None:
+            try:
+                from optimum.pipelines import pipeline  # type: ignore[import]
+
+                self._ml_pipeline = pipeline(
+                    "text-classification",
+                    model=self._model_name,
+                    accelerator="ort",
+                )
+            except Exception:  # pragma: no cover - env-dependent
+                return None
+
+        def _pipeline_scorer(text: str) -> float:
+            result = self._ml_pipeline(text, truncation=True, max_length=512)
+            # The pipeline returns a list of dicts, e.g.
+            # [{'label': 'INJECTION', 'score': 0.97}]
+            if isinstance(result, list):
+                result = result[0]
+            label: str = result.get("label", "").upper()
+            raw_score: float = float(result.get("score", 0.0))
+            # The model uses label "INJECTION" for positive class; for any other
+            # label the score is the probability of *not* being an injection so
+            # we invert it.
+            if "INJECTION" in label:
+                return raw_score
+            return 1.0 - raw_score
+
+        return _pipeline_scorer
+
+    def _regex_score(self, text: str) -> tuple[float, list[str]]:
+        """Run the regex patterns and return (clamped_score, reasons)."""
         total = 0.0
         reasons: list[str] = []
         for pat in self._patterns:
             if pat.regex.search(text):
                 total += pat.weight
                 reasons.append(f"{pat.name}:{pat.weight:.2f}")
+        return min(total, 1.0), reasons
 
-        score = min(total, 1.0)
+    def score(self, text: str) -> InjectionVerdict:
+        """Score ``text`` in [0, 1]; block when score >= threshold.
+
+        **Regex-only mode** (``use_ml=False``, the default): scoring is additive
+        over matched signatures and clamped to 1.0.  Behaviour is byte-identical
+        to the pre-ML implementation — existing callers are unaffected.
+
+        **ML mode** (``use_ml=True``): the ML probability and the regex score are
+        combined by taking their maximum so either signal can independently block
+        a chunk.  The ML reason is appended to ``reasons`` when the ML score is
+        the deciding factor or exceeds the threshold on its own.  If the ML
+        backend is unavailable the gate degrades to the regex scorer transparently.
+
+        We deliberately accept some false positives on retrieved content (the
+        user can override) in exchange for not missing a real override
+        instruction — the asymmetry of harm favors caution at this boundary.
+        """
+
+        if not text:
+            return InjectionVerdict(score=0.0, blocked=False, threshold=self._threshold)
+
+        regex_score, reasons = self._regex_score(text)
+
+        ml_scorer = self._get_ml_scorer()
+        if ml_scorer is not None:
+            try:
+                ml_prob = float(ml_scorer(text))
+            except Exception:
+                ml_prob = 0.0
+            # Combine: take the maximum so either signal can veto independently.
+            combined = max(regex_score, ml_prob)
+            if ml_prob >= self._threshold or ml_prob > regex_score:
+                reasons.append(f"ml_classifier:{ml_prob:.4f}")
+            score = min(combined, 1.0)
+        else:
+            score = regex_score
+
         return InjectionVerdict(
             score=score,
             blocked=score >= self._threshold,

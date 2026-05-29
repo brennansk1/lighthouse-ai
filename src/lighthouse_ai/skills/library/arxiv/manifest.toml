@@ -1,0 +1,36 @@
+id          = "arxiv"
+name        = "arXiv"
+description = "arXiv preprint server: primary literature for computer science, physics, mathematics, statistics, quantitative biology, and related fields. Search by keyword, author (au:), title (ti:), or category (cat:)."
+category    = "academic"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://export.arxiv.org"
+allowed_domains = ["arxiv.org"]
+rate_limit_per_sec = 0.34   # arXiv requests ~3-second spacing between API calls
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "A"
+license       = "arXiv non-exclusive"
+signed        = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = [
+    "comparative",
+    "causal_explanation",
+    "methodology_evaluation",
+    "exploratory_survey",
+]
+modes_natural_fit  = ["investigate", "survey"]
+modes_weak_fit     = ["decide", "watch"]
+output_shape       = "enumerable"
+temporal_tools     = false
+perspective_lens   = "primary"
+authority          = "preprint"
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["search_recent"]

@@ -1,0 +1,35 @@
+id          = "youtube"
+name        = "YouTube"
+description = "YouTube video search, metadata, and transcript extraction for talks, tutorials, primary-source video, and popular reception research."
+category    = "video"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://www.youtube.com"
+allowed_domains = ["youtube.com", "www.youtube.com", "youtubei.googleapis.com", "googleapis.com"]
+rate_limit_per_sec = 1.0
+robots_policy = "obey"
+
+# --- provenance ---
+# YouTube hosts user-generated content; grade C reflects this.
+# Individual verified publisher channels may be higher grade but the skill
+# cannot distinguish at fetch time — the planner should note channel authority.
+default_grade      = "C"
+license            = "YouTube ToS"
+signed             = true
+enabled_by_default = false
+
+# --- recommender scoring surface ---
+supported_question_types = ["exploratory_survey", "factual_lookup"]
+topics = ["video", "tutorials", "talks", "popular_reception", "primary_video"]
+modes_natural_fit  = ["investigate", "watch", "ask"]
+modes_weak_fit     = ["adjudicate", "survey"]
+output_shape       = "enumerable"
+temporal_tools     = false
+perspective_lens   = "popular"
+authority          = "general"
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["search_recent"]

@@ -1,0 +1,76 @@
+id          = "general_web"
+name        = "General Web"
+description = """\
+Universal open-web fallback using SearXNG meta-search (self-hosted). \
+Covers news, general information, images, videos, and shallow academic \
+results. Always available; used as primary when no specialty skill fits, \
+as gap-filler mid-loop, and as the popular-lens source in Adjudicate. \
+Grade C by default — high-stakes load-bearing claims sourced solely from \
+General Web drop one WEP band. Combine with specialty sources to avoid downgrade.\
+"""
+category    = "web"
+version     = "0.1.0"
+tier        = "A"
+
+# Effective reach is the intersection of these domains with the platform
+# egress allowlist. Declaring a domain here is a ceiling, not a grant.
+# SearXNG itself is the primary outbound target; individual result pages
+# are fetched through fetch_and_document which enforces the same allowlist.
+allowed_domains = [
+    "localhost",
+    "127.0.0.1",
+    # Common open-web sources that appear as SearXNG results.
+    # Effective fetch is still narrowed to the platform allowlist.
+    "wikipedia.org",
+    "en.wikipedia.org",
+    "wikimedia.org",
+    "github.com",
+    "arxiv.org",
+    "semanticscholar.org",
+    "openalex.org",
+    "archive.org",
+    "web.archive.org",
+    "youtube.com",
+    "www.youtube.com",
+]
+
+base_url            = "http://localhost:8888"
+rate_limit_per_sec  = 2.0
+robots_policy       = "obey"
+
+# Provenance
+default_grade  = "C"
+license        = "varies"
+signed         = true   # official Lighthouse skill
+
+# Recommender scoring surface (MODE_SKILL_INTEGRATION.md §2.2)
+supported_question_types = [
+    "factual_lookup",
+    "comparative",
+    "causal_explanation",
+    "exploratory",
+    "current_events",
+    "disambiguation",
+    "trend_analysis",
+    "list_enumeration",
+]
+topics = ["general", "news", "current_events", "web", "popular_opinion"]
+
+modes_natural_fit = [
+    "investigate",
+    "survey",
+    "reconstruct",
+    "decide",
+    "adjudicate",
+    "watch",
+    "ask",
+]
+modes_weak_fit     = []
+output_shape       = "enumerable"
+temporal_tools     = true          # search_news / run_watchable
+perspective_lens   = "popular"     # Adjudicate popular/cross_check lens
+authority          = "general_web"
+
+# Watch (Pattern 2) — search_news and search_web both accept since=
+watchable       = true
+watchable_tools = ["search_news", "search_web"]

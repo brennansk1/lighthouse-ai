@@ -1,0 +1,31 @@
+id          = "wikipedia"
+name        = "Wikipedia"
+description = "English Wikipedia: encyclopedic orientation, definitions, infoboxes, category traversal, and recent-revision monitoring via the MediaWiki REST/Action API."
+category    = "encyclopedia"
+version     = "0.1.0"
+
+# --- fetch policy ---
+tier        = "A"
+base_url    = "https://en.wikipedia.org"
+allowed_domains = ["wikipedia.org", "en.wikipedia.org", "wikimedia.org"]
+rate_limit_per_sec = 1.0
+robots_policy = "obey"
+
+# --- provenance ---
+default_grade = "C"   # general reference — acceptable for orientation, weak for load-bearing citations
+license       = "CC-BY-SA-4.0"
+signed        = true
+enabled_by_default = true
+
+# --- recommender scoring surface ---
+supported_question_types = ["factual_lookup", "exploratory_survey", "causal_explanation"]
+modes_natural_fit  = ["ask", "investigate", "reconstruct"]
+modes_weak_fit     = ["survey", "decide"]
+output_shape       = "lookup"
+temporal_tools     = true
+perspective_lens   = "popular"
+authority          = "general"
+
+# --- Watch (Pattern-2) ---
+watchable       = true
+watchable_tools = ["recent_revisions"]
