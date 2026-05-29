@@ -885,7 +885,7 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
     def sandbox_config_get() -> dict[str, Any]:
         return {"max_bytes": _sandbox_max_bytes()}
 
-    @app.put("/api/sandbox/config", tags=["sandbox"])
+    @app.api_route("/api/sandbox/config", methods=["PUT", "PATCH"], tags=["sandbox"])
     def sandbox_config_set(body: SandboxConfig) -> dict[str, Any]:
         if body.max_bytes is not None and body.max_bytes < 0:
             raise HTTPException(400, "max_bytes must be >= 0 or null")

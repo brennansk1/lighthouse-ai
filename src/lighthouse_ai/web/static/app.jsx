@@ -24,6 +24,7 @@ const NAV_ICONS = {
   track:       '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>',
   activity:    '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   system:      '<path d="M2 3h20v14H2z"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+  sandbox:     '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M9 4v5"/><path d="M9 20v-5"/>',
   settings:    '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
 };
 
@@ -48,6 +49,7 @@ const APP_PAGES = [
   { id: 'watch',     label: 'Watch',     icon: 'watch',     get C() { return window.WatchPage; } },
   { id: 'track',     label: 'Track',     icon: 'track',     counter: 'positions_overdue', get C() { return window.TrackPage; } },
   { id: 'activity',  label: 'Activity',  icon: 'activity',  counter: 'jobs_running',  get C() { return window.ActivityPage; } },
+  { id: 'sandbox',   label: 'Sandbox',   icon: 'sandbox',   get C() { return window.SandboxPage; } },
   { id: 'health',    label: 'Health',    icon: 'system',    get C() { return window.HealthPage; } },
   { id: 'info',      label: 'Info',      icon: 'info',      get C() { return window.InfoPage; } },
   { id: 'settings',  label: 'Settings',  icon: 'settings',  get C() { return window.SettingsPage; } },
