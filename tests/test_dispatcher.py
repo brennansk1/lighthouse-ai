@@ -351,3 +351,65 @@ def test_run_job_records_backend_used(migrated_paths):
     # decide calls the gateway to score cells → backend recorded as mock here.
     assert meta.get("backend") == "mock"
     assert meta.get("backends", {}).get("mock", 0) >= 1
+
+
+# --- staged-artifact Telegram notification wiring (task #42) ------------------
+
+
+def _write_ui_config(paths, *, enabled: bool, token: str = "123:ABC",
+                     chat: str = "555") -> None:
+    """Write a minimal config.toml with a [ui] notify block for the dispatcher."""
+    paths.config_file.write_text(
+        "[ui]\n"
+        f"notify_enabled = {'true' if enabled else 'false'}\n"
+        f'telegram_bot_token = "{token}"\n'
+        f'telegram_chat_id = "{chat}"\n'
+    )
+
+
+def test_run_job_sends_review_notification_when_enabled(migrated_paths):
+    """With [ui].notify_enabled + a token, a staged artifact pings Telegram once."""
+    import httpx
+    import respx
+
+    from lighthouse_ai.notify.telegram import API_ROOT
+
+    _write_ui_config(migrated_paths, enabled=True)
+    _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
+    send_url = f"{API_ROOT}/bot123:ABC/sendMessage"
+    with respx.mock:
+        route = respx.post(send_url).mock(
+            return_value=httpx.Response(200, json={"ok": True}))
+        draft_id = dispatch_once(migrated_paths)  # offline, gateway=None
+    assert draft_id is not None
+    assert route.called
+    # The message is rendered MarkdownV2 and carries the decision winner.
+    payload = json.loads(route.calls[0].request.content)
+    assert payload["parse_mode"] == "MarkdownV2"
+    assert payload["chat_id"] == "555"
+
+
+def test_run_job_no_notification_when_disabled(migrated_paths):
+    """notify_enabled=false → the review ping is a no-op (never attempts a send)."""
+    import httpx
+    import respx
+
+    from lighthouse_ai.notify.telegram import API_ROOT
+
+    _write_ui_config(migrated_paths, enabled=False)
+    _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
+    send_url = f"{API_ROOT}/bot123:ABC/sendMessage"
+    with respx.mock:
+        route = respx.post(send_url).mock(
+            return_value=httpx.Response(200, json={"ok": True}))
+        draft_id = dispatch_once(migrated_paths)
+    assert draft_id is not None       # job still completes to review
+    assert not route.called            # but no notification was sent
+
+
+def test_run_job_no_notification_without_config(migrated_paths):
+    """No config.toml at all → still completes, never raises, never sends."""
+    assert not migrated_paths.config_file.exists()
+    _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
+    draft_id = dispatch_once(migrated_paths)
+    assert draft_id is not None

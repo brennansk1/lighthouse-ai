@@ -419,6 +419,36 @@ def _audit(paths: Paths, event_type: str, payload: dict) -> None:
         pass
 
 
+def _notify_staged(paths: Paths, *, artifact_type: str, summary: dict) -> None:
+    """Best-effort Telegram ping that an artifact is staged for review.
+
+    Reads the ``[ui]`` config (``notify_enabled`` + the telegram token/chat id),
+    renders a concise per-type mobile summary, and sends it. A no-op when
+    notifications are disabled or unconfigured. Never raises — the dispatch loop
+    and ``run_job`` must stay alive regardless of notification outcome.
+    """
+    try:
+        if not paths.config_file.exists():
+            return
+        try:
+            import tomllib
+        except ImportError:  # pragma: no cover
+            import tomli as tomllib  # type: ignore
+        with paths.config_file.open("rb") as fh:
+            ui = tomllib.load(fh).get("ui", {})
+        if not ui.get("notify_enabled", False):
+            return
+        from .notify import notify_artifact_staged
+        notify_artifact_staged(
+            artifact_type, summary.get("title", ""), summary.get("body_json"),
+            bot_token=str(ui.get("telegram_bot_token", "")),
+            chat_id=str(ui.get("telegram_chat_id", "")),
+            enabled=True,
+        )
+    except Exception:
+        pass
+
+
 def run_job(paths: Paths, job: ClaimedJob, *,
             gateway: Gateway | None = None,
             gate: SchedulerGate | None = None,
@@ -478,6 +508,8 @@ def run_job(paths: Paths, job: ClaimedJob, *,
     _audit(paths, "job.review",
            {"job_id": job.id, "draft_id": draft_id, "mode": mode_key,
             "backend": meta.get("backend")})
+    # Best-effort mobile review ping (no-op unless [ui].notify_enabled + token).
+    _notify_staged(paths, artifact_type=spec.artifact_type.value, summary=summary)
     if bus is not None:
         bus.publish("job.status", {"id": job.id, "status": "review"})
         bus.publish("job.progress", {"id": job.id, "progress": 1.0})

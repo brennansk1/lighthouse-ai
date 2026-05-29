@@ -5,7 +5,7 @@ approve/confirm loop. This module provides two distinct pieces:
 
 * :class:`TelegramChannel` -- a fire-and-forget :class:`~lighthouse_ai.notify.
   channels.Channel` adapter over the Bot API ``sendMessage`` method, used for
-  stake notifications (digests, alerts, budget trips).
+  stake notifications (digests, monitor alerts, staged-artifact review pings).
 
 * :func:`request_confirmation` -- the §24.10 airlock. For high-impact
   destructive operations (delete topic, purge corpus, reset Position Registry)
@@ -75,10 +75,24 @@ class TelegramChannel:
         return bool(self.bot_token) and bool(self.chat_id)
 
     def send(self, title: str, body: str) -> bool:
+        text = f"*{title}*\n{body}" if title else body
+        return self.send_text(text)
+
+    def send_text(self, text: str, *, parse_mode: str | None = None) -> bool:
+        """Send an already-composed message, optionally with a Telegram parse mode.
+
+        :meth:`send` is the :class:`~lighthouse_ai.notify.channels.Channel`
+        contract (title+body, no markup); ``send_text`` is the lower-level seam
+        used by the artifact templates, which pre-render MarkdownV2 and pass
+        ``parse_mode="MarkdownV2"`` so Telegram interprets the formatting. Both
+        share the same delivery semantics: never raise on a delivery problem,
+        only close a client we own.
+        """
         if not self.available():
             return False
-        text = f"*{title}*\n{body}" if title else body
-        payload = {"chat_id": self.chat_id, "text": text}
+        payload: dict[str, object] = {"chat_id": self.chat_id, "text": text}
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
         client = self.client or httpx.Client(timeout=self.timeout)
         try:
             response = client.post(_method_url(self.bot_token, "sendMessage"), json=payload)
