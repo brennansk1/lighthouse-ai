@@ -13,23 +13,51 @@
 (function () {
 const { useState, useEffect, useCallback, useRef } = React;
 
-// Eight-item nav (design webapp_tui_design.md §0.3 + §3 Intelligence page).
-// Counters only where the user must act: Jobs (running), Drafts (staged),
-// Positions (overdue), Intelligence (open escalations).
+// Monochrome line-icon set (Feather-style, viewBox 0 0 24 24). Each entry is
+// the inner SVG markup; NavIcon wraps it so icons inherit currentColor and
+// stay crisp at any size. No emoji, no external icon dependency.
+const NAV_ICONS = {
+  info:        '<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+  research:    '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  library:     '<path d="M4 19.5V5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-1.5z"/><line x1="9" y1="3" x2="9" y2="21"/>',
+  watch:       '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>',
+  track:       '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>',
+  activity:    '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  system:      '<path d="M2 3h20v14H2z"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+  settings:    '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+};
+
+function NavIcon({ name, size = 16 }) {
+  const inner = NAV_ICONS[name] || NAV_ICONS.info;
+  return React.createElement('svg', {
+    width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round',
+    strokeLinejoin: 'round', 'aria-hidden': 'true',
+    dangerouslySetInnerHTML: { __html: inner },
+  });
+}
+window.NavIcon = NavIcon;
+
+// Nav: Research (the landing page) leads, then the artifact-centric working
+// pages. Library surfaces drafts awaiting review (staged counter). Track shows
+// overdue positions; Activity shows in-flight runs. Info sits at the end near
+// Health. Page ids are stable internal keys; labels are user-facing.
 const APP_PAGES = [
-  { id: 'home',         label: 'Home',         icon: '🏠', get C() { return window.HomePage; } },
-  { id: 'jobs',         label: 'Jobs',         icon: '⚡', counter: 'jobs_running',          get C() { return window.JobsPage; } },
-  { id: 'drafts',       label: 'Drafts',       icon: '📄', counter: 'drafts_staged',         get C() { return window.DraftsPage; } },
-  { id: 'topics',       label: 'Topics',       icon: '🗂',  get C() { return window.TopicsPage; } },
-  { id: 'positions',    label: 'Positions',    icon: '🎯', counter: 'positions_overdue',     get C() { return window.PositionsPage; } },
-  { id: 'intelligence', label: 'Intelligence', icon: '🧠', counter: 'escalations_open',      get C() { return window.IntelligencePage; } },
-  { id: 'health',       label: 'Health',       icon: '❤',  get C() { return window.HealthPage; } },
-  { id: 'settings',     label: 'Settings',     icon: '⚙',  get C() { return window.SettingsPage; } },
+  { id: 'research',  label: 'Research',  icon: 'research',  counter: 'jobs_running',  get C() { return window.ResearchPage; } },
+  { id: 'library',   label: 'Library',   icon: 'library',   counter: 'drafts_staged', get C() { return window.LibraryPage; } },
+  { id: 'watch',     label: 'Watch',     icon: 'watch',     get C() { return window.WatchPage; } },
+  { id: 'track',     label: 'Track',     icon: 'track',     counter: 'positions_overdue', get C() { return window.TrackPage; } },
+  { id: 'activity',  label: 'Activity',  icon: 'activity',  counter: 'jobs_running',  get C() { return window.ActivityPage; } },
+  { id: 'health',    label: 'Health',    icon: 'system',    get C() { return window.HealthPage; } },
+  { id: 'info',      label: 'Info',      icon: 'info',      get C() { return window.InfoPage; } },
+  { id: 'settings',  label: 'Settings',  icon: 'settings',  get C() { return window.SettingsPage; } },
 ];
 
+// Research is always the landing page; an explicit #hash always wins.
 function currentPage() {
-  const h = (window.location.hash || '#home').replace('#', '').replace('/', '');
-  return APP_PAGES.find((p) => p.id === h) ? h : 'home';
+  const raw = (window.location.hash || '').replace('#', '').replace('/', '');
+  if (raw && APP_PAGES.find((p) => p.id === raw)) return raw;
+  return 'research';
 }
 
 // ── Dark theme: a deep-navy variant of the coastal palette, injected as a
@@ -184,7 +212,6 @@ class PageBoundary extends React.Component {
 // ── Sidebar ─────────────────────────────────────────────────────────────
 function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
   const tier = counters.tier || '—';
-  const budget = counters.budget || '—';
 
   return (
     <aside className="lh-side">
@@ -204,8 +231,9 @@ function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
             <a key={p.id} href={`#${p.id}`} className={isActive ? 'active' : ''}
               aria-current={isActive ? 'page' : undefined}>
               {/* Icon cell — fixed width so labels align */}
-              <span aria-hidden="true" style={{ width: 18, textAlign: 'center', fontSize: 15, flexShrink: 0 }}>
-                {p.icon}
+              <span aria-hidden="true" style={{ width: 18, display: 'inline-flex',
+                justifyContent: 'center', flexShrink: 0 }}>
+                <NavIcon name={p.icon} />
               </span>
               {/* Label — expands to fill available space */}
               <span style={{ flex: 1 }}>{p.label}</span>
@@ -217,18 +245,12 @@ function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
       </nav>
 
       <div className="lh-foot">
-        {/* Governor: tier chip + budget on one row each */}
+        {/* Hardware tier chip */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center',
           gap: '4px 8px', marginBottom: 10 }}>
           <span style={{ fontSize: 10.5, color: 'var(--muted)', fontFamily: 'var(--sans)',
             textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tier</span>
           <span className={tierChipClass(tier)}>{tier}</span>
-
-          <span style={{ fontSize: 10.5, color: 'var(--muted)', fontFamily: 'var(--sans)',
-            textTransform: 'uppercase', letterSpacing: '0.05em' }}>Budget</span>
-          <span className="num" style={{ fontSize: 11, color: 'var(--ink-2)', textAlign: 'right' }}>
-            {budget}
-          </span>
         </div>
 
         {/* Theme toggle + help shortcut */}
@@ -327,8 +349,9 @@ function CommandPalette({ open, onClose, onGo }) {
                 fontFamily: 'var(--sans)', color: 'var(--ink)',
                 background: i === sel ? 'var(--rule-soft)' : 'transparent',
                 display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span aria-hidden="true" style={{ fontSize: 15, opacity: 0.75, width: 20,
-                textAlign: 'center', flexShrink: 0 }}>{p.icon}</span>
+              <span aria-hidden="true" style={{ opacity: 0.75, width: 20,
+                display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}>
+                <NavIcon name={p.icon} /></span>
               <span style={{ flex: 1 }}>{p.label}</span>
             </div>
           ))}
@@ -424,20 +447,13 @@ function App() {
         window.apiGet('/api/escalations?status=open').catch(() => ({ escalations: [] })),
       ]);
       const running = (dash.jobs || []).filter((j) => j.status === 'running').length;
-      const tier = (health.budget && health.budget.tier)
-        || (health.hardware && health.hardware.tier) || '—';
-      const usd = health.budget && health.budget.usd;
-      // Format as "$1.20 / $50" when both values are available
-      const budget = usd && usd.cap
-        ? `$${Number(usd.used || 0).toFixed(2)} / $${Number(usd.cap).toFixed(0)}`
-        : '—';
+      const tier = (health.hardware && health.hardware.tier) || '—';
       setCounters({
         jobs_running: running || null,
         drafts_staged: (drafts.drafts || []).length || null,
         positions_overdue: (pos.positions || []).length || null,
         escalations_open: (escs.escalations || []).length || null,
         tier,
-        budget,
       });
     } catch (e) { /* offline; leave counters blank */ }
   }, []);

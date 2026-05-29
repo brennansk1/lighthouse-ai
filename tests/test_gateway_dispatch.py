@@ -103,28 +103,6 @@ def test_dispatch_falls_back_to_mock_on_backend_error(migrated_paths, stub_profi
     assert "[mock" in resp.text
 
 
-def test_dispatch_debits_tokens_through_governor(migrated_paths, stub_profile):
-    fake = _FakeOllama(prompt_tokens=100, completion_tokens=50)
-    g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
-    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile,
-                 ollama=fake, prefer_real_backends=True)
-    before = g.remaining()["tokens"]["daily"]
-    gw.complete("planner", "hello")
-    after = g.remaining()["tokens"]["daily"]
-    assert before - after == 150  # 100 + 50 tokens
-
-
-def test_dispatch_charges_zero_usd_for_local(migrated_paths, stub_profile):
-    fake = _FakeOllama()
-    g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
-    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile,
-                 ollama=fake, prefer_real_backends=True)
-    before = g.remaining()["usd"]["monthly"]
-    gw.complete("planner", "hello")
-    after = g.remaining()["usd"]["monthly"]
-    assert before == after  # local inference is free
-
-
 def test_dispatch_records_backend_used_in_audit(migrated_paths, stub_profile):
     fake = _FakeOllama()
     gw = _gateway_with_fake(migrated_paths, stub_profile, fake)

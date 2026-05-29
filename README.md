@@ -50,9 +50,10 @@ entire run tamper-evident.
 - **Governor**: hierarchical token buckets, loop detector, injection gate, degradation
   tiers, cost report
 - **Sandbox**: EICAR / PDF-JS / HTML-script / zip-bomb scanners + quarantine
-- **Web dashboard**: 7 pages (Home, Jobs, Drafts, Topics, Positions, Health, Settings),
-  SSE live updates, light/dark theme, Cmd-K palette, editable research plan
-  (PlanPreview before each run), Elicit-style extraction table in draft reader
+- **Web dashboard**: 8 tabs (Research, Library, Watch, Track, Activity, Health,
+  Info, Settings) — Research is the landing page; SSE live updates, light/dark
+  theme, per-artifact-type viewers (report/digest/table/timeline/matrix/verdict/
+  transcript) with Markdown/CSV/JSON export; depth selector in the Research wizard
 - **TUI**: 7 Textual screens, themed coastal light/dark, offline-graceful
 - **CLI**: `lighthouse`, `lighthouse-supervisor`, `lighthouse-tui` console scripts;
   `lighthouse audit-egress`, `lighthouse resolver run`, and more
@@ -60,15 +61,28 @@ entire run tamper-evident.
 - **Citation source diversity**: distinct source domains counted per report
 - **CI**: GitHub Actions, ruff clean, pytest
 
-## What is not yet wired
+## Known limitations / not yet wired
 
-- SearXNG mid-loop CRAG fetch — seam is in place, SearXNG integration pending
-- Litestream replication — config written, binary optional
-- Logseq / Zotero / Telegram integrations — adapters exist, not wired into main flow
-- `minicheck` PyPI package does not exist yet — entailment gate degrades gracefully
-- FedRAMP / HIPAA compliance one-pager — planned Sprint 32
-- RAPTOR long-document tree — planned
-- LangGraph — plain Python for-loop (intentional; LangGraph deferred)
+**Affects a new user most:**
+- **Corpus auto-fetch into the dispatcher is not wired.** Corpus-backed modes
+  (Investigate / Ask / Survey / Reconstruct) ground on documents you attach; with
+  an empty corpus they run but have little to cite. Auto-fetch (arXiv/OpenAlex,
+  behind the sandbox) is the next functional priority.
+- **No document-ingestion UI yet.** Survey/Reconstruct need documents fed in;
+  today that's a CLI/programmatic path, not a dashboard upload.
+
+**Smaller gaps / planned:**
+- Deep-tier recursive runs are **not checkpointed** — an interrupted multi-hour
+  run restarts (resume is planned).
+- `minicheck` is not on PyPI — the entailment gate degrades gracefully to the
+  citation-coverage check when it's absent.
+- SearXNG mid-loop CRAG fetch — seam in place, integration pending.
+- Litestream replication — config written, binary optional.
+- Zotero integration — adapter pending. (**Logseq + Telegram are wired.**)
+- RAPTOR long-document tree, LangGraph backbone — deferred by design.
+
+Status: **pre-alpha**. See [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md)
+for the path to a distributable release.
 
 ## Quick start
 
@@ -109,13 +123,58 @@ Other commands: `lighthouse status`, `cost report`, `positions-due`,
 
 ## Research modes
 
-| Mode | Name | Description |
-|------|------|-------------|
-| A | Monitor | Continuous RSS / source watch; classify → alert or digest |
-| B | Deep-Dive | Multi-round iterative research with denoiser + debate + entailment gate |
-| C | QUC (Quick) | Single-pass cited answer with calibration position |
-| D | Digest | Scheduled briefing synthesized from monitored sources |
-| E | Debate | Structured pro/con with LLM judge; auto-fired on contradictions |
+Lighthouse runs seven research modes, each producing one typed **artifact**:
+
+| Mode | Artifact | What it does |
+|------|----------|--------------|
+| **Watch** | digest | Monitor entities/sources over time; salient items, alerts vs digest |
+| **Ask** | transcript | Cited, conversational Q&A grounded in the corpus |
+| **Investigate** | report | Bounded TTD-DR deep-dive; sectioned, per-claim citations |
+| **Survey** | evidence table | Screen many docs → PRISMA flow + attribute grid with entailment |
+| **Reconstruct** | timeline | Sourced chronology; dedup + weighted date-conflict resolution |
+| **Decide** | matrix | Score options × weighted criteria; sensitivity sweep + crux |
+| **Adjudicate** | verdict | Structured multi-perspective debate naming the crux |
+
+Launch from the **Research** tab (a 3-step wizard) or `POST /api/jobs`; the
+dispatcher runs them one-per-tick (RAM-gated) and stages the artifact in the
+**Library**. Legacy mode keys (`Deep-Dive`, `Monitor`, `QUC`, `Debate`) still
+resolve via the registry alias map.
+
+### Research depth (Quick → Deep)
+
+Every corpus mode takes a **depth tier** — see
+[`docs/research_depth_matrix.md`](./docs/research_depth_matrix.md):
+
+| Tier | Feel | Behavior |
+|------|------|----------|
+| Quick | ~1–3 min | fast grounded scan |
+| Standard | ~5–10 min | balanced, coverage-checked (≈ frontier deep research) |
+| Thorough | ~20–60 min | + adversarial refutation + triangulation + coverage critic |
+| Deep | hours (budgeted) | recursive question-tree to exhaustion — checkpointed |
+
+**The invariant: depth scales coverage and confidence, never trust.** Every tier
+runs the grounding gate — a claim is entailed by a real cited source or it is
+dropped/flagged, never asserted. Claude & Gemini deep research time-box to
+~10–20 min (≈ Standard); Thorough and Deep are depth they structurally can't reach.
+
+### What makes the output trustworthy
+
+- **Verifiable grounding** — citation + entailment gate; **zero fabricated
+  citations** (a cited chunk id must exist in the corpus or the claim is rejected).
+- **Adversarial refutation** — a skeptic tries to refute each key claim; refuted/
+  contested claims don't stand (`verification/adversarial.py`).
+- **Coverage critic** — coverage scored against the framing plan's load-bearing
+  sub-questions; gaps trigger another round or are recorded as known-unknowns
+  (`verification/coverage.py`).
+- **Triangulation + contradictions** — key claims need ≥2 independent sources;
+  source disagreements are surfaced, not smoothed (`verification/discipline.py`).
+- **Provenance manifest** — every artifact records mode, depth, backend used
+  (real vs mock), models, source count, metrics, and a content hash —
+  reproducible and auditable.
+- **Measured calibration** — forecasts become Brier-scored Positions over time.
+
+The `lighthouse_ai.eval.research_benchmark` harness scores artifacts against this
+bar and proves the grounding gate catches a planted hallucination.
 
 ## Architecture
 
@@ -160,12 +219,12 @@ Sources (arXiv · OpenAlex · PubMed · Crossref · RSS)
 
 ## Status
 
-**814 tests passing · 3 skipped (opt-in real-backend / litestream binary) · ruff clean · CI green · macOS M4 24 GB verified**
+**1283 tests passing · 3 skipped (opt-in real-backend / litestream binary) · ruff clean · macOS M4 24 GB verified (real Ollama: Decide validated end-to-end, backend=ollama, RAM-gated)**
 
 ## Development
 
 ```bash
-uv run pytest -q                          # 814 pass, 3 skip
+uv run pytest -q                          # 1283 pass, 3 skip
 uv run ruff check src tests               # 0 errors
 LIGHTHOUSE_REAL_BACKEND=1 uv run pytest tests/test_backends_ollama.py  # real LLM
 ```
@@ -174,12 +233,20 @@ Contributions welcome. Open an issue to discuss before large PRs. All new featur
 require unit tests; integration tests for real-backend paths must be gated on
 `LIGHTHOUSE_REAL_BACKEND=1` and must not start background processes.
 
-## Links
+## Documentation
 
-- [`PRODUCTION_CHECKLIST.md`](./PRODUCTION_CHECKLIST.md) — line-by-line status
-- [`lighthouse_design.md`](./lighthouse_design.md) — full design specification
-- [`MODE_PROCESSES.md`](./MODE_PROCESSES.md) — per-mode process details
-- [`SPRINT_QUALITY.md`](./SPRINT_QUALITY.md) — sprint acceptance criteria
+- [`docs/MODE_PROCESSES.md`](./docs/MODE_PROCESSES.md) — **the 7 research modes in
+  full detail** (algorithm, techniques, provenance, and optimality notes per mode)
+- [`docs/WEB_SCRAPING.md`](./docs/WEB_SCRAPING.md) — web acquisition / scraping
+  capabilities + evaluation strategies
+- [`docs/research_depth_matrix.md`](./docs/research_depth_matrix.md) — depth tiers
+  (Quick → Deep) × mode output
+- [`docs/research_prompts/`](./docs/research_prompts/) — ready-to-run prompts to
+  research better strategies/libraries for the modes and the scraping stack
+- [`docs/lighthouse_design.md`](./docs/lighthouse_design.md) — full design specification
+- [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md) — release-readiness status
+- [`docs/webapp_tui_design.md`](./docs/webapp_tui_design.md) — dashboard / TUI design
+- `docs/dev/` — working notes (sprint plans, build logs)
 
 ## License
 

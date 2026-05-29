@@ -1,0 +1,210 @@
+# Lighthouse — Overnight Finish-to-Quality Plan
+
+Goal: take Lighthouse from "all 7 modes wired" to "production-grade, ready for
+real use" overnight, autonomously. This file is the source of truth for the
+quality bar and the work queue. Each task lists its **Definition of Done (DoD)**.
+
+## Non-negotiable invariants (carry forward — never violate)
+- **Resource safety first.** The Mac crashed once. No process started by
+  `create_app()`. Single gated daemon, one job per tick. Real-LLM dispatch must
+  pick models that fit *measured free RAM* and must never OOM. Add a free-RAM
+  floor admission check; rely on the single `ollama_slot` seam — no second queue.
+- **Offline determinism.** Every engine deterministic when `gateway=None`. The
+  default test suite is offline + LLM-free. Real-backend tests gate behind
+  `LIGHTHOUSE_REAL_BACKEND=1`.
+- **No budget anywhere.** Display-layer renames only (internal keys/columns/API
+  field names stable). Python is always `.venv/bin/python`.
+- **Every gate stays:** LoopDetector, InjectionGate, SchedulerGate, RAM admission.
+
+## Global Definition of Done (applies to every change)
+1. `.venv/bin/ruff check src/ tests/` clean.
+2. `.venv/bin/python -m pytest -q` fully green; new code paths covered offline.
+3. No JS console errors on any page.
+4. Work committed on a feature branch with a clear message.
+5. Resource-safety invariants above demonstrably hold.
+
+---
+
+## COMPETITIVE THESIS — beat Claude & Gemini deep research
+
+We do **not** try to out-write frontier models on fluency or out-reach them on
+raw web breadth — a local 14B can't, and chasing that loses. We win on the thing
+research actually needs: **trustworthiness**. These are the axes where frontier
+chat-research is weakest and a disciplined local instrument can be provably
+better:
+
+1. **Verifiable grounding.** Every claim in a final artifact is entailed by a
+   real, cited source — or it is removed/flagged, never asserted. Frontier deep
+   research routinely ships confident prose with weak, missing, or *fabricated*
+   citations. We refuse to.
+2. **Adversarial depth.** After synthesis, a refutation pass attacks each key
+   claim from independent perspectives; only survivors stand. Single-pass
+   frontier research skips this.
+3. **Coverage critic (beat Gemini's depth).** Gemini Deep Research's edge is its
+   plan → parallel-search → self-critique → deepen loop. We match it and go
+   further: an explicit research **plan** (load-bearing sub-questions from the
+   framing planner) is generated up front and shown for review; the critic then
+   checks coverage *against that plan* — every load-bearing sub-question must be
+   answered by cited evidence or it's a gap that triggers another round.
+   Termination requires BOTH plan-coverage AND evidence saturation, bounded by
+   the depth setting. Depth = multi-angle, plan-complete coverage — not
+   one-query saturation, and unlike Gemini, every filled point is grounded and
+   entailment-checked.
+4. **Measured calibration.** Forecasts become tracked Positions scored by Brier
+   over time; the instrument reports its *own* historical accuracy. Chatbots
+   keep no score.
+5. **Triangulation.** Key claims need ≥2 independent sources; contradictions are
+   surfaced, not smoothed over.
+6. **Reproducibility.** Every artifact carries a provenance manifest (models,
+   sources, retrieval params) and is deterministic given the corpus. Frontier
+   outputs can't be reproduced.
+7. **Structured instruments.** Matrix / timeline / PRISMA evidence-table /
+   verdict-with-named-crux — research objects, not chat answers.
+8. **Unbounded professional-grade depth.** Claude and Gemini deep research
+   **time-box** to ~10–20 minutes. We don't. A "Deep" depth tier runs a
+   *recursive question tree* — sub-questions decompose into sub-sub-questions,
+   each researched to grounded resolution or an explicit known-unknown — bounded
+   only by a user budget (wall-clock or node count), checkpointed and resumable
+   so an hours-long run survives sleep/restart. This is safe on local hardware
+   precisely because it's one bounded, RAM-gated step at a time (long ≠ heavy):
+   the depth a professional reaches over days, done overnight, fully grounded.
+
+### Measurable bar (Investigate is the flagship; others adapt)
+A real-backend Investigate artifact is "better than frontier" only when:
+- `citation_coverage ≥ 0.95` and `entailment_coverage ≥ 0.90`
+- `fabricated_citations == 0` (every cited chunk id exists in the corpus)
+- 100% of **key claims** carry ≥2 independent sources
+- a **contradictions** section is present (or explicitly "none found")
+- an **adversarial refutation pass** ran; refuted claims are dropped/flagged
+- a **coverage critic** ran; its gaps either filled or listed as known-unknowns
+- a **provenance manifest** is attached (models, sources, retrieval params, depth)
+- `rounds_used` reflects the chosen depth setting
+These are asserted by the benchmark harness (task #49) on a fixed question set —
+"better" is measured, not claimed.
+
+---
+
+## Quality standards by feature
+
+### Research modes (all 7)
+- Launchable from the wizard with every input the engine needs.
+- Offline: deterministic stub artifact, no crash.
+- Real Ollama: substantive, **grounded** artifact (real sources where the mode
+  is corpus-backed) that fits in RAM and completes without OOM.
+- Artifact persists to Library, renders in its typed viewer, exports md/csv/json.
+
+### Dashboard (every page)
+- Purpose statement; loading, empty, and error+retry states; plain-English copy.
+- Keyboard-accessible, basic aria, responsive down to a narrow window.
+- Zero console errors.
+
+### Backend
+- Endpoints typed + validated; clear 4xx messages.
+- Audit-chain entries for state-changing actions.
+- No silent failures; everything logged.
+
+### Tests
+- Offline unit test per new path; real-backend gated integration per mode.
+
+### Docs
+- README quickstart, architecture overview, per-mode reference, run guide.
+
+---
+
+---
+
+## MODE QUALITY STANDARD (the bar every research mode must clear)
+
+This is the acceptance checklist. A mode is "done" only when **every** item
+passes. Each mode is taken **one at a time** through a test-and-refine loop:
+**run → evaluate against this bar → list gaps → refine → re-run → repeat** until
+all items pass, then lock with tests and commit before moving to the next mode.
+
+### Universal checklist (all 7 modes)
+1. **Launch** — launchable from the Research wizard with every input it needs;
+   missing/invalid inputs give a clear 400, not a 500 or empty artifact.
+2. **Offline determinism** — with `gateway=None`: well-formed, non-empty,
+   schema-complete artifact; no crash; same input → same output (deterministic).
+3. **Real backend** — with a RAM-fitting Ollama model: a *substantive* artifact
+   that (a) populates all required schema fields, (b) is grounded — claims tied
+   to real sources/citations for corpus-backed modes, no fabricated sources,
+   (c) is coherent and on-topic, (d) passes the citation/discipline gate.
+4. **No mock masquerade** — a run that silently fell back to `mock-lowmem`/`mock`
+   under a real gateway is a FAIL; surface the backend used and require real
+   output (or defer the job) when the user asked for real.
+5. **Persist** — lands in Library: correct `artifact_type`, `status='staged'`,
+   job → `review`; Positions recorded where the mode supports calibration.
+6. **Render** — displays in its typed viewer; all key fields visible; zero
+   console errors.
+7. **Export** — md / csv / json each produce complete, sensible content.
+8. **Resource-safe** — completes in reasonable wall-clock on a fitting model;
+   never OOMs; degrades gracefully (defer, not swap) when RAM is tight.
+9. **Tested** — offline unit test (determinism + shape) AND a
+   `LIGHTHOUSE_REAL_BACKEND=1`-gated integration test.
+
+### Per-mode acceptance criteria
+- **Watch → digest:** polls sources/topic; digest of new+salient items with
+  category + salience; duplicates suppressed; alerts vs digest split correct.
+- **Ask → transcript:** answer turn is responsive to the question and cites the
+  retrieved chunks it used; supports follow-up turns; no ungrounded claims.
+- **Investigate → report:** sectioned report addressing the question; per-claim
+  citations; each claim graded for faithfulness; established/disputed/unknown
+  coverage.
+- **Survey → table:** PRISMA screen with correct identified/included counts;
+  one cell per (doc × attribute) with citation + entailment flag; cells faithful
+  to the source doc.
+- **Reconstruct → timeline:** dated events extracted (date, actors, action),
+  deduped, date conflicts resolved by weighted vote, ordered chronologically,
+  per-event certainty + sources.
+- **Decide → matrix:** every option×criterion cell scored; weighted totals +
+  argmax winner; sensitivity sweep; crux statement that is meaningful and
+  Adjudicate-ready.
+- **Adjudicate → verdict:** N distinct, substantive perspectives; weighed; a
+  verdict that names the real crux of disagreement (not a flattened take).
+
+### The per-mode loop (definition of "until desired quality")
+```
+for mode in [Watch, Ask, Investigate, Survey, Reconstruct, Decide, Adjudicate]:
+    repeat:
+        run offline  -> check items 1,2,5,6,7
+        run real     -> check items 3,4,8   (skip real only if RAM cannot fit
+                                             the smallest model; note it)
+        score against universal + per-mode criteria -> list concrete gaps
+        if no gaps: lock tests (item 9), commit, break
+        else: refine engine/adapter/viewer, repeat
+```
+
+---
+
+## Work queue (priority order)
+P1   Real-LLM RAM-safety guard (foundation)               -> #26 ✅
+P1.5 Mode loops with no corpus (validate real LLM fast)   -> #35 Decide, #36 Adjudicate
+P1.7 Research-quality stack (the competitive thesis):
+       - Adversarial claim-refutation pass                -> #45
+       - Coverage/completeness critic pass                -> #46
+P1.8 Unbounded professional-grade depth (beats time-box):
+       - Exhaustive recursive question-tree engine        -> #51
+       - Long-run checkpoint / resume / progress          -> #52
+P2   Substantive grounding (corpus retrieval/auto-fetch)  -> #28
+P2.5 Trust layer:
+       - Source triangulation + contradiction surfacing   -> #47
+       - Provenance/reproducibility manifest              -> #48
+       - Research depth control end-to-end                -> #44
+P2.7 Corpus mode loops (must clear the measurable bar)    -> #37 Ask, #38 Investigate,
+       #39 Survey, #40 Reconstruct, #41 Watch
+P3   Wizard input completeness per mode                   -> #29
+P3.5 Reviewable research plan in the wizard (vs Gemini)   -> #50
+P3.5 Depth selector in Research tab (Quick→Deep, Auto)    -> #53, #54
+       tiers: Quick / Standard / Thorough / Deep; see docs/research_depth_matrix.md
+P4   UX polish + artifact viewers/exports                 -> #30, #31
+P4.5 Integrations: Telegram templates + Logseq rendering  -> #42, #43
+P5   Code review + security review                         -> #32
+P6   Test coverage hardening                               -> #33
+P6.5 Research quality benchmark harness (proves "better") -> #49
+P7   Documentation                                         -> #34
+
+Rationale: Decide/Adjudicate first (no corpus → fastest real-LLM validation of
+the RAM guard). Then build the research-quality stack (adversarial, coverage,
+triangulation, provenance, depth) BEFORE the corpus mode loops, so Ask/Investigate
+are held to the full "better-than-frontier" bar from the start. The benchmark
+(#49) is the scoreboard that proves it.

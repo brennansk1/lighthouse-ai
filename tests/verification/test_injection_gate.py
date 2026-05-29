@@ -11,12 +11,10 @@ import pytest
 from lighthouse_ai.governor.injection_gate import (
     DEFAULT_BLOCK_THRESHOLD,
     InjectionGate,
-    InjectionVerdict,
     is_spotlit,
     normalize_unicode,
     spotlight,
 )
-
 
 # ---------------------------------------------------------------------------
 # InjectionGate — clean text

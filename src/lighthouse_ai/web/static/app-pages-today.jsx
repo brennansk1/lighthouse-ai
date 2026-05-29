@@ -147,7 +147,8 @@
     );
   }
 
-  // Mode badge — small colored pill
+  // Mode badge — small colored pill. Keys are the stable internal mode ids;
+  // MODE_LABELS maps them to the user-facing names shown in the UI.
   function ModeBadge({ mode }) {
     const MAP = {
       'Deep-Dive': { bg: '#e3f2fd', color: 'var(--ink-2)', border: 'var(--primary)' },
@@ -163,7 +164,7 @@
         padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 700,
         background: s.bg, color: s.color, letterSpacing: '0.04em',
         textTransform: 'uppercase', whiteSpace: 'nowrap',
-      }}>{mode || 'Job'}</span>
+      }}>{window.modeLabel ? window.modeLabel(mode) : (mode || 'Job')}</span>
     );
   }
 
@@ -731,11 +732,11 @@
 
   // ════════════════════════════ JOBS PAGE ══════════════════════════════════
   const JOB_MODES = [
-    { key: 'Deep-Dive', label: 'Deep-Dive', desc: 'Full research report with citations and analysis.' },
-    { key: 'QUC',       label: 'QUC',       desc: 'Quick answer with key sources, fast turnaround.' },
-    { key: 'Monitor',   label: 'Monitor',   desc: 'Ongoing surveillance of a topic over time.' },
-    { key: 'Debate',    label: 'Debate',    desc: 'Steelman multiple perspectives on a question.' },
-    { key: 'Digest',    label: 'Digest',    desc: 'Curated summary of recent items on a theme.' },
+    { key: 'Deep-Dive', label: 'Deep Research', desc: 'Full research report with citations and analysis.' },
+    { key: 'QUC',       label: 'Quick Answer',  desc: 'Quick answer with key sources, fast turnaround.' },
+    { key: 'Monitor',   label: 'Event Monitor', desc: 'Watch a live, time-bounded event over time.' },
+    { key: 'Debate',    label: 'Debate',        desc: 'Steelman multiple perspectives on a question.' },
+    { key: 'Digest',    label: 'Digest',        desc: 'Curated summary of recent items on a theme.' },
   ];
   const JOB_DEPTHS = ['Quick', 'Standard', 'Thorough'];
   const JOBS_TABS = [

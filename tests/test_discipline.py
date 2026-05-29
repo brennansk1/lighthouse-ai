@@ -7,9 +7,58 @@ import respx
 
 from lighthouse_ai.verification.discipline import (
     check,
+    detect_contradictions,
     downgrade_wep,
     extract_claims,
 )
+
+# --- triangulation, fabricated-citation guard, contradictions (#47) ---
+
+class _Chunk:
+    def __init__(self, text, source):
+        self.text = text
+        self.metadata = {"source": source}
+
+
+def test_fabricated_citation_flagged_and_fails_high_stakes():
+    # Two evidence chunks exist (ids 1,2) but the claim cites [5] → fabricated.
+    ev = [_Chunk("a", "doc-a"), _Chunk("b", "doc-b")]
+    rep = check("The trial showed a strong effect [5].", evidence_chunks=ev,
+                high_stakes=True, min_coverage=0.0)
+    assert rep.fabricated_citations == 1
+    assert rep.passed is False
+    assert any("fabricated" in n for n in rep.notes)
+
+
+def test_triangulation_counts_independent_sources():
+    # [1] and [2] are distinct documents → triangulated; [1],[1] would not be.
+    ev = [_Chunk("a", "doc-a"), _Chunk("b", "doc-b")]
+    rep = check("The finding replicates across labs [1,2].", evidence_chunks=ev,
+                min_coverage=0.0)
+    assert rep.triangulated == 1
+    assert rep.fabricated_citations == 0
+
+
+def test_single_document_two_chunks_not_triangulated():
+    # Two chunks, SAME source → citing [1,2] is not independent triangulation.
+    ev = [_Chunk("a", "same-doc"), _Chunk("b", "same-doc")]
+    rep = check("Claim with two same-source cites [1,2].", evidence_chunks=ev,
+                min_coverage=0.0)
+    assert rep.triangulated == 0
+
+
+def test_detect_contradictions_antonym():
+    from lighthouse_ai.verification.discipline import extract_claims as _ex
+    claims = _ex("Remote work increases team productivity [1]. "
+                 "Remote work decreases team productivity [2].")
+    pairs = detect_contradictions(claims)
+    assert len(pairs) >= 1
+
+
+def test_no_false_contradiction_on_unrelated_claims():
+    from lighthouse_ai.verification.discipline import extract_claims as _ex
+    claims = _ex("The sky is blue today [1]. Quarterly revenue grew sharply [2].")
+    assert detect_contradictions(claims) == []
 
 # --- claim extraction ---
 
@@ -123,7 +172,7 @@ ARXIV_XML = b"""<?xml version="1.0"?>
 @respx.mock
 def test_arxiv_search_parses():
     from lighthouse_ai.sources.arxiv import search_arxiv
-    respx.get("http://export.arxiv.org/api/query").mock(
+    respx.get("https://export.arxiv.org/api/query").mock(
         return_value=httpx.Response(200, content=ARXIV_XML))
     docs = search_arxiv("quantum error correction", max_results=1)
     assert len(docs) == 1

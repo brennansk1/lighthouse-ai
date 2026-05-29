@@ -46,6 +46,29 @@ class DisciplineReport:
     distinct_sources: int = 0
     entailment_coverage: float = 0.0  # fraction of sourced claims entailed by grounding
     entailment_checked: bool = False   # True iff MiniCheck/HHEM was available
+    # Triangulation + integrity (set when evidence_chunks is supplied):
+    triangulated: int = 0              # claims with >=2 INDEPENDENT sources (distinct docs)
+    fabricated_citations: int = 0      # citation ids that map to no evidence chunk
+    contradictions: list[tuple[str, str]] = field(default_factory=list)
+
+
+# Antonym pairs + negation markers for a conservative, deterministic
+# contradiction heuristic. We only flag a pair when the two claims share enough
+# subject tokens AND carry opposing polarity — favouring precision over recall so
+# we don't cry "contradiction" on unrelated sentences.
+_ANTONYM_PAIRS = [
+    ("increase", "decrease"), ("increases", "decreases"), ("rose", "fell"),
+    ("rise", "fall"), ("higher", "lower"), ("more", "less"), ("grew", "shrank"),
+    ("positive", "negative"), ("effective", "ineffective"), ("safe", "unsafe"),
+    ("benefit", "harm"), ("benefits", "harms"), ("supports", "refutes"),
+    ("confirms", "contradicts"), ("improved", "worsened"),
+]
+_NEGATIONS = {"not", "no", "never", "n't", "without", "cannot", "fails", "failed"}
+_STOPWORDS = {
+    "the", "a", "an", "of", "to", "in", "on", "and", "or", "is", "are", "was",
+    "were", "be", "been", "it", "its", "this", "that", "these", "those", "with",
+    "for", "by", "as", "at", "from", "has", "have", "had", "but", "than",
+}
 
 
 def extract_claims(text: str) -> list[Claim]:
@@ -67,6 +90,56 @@ def extract_claims(text: str) -> list[Claim]:
             ids.extend(int(x) for x in re.split(r"\s*,\s*", m.group(1)))
         claims.append(Claim(text=s, citation_ids=ids))
     return claims
+
+
+def _domain_by_id(evidence_chunks: list) -> dict[int, str]:
+    """Map 1-based citation id → source domain/document for independence checks."""
+    out: dict[int, str] = {}
+    for idx, r in enumerate(evidence_chunks, start=1):
+        chunk = getattr(r, "chunk", r)
+        meta = getattr(chunk, "metadata", {}) or {}
+        domain = meta.get("source") or getattr(chunk, "document_id", None) \
+            or getattr(chunk, "id", f"chunk{idx}")
+        out[idx] = str(domain)
+    return out
+
+
+def _significant_tokens(text: str) -> set[str]:
+    toks = re.findall(r"[a-z0-9]+", text.lower())
+    return {t for t in toks if t not in _STOPWORDS and len(t) > 2}
+
+
+def detect_contradictions(claims: list[Claim]) -> list[tuple[str, str]]:
+    """Conservatively flag pairs of claims that appear to disagree.
+
+    A pair is flagged only when the claims share >=2 significant subject tokens
+    AND carry opposing polarity — either opposite members of an antonym pair, or
+    exactly one of them negates a shared key token. Precision over recall: better
+    to miss a subtle contradiction than to manufacture a false one.
+    """
+    out: list[tuple[str, str]] = []
+    toks = [(_significant_tokens(c.text), c.text.lower(), c.text) for c in claims]
+    for i in range(len(toks)):
+        ti, li, raw_i = toks[i]
+        for j in range(i + 1, len(toks)):
+            tj, lj, raw_j = toks[j]
+            shared = ti & tj
+            if len(shared) < 2:
+                continue
+            opposed = False
+            for a, b in _ANTONYM_PAIRS:
+                if (a in ti and b in tj) or (b in ti and a in tj):
+                    opposed = True
+                    break
+            if not opposed:
+                neg_i = bool(_NEGATIONS & ti) or "n't" in li
+                neg_j = bool(_NEGATIONS & tj) or "n't" in lj
+                # one negates, the other asserts, over a shared subject
+                if neg_i != neg_j and len(shared) >= 3:
+                    opposed = True
+            if opposed:
+                out.append((raw_i, raw_j))
+    return out
 
 
 def check(text: str, *, min_coverage: float = 0.6,
@@ -136,11 +209,39 @@ def check(text: str, *, min_coverage: float = 0.6,
                 )
                 passed = False
 
+    # --- triangulation + citation integrity (when evidence is supplied) ---
+    triangulated = 0
+    fabricated = 0
+    if evidence_chunks is not None:
+        dom_by_id = _domain_by_id(evidence_chunks)
+        valid_ids = set(dom_by_id)
+        for c in claims:
+            if not c.citation_ids:
+                continue
+            if any(cid not in valid_ids for cid in c.citation_ids):
+                fabricated += 1
+            domains = {dom_by_id[cid] for cid in c.citation_ids if cid in valid_ids}
+            if len(domains) >= 2:
+                triangulated += 1
+        if fabricated:
+            notes.append(f"{fabricated} claim(s) cite non-existent sources "
+                         f"(fabricated citations)")
+            if high_stakes:
+                passed = False
+
+    # --- contradiction surfacing (always; cheap and corpus-independent) ---
+    contradictions = detect_contradictions(claims)
+    if contradictions:
+        notes.append(f"{len(contradictions)} potential contradiction(s) surfaced")
+
     return DisciplineReport(claims=claims, sourced=sourced, unsourced=unsourced,
                             two_sourced=two, citation_coverage=round(coverage, 3),
                             passed=passed, notes=notes,
                             entailment_coverage=round(entailment_coverage, 3),
-                            entailment_checked=entailment_checked)
+                            entailment_checked=entailment_checked,
+                            triangulated=triangulated,
+                            fabricated_citations=fabricated,
+                            contradictions=contradictions)
 
 
 def check_source_diversity(evidence_chunks) -> int:

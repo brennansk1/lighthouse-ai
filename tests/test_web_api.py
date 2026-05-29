@@ -34,6 +34,57 @@ def test_job_create_list_get(client):
     assert "model_calls" in detail
 
 
+def test_job_create_persists_depth_and_budget(client):
+    r = client.post("/api/jobs", json={
+        "mode": "investigate", "topic": "Deep dive on X",
+        "depth": "deep", "budget": "overnight"})
+    assert r.status_code == 200
+    jid = r.json()["id"]
+    meta = client.get(f"/api/jobs/{jid}").json()["metadata"]
+    assert meta["depth"] == "deep"
+    assert meta["budget"] == "overnight"
+
+
+def test_adjudicate_quick_promoted_to_standard(client):
+    jid = client.post("/api/jobs", json={
+        "mode": "adjudicate", "topic": "Is X true?", "depth": "quick"}).json()["id"]
+    meta = client.get(f"/api/jobs/{jid}").json()["metadata"]
+    assert meta["depth"] == "standard"   # Quick adjudication is not allowed
+
+
+_EXPORT_MODES = [
+    ("decide", {"topic": "A vs B?", "options": ["A", "B"],
+                "criteria": [{"label": "cost", "weight": 1.0}]}, "matrix"),
+    ("adjudicate", {"topic": "Is X true?"}, "verdict"),
+    ("investigate", {"topic": "Why did Y happen?"}, "report"),
+    ("survey", {"topic": "Trials of Z"}, "table"),
+    ("reconstruct", {"topic": "History of W"}, "timeline"),
+    ("ask", {"topic": "What is V?"}, "transcript"),
+    ("watch", {"topic": "topic U"}, "digest"),
+]
+
+
+@pytest.mark.parametrize("mode,meta,artifact_type", _EXPORT_MODES)
+def test_export_all_artifact_types(migrated_paths, client, mode, meta, artifact_type):
+    """Every artifact type dispatches offline and exports as md/csv/json."""
+    from lighthouse_ai.dispatcher import dispatch_once
+    client.post("/api/jobs", json={"mode": mode, **meta})
+    draft_id = dispatch_once(migrated_paths)  # offline
+    assert draft_id is not None
+    for fmt in ("json", "md", "csv"):
+        r = client.get(f"/api/library/{draft_id}/export?format={fmt}")
+        assert r.status_code == 200, f"{mode}/{fmt} -> {r.status_code}"
+        assert r.text, f"{mode}/{fmt} empty"
+    detail = client.get(f"/api/library/{draft_id}").json()
+    assert detail.get("artifact_type") == artifact_type
+
+
+def test_classify_suggests_depth_tier(client):
+    body = client.get("/api/classify", params={"q": "What is the capital of France?"}).json()
+    assert "question_type" in body
+    assert body["suggested_tier"] in {"quick", "standard", "thorough", "deep"}
+
+
 def test_job_get_404(client):
     assert client.get("/api/jobs/nope").status_code == 404
 
@@ -123,6 +174,44 @@ def test_topic_create_get_delete(client):
     assert client.get(f"/api/topics/{tid}").status_code == 404
 
 
+# ====================== MONITOR SESSIONS ======================
+
+def test_monitor_session_create_list_get(client):
+    r = client.post("/api/monitor/sessions", json={
+        "label": "Hearing", "source_urls": ["https://a/feed"], "auto_stop": True})
+    assert r.status_code == 200
+    sid = r.json()["id"]
+    assert r.json()["status"] == "active"
+    listing = client.get("/api/monitor/sessions").json()["sessions"]
+    assert any(s["id"] == sid for s in listing)
+    detail = client.get(f"/api/monitor/sessions/{sid}").json()
+    assert detail["label"] == "Hearing"
+    assert detail["source_urls"] == ["https://a/feed"]
+
+
+def test_monitor_session_get_404(client):
+    assert client.get("/api/monitor/sessions/nope").status_code == 404
+    assert client.get("/api/monitor/sessions/nope/results").status_code == 404
+
+
+def test_monitor_session_stop(client):
+    sid = client.post("/api/monitor/sessions", json={"label": "S"}).json()["id"]
+    r = client.post(f"/api/monitor/sessions/{sid}/stop")
+    assert r.json()["status"] == "ended"
+    assert r.json()["ended_reason"] == "manual"
+    active = client.get("/api/monitor/sessions?status=active").json()["sessions"]
+    assert not any(s["id"] == sid for s in active)
+
+
+def test_monitor_session_stop_404(client):
+    assert client.post("/api/monitor/sessions/nope/stop").status_code == 404
+
+
+def test_monitor_session_results_empty(client):
+    sid = client.post("/api/monitor/sessions", json={"label": "S"}).json()["id"]
+    assert client.get(f"/api/monitor/sessions/{sid}/results").json() == {"results": []}
+
+
 # ========================= POSITIONS ==========================
 
 def test_positions_resolve_and_calibration(migrated_paths, client):
@@ -173,9 +262,17 @@ def test_health_shape(client):
     body = client.get("/api/health").json()
     assert body["overall"] in {"green", "attention"}
     assert "databases" in body
-    assert "budget" in body
     assert "storage" in body
     assert "external" in body
+    # Budget removed — local tool has no spend caps.
+    assert "budget" not in body
+    # Free RAM is re-probed and surfaced; chosen models are reported.
+    assert "free_ram_gb" in body["hardware"]
+    assert "chosen_models" in body
+    # CPU cores and GPU are surfaced for the Health page diagnostics.
+    assert "cpu_cores_logical" in body["hardware"]
+    assert "cpu_cores_physical" in body["hardware"]
+    assert "gpu" in body["hardware"]
 
 
 def test_audit_verify_and_list(migrated_paths, client):
@@ -199,6 +296,32 @@ def test_settings_returns_config(migrated_paths, client):
     migrated_paths.config_file.write_text('[lighthouse]\nversion = "0.1.0"\n')
     body = client.get("/api/settings").json()
     assert body["config"]["lighthouse"]["version"] == "0.1.0"
+
+
+def test_settings_flat_fields_defaults(client):
+    body = client.get("/api/settings").json()
+    assert body["offline_mode"] is False
+    assert body["backup_enabled"] is False
+    assert body["notify_enabled"] is False
+    assert body["theme"] == "system"
+    assert "data_dir" in body
+
+
+def test_settings_patch_round_trip(migrated_paths, client):
+    # Seed an unrelated section to confirm PATCH preserves it.
+    migrated_paths.config_file.write_text('[lighthouse]\nversion = "0.1.0"\n')
+    r = client.patch("/api/settings", json={"offline_mode": True, "theme": "dark"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["offline_mode"] is True
+    assert body["theme"] == "dark"
+    # Untouched flat field keeps its default; unrelated section is preserved.
+    assert body["backup_enabled"] is False
+    assert body["config"]["lighthouse"]["version"] == "0.1.0"
+    # Persisted across a fresh GET.
+    again = client.get("/api/settings").json()
+    assert again["offline_mode"] is True
+    assert again["theme"] == "dark"
 
 
 def test_secrets_masked(migrated_paths, client):
@@ -268,6 +391,16 @@ def test_event_bus_drops_full_queue():
     assert size <= 2
 
 
+def test_create_app_starts_no_daemon(migrated_paths):
+    """Safety invariant: create_app() must NOT start the dispatch/monitor loops
+    (those belong to serve(run=True) only) — protects against runaway processes."""
+    import threading
+    create_app(migrated_paths)
+    names = {t.name for t in threading.enumerate()}
+    assert "dispatch-loop" not in names
+    assert "monitor-loop" not in names
+
+
 def test_api_write_publishes_event(migrated_paths):
     """A job-status change pushes onto the bus."""
     app = create_app(migrated_paths)
@@ -290,3 +423,99 @@ def test_api_write_publishes_event(migrated_paths):
     asyncio.run(run())
     kinds = [m["event"] for m in received]
     assert "job.status" in kinds
+
+
+# ===================== MODES / LIBRARY / ASK (Phase 4) ==================
+
+def test_modes_endpoint_lists_seven(client):
+    modes = client.get("/api/modes").json()["modes"]
+    keys = {m["key"] for m in modes}
+    assert keys == {"watch", "ask", "investigate", "survey",
+                    "reconstruct", "decide", "adjudicate"}
+
+
+def test_create_decide_job_normalizes_and_validates(client):
+    # Missing options → 400.
+    r = client.post("/api/jobs", json={"mode": "decide", "topic": "db?"})
+    assert r.status_code == 400
+    # Valid Decide job is accepted and stored under the canonical key.
+    r = client.post("/api/jobs", json={
+        "mode": "Decide", "topic": "db?",
+        "options": ["a", "b"],
+        "criteria": [{"label": "speed", "weight": 1.0}]})
+    assert r.status_code == 200
+    assert r.json()["mode"] == "decide"
+
+
+def test_legacy_mode_alias_accepted(client):
+    r = client.post("/api/jobs", json={"mode": "Deep-Dive", "topic": "x"})
+    assert r.json()["mode"] == "investigate"
+
+
+def _seed_artifact(paths, *, atype="matrix", body=None, status="staged"):
+    import json as _json
+
+    from lighthouse_ai.persistence import open_db
+    conn = open_db(paths.state_db)
+    try:
+        conn.execute(
+            "INSERT INTO drafts (id, topic, title, body_html, body_json, "
+            "artifact_type, source_count, status) "
+            "VALUES ('a1','T','Title','<p>b</p>',?,?,2,?)",
+            (_json.dumps(body) if body else None, atype, status))
+    finally:
+        conn.close()
+
+
+def test_library_lists_and_filters(client, migrated_paths):
+    _seed_artifact(migrated_paths, atype="matrix")
+    arts = client.get("/api/library").json()["artifacts"]
+    assert any(a["id"] == "a1" and a["artifact_type"] == "matrix" for a in arts)
+    # Filter by type that doesn't match → empty.
+    assert client.get("/api/library?type=timeline").json()["artifacts"] == []
+
+
+def test_library_get_parses_body(client, migrated_paths):
+    _seed_artifact(migrated_paths, body={"winner": "a", "totals": {"a": 0.6}})
+    art = client.get("/api/library/a1").json()
+    assert art["body"]["winner"] == "a"
+
+
+def test_library_export_formats(client, migrated_paths):
+    _seed_artifact(migrated_paths, body={
+        "cells": [{"option": "a", "criterion": "speed", "score": 0.5,
+                   "contribution": 0.5}],
+        "totals": {"a": 0.5, "b": 0.4}})
+    assert client.get("/api/library/a1/export?format=json").json()["id"] == "a1"
+    md = client.get("/api/library/a1/export?format=md")
+    assert md.status_code == 200 and "# Title" in md.text
+    csv = client.get("/api/library/a1/export?format=csv")
+    assert csv.status_code == 200 and "option,criterion" in csv.text
+
+
+def test_ask_sessions_roundtrip(client, migrated_paths):
+    from lighthouse_ai.modes.ask_store import save_session
+    from lighthouse_ai.modes.quc import QUCSession
+    s = QUCSession(id="s1", topic="weather")
+    s.add("user", "is it raining?")
+    s.add("assistant", "yes", citations=["c1"])
+    save_session(migrated_paths.state_db, s, title="Weather chat")
+
+    sessions = client.get("/api/ask/sessions").json()["sessions"]
+    assert any(x["id"] == "s1" and x["turn_count"] == 2 for x in sessions)
+    full = client.get("/api/ask/sessions/s1").json()
+    assert full["turns"][1]["text"] == "yes"
+    # Promote the assistant turn into a transcript artifact.
+    r = client.post("/api/ask/sessions/s1/turns/1/promote")
+    assert r.status_code == 200
+    assert r.json()["artifact_type"] == "transcript"
+
+
+def test_ask_session_404(client):
+    assert client.get("/api/ask/sessions/nope").status_code == 404
+
+
+def test_calibration_timeline_empty(client):
+    r = client.get("/api/calibration/timeline").json()
+    assert r["bucket"] == "week"
+    assert r["buckets"] == []

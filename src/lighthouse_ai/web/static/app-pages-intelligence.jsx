@@ -1,8 +1,8 @@
 // app-pages-intelligence.jsx — Intelligence page (§3 dashboard, OpenHuman §3).
 //
 // Shows passive reflections (provenance notes; never auto-post) + actionable
-// escalations (status + priority). "Act" spawns a fresh research job seeded
-// from the reflection body via POST /api/reflections/{id}/act.
+// escalations (status + priority). "Investigate" spawns a fresh research job
+// seeded from the reflection body via POST /api/reflections/{id}/act.
 //
 // Loaded via babel-standalone. All helpers come from app-lib.jsx / app-pages-rest.jsx
 // (window.*). I-prefixed to avoid collision with other page files.
@@ -27,10 +27,10 @@ const {
   padding: 2px 8px; border-radius: 999px;
   background: var(--rule-soft); color: var(--muted);
 }
-.i-kind-chip.provenance   { background: rgba(2,136,209,0.10);  color: var(--primary-dark); }
-.i-kind-chip.contradiction{ background: rgba(199,21,133,0.10);  color: #880e4f; }
-.i-kind-chip.gap          { background: rgba(255,213,79,0.20);  color: #8d6e00; }
-.i-kind-chip.stale_position { background: rgba(183,28,28,0.10); color: #b71c1c; }
+.i-kind-chip.provenance     { background: rgba(2,136,209,0.10);  color: var(--primary-dark); }
+.i-kind-chip.contradiction  { background: rgba(199,21,133,0.10);  color: #880e4f; }
+.i-kind-chip.gap            { background: rgba(255,213,79,0.20);  color: #8d6e00; }
+.i-kind-chip.stale_position { background: rgba(183,28,28,0.10);  color: #b71c1c; }
 
 .i-priority-chip {
   display: inline-block;
@@ -74,30 +74,83 @@ const {
   document.head && document.head.appendChild(el);
 })();
 
-// ── Small presentational components ──────────────────────────────────────────
+// ── Kind label map — translate internal enum values to plain language ─────────
+const KIND_LABELS = {
+  provenance:     'Source Note',
+  contradiction:  'Conflicting Evidence',
+  gap:            'Research Gap',
+  stale_position: 'Outdated Position',
+};
 
 function IKindChip({ kind }) {
-  const label = (kind || '').replace(/_/g, ' ');
-  return <span className={`i-kind-chip ${kind || ''}`}>{label}</span>;
-}
-
-function IPriorityChip({ priority }) {
-  return <span className={`i-priority-chip ${priority || 'low'}`}>{priority || 'low'}</span>;
-}
-
-function IStatusChip({ status }) {
-  return <span className={`i-status-chip ${status || 'open'}`}>{(status || 'open').replace(/_/g, ' ')}</span>;
-}
-
-function IEmptyState({ icon, title, hint }) {
+  const label = KIND_LABELS[kind] || (kind || '').replace(/_/g, ' ');
   return (
-    <div style={{ ...window.card, padding: '40px 24px', textAlign: 'center' }}>
-      <div style={{ fontSize: 32, marginBottom: 10 }}>{icon}</div>
-      <div style={{ fontFamily: 'var(--serif)', fontSize: 17, fontWeight: 700,
-        color: 'var(--ink)', marginBottom: 6 }}>{title}</div>
-      {hint && <div style={{ fontSize: 13, color: 'var(--muted)', maxWidth: 420,
-        margin: '0 auto', lineHeight: 1.5 }}>{hint}</div>}
+    <span
+      className={`i-kind-chip ${kind || ''}`}
+      title={kind ? `Kind: ${kind}` : undefined}
+    >
+      {label}
+    </span>
+  );
+}
+
+// Priority is already clear; "High" / "Medium" / "Low" need no translation.
+function IPriorityChip({ priority }) {
+  const p = priority || 'low';
+  const LABELS = { high: 'High Priority', medium: 'Medium Priority', low: 'Low Priority' };
+  return (
+    <span className={`i-priority-chip ${p}`} title={`Priority: ${p}`}>
+      {LABELS[p] || p}
+    </span>
+  );
+}
+
+// Status chip — plain-language labels for each workflow state.
+const STATUS_LABELS = {
+  open:         'Open',
+  acknowledged: 'In Review',
+  resolved:     'Resolved',
+};
+function IStatusChip({ status }) {
+  const s = status || 'open';
+  return (
+    <span className={`i-status-chip ${s}`}>
+      {STATUS_LABELS[s] || s.replace(/_/g, ' ')}
+    </span>
+  );
+}
+
+// ── Panel description bar — appears directly below the tab strip ──────────────
+function IPanelDesc({ children }) {
+  return (
+    <div style={{
+      background: 'var(--rule-soft)',
+      border: '1px solid var(--rule)',
+      borderRadius: 'var(--radius)',
+      padding: '10px 14px',
+      fontSize: 13,
+      color: 'var(--ink-2)',
+      lineHeight: 1.55,
+      marginBottom: 20,
+    }}>
+      {children}
     </div>
+  );
+}
+
+// ── Source reference tag ──────────────────────────────────────────────────────
+function ISourceRef({ ref: refStr, index }) {
+  return (
+    <span
+      title={`Source reference: ${refStr}`}
+      style={{
+        fontSize: 10.5, fontFamily: 'var(--mono)',
+        background: 'var(--rule-soft)', color: 'var(--muted)',
+        padding: '1px 6px', borderRadius: 4,
+      }}
+    >
+      {refStr}
+    </span>
   );
 }
 
@@ -115,25 +168,38 @@ function IReflectionsPanel({ toast }) {
     iSetActing(r.id);
     try {
       const res = await window.apiPost(`/api/reflections/${r.id}/act`, {});
-      toast.show(`Job ${res.job_id} spawned`, 'success');
+      toast.show(`Investigation job ${res.job_id} started`, 'success');
       reload();
     } catch (e) {
-      toast.show(e.message || 'Act failed', 'error');
+      toast.show(e.message || 'Could not start investigation job', 'error');
     } finally {
       iSetActing(null);
     }
   }
 
-  if (loading) return <div style={{ padding: 20, color: 'var(--muted)' }}>Loading reflections…</div>;
-  if (error)   return <window.ErrorBox message={`Could not load reflections — ${error}`} />;
+  if (loading) return <window.Loading label="Loading observations..." />;
+  if (error) {
+    return (
+      <window.ErrorBox
+        message={`Could not load observations — ${error}`}
+        onRetry={reload}
+      />
+    );
+  }
 
   const items = (data && data.reflections) || [];
+
   if (!items.length) {
     return (
-      <IEmptyState
+      <window.EmptyState
         icon="◎"
-        title="No reflections yet"
-        hint="Passive observations (provenance notes, contradictions, gaps) appear here as research runs."
+        title="No observations yet"
+        hint={
+          'Observations appear here as the system monitors your research topics. ' +
+          'Each one notes something worth your attention — a source conflict, ' +
+          'a coverage gap, or a position that may need updating. ' +
+          'Start a research job to generate your first observations.'
+        }
       />
     );
   }
@@ -142,50 +208,63 @@ function IReflectionsPanel({ toast }) {
     <div>
       {items.map((r) => (
         <div key={r.id} className="i-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between',
-            alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+          {/* Header row: kind chip + timestamp + action button */}
+          <div style={{
+            display: 'flex', justifyContent: 'space-between',
+            alignItems: 'flex-start', gap: 12, marginBottom: 10,
+          }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               <IKindChip kind={r.kind} />
-              <span style={{ fontSize: 10.5, color: 'var(--muted)',
-                fontFamily: 'var(--mono)' }}>
+              <span style={{ fontSize: 10.5, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
                 {r.created_at ? r.created_at.slice(0, 19).replace('T', ' ') : ''}
               </span>
             </div>
+
             {r.proposed_action && (
               <button
                 className="i-act-btn"
                 disabled={acting === r.id}
                 onClick={() => handleAct(r)}
-                title="Spawn a research job seeded from this reflection"
+                title="Start a new research job based on this observation"
               >
-                {acting === r.id ? 'Acting…' : 'Act'}
+                {acting === r.id ? 'Starting...' : 'Investigate'}
               </button>
             )}
           </div>
 
-          <div style={{ fontFamily: 'var(--serif)', fontSize: 14.5, color: 'var(--ink)',
-            lineHeight: 1.55, marginBottom: r.proposed_action ? 10 : 0 }}>
+          {/* Observation body */}
+          <div style={{
+            fontFamily: 'var(--serif)', fontSize: 14.5, color: 'var(--ink)',
+            lineHeight: 1.55, marginBottom: r.proposed_action ? 10 : 0,
+          }}>
             {r.body}
           </div>
 
+          {/* Suggested next step */}
           {r.proposed_action && (
-            <div style={{ fontSize: 12.5, color: 'var(--ink-2)', borderTop: '1px solid var(--rule)',
-              paddingTop: 8, marginTop: 6 }}>
-              <span style={{ fontWeight: 700, color: 'var(--muted)',
+            <div style={{
+              fontSize: 12.5, color: 'var(--ink-2)',
+              borderTop: '1px solid var(--rule)',
+              paddingTop: 8, marginTop: 6,
+            }}>
+              <span style={{
+                fontWeight: 700, color: 'var(--muted)',
                 fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em',
-                marginRight: 6 }}>Proposed</span>
+                marginRight: 6,
+              }}>Suggested action</span>
               {r.proposed_action}
             </div>
           )}
 
+          {/* Source references */}
           {r.source_refs && r.source_refs.length > 0 && (
-            <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{
+                fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                letterSpacing: '0.07em', color: 'var(--muted)', marginRight: 2,
+              }}>Sources</span>
               {r.source_refs.map((ref, i) => (
-                <span key={i} style={{ fontSize: 10.5, fontFamily: 'var(--mono)',
-                  background: 'var(--rule-soft)', color: 'var(--muted)',
-                  padding: '1px 6px', borderRadius: 4 }}>
-                  {ref}
-                </span>
+                <ISourceRef key={i} ref={ref} index={i} />
               ))}
             </div>
           )}
@@ -209,17 +288,25 @@ function IEscalationsPanel({ toast }) {
     iSetUpdating(id);
     try {
       await window.apiPatch(`/api/escalations/${id}/status`, { status });
-      toast.show(`Status → ${status}`, 'success');
+      const VERB = { acknowledged: 'marked as in review', resolved: 'resolved' };
+      toast.show(`Item ${VERB[status] || status}`, 'success');
       reload();
     } catch (e) {
-      toast.show(e.message || 'Update failed', 'error');
+      toast.show(e.message || 'Could not update status', 'error');
     } finally {
       iSetUpdating(null);
     }
   }
 
-  if (loading) return <div style={{ padding: 20, color: 'var(--muted)' }}>Loading escalations…</div>;
-  if (error)   return <window.ErrorBox message={`Could not load escalations — ${error}`} />;
+  if (loading) return <window.Loading label="Loading items requiring attention..." />;
+  if (error) {
+    return (
+      <window.ErrorBox
+        message={`Could not load items requiring attention — ${error}`}
+        onRetry={reload}
+      />
+    );
+  }
 
   const items = (data && data.escalations) || [];
   const open   = items.filter((e) => e.status === 'open');
@@ -227,27 +314,37 @@ function IEscalationsPanel({ toast }) {
 
   if (!items.length) {
     return (
-      <IEmptyState
-        icon="✓"
-        title="No active escalations"
-        hint="Actionable findings (stale positions, deadline breaches) appear here when they arise."
+      <window.EmptyState
+        icon="+"
+        title="Nothing requires attention"
+        hint={
+          'Items appear here when the system detects something that needs your decision — ' +
+          'an outdated position, a missed deadline, or a finding that conflicts with your ' +
+          'current conclusions. You can acknowledge items to mark them as seen, or resolve ' +
+          'them once addressed.'
+        }
       />
     );
   }
 
   function EscCard({ e }) {
+    const borderColor =
+      e.priority === 'high'   ? '#b71c1c' :
+      e.priority === 'medium' ? '#ffd54f' :
+      'var(--green)';
+
     return (
-      <div className="i-card" style={{ borderLeft: `3px solid ${
-        e.priority === 'high' ? '#b71c1c' : e.priority === 'medium' ? '#ffd54f' : 'var(--green)'
-      }` }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between',
-          alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+      <div className="i-card" style={{ borderLeft: `3px solid ${borderColor}` }}>
+        {/* Header: classification chips + timestamp + action buttons */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between',
+          alignItems: 'flex-start', gap: 12, marginBottom: 10,
+        }}>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             <IKindChip kind={e.kind} />
             <IPriorityChip priority={e.priority} />
             <IStatusChip status={e.status} />
-            <span style={{ fontSize: 10.5, color: 'var(--muted)',
-              fontFamily: 'var(--mono)' }}>
+            <span style={{ fontSize: 10.5, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
               {e.created_at ? e.created_at.slice(0, 19).replace('T', ' ') : ''}
             </span>
           </div>
@@ -258,17 +355,25 @@ function IEscalationsPanel({ toast }) {
               <button
                 disabled={updating === e.id}
                 onClick={() => setStatus(e.id, 'acknowledged')}
-                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6,
+                title="Mark as seen — you are aware of this item and will address it"
+                style={{
+                  fontSize: 11, padding: '4px 10px', borderRadius: 6,
                   border: '1px solid var(--rule)', background: 'var(--card)',
-                  color: 'var(--ink-2)', cursor: 'pointer' }}>
-                Acknowledge
+                  color: 'var(--ink-2)', cursor: 'pointer',
+                }}
+              >
+                Mark as seen
               </button>
               <button
                 disabled={updating === e.id}
                 onClick={() => setStatus(e.id, 'resolved')}
-                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6,
+                title="Mark as resolved — this item has been addressed"
+                style={{
+                  fontSize: 11, padding: '4px 10px', borderRadius: 6,
                   background: 'var(--green)', border: 'none',
-                  color: '#fff', cursor: 'pointer' }}>
+                  color: '#fff', cursor: 'pointer',
+                }}
+              >
                 Resolve
               </button>
             </div>
@@ -277,27 +382,35 @@ function IEscalationsPanel({ toast }) {
             <button
               disabled={updating === e.id}
               onClick={() => setStatus(e.id, 'resolved')}
-              style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6,
+              title="Mark as resolved — this item has been addressed"
+              style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 6,
                 background: 'var(--green)', border: 'none',
-                color: '#fff', cursor: 'pointer', flexShrink: 0 }}>
+                color: '#fff', cursor: 'pointer', flexShrink: 0,
+              }}
+            >
               Resolve
             </button>
           )}
         </div>
 
-        <div style={{ fontFamily: 'var(--serif)', fontSize: 14.5, color: 'var(--ink)',
-          lineHeight: 1.55 }}>
+        {/* Item description */}
+        <div style={{
+          fontFamily: 'var(--serif)', fontSize: 14.5, color: 'var(--ink)',
+          lineHeight: 1.55,
+        }}>
           {e.body}
         </div>
 
+        {/* Source references */}
         {e.source_refs && e.source_refs.length > 0 && (
-          <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{
+              fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+              letterSpacing: '0.07em', color: 'var(--muted)', marginRight: 2,
+            }}>Sources</span>
             {e.source_refs.map((ref, i) => (
-              <span key={i} style={{ fontSize: 10.5, fontFamily: 'var(--mono)',
-                background: 'var(--rule-soft)', color: 'var(--muted)',
-                padding: '1px 6px', borderRadius: 4 }}>
-                {ref}
-              </span>
+              <ISourceRef key={i} ref={ref} index={i} />
             ))}
           </div>
         )}
@@ -309,18 +422,22 @@ function IEscalationsPanel({ toast }) {
     <div>
       {open.length > 0 && (
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
-            letterSpacing: '0.09em', color: 'var(--muted)', marginBottom: 8 }}>
-            Open ({open.length})
+          <div style={{
+            fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
+            letterSpacing: '0.09em', color: 'var(--muted)', marginBottom: 8,
+          }}>
+            Needs attention ({open.length})
           </div>
           {open.map((e) => <EscCard key={e.id} e={e} />)}
         </div>
       )}
       {others.length > 0 && (
         <div>
-          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
-            letterSpacing: '0.09em', color: 'var(--muted)', marginBottom: 8 }}>
-            Closed ({others.length})
+          <div style={{
+            fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
+            letterSpacing: '0.09em', color: 'var(--muted)', marginBottom: 8,
+          }}>
+            Addressed ({others.length})
           </div>
           {others.map((e) => <EscCard key={e.id} e={e} />)}
         </div>
@@ -331,51 +448,41 @@ function IEscalationsPanel({ toast }) {
 
 // ── IntelligencePage ──────────────────────────────────────────────────────────
 
+const INTEL_TABS = ['Observations', 'Attention Required'];
+
 window.IntelligencePage = function IntelligencePage({ toast }) {
-  const [tab, iSetTab] = iUseState('reflections');
+  const [tab, iSetTab] = iUseState('Observations');
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '32px 24px 48px' }}>
-      {/* Header */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontFamily: 'var(--serif)', fontSize: 26, fontWeight: 700,
-          color: 'var(--ink)', margin: 0, letterSpacing: '-0.01em' }}>
-          Intelligence
-        </h1>
-        <p style={{ margin: '6px 0 0', fontSize: 13.5, color: 'var(--muted)',
-          lineHeight: 1.5 }}>
-          Passive reflections (provenance notes, contradictions, gaps) and actionable
-          escalations produced by the subconscious tick engine. Reflections are never
-          auto-posted; escalations track status until resolved.
-        </p>
-      </div>
+      <window.PageHeader
+        title="Intelligence"
+        subtitle="Passive observations and items that need your attention, surfaced automatically as your research runs."
+        tabs={INTEL_TABS}
+        activeTab={tab}
+        onTab={iSetTab}
+      />
 
-      {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20,
-        borderBottom: '1px solid var(--rule)', paddingBottom: 0 }}>
-        {['reflections', 'escalations'].map((t) => (
-          <button
-            key={t}
-            onClick={() => iSetTab(t)}
-            style={{
-              padding: '8px 18px', border: 'none', cursor: 'pointer',
-              fontFamily: 'var(--sans)', fontSize: 13, fontWeight: tab === t ? 600 : 500,
-              background: 'transparent',
-              color: tab === t ? 'var(--primary)' : 'var(--muted)',
-              borderBottom: tab === t ? '2px solid var(--primary)' : '2px solid transparent',
-              marginBottom: -1, borderRadius: 0,
-              transition: 'color .12s',
-              textTransform: 'capitalize',
-            }}
-          >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
+      {/* Per-tab orientation text */}
+      {tab === 'Observations' && (
+        <IPanelDesc>
+          The system notes patterns in your research automatically — source conflicts,
+          coverage gaps, and positions that may be outdated. These observations do not
+          change your data; they are read-only notes. If one suggests a next step,
+          you can start an investigation job directly from the item.
+        </IPanelDesc>
+      )}
+      {tab === 'Attention Required' && (
+        <IPanelDesc>
+          These items have been flagged as needing a decision from you. Review each one,
+          then mark it as seen to acknowledge it, or resolve it once you have addressed it.
+          High-priority items appear at the top of the list.
+        </IPanelDesc>
+      )}
 
-      {/* Panel */}
-      {tab === 'reflections' && <IReflectionsPanel toast={toast} />}
-      {tab === 'escalations' && <IEscalationsPanel toast={toast} />}
+      {/* Panels */}
+      {tab === 'Observations'       && <IReflectionsPanel toast={toast} />}
+      {tab === 'Attention Required' && <IEscalationsPanel toast={toast} />}
     </div>
   );
 };

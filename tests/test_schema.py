@@ -86,6 +86,35 @@ def test_intents_schema_has_status_check(migrated_paths):
         conn.close()
 
 
+def test_monitor_sessions_migration_applies(migrated_paths):
+    conn = open_db(migrated_paths.state_db)
+    try:
+        names = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        applied = applied_migrations(conn)
+    finally:
+        conn.close()
+    assert "0003_monitor_sessions" in applied
+    assert "monitor_sessions" in names
+    assert "monitor_items" in names
+
+
+def test_artifacts_and_transcripts_migration_applies(migrated_paths):
+    conn = open_db(migrated_paths.state_db)
+    try:
+        names = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        applied = applied_migrations(conn)
+        draft_cols = {r[1] for r in conn.execute("PRAGMA table_info(drafts)")}
+        ask_cols = {r[1] for r in conn.execute("PRAGMA table_info(ask_sessions)")}
+    finally:
+        conn.close()
+    assert "0004_artifacts_and_transcripts" in applied
+    assert "ask_sessions" in names
+    assert {"artifact_type", "body_json"} <= draft_cols
+    assert {"id", "turns_json", "status", "job_id"} <= ask_cols
+
+
 def test_apply_migrations_records_applied_ids(tmp_path: Path):
     db_path = tmp_path / "a.db"
     conn = open_db(db_path)

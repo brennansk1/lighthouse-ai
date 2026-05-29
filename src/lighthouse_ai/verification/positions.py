@@ -106,6 +106,35 @@ def resolve_position(positions_db: Path, position_id: int, outcome: bool) -> Pos
                     outcome=outcome, brier=bs)
 
 
+def timeline(positions_db: Path, *, bucket: str = "week") -> list[dict]:
+    """Calibration over time: resolved positions grouped into time buckets.
+
+    Each bucket reports ``n``, ``mean_brier``, ``mean_probability`` and
+    ``mean_outcome_rate`` so the dashboard can plot calibration drift. ``bucket``
+    is ``day``, ``week`` (default) or ``month``; bucketing keys off
+    ``resolved_at``. Buckets are returned in chronological order.
+    """
+    _ensure_extras(positions_db)
+    fmt = {"day": "%Y-%m-%d", "month": "%Y-%m", "week": "%Y-%W"}.get(bucket, "%Y-%W")
+    conn = open_db(positions_db)
+    try:
+        rows = conn.execute(
+            f"SELECT strftime('{fmt}', resolved_at) AS b, "
+            "COUNT(*), AVG(brier), AVG(confidence), AVG(outcome) "
+            "FROM positions WHERE outcome IS NOT NULL AND resolved_at IS NOT NULL "
+            "GROUP BY b ORDER BY b"
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        {"bucket": b, "n": int(n),
+         "mean_brier": round(mb or 0.0, 4),
+         "mean_probability": round(mp or 0.0, 4),
+         "mean_outcome_rate": round(mo or 0.0, 4)}
+        for b, n, mb, mp, mo in rows
+    ]
+
+
 def score_all(positions_db: Path) -> dict[str, float]:
     """Aggregate calibration metrics across all resolved positions."""
     _ensure_extras(positions_db)

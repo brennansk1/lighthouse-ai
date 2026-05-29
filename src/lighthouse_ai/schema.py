@@ -113,6 +113,79 @@ STATE_MIGRATIONS: list[Migration] = [
         );
         """,
     ),
+    Migration(
+        "0003_monitor_sessions",
+        """
+        -- Event-monitor sessions: time-bounded watches over one or more
+        -- sources. Run by the supervisor's subconscious loop. A session ends
+        -- at ends_at, or auto-stops after consecutive_quiet >= quiet_cycles,
+        -- or when it exceeds its max duration.
+        CREATE TABLE monitor_sessions (
+            id TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            source_urls_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            starts_at TEXT,
+            ends_at TEXT,
+            auto_stop INTEGER NOT NULL DEFAULT 1,
+            quiet_cycles INTEGER NOT NULL DEFAULT 3,
+            salience_floor REAL NOT NULL DEFAULT 0.5,
+            max_duration_s INTEGER NOT NULL DEFAULT 86400,
+            poll_interval_s INTEGER NOT NULL DEFAULT 300,
+            status TEXT NOT NULL DEFAULT 'active'
+                CHECK (status IN ('active','paused','ended')),
+            consecutive_quiet INTEGER NOT NULL DEFAULT 0,
+            last_salience REAL,
+            last_polled_at TEXT,
+            cycles INTEGER NOT NULL DEFAULT 0,
+            ended_reason TEXT
+        );
+        CREATE INDEX idx_monitor_sessions_status ON monitor_sessions (status);
+
+        -- Items surfaced by a session, deduplicated per session.
+        CREATE TABLE monitor_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL REFERENCES monitor_sessions(id) ON DELETE CASCADE,
+            dedup_key TEXT NOT NULL,
+            url TEXT,
+            title TEXT NOT NULL DEFAULT '',
+            salience REAL NOT NULL DEFAULT 0.0,
+            category TEXT,
+            is_alert INTEGER NOT NULL DEFAULT 0,
+            cycle INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (session_id, dedup_key)
+        );
+        CREATE INDEX idx_monitor_items_session ON monitor_items (session_id);
+        """,
+    ),
+    Migration(
+        "0004_artifacts_and_transcripts",
+        """
+        -- Typed artifacts: every staged draft now declares what kind of
+        -- artifact it is (report/table/timeline/matrix/verdict/transcript).
+        -- body_json carries the structured payload for non-prose artifacts;
+        -- body_html stays for prose and for a rendered fallback.
+        ALTER TABLE drafts ADD COLUMN artifact_type TEXT NOT NULL DEFAULT 'report';
+        ALTER TABLE drafts ADD COLUMN body_json TEXT;
+        CREATE INDEX idx_drafts_artifact_type ON drafts (artifact_type, status);
+
+        -- Ask sessions: persisted conversational Q&A transcripts so an Ask
+        -- run shows up in the Library as a re-openable transcript artifact.
+        CREATE TABLE ask_sessions (
+            id TEXT PRIMARY KEY,
+            job_id TEXT,
+            topic TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            turns_json TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL DEFAULT 'open'
+                CHECK (status IN ('open','archived')),
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_ask_sessions_status ON ask_sessions (status);
+        """,
+    ),
 ]
 
 # --- audit.db: append-only audit spine; HMAC chain in later sprint ---

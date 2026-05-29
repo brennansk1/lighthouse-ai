@@ -10,9 +10,7 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from lighthouse_ai.rag.chunker import Chunk
 from lighthouse_ai.rag.contextual import (
@@ -20,7 +18,6 @@ from lighthouse_ai.rag.contextual import (
     llm_preamble_fn,
     prepend_context,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

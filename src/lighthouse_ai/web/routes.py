@@ -25,6 +25,21 @@ def _static_root() -> Path:
     return Path(str(resources.files(__package__) / "static"))
 
 
+class _NoCacheStatic(StaticFiles):
+    """StaticFiles that asks the browser to revalidate every asset.
+
+    The dashboard is hand-edited JSX compiled in-browser by babel-standalone;
+    Starlette's default sends no ``Cache-Control``, so browsers heuristically
+    cache the ``.jsx`` and serve stale UI after edits. ``no-cache`` keeps the
+    304/ETag revalidation path (cheap) while guaranteeing freshness.
+    """
+
+    def file_response(self, *args, **kwargs):  # type: ignore[override]
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 def attach_web(app: FastAPI, paths: Paths, bus: EventBus | None = None) -> EventBus:
     """Mount static design bundle at ``/ui`` and the JSON API under ``/api``.
 
@@ -66,7 +81,7 @@ def attach_web(app: FastAPI, paths: Paths, bus: EventBus | None = None) -> Event
     register_api(app, paths, bus)
 
     # The static mount must be LAST — it grabs every URL under /ui/.
-    app.mount("/ui", StaticFiles(directory=str(_static_root()), html=True),
+    app.mount("/ui", _NoCacheStatic(directory=str(_static_root()), html=True),
               name="ui")
     return bus
 

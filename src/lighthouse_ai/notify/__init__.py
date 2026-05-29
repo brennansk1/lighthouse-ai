@@ -15,6 +15,11 @@ from .channels import (
 )
 from .dispatcher import ChannelResult, Notifier
 from .telegram import TelegramChannel, request_confirmation
+from .templates import (
+    escape_md,
+    notify_artifact_staged,
+    render_artifact,
+)
 
 __all__ = [
     "Channel",
@@ -24,5 +29,8 @@ __all__ = [
     "EmailChannel",
     "Notifier",
     "TelegramChannel",
+    "escape_md",
+    "notify_artifact_staged",
+    "render_artifact",
     "request_confirmation",
 ]

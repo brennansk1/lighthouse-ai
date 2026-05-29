@@ -9,24 +9,40 @@
 
 Lighthouse is a **local-first, hardware-adaptive research instrument** (Python ≥3.11, MIT). It runs on
 a laptop: LLM inference via **Ollama** (local HTTP daemon), vectors via **Qdrant** (or an in-memory
-fallback), no cloud required. Five research modes share one infrastructure spine.
+fallback), no cloud required. **Seven research modes**, each producing one typed **artifact**, share
+one infrastructure spine.
 
-| Mode | Name | Entry point | Shape |
-|------|------|-------------|-------|
-| A | **Monitor** | `modes/monitor.py:run_monitor` | Continuous: poll → dedupe → classify → alert/digest |
-| B | **Deep-Dive** | `modes/deepdive.py:run_deepdive` | Bounded iterative research (TTD-DR) → drafted report |
-| C | **QUC** (chat) | `modes/quc.py:ask` | Multi-turn Q&A with retrieval |
-| D | **Digest** | `modes/digest.py:aggregate_digest` | Roll-up of many Monitor runs into one bulletin |
-| E | **Debate** | `modes/debate.py:run_debate` | N adversarial perspectives critique a draft |
+| Mode | Artifact | Entry point | Shape | Legacy key |
+|------|----------|-------------|-------|-----------|
+| **Watch** | digest | `modes/monitor.py:run_monitor` | Continuous: poll → dedupe → classify → alert/digest | Monitor |
+| **Ask** | transcript | `modes/quc.py:ask` | Multi-turn cited Q&A with retrieval | QUC |
+| **Investigate** | report | `modes/deepdive.py:run_deepdive` | Bounded iterative research (TTD-DR) → sourced report | Deep-Dive |
+| **Survey** | evidence table | `modes/survey.py:run_survey` | Screen many docs → PRISMA flow + attribute grid | — (new) |
+| **Reconstruct** | timeline | `modes/reconstruct.py:run_reconstruct` | Extract dated events → dedup → resolve → chronology | — (new) |
+| **Decide** | matrix | `modes/decide.py:run_decide` | Score options × weighted criteria → winner + crux | — (new) |
+| **Adjudicate** | verdict | `modes/debate.py:run_debate` | N adversarial perspectives → judged verdict | Debate |
 
-Modes B and C run **inside `ResearchPipeline`** (`pipeline.py`), which wraps them with ingestion,
-backend selection, the quality-discipline gate, calibration, persistence, and a tamper-evident audit
-log. Modes A/D/E are invoked more directly today. The shared spine is documented once in
-[§0](#0-shared-spine-used-by-every-research-job) and referenced from each mode.
+Plus a **Digest** roll-up (`modes/digest.py`) that aggregates many Watch runs, and the **Deep-tier
+exhaustive engine** (`modes/exhaustive.py`) that Investigate routes to at the deepest depth.
+
+**Dispatch model.** A research job is a row in the `jobs` table created by `POST /api/jobs`. The
+**dispatcher** (`dispatcher.py`) claims it (atomic `BEGIN IMMEDIATE`), resolves the registry to the
+engine, builds inputs from job metadata, runs **one job per tick** (RAM-gated through the single
+`ollama_slot` admission seam — never a second queue), attaches a provenance manifest, and stages the
+artifact in `drafts` (status `staged`, job → `review`). The loop is SchedulerGate-gated and started
+only by `serve(run=True)`, never by `create_app()`. Legacy mode keys still resolve via the registry
+alias map, so persisted `jobs.mode` rows keep working.
+
+Every mode is **offline-deterministic** when `gateway=None` (heuristic/stub path, no model load), so
+the whole suite is testable without an LLM; the real path is identical in shape but model-filled.
 
 **Status legend used throughout:** ✅ real/production-shaped · 🟡 heuristic baseline (works, but a model
 or better algorithm is the intended replacement) · 🔌 contract exists but not yet wired into the live
 path.
+
+**Optimality callouts.** Each mode ends with a **❓ Is this optimal?** block listing the open research
+questions for that mode — the specific design choices worth validating against the literature or
+benchmarking before calling the approach settled.
 
 ---
 
@@ -168,9 +184,20 @@ the LLM behaves."
 | `likely` | 0.60–0.90 | likely |
 | `almost_certain` | 0.90–1.00 | almost certain |
 
-> 🟡 Claim extraction is regex sentence-splitting (misses compound/implicit claims). "Independent" in
-> the two-source rule = "distinct citation id" only — real source independence (different
-> domain/author) is **not** checked. `min_coverage`/`high_stakes` are not yet exposed per-mode.
+**Triangulation + integrity (✅, added Sprint "night"):** when `evidence_chunks` is supplied, `check()`
+also computes, against the real chunk metadata:
+- **`triangulated`** — claims with ≥2 **independent** sources, where independence = **distinct source
+  domain / document** (`metadata["source"]` or `document_id`), not merely distinct citation ids.
+- **`fabricated_citations`** — claims citing an id that maps to **no evidence chunk**. Under
+  `high_stakes`, any fabricated citation **fails** the gate (the competitive invariant: zero
+  hallucinated citations — a cited chunk id must exist or the claim is rejected).
+- **`contradictions`** — pairs of claims that disagree, found by a conservative deterministic heuristic
+  (`detect_contradictions`): shared subject tokens + opposing polarity (antonym pair, or one negates a
+  shared key term). Precision-biased — surfaced, never silently smoothed.
+
+> 🟡 Claim extraction is regex sentence-splitting (misses compound/implicit claims). The contradiction
+> heuristic is token-overlap + antonym/negation, not entailment-based NLI — it favours precision over
+> recall. `min_coverage`/`high_stakes` are now driven per-mode by the depth tier (§0.7).
 
 ### 0.6 Persistence, calibration, audit
 `pipeline.py:_persist_draft / _record_positions / _audit` — ✅
@@ -190,9 +217,65 @@ the LLM behaves."
 > against — a human must resolve each position manually. **Improvement hook:** attach a resolve-by date
 > + machine-checkable criterion at position-creation time.
 
+### 0.7 Depth tiers — `modes/depth.py`
+✅ The user (or `Auto`) picks a depth tier; the dispatcher maps it to concrete engine knobs. **Depth
+scales coverage and confidence, never trust** — the discipline + entailment gates run at every tier.
+
+| Tier | `max_rounds` | `top_k` | adversarial | coverage critic | recursive | high-stakes gate |
+|------|-------------|---------|-------------|-----------------|-----------|------------------|
+| `quick` | 2 | 4 | — | — | — | off |
+| `standard` | 4 | 5 | — | ✅ | — | off |
+| `thorough` | 6 | 8 | ✅ | ✅ | — | on |
+| `deep` | 12 | 10 | ✅ | ✅ | ✅ (exhaustive engine) | on |
+
+`resolve_depth(name)` normalizes aliases (`exhaustive`→thorough, `professional`/`overnight`→deep).
+`Auto` (`/api/classify`) maps the framing **question type** → a tier (`factual_lookup`→quick,
+`comparative`/`decision_support`→standard, `controversy`/`methodology`/`forecast`→thorough). The Deep
+tier requires a user **budget** (wall-clock or node cap) before it will start.
+
+> 🟡 Knob values are hand-tuned, not empirically calibrated. **Open question:** are 2/4/6 rounds and
+> top-k 4/5/8/10 the right curve for answer quality vs latency on local models? The benchmark harness
+> (§0.11) is the place to settle it.
+
+### 0.8 Adversarial refutation — `verification/adversarial.py`
+✅ (Thorough+). After synthesis, each **key claim** is handed to an independent skeptic that tries to
+**refute** it against the same evidence. `refute_claim` → verdict ∈ {`stands`, `contested`, `refuted`};
+a claim that is refuted, contested, or cannot be re-grounded is flagged, not asserted. Offline
+(`gateway=None`) it is conservative: an uncited claim is `contested`, a cited one `stands`, nothing is
+ever `refuted` without a model. `summarize()` rolls up a survival rate for the artifact.
+
+> ❓ Single skeptic prompt today. **Open question:** is N independent skeptics with majority-vote
+> (or perspective-diverse refutation: correctness / source-quality / reproducibility lenses) materially
+> better per token than one? This is the classic adversarial-verification trade-off.
+
+### 0.9 Coverage / completeness critic — `verification/coverage.py`
+✅ (Standard+). Mirrors Gemini Deep Research's self-critique loop but scores coverage **against the
+explicit plan**: `assess_coverage(sub_questions, sections)` marks each load-bearing sub-question
+covered iff a section ties to it with a substantive body (≥8 words). Uncovered sub-questions are
+**gaps** that trigger another round (`needs_another_round`); when the depth budget is exhausted they
+are recorded as explicit **known-unknowns**. `find_missing_angles` (real-backend) additionally asks a
+model what angle the draft hasn't considered.
+
+> ❓ Coverage = "a substantive section exists per sub-question". **Open question:** should "covered"
+> require a minimum *grounded* (cited+entailed) claim count, not just prose length? And should the
+> termination condition weight plan-coverage vs evidence-saturation differently?
+
+### 0.10 Provenance manifest — `dispatcher.py:_provenance_manifest`
+✅ Every artifact's `body_json` carries a deterministic manifest: engine version, mode, depth, budget,
+**backend actually used** (`ollama` vs `mock`/`mock-lowmem` — exposes a "mock masquerade"), per-role
+models, source count, quality metrics, and a SHA-256 content hash. Deterministic given fixed inputs
+(no wall-clock inside), so the same corpus + question reproduces the same manifest — the
+reproducibility property frontier tools can't offer.
+
+### 0.11 Quality benchmark — `eval/research_benchmark.py`
+✅ (offline) Scores an artifact against the measurable bar (citation coverage ≥0.95, entailment ≥0.90,
+fabricated == 0, adversarial + coverage ran, provenance present) and proves the grounding gate
+**catches a planted hallucination** (a claim citing a non-existent source) — the failure mode frontier
+deep-research ships. The real-LLM end-to-end variant is gated behind `LIGHTHOUSE_REAL_BACKEND=1`.
+
 ---
 
-## A. Monitor — `modes/monitor.py:run_monitor`
+## Watch (legacy: Monitor) — `modes/monitor.py:run_monitor` → **digest**
 
 **Purpose (§9.1):** continuously poll named sources; surface high-salience items as **alerts**, batch
 the rest into a **digest**. Idempotent over `(source, item)`.
@@ -223,17 +306,30 @@ else `"informational"`.
 > is **in-memory** — production should persist the dedup ledger to `state.db` so dedupe survives
 > restarts. Thresholds (alert 0.7, dup 0.97) are hard-coded.
 
+> ❓ **Is this optimal?** (a) Salience is length+keyword; the design intends an LLM scoring each item
+> **relative to the user's stated interest** — does interest-relative scoring change which items alert?
+> (b) The 0.7 alert / 0.97 dedup thresholds are arbitrary constants — should they be learned from user
+> accept/dismiss feedback? (c) Semantic dedup is cosine ≥0.97 on titles only — body-aware near-dup
+> detection (or clustering) would catch reworded headlines.
+
 ---
 
-## B. Deep-Dive — `modes/deepdive.py:run_deepdive` (TTD-DR backbone)
+## Investigate (legacy: Deep-Dive) — `modes/deepdive.py:run_deepdive` (TTD-DR backbone) → **report**
 
 **Purpose (§9, §11):** bounded iterative research. Skeleton → per-section research fan-out → denoise
 merge → iterate until the discovery curve flattens or the round budget is hit. Pattern = **TTD-DR**
 ("Test-Time Diffusion for Deep Research", Google).
 
+**Depth + quality wiring (✅, night sprint).** The Investigate dispatcher adapter reads the depth tier
+(§0.7): `max_rounds`/`top_k` come from the tier; **Standard+** runs the coverage critic (§0.9) and
+records `coverage` + `coverage_gaps`; **Thorough+** runs the adversarial pass (§0.8) over load-bearing
+section claims and records `adversarial` survival + `contested_claims`. **Deep** routes to the
+exhaustive recursive engine instead (see [Deep-tier engine](#deep-tier-engine--modesexhaustivepyrun_exhaustive)).
+`depth`, `max_rounds`, `rounds_used` are written into `body_json`.
+
 **Process:**
 
-1. **Frame** → `run_framing(question)` produces a `FramedQuestion` (see [§B.0](#b0-framing-pipeline)).
+1. **Frame** → `run_framing(question)` produces a `FramedQuestion` (see [Framing pipeline](#framing-pipeline-shared-by-investigate--the-deep-tree)).
 2. **Skeleton** (`_skeleton`): one `Section(title, sub_question, body="", is_load_bearing)` per
    sub-question; sections matching a load-bearing sub-question are flagged.
 3. **Round loop** (up to `max_rounds`, pipeline default **2**):
@@ -269,7 +365,16 @@ merge → iterate until the discovery curve flattens or the round budget is hit.
 > `progress_threshold=0.1` are fixed. The design's LangGraph backbone is deferred — the loop is a plain
 > `for`.
 
-### B.0 Framing pipeline
+> ❓ **Is this optimal?** (a) **TTD-DR (skeleton→research→denoise→iterate)** vs alternatives — plan-and-
+> execute (ReAct), or a true graph where sections depend on each other's findings. Is diffusion-style
+> iteration the best fit for a *local* model's small context? (b) Sections are researched
+> **independently within a round** (no shared scratchpad), so a finding in section 3 can't inform
+> section 1 until the next round — is per-round independence costing answer quality? (c) The
+> termination signal is evidence-saturation (discovery curve) AND plan-coverage (§0.9) — is that the
+> right joint stopping rule, or should value-of-information drive it? Worth benchmarking on a question
+> set with known-good reports.
+
+### Framing pipeline (shared by Investigate + the Deep tree)
 `framing/pipeline.py:run_framing` → `FramedQuestion`
 
 1. **Classify type** (`classify_question`) — keyword rules → one of 8 `QuestionType`s:
@@ -300,7 +405,7 @@ merge → iterate until the discovery curve flattens or the round budget is hit.
 
 ---
 
-## C. QUC (chat) — `modes/quc.py:ask`
+## Ask (legacy: QUC) — `modes/quc.py:ask` → **transcript**
 
 **Purpose (§9.3):** multi-turn conversation; retrieve when the user asks something substantive; answer
 with citations. The `QUCSession(id, history, topic)` is serializable so a paused conversation can be
@@ -335,9 +440,15 @@ checkpointed.
 > 🔌 Streaming + interrupt not implemented (design defers it). QUC reuses the `researcher` role prompt —
 > a conversational system prompt would fit chat better.
 
+> ❓ **Is this optimal?** (a) Retrieve-or-not is a ≥4-word heuristic — a cheap intent classifier (or
+> always-retrieve-then-let-the-model-ignore) may serve terse-but-substantive questions better. (b)
+> History is truncated oldest-first at 4000 chars — ReSum-style compaction would keep salient facts in
+> long sessions. (c) One retrieval per turn with no query rewriting — multi-hop questions ("and how
+> does that compare to…") would benefit from query reformulation against the conversation.
+
 ---
 
-## D. Digest — `modes/digest.py:aggregate_digest`
+## Digest (rolls up Watch) — `modes/digest.py:aggregate_digest`
 
 **Purpose (§9.4):** roll up many Monitor runs (across all watched topics) into one daily/weekly
 bulletin. **Pure aggregator**; IO (write file, notify Telegram) is the caller's job.
@@ -358,10 +469,15 @@ bulletin. **Pure aggregator**; IO (write file, notify Telegram) is the caller's 
 
 ---
 
-## E. Debate — `modes/debate.py:run_debate`
+## Adjudicate (legacy: Debate) — `modes/debate.py:run_debate` → **verdict**
 
 **Purpose (§9.5):** for controversial claims, instantiate N perspectives to critique a draft; a judge
 summarizes agreements and unresolved disputes.
+
+**Now wired (✅, night sprint):** Adjudicate is a first-class dispatcher mode producing a `verdict`
+artifact. Server-side, selecting it **promotes Quick → Standard** (a 2–3-perspective debate
+legitimizes rather than stress-tests; the 4-perspective set is the floor). Validated real end-to-end
+(`backend=ollama`, 168 s on a 14B).
 
 **Process** (`run_debate(claim, draft, gateway, perspectives=PERSPECTIVES, agree_predicate)`):
 
@@ -385,31 +501,161 @@ summarizes agreements and unresolved disputes.
 > steelman/devil's-advocate truly diverge; (c) the judge merely counts — a real judge should identify
 > *which* dispute is load-bearing and feed it back into Deep-Dive; (d) 🔌 Debate is **not wired into
 > `ResearchPipeline`** — nothing triggers it (e.g. a `controversy_resolution` question type or a
-> low-agreement draft) and its output isn't staged/audited like B and C.
+> low-agreement draft) and its output isn't staged/audited like B and C. *(Update: Adjudicate is now
+> wired into dispatch and staged/audited; the judge + agree-classifier remain stubs.)*
+
+> ❓ **Is this optimal?** (a) The fixed 4-perspective set (steelman / devil's-advocate / base-rate /
+> fragility) — is it the right basis, and should perspective count scale with the question's
+> contestedness? (b) The agree-classifier is keyword-based and the judge merely counts — a real judge
+> should identify *which* dispute is load-bearing and feed it back. (c) All four perspectives share the
+> `researcher` role/prompt, so they diverge only by instruction, not by model/temperature — would
+> distinct system prompts (or distinct models) produce genuinely more independent arguments? This is
+> the multi-agent-debate literature (Du et al., "Improving Factuality via Debate").
+
+---
+
+## Survey — `modes/survey.py:run_survey` → **evidence table (PRISMA)**
+
+**Purpose:** screen a corpus against inclusion/exclusion criteria, then extract a fixed set of
+attributes from the included documents into a sortable evidence table — a systematic-review funnel.
+
+**Inputs:** `topic`, `documents: [Document(doc_id, title, text)]`, `criteria: [ScreeningCriterion]`,
+`attributes: [AttributeSpec]`, `gateway`, `gate`.
+
+**Process:**
+1. **Dedupe** documents by `doc_id` (first occurrence wins) → `identified` count.
+2. **Screen** each document against every criterion (`ScreenDecision`). Offline: keyword match over
+   `title + text`. A document is **included** iff it passes all inclusion criteria.
+3. **Extract** one **`EvidenceCell` per (included doc × attribute)**: value + `citation_chunk_ids` +
+   an **entailment score** (`verification.entailment.score_claim`, 1.0 offline) + `entailed` flag.
+   Unsupported values are **flagged, not asserted** (`missing_attrs` records gaps).
+4. **PRISMA counts** — `identified → screened → included → excluded` (internally consistent by
+   construction) with `excluded_reasons`.
+5. **Return** `SurveyReport(question, prisma, rows, …)`; `artifact_type=table`.
+
+Deterministic offline (keyword screen + extract); the gateway path fills the same structure and falls
+back to the heuristic on any exception.
+
+> ❓ **Is this optimal?** (a) Screening is keyword-match offline; the real path should use the model
+> with the criterion as a natural-language predicate — does that change inclusion materially vs a
+> title/abstract pre-filter (real PRISMA screens titles → abstracts → full-text in stages, we screen
+> full-text in one pass)? (b) Per-cell extraction is single-pass; dual-extraction with adjudication is
+> the systematic-review gold standard — worth the 2× cost? (c) No inter-document contradiction flag on
+> attribute values yet. (d) Entailment gate is off without MiniCheck installed.
+
+---
+
+## Reconstruct — `modes/reconstruct.py:run_reconstruct` → **timeline**
+
+**Purpose:** assemble a sourced chronology — extract dated events across documents, dedupe the same
+happening reported by multiple sources, resolve date disagreements, order them.
+
+**Process:**
+1. **Extract** `(date_raw, actors, action)` triples per document (offline: date regex over
+   ISO / Month-Year / Month-Day-Year / numeric forms + sentence heuristic).
+2. **Normalize** dates to a comparable key.
+3. **Dedupe** events that are the same happening via an `event_id` hash (so one happening reported by
+   five sources is one event with five sources).
+4. **Resolve date conflicts** — when sources disagree, the **modal date weighted by *source* count**
+   wins (one document mentioning a date 5× counts **once**, so it can't out-vote 5 separate documents).
+5. **Certainty** = `winning_source_count / total_unique_sources` (1.0 when all agree, →1/N when one of
+   N agrees). Events with no explicit date but inferred from ordering are marked `inferred`.
+6. **Sort** chronologically → `ReconstructReport(events, …)`; `artifact_type=timeline`.
+
+> ❓ **Is this optimal?** (a) Date extraction is regex offline — recall on prose dates ("the following
+> spring", relative dates) is limited; a temporal-tagger (HeidelTime / SUTime) or the model is the
+> intended upgrade. (b) Event dedup is a hash of normalized (actors, action) — paraphrased reports of
+> the same event may not collide; embedding-similarity dedup is the obvious alternative. (c)
+> Source-count weighting treats all sources as equally reliable — should source *grade* weight the
+> vote? (d) No causal/ordering inference between events yet.
+
+---
+
+## Decide — `modes/decide.py:run_decide` → **decision matrix**
+
+**Purpose:** score options against weighted criteria, compute a winner, and name the **crux** — the
+criterion whose weight, if wrong, flips the decision — phrased to hand straight to Adjudicate.
+
+**Inputs:** `question`, `options: [Option]` (≥2), `criteria: [Criterion(label, weight,
+higher_is_better)]` (≥1). Validation raises on <2 options / empty criteria / missing weights.
+
+**Process:**
+1. **Score every cell** (option × criterion) → `ScoredCell(score∈[0,1], contribution)`. Offline: a
+   stable hash of `(option, criterion)` (deterministic); real: `gateway.complete_structured` (the fast
+   aux model — structured scoring, §model-role discipline).
+2. **Weighted totals** = Σ `weight · score` per option; **argmax = winner**, runner-up + `margin`.
+3. **Sensitivity sweep** — re-run totals with **each criterion removed**; record whether the winner
+   changes (`decisive=True`) and the margin delta (`SensitivityResult`).
+4. **Crux** — if any criterion is decisive, name all decisive criteria as a falsifiable claim ("the
+   choice of X over Y is decided by C; if that weight is wrong, Z wins"); else acknowledge robustness
+   and name the highest-weighted criterion as `primary_driver`.
+5. **Return** `DecideReport(cells, totals, winner, runner_up, margin, sensitivity, crux, …)`;
+   `artifact_type=matrix`. Validated real end-to-end (`backend=ollama`).
+
+> ❓ **Is this optimal?** (a) Sensitivity is one-criterion-removed (one-at-a-time); it won't catch
+> interactions where two weight changes jointly flip the result — a proper weight-space sweep or
+> Monte-Carlo over weight distributions would. (b) Cells carry no per-cell **rationale** yet (scores
+> without justification). (c) Scores are independent per cell — no cross-criterion consistency check.
+> (d) Is a linear weighted-sum the right aggregation, or should it support non-compensatory rules
+> (e.g. a hard veto criterion)? These map to classic MCDA literature (AHP, TOPSIS, ELECTRE).
+
+---
+
+## Deep-tier engine — `modes/exhaustive.py:run_exhaustive`
+
+**Purpose:** the depth Claude/Gemini's ~10–20-min time-box can't reach. Decompose a question into a
+**recursive question tree**, research each node, and recurse on any node that itself surfaces
+load-bearing gaps — until every leaf is **grounded or an explicit known-unknown** — bounded only by a
+user budget (`max_nodes` from the Deep budget: 30m=8 / 1h=15 / 2h=25 / overnight=50; `max_depth=3`).
+
+**Process:** BFS over the tree; each node researched by an injectable `research_fn` (Investigate's Deep
+adapter passes a one-round deep-dive: grounded iff it gathers citations). Decomposition reuses the
+framing planner per node. **Termination is guaranteed** by the node/depth budget **plus question
+dedup** (normalized-text `seen` set). Emits `on_node` progress; returns a serialized tree +
+grounded/known-unknown counts + `truncated` flag. Safe on local hardware because it is **one bounded,
+RAM-gated step at a time** — long ≠ heavy.
+
+> ❓ **Is this optimal?** (a) The tree is **BFS, breadth-first, uniform budget** — no value-of-
+> information prioritization (research the most decision-relevant branch first, prune low-value ones).
+> (b) Per-node research is a 1-round deep-dive; deeper nodes might warrant more rounds. (c) No
+> cross-node synthesis yet — leaves aren't woven into one narrative. (d) No checkpoint/resume (#52), so
+> an interrupted multi-hour run restarts. (e) Dedup is exact normalized-text — near-duplicate
+> sub-questions still expand.
 
 ---
 
 ## Cross-cutting improvement priorities (highest leverage first)
 
-1. **Framing → planner LLM** (§B.0). Pure keyword rules today; everything downstream inherits its
-   quality.
-2. **Deep-Dive denoiser** (§B). The merge step is a citation de-dupe; a real contradiction-resolving
-   synthesizer is the biggest report-quality gain.
+**Done in the night sprint** (was on this list): Adjudicate is wired into dispatch; the discipline gate
+now does real source-independence triangulation + a fabricated-citation guard + contradiction
+surfacing (§0.5); adversarial refutation (§0.8), coverage critic (§0.9), provenance (§0.10), depth
+tiers (§0.7), and the benchmark (§0.11) all landed. Remaining, still highest-leverage:
+
+1. **Framing → planner LLM** (§Investigate.0). Pure keyword rules today; everything downstream — including
+   the recursive Deep tree and the coverage critic's sub-question list — inherits its decomposition
+   quality. **The single highest-leverage upgrade.**
+2. **Investigate denoiser** (§Investigate). The merge step is a citation de-dupe; a real
+   contradiction-resolving synthesizer is the biggest report-quality gain.
 3. **Wire the real reranker** (§0.4). `FlagReranker` (`BAAI/bge-reranker-v2-m3`) exists and is tested
-   but the pipeline still uses the passthrough `ScoreReranker`; the eval says precision is the metric it
-   moves.
-4. **LLM salience for Monitor** (§A) — interest-relative scoring instead of length+keywords; and persist
-   the dedup ledger.
-5. **Model-based injection gate** (§0.3, ProtectAI deBERTa) and **claim-detector for the discipline
-   gate** (§0.5) — both are deterministic heuristics behind clean call sites.
-6. **Calibration auto-resolution** (§0.6) — positions need resolve-by dates + criteria or the Brier loop
+   but the pipeline still uses the passthrough `ScoreReranker`; the golden-set eval says precision is
+   the metric it moves.
+4. **Grounding / auto-fetch into the dispatcher** (#28). Corpus modes only ground when documents are
+   attached; without auto-fetch (arXiv/OpenAlex, behind the sandbox) a fresh user's Investigate/Ask
+   runs on an empty corpus. Biggest *functional* gap for a new user.
+5. **Document-ingestion UI** (#29) — Survey/Reconstruct need a way to get documents in from the
+   dashboard; today they run on a placeholder.
+6. **LLM salience for Watch** (§Watch) — interest-relative scoring instead of length+keywords; persist
+   the dedup ledger to `state.db`.
+7. **Model-based injection gate** (§0.3, ProtectAI deBERTa) and **claim-detector for the discipline
+   gate** (§0.5) — both deterministic heuristics behind clean call sites.
+8. **Calibration auto-resolution** (§0.6) — positions need resolve-by dates + criteria or the Brier loop
    has no ground truth.
-7. **Trigger + integrate Debate** (§E) — it runs in isolation; nothing invokes it from a draft.
-8. **ReSum compaction** (§B, §C) — both modes truncate context crudely; the `compact()` contract is
-   ready to wire.
+9. **Deep-tier checkpoint/resume + cross-node synthesis** (#52, §exhaustive) — for the overnight tier.
+10. **ReSum compaction** (§Investigate, §Ask) — both truncate context crudely; the `compact()` contract
+    is ready to wire.
 
 Each hook is a single, isolated call site — the orchestration contracts are stable, so these are
-swap-in improvements, not rewrites.
+swap-in improvements, not rewrites. Per-mode optimality questions live in each mode's **❓** block.
 
 ---
 
@@ -465,8 +711,18 @@ Everything a swap-in improvement would build on. **Pip package names and version
 - **Prompt-injection (planned, not wired):** `protectai/deberta-v3-base-prompt-injection`.
 
 ### Algorithms & papers (embedded above; cite when improving)
-- **TTD-DR** — Google, "Test-Time Diffusion for Deep Research" — the Deep-Dive loop shape (skeleton →
+- **TTD-DR** — Google, "Test-Time Diffusion for Deep Research" — the Investigate loop shape (skeleton →
   research → denoise → iterate).
+- **PRISMA** — Page et al. 2021 — the systematic-review screening funnel (identified → screened →
+  included → excluded) reported by Survey.
+- **MCDA / weighted-sum + one-at-a-time sensitivity** — Decide's aggregation and crux. Adjacent
+  literature to evaluate against: AHP (Saaty), TOPSIS, ELECTRE; Monte-Carlo weight sensitivity.
+- **Weighted-vote temporal reconciliation** — Reconstruct's modal-date-by-source-count rule (no single
+  citation; the design's own heuristic). Temporal taggers to compare: HeidelTime, SUTime.
+- **Recursive question-tree decomposition** — the Deep-tier engine (budget-bounded BFS with dedup
+  termination); relate to plan-and-solve / tree-of-thought decomposition.
+- **Adversarial / multi-agent debate** — Du et al. 2023, "Improving Factuality and Reasoning via
+  Multiagent Debate" — basis for Adjudicate and the §0.8 refutation pass.
 - **ReSum** — context-compaction primitive (summarize-and-replace working set); design §14.11.
 - **Discovery curve** — Undermind's marginal-information-gain termination signal; design §11.
 - **Okapi BM25** — sparse retrieval, `k1=1.2`, `b=0.75`.
@@ -478,6 +734,17 @@ Everything a swap-in improvement would build on. **Pip package names and version
 - **WEP / Words of Estimative Probability** — Sherman Kent; **ICD-203** analytic standards (the five
   confidence bands).
 - **Brier score** — Brier 1950; calibration metric `(p − outcome)²`.
+
+### New internal modules (night sprint — no external dep)
+- **`modes/depth.py`** — depth-tier → engine-knob map + `auto_tier` (question-type → tier).
+- **`modes/exhaustive.py`** — recursive question-tree engine (Deep tier).
+- **`verification/adversarial.py`** — skeptic refutation pass over key claims.
+- **`verification/coverage.py`** — plan-coverage critic + missing-angle finder.
+- **`verification/discipline.py`** (extended) — independent-source triangulation, fabricated-citation
+  guard, contradiction detection.
+- **`dispatcher.py:_provenance_manifest`** — per-artifact reproducibility manifest.
+- **`eval/research_benchmark.py`** — the "better than frontier" scorecard + planted-hallucination proof.
+- **`notify/templates.py`** — per-artifact Telegram review templates.
 
 ### Internal-only (no external dep, but reference points)
 - **HMAC audit chain** — tamper-evident log; key from keychain.

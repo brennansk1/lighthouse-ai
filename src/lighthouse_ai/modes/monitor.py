@@ -148,7 +148,7 @@ def run_monitor(
     salience_fn: SalienceFn = default_salience,
     gateway: Gateway | None = None,
     embed_titles: Callable[[Iterable[str]], list[list[float]]] | None = None,
-    gate: "SchedulerGate | None" = None,
+    gate: SchedulerGate | None = None,
 ) -> MonitorReport:
     """Run one polling cycle of Mode A.
 

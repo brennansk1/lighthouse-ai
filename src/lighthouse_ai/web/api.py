@@ -31,11 +31,22 @@ class NewJob(BaseModel):
     mode: str
     topic: str
     depth: str = "Standard"
+    budget: str | None = None  # Deep-tier wall-clock/node budget (30m/1h/2h/overnight)
+    options: list[str] = []
+    criteria: list[dict[str, Any]] = []
+    source_urls: list[str] = []
 
 
 class ResolveBody(BaseModel):
     outcome: str  # "confirmed" | "refuted" | "defer"
     notes: str | None = None
+
+
+class SettingsPatch(BaseModel):
+    offline_mode: bool | None = None
+    backup_enabled: bool | None = None
+    notify_enabled: bool | None = None
+    theme: str | None = None
 
 
 class NewTopic(BaseModel):
@@ -47,6 +58,18 @@ class NewTopic(BaseModel):
 
 class NewHypothesis(BaseModel):
     statement: str
+
+
+class NewMonitorSession(BaseModel):
+    label: str
+    source_urls: list[str] = []
+    starts_at: str | None = None
+    ends_at: str | None = None
+    auto_stop: bool = True
+    poll_interval_s: int = 300
+    quiet_cycles: int = 3
+    salience_floor: float = 0.5
+    max_duration_s: int = 86400
 
 
 class StatusBody(BaseModel):
@@ -139,20 +162,46 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
     @app.post("/api/jobs", tags=["jobs"])
     def create_job(body: NewJob) -> dict[str, Any]:
         import uuid
+
+        from ..modes.registry import canonical, resolve
+        try:
+            mode_key = canonical(body.mode)
+            spec = resolve(mode_key)
+        except KeyError:
+            raise HTTPException(400, f"unknown mode: {body.mode!r}") from None
+        # Decide needs at least two options and weighted criteria up front.
+        if "options" in spec.requires and len(body.options) < 2:
+            raise HTTPException(400, "Decide requires at least two options")
+        if "criteria" in spec.requires and not body.criteria:
+            raise HTTPException(400, "Decide requires at least one weighted criterion")
+        # Adjudicate needs a real adversarial set (steelman / devil's-advocate /
+        # base-rate / fragility). A 2-3 perspective "debate" only legitimizes a
+        # decision instead of stress-testing it, so Quick is promoted to Standard.
+        depth = body.depth
+        if mode_key == "adjudicate" and str(depth).strip().lower() == "quick":
+            depth = "standard"
         jid = uuid.uuid4().hex[:6]
-        meta = {"topic": body.topic, "progress": 0.0, "depth": body.depth,
+        meta = {"topic": body.topic, "progress": 0.0, "depth": depth,
                 "eta": "queued"}
+        if body.budget:
+            meta["budget"] = body.budget
+        if body.options:
+            meta["options"] = body.options
+        if body.criteria:
+            meta["criteria"] = body.criteria
+        if body.source_urls:
+            meta["source_urls"] = body.source_urls
         conn = open_db(paths.state_db)
         try:
             conn.execute(
                 "INSERT INTO jobs (id, mode, status, metadata_json) "
                 "VALUES (?, ?, 'queued', ?)",
-                (jid, body.mode, json.dumps(meta)),
+                (jid, mode_key, json.dumps(meta)),
             )
         finally:
             conn.close()
         bus.publish("job.status", {"id": jid, "status": "queued"})
-        return {"id": jid, "status": "queued"}
+        return {"id": jid, "status": "queued", "mode": mode_key}
 
     def _set_job_status(job_id: str, status: str) -> dict[str, Any]:
         conn = open_db(paths.state_db)
@@ -301,6 +350,68 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
             conn.close()
         return {"id": topic_id, "deleted": True}
 
+    # ====================== MONITOR SESSIONS =======================
+
+    @app.get("/api/monitor/sessions", tags=["monitors"])
+    def list_monitor_sessions(status: str | None = None) -> dict[str, Any]:
+        from dataclasses import asdict
+
+        from ..modes.monitor_session import list_sessions
+        sessions = list_sessions(paths.state_db, status=status)
+        return {"sessions": [asdict(s) for s in sessions]}
+
+    @app.get("/api/monitor/sessions/{session_id}", tags=["monitors"])
+    def get_monitor_session(session_id: str) -> dict[str, Any]:
+        from dataclasses import asdict
+
+        from ..modes.monitor_session import get_session
+        s = get_session(paths.state_db, session_id)
+        if s is None:
+            raise HTTPException(404, f"session {session_id} not found")
+        return asdict(s)
+
+    @app.get("/api/monitor/sessions/{session_id}/results", tags=["monitors"])
+    def get_monitor_session_results(session_id: str) -> dict[str, Any]:
+        from ..modes.monitor_session import get_session, get_session_results
+        if get_session(paths.state_db, session_id) is None:
+            raise HTTPException(404, f"session {session_id} not found")
+        return {"results": get_session_results(paths.state_db, session_id)}
+
+    @app.post("/api/monitor/sessions", tags=["monitors"])
+    def create_monitor_session(body: NewMonitorSession) -> dict[str, Any]:
+        from dataclasses import asdict
+
+        from ..modes.monitor_session import (
+            AutoStopConfig,
+            SessionSpec,
+            create_session,
+        )
+        spec = SessionSpec(
+            label=body.label,
+            source_urls=body.source_urls,
+            starts_at=body.starts_at,
+            ends_at=body.ends_at,
+            auto_stop=body.auto_stop,
+            poll_interval_s=body.poll_interval_s,
+            auto=AutoStopConfig(
+                quiet_cycles=body.quiet_cycles,
+                salience_floor=body.salience_floor,
+                max_duration_s=body.max_duration_s,
+            ),
+        )
+        session = create_session(paths.state_db, spec)
+        return asdict(session)
+
+    @app.post("/api/monitor/sessions/{session_id}/stop", tags=["monitors"])
+    def stop_monitor_session(session_id: str) -> dict[str, Any]:
+        from dataclasses import asdict
+
+        from ..modes.monitor_session import stop_session
+        s = stop_session(paths.state_db, session_id, reason="manual")
+        if s is None:
+            raise HTTPException(404, f"session {session_id} not found")
+        return asdict(s)
+
     # ========================== POSITIONS ==========================
 
     @app.get("/api/positions", tags=["positions"])
@@ -369,7 +480,7 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
 
     @app.get("/api/health", tags=["health"])
     def health() -> dict[str, Any]:
-        return _build_health(paths, gov_get())
+        return _build_health(paths)
 
     @app.get("/api/audit", tags=["health"])
     def audit(limit: int = 100, event_type: str | None = None) -> dict[str, Any]:
@@ -426,17 +537,49 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
 
     # ============================ SETTINGS =========================
 
+    def _load_config() -> dict[str, Any]:
+        if not paths.config_file.exists():
+            return {}
+        try:
+            import tomllib
+        except ImportError:  # pragma: no cover
+            import tomli as tomllib  # type: ignore
+        with paths.config_file.open("rb") as fh:
+            return tomllib.load(fh)
+
+    def _settings_payload() -> dict[str, Any]:
+        cfg = _load_config()
+        ui = cfg.get("ui", {}) if isinstance(cfg.get("ui"), dict) else {}
+        return {
+            "config": cfg,
+            "data_dir": str(paths.data_dir),
+            "offline_mode": bool(ui.get("offline_mode", False)),
+            "backup_enabled": bool(ui.get("backup_enabled", False)),
+            "notify_enabled": bool(ui.get("notify_enabled", False)),
+            "theme": ui.get("theme", "system"),
+        }
+
     @app.get("/api/settings", tags=["settings"])
     def get_settings() -> dict[str, Any]:
-        cfg = {}
-        if paths.config_file.exists():
-            try:
-                import tomllib
-            except ImportError:  # pragma: no cover
-                import tomli as tomllib  # type: ignore
-            with paths.config_file.open("rb") as fh:
-                cfg = tomllib.load(fh)
-        return {"config": cfg}
+        return _settings_payload()
+
+    @app.patch("/api/settings", tags=["settings"])
+    def patch_settings(body: SettingsPatch) -> dict[str, Any]:
+        import tomli_w
+
+        cfg = _load_config()
+        ui = cfg.get("ui")
+        if not isinstance(ui, dict):
+            ui = {}
+        for key in ("offline_mode", "backup_enabled", "notify_enabled", "theme"):
+            val = getattr(body, key)
+            if val is not None:
+                ui[key] = val
+        cfg["ui"] = ui
+        paths.config_file.parent.mkdir(parents=True, exist_ok=True)
+        with paths.config_file.open("wb") as fh:
+            tomli_w.dump(cfg, fh)
+        return _settings_payload()
 
     @app.get("/api/skills", tags=["settings"])
     def list_skills() -> dict[str, Any]:
@@ -523,6 +666,7 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
 
         # Reuse the existing job-creation path so the job lands in the same store.
         import uuid
+
         from ..persistence import open_db as _open_db
 
         def _spawn(seed: str) -> str:
@@ -532,7 +676,7 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
             try:
                 conn.execute(
                     "INSERT INTO jobs (id, mode, status, metadata_json) VALUES (?, ?, ?, ?)",
-                    (job_id, "deepdive", "queued", meta),
+                    (job_id, "investigate", "queued", meta),
                 )
             except Exception as exc:
                 raise HTTPException(status_code=500,
@@ -554,7 +698,7 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         try:
             new_status = EscalationStatus(body.status)
         except ValueError:
-            raise HTTPException(status_code=422, detail=f"invalid status: {body.status!r}")
+            raise HTTPException(status_code=422, detail=f"invalid status: {body.status!r}") from None
         store = _reflection_store()
         updated = store.update_escalation_status(escalation_id, new_status)
         if not updated:
@@ -594,8 +738,166 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    # ============================ MODES ============================
+
+    @app.get("/api/modes", tags=["research"])
+    def list_modes() -> dict[str, Any]:
+        from ..modes.registry import all_modes
+        return {"modes": [m.as_dict() for m in all_modes()]}
+
+    @app.get("/api/classify", tags=["research"])
+    def classify(q: str) -> dict[str, Any]:
+        """Classify a question (deterministic, offline) and suggest a depth tier.
+
+        Powers the wizard's 'Auto' depth default so routine work needs no
+        decision. Never calls an LLM here (framing runs with gateway=None)."""
+        from ..framing.pipeline import run_framing
+        from ..modes.depth import auto_tier
+        try:
+            framed = run_framing(q)
+            qtype = framed.question_type.value
+            subs = list(framed.load_bearing or framed.sub_questions)
+        except Exception:
+            qtype, subs = "exploratory_survey", []
+        return {"question_type": qtype, "suggested_tier": auto_tier(qtype),
+                "sub_questions": subs}
+
+    # =========================== LIBRARY ===========================
+
+    @app.get("/api/library", tags=["library"])
+    def library(type: str | None = None, status: str | None = None
+                ) -> dict[str, Any]:
+        clauses, params = [], []
+        if type:
+            clauses.append("artifact_type=?")
+            params.append(type)
+        if status:
+            clauses.append("status=?")
+            params.append(status)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        conn = open_db(paths.state_db)
+        try:
+            rows = _rows(conn,
+                         "SELECT id, job_id, topic, title, artifact_type, wep_band, "
+                         "wep_phrase, confidence, source_count, status, created_at "
+                         f"FROM drafts{where} ORDER BY created_at DESC", tuple(params))
+        finally:
+            conn.close()
+        return {"artifacts": rows}
+
+    @app.get("/api/library/{artifact_id}", tags=["library"])
+    def get_artifact(artifact_id: str) -> dict[str, Any]:
+        conn = open_db(paths.state_db)
+        try:
+            rows = _rows(conn, "SELECT * FROM drafts WHERE id=?", (artifact_id,))
+        finally:
+            conn.close()
+        if not rows:
+            raise HTTPException(404, f"artifact {artifact_id} not found")
+        art = rows[0]
+        if art.get("body_json"):
+            try:
+                art["body"] = json.loads(art["body_json"])
+            except (TypeError, ValueError):
+                art["body"] = None
+        return art
+
+    @app.get("/api/library/{artifact_id}/export", tags=["library"])
+    def export_artifact(artifact_id: str, format: str = "json"):
+        from fastapi.responses import PlainTextResponse
+        conn = open_db(paths.state_db)
+        try:
+            rows = _rows(conn, "SELECT * FROM drafts WHERE id=?", (artifact_id,))
+        finally:
+            conn.close()
+        if not rows:
+            raise HTTPException(404, f"artifact {artifact_id} not found")
+        art = rows[0]
+        body = None
+        if art.get("body_json"):
+            try:
+                body = json.loads(art["body_json"])
+            except (TypeError, ValueError):
+                body = None
+        if format == "json":
+            return {"id": art["id"], "title": art["title"],
+                    "artifact_type": art.get("artifact_type"), "body": body}
+        if format == "md":
+            md = f"# {art['title']}\n\n{art.get('body_html', '')}"
+            return PlainTextResponse(md, media_type="text/markdown")
+        if format == "csv":
+            return PlainTextResponse(_artifact_to_csv(art, body),
+                                     media_type="text/csv")
+        raise HTTPException(400, f"unknown export format: {format!r}")
+
+    # ========================= ASK SESSIONS ========================
+
+    @app.get("/api/ask/sessions", tags=["library"])
+    def ask_sessions(status: str | None = None) -> dict[str, Any]:
+        from ..modes.ask_store import list_sessions
+        return {"sessions": list_sessions(paths.state_db, status=status)}
+
+    @app.get("/api/ask/sessions/{session_id}", tags=["library"])
+    def ask_session(session_id: str) -> dict[str, Any]:
+        from ..modes.ask_store import get_session_dict
+        d = get_session_dict(paths.state_db, session_id)
+        if d is None:
+            raise HTTPException(404, f"session {session_id} not found")
+        return d
+
+    @app.post("/api/ask/sessions/{session_id}/turns/{idx}/promote", tags=["library"])
+    def promote_ask_turn(session_id: str, idx: int) -> dict[str, Any]:
+        from ..modes.ask_store import promote_turn
+        try:
+            draft_id = promote_turn(paths.state_db, session_id, idx)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from None
+        bus.publish("draft.staged", {"id": draft_id})
+        return {"id": draft_id, "status": "staged", "artifact_type": "transcript"}
+
+    # ====================== CALIBRATION TIMELINE ===================
+
+    @app.get("/api/calibration/timeline", tags=["positions"])
+    def calibration_timeline(bucket: str = "week") -> dict[str, Any]:
+        from ..verification.positions import timeline
+        return {"bucket": bucket,
+                "buckets": timeline(paths.positions_db, bucket=bucket)}
+
 
 # ---- health payload -------------------------------------------------------
+
+
+def _artifact_to_csv(art: dict[str, Any], body: Any) -> str:
+    """Flatten a table/matrix artifact into CSV; fall back to a title row."""
+    import csv
+    import io
+    out = io.StringIO()
+    w = csv.writer(out)
+    if isinstance(body, dict) and body.get("rows") and isinstance(body["rows"], list):
+        # Survey evidence table: one row per document, columns per attribute.
+        attrs = [a["label"] if isinstance(a, dict) else str(a)
+                 for a in body.get("attributes", [])]
+        w.writerow(["doc_id", "title", *attrs])
+        for row in body["rows"]:
+            cells = {c["attribute"]: c["value"] for c in row.get("cells", [])}
+            w.writerow([row.get("doc_id", ""), row.get("title", ""),
+                        *[cells.get(a, "") for a in attrs]])
+    elif isinstance(body, dict) and body.get("cells") and body.get("totals"):
+        # Decide matrix: option x criterion scores.
+        w.writerow(["option", "criterion", "score", "contribution"])
+        for c in body["cells"]:
+            w.writerow([c.get("option"), c.get("criterion"),
+                        c.get("score"), c.get("contribution")])
+    elif isinstance(body, dict) and body.get("events"):
+        # Reconstruct timeline.
+        w.writerow(["date", "action", "sources", "certainty"])
+        for e in body["events"]:
+            w.writerow([e.get("date"), e.get("action"),
+                        ";".join(e.get("sources", [])), e.get("certainty")])
+    else:
+        w.writerow(["title"])
+        w.writerow([art.get("title", "")])
+    return out.getvalue()
 
 def _dir_size(path: Path) -> int:
     total = 0
@@ -610,7 +912,7 @@ def _dir_size(path: Path) -> int:
     return total
 
 
-def _build_health(paths: Paths, gov: Governor) -> dict[str, Any]:
+def _build_health(paths: Paths) -> dict[str, Any]:
     from ..hardware import probe
     from ..intents import outbox_depth
     from ..litestream import replica_lags
@@ -646,9 +948,14 @@ def _build_health(paths: Paths, gov: Governor) -> dict[str, Any]:
     except Exception:
         qdrant_ok = False
 
-    # budget
-    rem = gov.remaining()
-    tier = gov.tier()
+    # chosen models for this hardware (per-role bindings the tier resolved to)
+    try:
+        from ..gateway import recommend_models
+        chosen_models = {
+            role: b.model for role, b in recommend_models(profile).items()
+        }
+    except Exception:
+        chosen_models = {}
 
     # storage
     import psutil
@@ -679,20 +986,18 @@ def _build_health(paths: Paths, gov: Governor) -> dict[str, Any]:
         "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "hardware": {
             "platform": profile.platform, "arch": profile.arch,
-            "total_ram_gb": profile.total_ram_gb, "tier": profile.suggested_tier,
+            "total_ram_gb": profile.total_ram_gb,
+            "free_ram_gb": round(profile.free_ram_gb, 1),
+            "tier": profile.suggested_tier,
+            "cpu_cores_physical": profile.cpu_cores_physical,
+            "cpu_cores_logical": profile.cpu_cores_logical,
+            "gpu": [{"name": g.name, "vram_gb": g.vram_gb, "vendor": g.vendor}
+                    for g in profile.gpu],
         },
+        "chosen_models": chosen_models,
         "databases": db_status,
         "external": {"ollama": ollama_ok, "qdrant": qdrant_ok,
                      "litestream": shutil.which("litestream") is not None},
-        "budget": {
-            "tier": tier,
-            "usd": {"used": round(BUDGET_DEFAULTS.monthly_usd - rem["usd"]["monthly"], 2),
-                    "cap": BUDGET_DEFAULTS.monthly_usd},
-            "tokens": {"used": BUDGET_DEFAULTS.daily_tokens - rem["tokens"]["daily"],
-                       "cap": BUDGET_DEFAULTS.daily_tokens},
-            "tool_calls": {"used": BUDGET_DEFAULTS.daily_tool_calls - rem["tool_calls"]["daily"],
-                           "cap": BUDGET_DEFAULTS.daily_tool_calls},
-        },
         "storage": {
             "disk_total_gb": round(disk.total / 1e9, 1),
             "disk_free_gb": round(disk.free / 1e9, 1),
