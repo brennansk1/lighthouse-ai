@@ -59,16 +59,30 @@ depth doc carries the hardware caveat. Survey/Reconstruct/Watch are
 offline-dispatch-tested; their real value needs ingested documents/sources
 (see #28/#29).
 
-## Remaining (clearly scoped tasks #28, #29, #32, #37–#41, #50, #52, #54, #56)
-- **#56 Wire Deep tier into Investigate dispatch** — the exhaustive engine is built
-  + tested standalone; depth=deep currently runs a 12-round deepdive (reasonable),
-  the recursive-tree route is the enhancement.
-- **#52 Long-run resilience** — checkpoint/resume for hours-long Deep runs.
-- **#28 Grounding (auto-fetch)** — corpus modes ground when documents are attached;
-  auto-fetch wiring is network-touching, left for supervised work.
-- **#29 Survey wizard inputs** — needs a document-ingestion UI (larger piece).
-- **#50 reviewable plan / #54 auto-tier** — need a classify endpoint.
-- **#32 code+security review**, **#37–#41 remaining real-LLM mode validations**.
+## Also shipped (second wave)
+- **Deep tier wired (#56):** depth=deep routes Investigate to the recursive
+  exhaustive engine (budget-capped tree, grounded-or-known-unknown leaves).
+- **Auto depth (#54):** `/api/classify` → question-type → suggested tier; wizard
+  defaults to Auto ("Auto chose Standard…").
+- **Reviewable plan (#50):** the Review step shows the framing plan
+  (load-bearing sub-questions) before launch — Gemini-style, but grounded.
+- **Exports (#31), depth selector (#53), model-role speed (#55), docs (#34),
+  UX sweep (#30), test coverage (#33)** — all done.
+
+## Genuinely remaining (larger / needs supervision — not started)
+- **#28 Grounding auto-fetch** — network egress (arXiv/OpenAlex) into the
+  dispatcher; left for supervised work (sandbox/egress review).
+- **#29 Survey/Reconstruct wizard inputs** — needs a document-ingestion UI.
+- **#52 Long-run resilience** — full checkpoint/resume of an in-flight Deep tree
+  (progress emission is the next safe slice).
+- **#32 Code + security review** of the night's diff.
+- **#39/#40/#41** Survey/Reconstruct/Watch real-LLM validation — needs an
+  ingested corpus / sources to be meaningful (offline dispatch is tested).
+
+## Tally
+24 tasks completed tonight (#26, #30–#38, #42–#56, #50, #53–#55 + adjudicate
+min-tier). Suite **1297 passing, 5 skipped**, ruff clean, ~28 commits on
+`night/finish-to-quality`.
 
 ## How to run
 ```bash
