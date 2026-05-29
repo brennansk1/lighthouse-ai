@@ -35,6 +35,7 @@ class NewJob(BaseModel):
     options: list[str] = []
     criteria: list[dict[str, Any]] = []
     source_urls: list[str] = []
+    selected_skills: list[str] = []  # skill ids chosen in the source picker (Zone K)
 
 
 class ResolveBody(BaseModel):
@@ -191,6 +192,8 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
             meta["criteria"] = body.criteria
         if body.source_urls:
             meta["source_urls"] = body.source_urls
+        if body.selected_skills:
+            meta["selected_skills"] = body.selected_skills
         conn = open_db(paths.state_db)
         try:
             conn.execute(
@@ -761,6 +764,41 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
             qtype, subs = "exploratory_survey", []
         return {"question_type": qtype, "suggested_tier": auto_tier(qtype),
                 "sub_questions": subs}
+
+    # ============================ SOURCES ==========================
+
+    @app.get("/api/sources", tags=["research"])
+    def list_sources() -> dict[str, Any]:
+        """The skill catalog for the source picker (Zone K).
+
+        Each entry is ``SkillManifest.as_dict()`` so the UI can render a
+        categorized checkbox list (category, name, description, tier, grade,
+        community flag, enabled_by_default). Tolerates an empty library."""
+        from ..skills.registry import all_skills
+        try:
+            sources = [m.as_dict() for m in all_skills()]
+        except Exception:
+            sources = []
+        return {"sources": sources}
+
+    @app.get("/api/recommend-sources", tags=["research"])
+    def recommend_sources(q: str, mode: str = "investigate",
+                          depth: str | None = None) -> dict[str, Any]:
+        """Mode-aware ranked source suggestions for the picker (Zone K).
+
+        Offline-safe and deterministic — the recommender frames the question
+        with gateway=None. If the recommender raises or the library is empty we
+        return an empty list (200, never 500)."""
+        from ..skills.recommender import recommend
+        try:
+            recs = recommend(q, mode, depth)
+        except Exception:
+            recs = []
+        return {"recommended": [
+            {"skill_id": r.skill_id, "score": r.score,
+             "reason": r.reason, "role": r.role}
+            for r in recs
+        ]}
 
     # =========================== LIBRARY ===========================
 

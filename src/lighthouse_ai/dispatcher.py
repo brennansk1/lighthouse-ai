@@ -27,7 +27,10 @@ import json
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
+
+import structlog
 
 from .gateway import Gateway
 from .governor.scheduler_gate import SchedulerGate
@@ -35,9 +38,31 @@ from .modes.registry import canonical, load_engine, resolve
 from .paths import Paths
 from .persistence import open_db
 
+_log = structlog.get_logger(__name__)
+
 #: Bumped when artifact body_json schemas change; recorded in every provenance
 #: manifest so an artifact says which engine produced it (reproducibility).
 ENGINE_VERSION = "1.0.0"
+
+#: General Web fallback skill id (CRAG gap-filler — MODE_SKILL_INTEGRATION §5.2).
+_GENERAL_WEB_ID = "general_web"
+
+#: Private meta key the dispatcher uses to hand the per-job broker to the
+#: adapters without changing their (stable) signatures. Stripped before persist.
+_BROKER_META_KEY = "_broker"
+
+#: Private meta key holding the raw skill Documents (for contradiction
+#: detection). Stripped before persist alongside ``_BROKER_META_KEY``.
+_SKILL_DOCS_META_KEY = "_skill_documents"
+
+#: Fixed epoch handed to ``contradiction.detect`` so detection is deterministic
+#: and free of ``datetime.now()`` at import/runtime (the module forbids it).
+_DETECTED_AT = datetime(2026, 1, 1, tzinfo=UTC)
+
+#: Modes whose engines consume a multi-source corpus (``meta["documents"]``) and
+#: therefore benefit from skill execution feeding documents into the hybrid.
+_MULTISOURCE_MODES = frozenset(
+    {"investigate", "survey", "reconstruct", "decide", "adjudicate"})
 
 
 @dataclass(frozen=True)
@@ -176,7 +201,215 @@ def _build_hybrid(meta: dict, *, gateway):
         return None
 
 
+def _build_broker(paths: Paths):
+    """Best-effort default :class:`SandboxBroker` for skill fetches.
+
+    Returns ``None`` on any failure so the dispatcher degrades to "no skills"
+    rather than crashing a job over broker assembly."""
+    try:
+        from .sandbox.broker import build_default_broker
+        return build_default_broker(paths.data_dir)
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.warning("dispatcher.broker.build_failed", error=repr(exc))
+        return None
+
+
+# ── skill execution (Zone J — dispatcher pipeline skill run) ────────────────
+#
+# When a job carries ``meta["selected_skills"]`` (chosen in the source picker),
+# the dispatcher executes each through the platform broker, aggregates the
+# attributed Documents, and feeds them into the mode engine's hybrid corpus
+# (MODE_SKILL_INTEGRATION §2.1). The mode engine never reads ``selected_skills``
+# — it only consumes the corpus, which keeps the seven modes orthogonal. When no
+# skills are selected this whole path is inert and behaviour is UNCHANGED.
+
+
+def _selected_skill_ids(meta: dict) -> list[str]:
+    """The skill ids chosen in the source picker, de-duped, order-preserved."""
+    raw = meta.get("selected_skills") or []
+    out: list[str] = []
+    seen: set[str] = set()
+    for sid in raw:
+        sid = str(sid)
+        if sid and sid not in seen:
+            seen.add(sid)
+            out.append(sid)
+    return out
+
+
+def _maybe_decide_skills(meta: dict, *, gateway) -> list[str]:
+    """Decide per-option merge (§2.2): merge ``recommend`` picks per option into
+    the selected set. Optional, guarded, offline-safe — any failure (or no
+    options) leaves the explicitly selected ids unchanged.
+    """
+    selected = _selected_skill_ids(meta)
+    options = meta.get("options") or []
+    if not options:
+        return selected
+    try:
+        from .skills.recommender import recommend
+
+        topic = meta.get("topic", "") or ""
+        merged: dict[str, float] = {sid: 1.0 for sid in selected}
+        for opt in options:
+            q = f"{topic} {opt}".strip()
+            for rec in recommend(q, "decide", meta.get("depth"), gateway=gateway):
+                merged[rec.skill_id] = max(merged.get(rec.skill_id, 0.0), rec.score)
+        # Keep originally-selected ids first, then the merged picks by score.
+        extra = sorted(
+            (sid for sid in merged if sid not in selected),
+            key=lambda s: merged[s], reverse=True)
+        return selected + extra
+    except Exception:
+        return selected
+
+
+def _run_selected_skills(meta: dict, *, gateway, broker,
+                         max_results: int = 5) -> list:
+    """Load + run each selected skill through the broker, aggregate ``.documents``.
+
+    Returns a flat ``list[Document]`` (rag chunker Documents, already stamped
+    with ``skill_id`` provenance by the runner). When the specialty skills all
+    return thin/empty results, falls back to the ``general_web`` skill as a
+    CRAG-style gap-filler (§5.2). Never raises — a missing/faulting skill is
+    logged and skipped (``run_skill`` already swallows skill-side faults), so
+    skill execution can never crash a job.
+    """
+    skill_ids = (_maybe_decide_skills(meta, gateway=gateway)
+                 if str(meta.get("mode") or "") == "decide"
+                 else _selected_skill_ids(meta))
+    if not skill_ids:
+        return []
+    if broker is None:
+        _log.warning("dispatcher.skills.no_broker", skills=skill_ids)
+        return []
+
+    from .skills import load_skill, run_skill
+
+    question = meta.get("topic", "") or ""
+    documents: list = []
+    all_thin = True
+    ran_general_web = False
+    for sid in skill_ids:
+        if sid == _GENERAL_WEB_ID:
+            ran_general_web = True
+        try:
+            skill = load_skill(sid)
+        except Exception as exc:  # SkillNotFound / SkillLoadError
+            _log.warning("dispatcher.skills.load_failed", skill=sid, error=repr(exc))
+            continue
+        run = run_skill(skill, question, broker=broker, gateway=gateway,
+                        max_results=max_results)
+        if not run.ok:
+            _log.warning("dispatcher.skills.run_error", skill=sid, error=run.error)
+        if not run.thin:
+            all_thin = False
+        documents.extend(run.documents)
+
+    # CRAG gap-filler: specialty skills came back empty → fall back to the
+    # universal General Web skill (when available and not already run).
+    if all_thin and not ran_general_web:
+        try:
+            gw = load_skill(_GENERAL_WEB_ID)
+        except Exception:
+            gw = None
+        if gw is not None:
+            _log.info("dispatcher.skills.gap_filler", reason="thin_specialty_results",
+                      fallback=_GENERAL_WEB_ID)
+            run = run_skill(gw, question, broker=broker, gateway=gateway,
+                            max_results=max_results)
+            documents.extend(run.documents)
+    return documents
+
+
+def _skill_docs_to_meta(documents: list) -> list[dict]:
+    """Adapt skill ``Document`` objects to the ``meta["documents"]`` dict shape
+    that :func:`_build_hybrid` and the corpus adapters expect."""
+    out: list[dict] = []
+    for d in documents:
+        meta = getattr(d, "metadata", {}) or {}
+        out.append({
+            "doc_id": getattr(d, "id", None),
+            "id": getattr(d, "id", None),
+            "title": meta.get("title") or meta.get("source") or getattr(d, "id", ""),
+            "text": getattr(d, "text", "") or "",
+            "url": meta.get("url") or meta.get("source"),
+            "source": meta.get("source"),
+            "skill_id": meta.get("skill_id"),
+        })
+    return out
+
+
+def _inject_skill_documents(meta: dict, *, gateway) -> list:
+    """Run the job's selected skills and merge their documents into
+    ``meta["documents"]`` (extending, not replacing, any caller-supplied docs).
+
+    Returns the raw ``list[Document]`` from the skills (for downstream
+    contradiction detection). Inert when no skills are selected — ``meta`` is
+    left untouched and behaviour is UNCHANGED (back-compat).
+    """
+    if not _selected_skill_ids(meta) and not (
+            str(meta.get("mode") or "") == "decide" and meta.get("options")):
+        return []
+    broker = meta.get(_BROKER_META_KEY)
+    documents = _run_selected_skills(meta, gateway=gateway, broker=broker)
+    if not documents:
+        return []
+    existing = _meta_documents(meta)
+    meta["documents"] = existing + _skill_docs_to_meta(documents)
+    # Retain the raw skill Documents (carrying metadata.skill_id + any
+    # entailment_score) for contradiction detection in run_job.
+    prior = meta.get(_SKILL_DOCS_META_KEY) or []
+    meta[_SKILL_DOCS_META_KEY] = list(prior) + list(documents)
+    return documents
+
+
+def _collect_skill_documents(meta: dict) -> list:
+    """The raw skill Documents stashed by :func:`_inject_skill_documents`."""
+    return list(meta.get(_SKILL_DOCS_META_KEY) or [])
+
+
+def _maybe_flag_auto_adjudicate(meta: dict, summary: dict, documents: list) -> None:
+    """Auto-Adjudicate trigger (§6.4): detect contradictions over the run's
+    corpus and, when the five conditions hold for any contradiction, record the
+    decision on the artifact + job meta. This zone DETECTS and FLAGS only — the
+    actual sub-job spawn is mode-side (P/R) and left as a logged hook.
+    """
+    if not documents:
+        return
+    try:
+        from .verification.contradiction import detect, should_auto_adjudicate
+        from .verification.discipline import extract_claims
+
+        # Claims come from the produced artifact body where available; evidence
+        # is the skill corpus (carrying metadata.skill_id for the cross-skill
+        # layer). Each chunk's entailment_score may be pre-stamped by a skill.
+        body = summary.get("body_json")
+        body = body if isinstance(body, dict) else {}
+        text = json.dumps(body, default=str)
+        claims = extract_claims(text)
+        if not claims:
+            return
+        depth_tier = str(meta.get("depth") or "standard")
+        contradictions = detect(
+            claims, documents, job_id=str(meta.get("job_id") or "job"),
+            detected_at=_DETECTED_AT, load_bearing=True)
+        for c in contradictions:
+            if should_auto_adjudicate(c, depth_tier=depth_tier):
+                meta["auto_adjudicate"] = c.contradiction_id
+                if isinstance(summary.get("body_json"), dict):
+                    summary["body_json"]["auto_adjudicate"] = c.contradiction_id
+                _log.info("dispatcher.auto_adjudicate.flagged",
+                          contradiction=c.contradiction_id,
+                          # TODO(P/R): spawn the Adjudicate sub-job from this hook.
+                          depth=depth_tier)
+                return
+    except Exception as exc:  # never let detection crash a job
+        _log.warning("dispatcher.auto_adjudicate.error", error=repr(exc))
+
+
 def _adapt_decide(meta, *, gateway, gate, job_id, positions_db) -> dict:
+    _inject_skill_documents(meta, gateway=gateway)
     fn = load_engine("decide")
     report = fn(
         meta.get("topic", ""),
@@ -196,6 +429,7 @@ def _adapt_decide(meta, *, gateway, gate, job_id, positions_db) -> dict:
 
 
 def _adapt_survey(meta, *, gateway, gate, job_id, positions_db) -> dict:
+    _inject_skill_documents(meta, gateway=gateway)
     fn = load_engine("survey")
     topic = meta.get("topic", "") or "Survey"
     documents = _meta_documents(meta)
@@ -225,6 +459,7 @@ def _adapt_survey(meta, *, gateway, gate, job_id, positions_db) -> dict:
 
 
 def _adapt_reconstruct(meta, *, gateway, gate, job_id, positions_db) -> dict:
+    _inject_skill_documents(meta, gateway=gateway)
     fn = load_engine("reconstruct")
     topic = meta.get("topic", "") or "Timeline"
     documents = _meta_documents(meta)
@@ -386,6 +621,7 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
     from .modes.deepdive import run_deepdive
     from .modes.depth import resolve_depth
 
+    _inject_skill_documents(meta, gateway=gateway)
     topic = meta.get("topic", "") or "Investigation"
     knobs = resolve_depth(meta.get("depth"))
     if knobs.get("recursive"):
@@ -465,6 +701,7 @@ def _adapt_adjudicate(meta, *, gateway, gate, job_id, positions_db) -> dict:
     ``run_debate`` when ``gateway=None``."""
     from .modes.debate import run_debate
 
+    _inject_skill_documents(meta, gateway=gateway)
     topic = meta.get("topic", "") or "Claim under debate"
     draft = str(meta.get("draft", "")) or topic
     result = run_debate(claim=topic, draft=draft, gateway=gateway, job_id=job_id)
@@ -638,10 +875,23 @@ def run_job(paths: Paths, job: ClaimedJob, *,
             bus.publish("job.status", {"id": job.id, "status": "failed"})
         return None
 
+    # Hand the per-job broker + routing context to the adapters via private meta
+    # keys (keeps the stable adapter signatures untouched). The broker is the
+    # platform chokepoint every skill fetch passes through; built best-effort so
+    # a broker failure degrades to "no skills" rather than crashing the job.
+    job.meta.setdefault("mode", mode_key)
+    job.meta.setdefault("job_id", job.id)
+    job.meta[_BROKER_META_KEY] = _build_broker(paths)
+
     backends: dict = {}
     try:
         summary = adapter(job.meta, gateway=gateway, gate=gate, job_id=job.id,
                           positions_db=paths.positions_db)
+        # Auto-Adjudicate trigger (§6.4): detect contradictions over the run's
+        # skill corpus and flag a follow-up when the five conditions hold.
+        if mode_key in _MULTISOURCE_MODES:
+            skill_docs = _collect_skill_documents(job.meta)
+            _maybe_flag_auto_adjudicate(job.meta, summary, skill_docs)
         # Drain the backend tally BEFORE persisting so the provenance manifest
         # can record which backend actually served the job.
         if gateway is not None:
@@ -669,6 +919,9 @@ def run_job(paths: Paths, job: ClaimedJob, *,
         return None
 
     meta = dict(job.meta)
+    # Drop the private, non-serializable handoff keys before persisting.
+    meta.pop(_BROKER_META_KEY, None)
+    meta.pop(_SKILL_DOCS_META_KEY, None)
     meta["progress"] = 1.0
     meta["draft_id"] = draft_id
     # Record which backend actually served this job so a "mock masquerade" (a
