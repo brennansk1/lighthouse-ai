@@ -316,6 +316,67 @@ def _adapt_ask(meta, *, gateway, gate, job_id, positions_db) -> dict:
     }
 
 
+#: Deep-tier wall-clock budget → recursive node cap (max tree size).
+_DEEP_BUDGET_NODES = {"30m": 8, "1h": 15, "2h": 25, "overnight": 50}
+
+
+def _serialize_tree(node) -> dict:
+    return {
+        "question": node.question, "depth": node.depth, "status": node.status,
+        "body": node.body, "citations": list(node.citations),
+        "children": [_serialize_tree(c) for c in node.children],
+    }
+
+
+def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
+    """Deep tier → recursive question-tree research via the exhaustive engine.
+
+    Each node is researched with a one-round deep-dive (grounded iff it gathers
+    citations); the tree is bounded by the Deep budget. Offline-deterministic
+    (stub bodies, every node a known-unknown without a corpus)."""
+    from .modes.deepdive import run_deepdive
+    from .modes.exhaustive import run_exhaustive
+
+    topic = meta.get("topic", "") or "Investigation"
+    hybrid = _build_hybrid(meta, gateway=gateway)
+    max_nodes = _DEEP_BUDGET_NODES.get(str(meta.get("budget", "1h")), 15)
+
+    def _research(q: str):
+        try:
+            r = run_deepdive(q, hybrid=hybrid, gateway=gateway, job_id=job_id,
+                             gate=gate, max_rounds=1, top_k=knobs["top_k"])
+            cites = sorted({c for s in r.sections for c in s.citations})
+            body = " ".join(s.body for s in r.sections if s.body.strip())
+            return (body or f"[draft] {q}", list(cites), bool(cites))
+        except Exception:
+            return (f"[draft] {q}", [], False)
+
+    tree = run_exhaustive(topic, research_fn=_research, gateway=gateway,
+                          job_id=job_id, max_nodes=max_nodes, max_depth=3)
+    body_json = {
+        "question": topic, "depth": "deep", "engine": "exhaustive",
+        "budget": meta.get("budget"),
+        "tree": _serialize_tree(tree.root),
+        "total_nodes": tree.total_nodes, "grounded": tree.grounded,
+        "known_unknowns": tree.known_unknowns,
+        "coverage": tree.coverage_ratio, "truncated": tree.truncated,
+        "max_depth_reached": tree.max_depth_reached,
+    }
+
+    def _count(node, acc):
+        acc.update(node.citations)
+        for c in node.children:
+            _count(c, acc)
+        return acc
+    source_count = len(_count(tree.root, set()))
+    body_html = (
+        f"<p>Recursive deep research: {tree.grounded}/{tree.total_nodes} nodes "
+        f"grounded (depth {tree.max_depth_reached}"
+        f"{', budget-truncated' if tree.truncated else ''}).</p>")
+    return {"title": topic, "body_html": body_html, "body_json": body_json,
+            "source_count": source_count}
+
+
 def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
     """Investigate → report. Bounded TTD-DR deep-dive over the corpus.
 
@@ -327,6 +388,9 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
 
     topic = meta.get("topic", "") or "Investigation"
     knobs = resolve_depth(meta.get("depth"))
+    if knobs.get("recursive"):
+        return _adapt_investigate_deep(meta, knobs, gateway=gateway, gate=gate,
+                                       job_id=job_id)
     hybrid = _build_hybrid(meta, gateway=gateway)
     report = run_deepdive(topic, hybrid=hybrid, gateway=gateway,
                           job_id=job_id, gate=gate,

@@ -89,3 +89,25 @@ def test_quick_tier_skips_adversarial(migrated_paths):
     body = json.loads(bj)
     assert body["depth"] == "quick"
     assert "adversarial" not in body   # quick tier skips the refutation pass
+
+
+def test_deep_tier_routes_to_exhaustive_tree(migrated_paths):
+    """depth='deep' runs the recursive exhaustive engine, bounded by budget."""
+    from lighthouse_ai.dispatcher import dispatch_once
+
+    _insert(migrated_paths.state_db, "j1", "investigate",
+            {"topic": "Should we adopt a local-first architecture?",
+             "depth": "deep", "budget": "30m"})
+    draft_id = dispatch_once(migrated_paths)  # offline
+    conn = open_db(migrated_paths.state_db)
+    try:
+        bj = conn.execute("SELECT body_json FROM drafts WHERE id=?",
+                          (draft_id,)).fetchone()[0]
+    finally:
+        conn.close()
+    body = json.loads(bj)
+    assert body["engine"] == "exhaustive"
+    assert body["total_nodes"] >= 1
+    assert body["total_nodes"] <= 8          # 30m budget node cap
+    assert "tree" in body and body["tree"]["question"]
+    assert "provenance" in body
