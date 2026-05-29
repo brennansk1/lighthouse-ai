@@ -4,8 +4,8 @@ The :class:`Notifier` is the single fan-out point used by the rest of
 Lighthouse. It owns two pieces of policy from the ``[notifications]`` config
 (design §30): which *events* the user opted into, and which *channels* are
 enabled. Keeping that policy here -- rather than in each call site -- means a
-producer just emits a semantic event (``draft_ready``, ``budget_trip``) and
-never has to know whether the user wants desktop vs Discord vs nothing.
+producer just emits a semantic event (``draft_ready``, ``monitor_alert_high``)
+and never has to know whether the user wants desktop vs Discord vs nothing.
 
 Channels are passed in already constructed (dependency injection at the edges)
 so this module stays free of subprocess/network/SMTP concerns and is trivial

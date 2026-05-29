@@ -37,4 +37,13 @@ allow_drift_with_flag = true
 [notifications]
 desktop_enabled = true
 email_enabled = false
-events = ["draft_ready", "monitor_alert_high", "budget_warn", "budget_trip"]
+events = ["draft_ready", "monitor_alert_high"]
+
+[ui]
+# When true, a staged artifact (a finished job awaiting review) sends a concise
+# summary to the configured Telegram chat. Off by default — and a no-op anyway
+# until a Telegram bot token + chat id are configured. The §24.10 destructive-
+# action airlock is unaffected by this flag.
+notify_enabled = false
+telegram_bot_token = ""
+telegram_chat_id = ""

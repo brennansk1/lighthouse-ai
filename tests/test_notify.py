@@ -283,7 +283,7 @@ def _config(**overrides):
         "desktop_enabled": True,
         "email_enabled": False,
         "discord_webhook_url": "",
-        "events": ["draft_ready", "budget_trip"],
+        "events": ["draft_ready", "monitor_alert_high"],
     }
     base.update(overrides)
     return base
@@ -300,7 +300,7 @@ def test_notifier_sends_to_enabled_channel_for_allowed_event():
 def test_notifier_skips_event_not_in_allowlist():
     desktop = _RecordingChannel()
     notifier = Notifier(_config(), [("desktop", desktop)])
-    results = notifier.notify("monitor_alert_high", "T", "B")
+    results = notifier.notify("some_unsubscribed_event", "T", "B")
     assert results == [ChannelResult("desktop", attempted=False, delivered=False)]
     assert desktop.calls == []
 
@@ -338,7 +338,7 @@ def test_notifier_fans_out_to_multiple_channels():
         _config(email_enabled=True, discord_webhook_url=WEBHOOK),
         [("desktop", desktop), ("email", email), ("discord", discord)],
     )
-    results = notifier.notify("budget_trip", "T", "B")
+    results = notifier.notify("monitor_alert_high", "T", "B")
     assert all(r.attempted and r.delivered for r in results)
     assert len(results) == 3
 
@@ -365,7 +365,7 @@ def test_notifier_missing_events_key_blocks_everything():
 
 def test_notifier_events_property():
     notifier = Notifier(_config(), [])
-    assert notifier.events == {"draft_ready", "budget_trip"}
+    assert notifier.events == {"draft_ready", "monitor_alert_high"}
 
 
 def test_notifier_no_channels_returns_empty():
