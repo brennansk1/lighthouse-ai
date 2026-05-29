@@ -61,7 +61,7 @@ better:
 7. **Structured instruments.** Matrix / timeline / PRISMA evidence-table /
    verdict-with-named-crux — research objects, not chat answers.
 8. **Unbounded professional-grade depth.** Claude and Gemini deep research
-   **time-box** to ~10–20 minutes. We don't. A "Professional" depth tier runs a
+   **time-box** to ~10–20 minutes. We don't. A "Deep" depth tier runs a
    *recursive question tree* — sub-questions decompose into sub-sub-questions,
    each researched to grounded resolution or an explicit known-unknown — bounded
    only by a user budget (wall-clock or node count), checkpointed and resumable
@@ -194,7 +194,8 @@ P2.7 Corpus mode loops (must clear the measurable bar)    -> #37 Ask, #38 Invest
        #39 Survey, #40 Reconstruct, #41 Watch
 P3   Wizard input completeness per mode                   -> #29
 P3.5 Reviewable research plan in the wizard (vs Gemini)   -> #50
-P3.5 Depth selector in Research tab (Quick→Professional)  -> #53
+P3.5 Depth selector in Research tab (Quick→Deep, Auto)    -> #53, #54
+       tiers: Quick / Standard / Thorough / Deep; see docs/research_depth_matrix.md
 P4   UX polish + artifact viewers/exports                 -> #30, #31
 P4.5 Integrations: Telegram templates + Logseq rendering  -> #42, #43
 P5   Code review + security review                         -> #32
