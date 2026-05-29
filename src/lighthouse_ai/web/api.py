@@ -10,6 +10,7 @@ Registered onto the FastAPI app by ``register_api(app, paths)``.
 
 from __future__ import annotations
 
+import base64
 import json
 import shutil
 from datetime import UTC, datetime
@@ -88,6 +89,20 @@ class SecretBody(BaseModel):
 
 class ActBody(BaseModel):
     pass  # no payload required; act_on_reflection uses the stored reflection
+
+
+class SandboxUpload(BaseModel):
+    filename: str
+    content_base64: str
+    content_type: str | None = None
+
+
+class PinBody(BaseModel):
+    pinned: bool = True
+
+
+class SandboxConfig(BaseModel):
+    max_bytes: int | None = None
 
 
 # ---- helpers --------------------------------------------------------------
@@ -799,6 +814,87 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
              "reason": r.reason, "role": r.role}
             for r in recs
         ]}
+
+    # =========================== SANDBOX ===========================
+    # The secured two-zone data store (SB3): user uploads + LLM workspace, every
+    # byte broker-scanned on entry, user-configurable size, LRU eviction + pin.
+
+    _MAX_UPLOAD_BYTES = 64 * 1024 * 1024  # hard request cap (memory safety)
+    _sandbox_config_path = paths.data_dir / "sandbox_config.json"
+
+    def _sandbox_max_bytes() -> int | None:
+        from ..sandbox.store import DEFAULT_MAX_BYTES
+        try:
+            cfg = json.loads(_sandbox_config_path.read_text(encoding="utf-8"))
+            val = cfg.get("max_bytes", DEFAULT_MAX_BYTES)
+            return None if val is None else int(val)
+        except (OSError, ValueError):
+            return DEFAULT_MAX_BYTES
+
+    def _sandbox_store():
+        from ..sandbox.store import SandboxStore
+        return SandboxStore(paths.data_dir, max_bytes=_sandbox_max_bytes())
+
+    def _sandbox_broker():
+        from ..sandbox.broker import build_default_broker
+        return build_default_broker(paths.data_dir)
+
+    @app.get("/api/sandbox", tags=["sandbox"])
+    def sandbox_contents() -> dict[str, Any]:
+        store = _sandbox_store()
+        return {
+            "items": [i.as_dict() for i in store.list()],
+            "usage": store.usage(),
+            "breakdown": store.breakdown(),
+        }
+
+    @app.post("/api/sandbox/upload", tags=["sandbox"])
+    def sandbox_upload(body: SandboxUpload) -> dict[str, Any]:
+        try:
+            payload = base64.b64decode(body.content_base64, validate=True)
+        except Exception as exc:
+            raise HTTPException(400, f"invalid base64 content: {exc}") from exc
+        if len(payload) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "upload exceeds the per-file size cap")
+        item = _sandbox_store().add(
+            payload, zone="uploads", filename=body.filename,
+            content_type=body.content_type, source="user",
+            broker=_sandbox_broker(), now=datetime.now(UTC).isoformat(),
+        )
+        if item is None:
+            # Broker REJECTed the bytes — never stored. Surface why.
+            raise HTTPException(422, "file rejected by the sandbox security scan")
+        return item.as_dict()
+
+    @app.delete("/api/sandbox/{item_id}", tags=["sandbox"])
+    def sandbox_delete(item_id: str) -> dict[str, Any]:
+        ok = _sandbox_store().remove(item_id)
+        if not ok:
+            raise HTTPException(404, "no such sandbox item")
+        return {"id": item_id, "removed": True}
+
+    @app.post("/api/sandbox/{item_id}/pin", tags=["sandbox"])
+    def sandbox_pin(item_id: str, body: PinBody) -> dict[str, Any]:
+        store = _sandbox_store()
+        if store.stat(item_id) is None:
+            raise HTTPException(404, "no such sandbox item")
+        store.pin(item_id, body.pinned)
+        return {"id": item_id, "pinned": body.pinned}
+
+    @app.get("/api/sandbox/config", tags=["sandbox"])
+    def sandbox_config_get() -> dict[str, Any]:
+        return {"max_bytes": _sandbox_max_bytes()}
+
+    @app.put("/api/sandbox/config", tags=["sandbox"])
+    def sandbox_config_set(body: SandboxConfig) -> dict[str, Any]:
+        if body.max_bytes is not None and body.max_bytes < 0:
+            raise HTTPException(400, "max_bytes must be >= 0 or null")
+        _sandbox_config_path.parent.mkdir(parents=True, exist_ok=True)
+        _sandbox_config_path.write_text(
+            json.dumps({"max_bytes": body.max_bytes}), encoding="utf-8")
+        store = _sandbox_store()
+        store.enforce_quota()  # apply the new cap immediately
+        return {"max_bytes": body.max_bytes, "usage": store.usage()}
 
     # =========================== LIBRARY ===========================
 
