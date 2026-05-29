@@ -246,7 +246,22 @@ def status(port: int = DEFAULT_PORT, json_out: bool = typer.Option(False, "--jso
 
 # --------------------------------------------------------- doctor --
 
-@app.command()
+doctor_app = typer.Typer(help="Readiness checks and diagnostics.", invoke_without_command=True)
+app.add_typer(doctor_app, name="doctor")
+
+
+@doctor_app.callback(invoke_without_command=True)
+def _doctor_default(ctx: typer.Context) -> None:
+    """Run readiness checks when ``doctor`` is invoked with no subcommand.
+
+    Keeps the historical ``lighthouse doctor`` behavior (== ``doctor check``)
+    while still exposing ``doctor news`` and ``doctor check`` as subcommands.
+    """
+    if ctx.invoked_subcommand is None:
+        doctor()
+
+
+@doctor_app.command("check")
 def doctor() -> None:
     """Run readiness checks; exit non-zero on failure."""
     paths = _paths_from_env()
@@ -428,6 +443,115 @@ def doctor() -> None:
             console.print(f"  • {i}")
         raise typer.Exit(1)
     console.print("[bold green]all green.[/bold green]")
+
+
+@doctor_app.command("news")
+def doctor_news(
+    live: bool = typer.Option(False, "--live",
+                              help="Attempt real network checks (requires egress)."),
+) -> None:
+    """Check reachability of all trusted news outlets; prints the trust matrix.
+
+    Runs OFFLINE by default — every outlet is shown as 'unreachable (offline)'
+    without any network call.  Pass ``--live`` (or set
+    ``LIGHTHOUSE_REAL_BACKEND=1``) to perform actual HEAD/GET reachability
+    checks.
+
+    The trust matrix columns mirror §4 of SKILL_LIBRARY_V1.md:
+      outlet / reachable? / method / AllSides / trusted
+
+    Exit code is always 0 — individual outlet failures are informational only.
+    """
+    import os
+
+    # Gate live checks behind --live or LIGHTHOUSE_REAL_BACKEND=1 (§resource limits).
+    do_live = live or (os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1")
+
+    # Import the orchestrator's outlet table (read-only, no network at import).
+    from .skills.library.news_orchestrator.skill import _TRUSTED_OUTLETS
+
+    # §4 trust matrix: fetch method is RSS for all seed outlets (the API/platform
+    # invariants are documented in the spec — paywall = "✗", RSS = "✓ (RSS)").
+    _METHOD: dict[str, str] = {
+        "reuters": "RSS",
+        "associated_press": "RSS + web",
+        "bbc_news": "RSS",
+        "npr": "RSS + web",
+        "guardian": "Open Platform API",
+        "propublica": "RSS + web",
+    }
+
+    console.rule("[bold]doctor news — trusted outlet trust matrix[/bold]")
+
+    table = Table(
+        "Outlet",
+        "Reachable?",
+        "Method",
+        "AllSides",
+        "Trusted",
+        show_lines=False,
+        title="News outlets (seed six)",
+    )
+
+    for outlet in _TRUSTED_OUTLETS:
+        method = _METHOD.get(outlet.id, "RSS")
+        trusted_mark = "[green]✓[/green]"  # all seed outlets are pre-trusted
+
+        if not do_live:
+            # Offline mode: show each outlet as unreachable with reason.
+            reachable_cell = "[yellow]— (offline)[/yellow]"
+        else:
+            # Live mode: attempt a minimal fetch via httpx (no egress proxy —
+            # this is a diagnostic tool, not a skill).
+            import httpx as _httpx
+
+            feed_url = outlet.feeds[0] if outlet.feeds else ""
+            if not feed_url:
+                reachable_cell = "[red]✗[/red] no feeds configured"
+            else:
+                try:
+                    resp = _httpx.head(feed_url, follow_redirects=True, timeout=5.0)
+                    if resp.status_code < 400:
+                        reachable_cell = "[green]✓[/green]"
+                    else:
+                        reachable_cell = f"[red]✗[/red] HTTP {resp.status_code}"
+                except Exception as exc:
+                    short = str(exc)[:40]
+                    reachable_cell = f"[red]✗[/red] {short}"
+
+        table.add_row(
+            outlet.name,
+            reachable_cell,
+            method,
+            outlet.allsides_rating,
+            trusted_mark,
+        )
+
+    # Show outlets that are known-unavailable (paywalled / ToS — §4).
+    _UNAVAILABLE = [
+        ("New York Times", "metadata+abstract only", "lean_left", "◐ (limited)"),
+        ("Wall Street Journal", "paywall/ToS — not fetchable", "lean_right", "✗"),
+        ("Bloomberg", "paywall/ToS — not fetchable", "center", "✗"),
+        ("Financial Times", "paywall/ToS — not fetchable", "center", "✗"),
+        ("Fox News", "RSS only", "right", "◐ (RSS only)"),
+    ]
+    for name, reason, allsides, trusted in _UNAVAILABLE:
+        table.add_row(name, f"[dim]{reason}[/dim]", "—", allsides, f"[dim]{trusted}[/dim]")
+
+    console.print(table)
+
+    mode_label = "[yellow]offline (pass --live to check egress)[/yellow]" if not do_live else "[green]live[/green]"
+    console.print(f"\n  mode: {mode_label}")
+    console.print(
+        "  Seed outlets (Reuters, AP, BBC, NPR, Guardian, ProPublica) are "
+        "pre-trusted and RSS-accessible without auth."
+    )
+    console.print(
+        "  Paywall/ToS constraints are platform invariants — visible with "
+        "reason, not silently absent (SKILL_LIBRARY_V1.md §8)."
+    )
+    # Exit 0 always — outlet failures are informational.
+    raise typer.Exit(0)
 
 
 # ---------------------------------------------------- pause / resume --
