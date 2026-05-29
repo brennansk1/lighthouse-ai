@@ -45,6 +45,13 @@ def test_job_create_persists_depth_and_budget(client):
     assert meta["budget"] == "overnight"
 
 
+def test_adjudicate_quick_promoted_to_standard(client):
+    jid = client.post("/api/jobs", json={
+        "mode": "adjudicate", "topic": "Is X true?", "depth": "quick"}).json()["id"]
+    meta = client.get(f"/api/jobs/{jid}").json()["metadata"]
+    assert meta["depth"] == "standard"   # Quick adjudication is not allowed
+
+
 def test_job_get_404(client):
     assert client.get("/api/jobs/nope").status_code == 404
 

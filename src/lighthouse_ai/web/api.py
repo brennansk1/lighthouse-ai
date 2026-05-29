@@ -174,8 +174,14 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
             raise HTTPException(400, "Decide requires at least two options")
         if "criteria" in spec.requires and not body.criteria:
             raise HTTPException(400, "Decide requires at least one weighted criterion")
+        # Adjudicate needs a real adversarial set (steelman / devil's-advocate /
+        # base-rate / fragility). A 2-3 perspective "debate" only legitimizes a
+        # decision instead of stress-testing it, so Quick is promoted to Standard.
+        depth = body.depth
+        if mode_key == "adjudicate" and str(depth).strip().lower() == "quick":
+            depth = "standard"
         jid = uuid.uuid4().hex[:6]
-        meta = {"topic": body.topic, "progress": 0.0, "depth": body.depth,
+        meta = {"topic": body.topic, "progress": 0.0, "depth": depth,
                 "eta": "queued"}
         if body.budget:
             meta["budget"] = body.budget
