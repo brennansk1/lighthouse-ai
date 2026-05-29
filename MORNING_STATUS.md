@@ -45,12 +45,19 @@ Branch: `night/finish-to-quality` (all work committed; nothing pushed). Suite:
   no-daemon safety test.
 - **UX (#30):** all 8 tabs render with purpose statements, zero console errors.
 
-## Real-LLM validation
-- **Decide:** ✅ `backend=ollama`, correct matrix, no OOM (~slow on 14B → fixed by #55).
-- **Adjudicate:** ✅ 168s, `backend=ollama`, verdict + provenance.
-- **Investigate (standard depth):** real run is slow on a 14B reasoner (many
-  rounds × sections) — bounded by the LoopDetector, but minutes-scale. Use Quick
-  for fast turnarounds; the depth doc carries the hardware caveat.
+## Real-LLM validation (all backend=ollama, provenance recorded — no mock masquerade)
+| Mode | Wall-clock | Artifact |
+|------|-----------|----------|
+| Decide | ~slow on 14B → fixed by #55 (aux model) | matrix |
+| Adjudicate | 168s | verdict |
+| Ask | 65s | transcript |
+| Investigate (standard depth) | 788s (~13 min) | report |
+
+Investigate at standard depth is minutes-scale on a 14B reasoner (4 rounds ×
+sections), bounded by the LoopDetector — use Quick for fast turnarounds; the
+depth doc carries the hardware caveat. Survey/Reconstruct/Watch are
+offline-dispatch-tested; their real value needs ingested documents/sources
+(see #28/#29).
 
 ## Remaining (clearly scoped tasks #28, #29, #32, #37–#41, #50, #52, #54, #56)
 - **#56 Wire Deep tier into Investigate dispatch** — the exhaustive engine is built
