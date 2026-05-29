@@ -132,6 +132,51 @@ function DepthSelector({ depth, setDepth, budget, setBudget }) {
   );
 }
 
+// First-run welcome card. Shown once on the Research tab until dismissed
+// (remembered in localStorage). Surfaces the §7 first-launch defaults in plain
+// language: General Web is on, the no-login sources are ready, and where to add
+// more. Kept brief so it doesn't overwhelm a first-time researcher.
+function useFirstRun(key) {
+  const [seen, setSeen] = useState(() => {
+    try { return localStorage.getItem(key) === '1'; } catch (e) { return true; }
+  });
+  const dismiss = useCallback(() => {
+    try { localStorage.setItem(key, '1'); } catch (e) { /* private mode */ }
+    setSeen(true);
+  }, [key]);
+  return { seen, dismiss };
+}
+
+function FirstRunCard({ onDismiss }) {
+  return (
+    <div style={{ ...card, padding: '18px 20px', marginBottom: GAP,
+      borderLeft: '3px solid var(--primary)', position: 'relative' }}>
+      <button onClick={onDismiss} aria-label="Dismiss welcome"
+        style={{ position: 'absolute', top: 12, right: 14, background: 'none',
+          border: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--muted)',
+          lineHeight: 1, padding: 2 }}>×</button>
+      <div style={{ fontFamily: 'var(--serif)', fontSize: 16, fontWeight: 700,
+        color: 'var(--ink)', marginBottom: 6, paddingRight: 24 }}>
+        Welcome — you're ready to research
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6,
+        marginBottom: 10, maxWidth: '70ch' }}>
+        Lighthouse runs on your own hardware. General web search is on by default,
+        and many trusted sources — Wikipedia, arXiv, PubMed, OpenAlex, the major
+        news wires, and more — work right away with no login. Just frame a question
+        below; Lighthouse recommends the right sources for it.
+      </div>
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+        Want to turn outlets on or off, or add your own feeds? Visit{' '}
+        <a href="#settings" style={{ color: 'var(--primary)', fontWeight: 600 }}>
+          Settings → Sources &amp; trust</a>. New to the modes?{' '}
+        <a href="#info" style={{ color: 'var(--primary)', fontWeight: 600 }}>
+          Read the primer</a>.
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────── Research (wizard) ───────────────────────────
 //
 // A three-step launcher driven by GET /api/modes:
@@ -276,6 +321,30 @@ function SkillBadge({ label, color }) {
 const TIER_COLOR = { A: '#e8f5e9', B: '#fff3e0', C: '#fce4ec' };
 const GRADE_COLOR = { A: '#c8e6c9', B: '#ffe0b2', C: '#f8bbd0' };
 
+// Plain-language source badges. The backend speaks in tiers (A/B/C fetch path)
+// and grades (A/B/C evidence quality); researchers don't. Translate to words
+// that say what the badge *means* for trust, not an internal code.
+//   tier A  → "official source"  (first-party API / clean fetch)
+//   tier B  → "web source"        (rendered/extracted web)
+//   tier C  → "needs approval"    (fingerprint fallback, allowlisted)
+//   grade A → "high quality"      grade B → "standard"  grade C → "use with care"
+const TIER_PLAIN = { A: 'official source', B: 'web source', C: 'needs approval' };
+const GRADE_PLAIN = { A: 'high quality', B: 'standard', C: 'use with care' };
+// authority values from the manifest, surfaced verbatim-ish in plain words.
+const AUTHORITY_PLAIN = {
+  peer_reviewed: 'peer-reviewed',
+  wire_service: 'wire service',
+  public_broadcaster: 'public broadcaster',
+  investigative_nonprofit: 'investigative nonprofit',
+  newspaper: 'newspaper',
+  government: 'government data',
+  official: 'official data',
+};
+function authorityPlain(a) {
+  if (!a) return null;
+  return AUTHORITY_PLAIN[a] || a.replace(/_/g, ' ');
+}
+
 function SourcePicker({ topic, mode, depth, selectedSkills, setSelectedSkills }) {
   const [sources, setSources] = useState([]);
   const [recMap, setRecMap] = useState({});   // skill_id -> {score, reason, role}
@@ -393,16 +462,20 @@ function SourcePicker({ topic, mode, depth, selectedSkills, setSelectedSkills })
                     flexWrap: 'wrap', gap: 4, marginBottom: 2 }}>
                     <span style={{ fontSize: 13, fontWeight: 600,
                       color: 'var(--ink)' }}>{src.name}</span>
-                    {src.tier && (
-                      <SkillBadge label={`Tier ${src.tier}`}
+                    {authorityPlain(src.authority) && (
+                      <SkillBadge label={authorityPlain(src.authority)}
+                        color="#e8f5e9" />
+                    )}
+                    {src.tier && TIER_PLAIN[src.tier] && (
+                      <SkillBadge label={TIER_PLAIN[src.tier]}
                         color={TIER_COLOR[src.tier] || 'var(--rule-soft)'} />
                     )}
-                    {src.default_grade && (
-                      <SkillBadge label={`Grade ${src.default_grade}`}
+                    {src.default_grade && src.default_grade !== 'A' && GRADE_PLAIN[src.default_grade] && (
+                      <SkillBadge label={GRADE_PLAIN[src.default_grade]}
                         color={GRADE_COLOR[src.default_grade] || 'var(--rule-soft)'} />
                     )}
                     {src.community && (
-                      <SkillBadge label="community" color="#f3e5f5" />
+                      <SkillBadge label="community-contributed" color="#f3e5f5" />
                     )}
                     {rec && rec.role && (
                       <SkillBadge label={rec.role.replace(/_/g, ' ')}
@@ -446,6 +519,7 @@ function ResearchPage({ toast }) {
   const [plan, setPlan] = useState([]);
   const [busy, setBusy] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState([]);
+  const firstRun = useFirstRun('lh-seen-research-intro');
 
   const modes = (data && Array.isArray(data.modes)) ? data.modes : [];
   const sel = modes.find((m) => m.key === selected) || null;
@@ -553,6 +627,9 @@ function ResearchPage({ toast }) {
 
       {!loading && !error && (
         <React.Fragment>
+          {step === 1 && !firstRun.seen && (
+            <FirstRunCard onDismiss={firstRun.dismiss} />
+          )}
           <WizardSteps step={step} />
 
           {/* ── Step 1 — Choose what you want ── */}
@@ -843,9 +920,53 @@ function KnownUnknowns({ openQuestions }) {
   );
 }
 
+// Contradictions: surfaced, never hidden. A run flags claims that conflict with
+// each other or with prior evidence; we render them in a clearly-labeled block so
+// the reader sees the tension rather than a falsely-clean answer.
+function Contradictions({ items }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div style={{ marginTop: 22, borderTop: '2px solid var(--rule)', paddingTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span aria-hidden="true" style={{ fontSize: 13, color: '#a83269' }}>⚠</span>
+        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+          letterSpacing: '0.06em', color: '#880e4f' }}>Contradictions</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>
+          — claims in conflict that this run did not resolve
+        </span>
+      </div>
+      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--ink-2)',
+        lineHeight: 1.65 }}>
+        {items.map((c, i) => (
+          <li key={i} style={{ marginBottom: 6 }}>
+            {typeof c === 'string'
+              ? c
+              : (c.statement || c.summary || c.description
+                  || `${c.claim_a || '?'} vs. ${c.claim_b || '?'}`)}
+            {c && c.sources && c.sources.length > 0 && (
+              <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>
+                ({c.sources.length} source{c.sources.length === 1 ? '' : 's'})
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ArtifactBody({ artifact }) {
   const t = artifact.artifact_type;
   const body = artifact.body;
+
+  // Contradictions can live on the body or top-level; surface either.
+  const contradictions = (
+    (body && Array.isArray(body.contradictions) && body.contradictions.length > 0
+      ? body.contradictions : null) ||
+    (Array.isArray(artifact.contradictions) && artifact.contradictions.length > 0
+      ? artifact.contradictions : null) ||
+    []
+  );
 
   // Normalize open_questions from body.open_questions or top-level artifact.open_questions.
   const openQuestions = (
@@ -861,25 +982,29 @@ function ArtifactBody({ artifact }) {
   if (t === 'matrix') return (
     <React.Fragment>
       <MatrixView body={body} />
+      <Contradictions items={contradictions} />
       <KnownUnknowns openQuestions={openQuestions} />
     </React.Fragment>
   );
   if (t === 'table') return (
     <React.Fragment>
       <TableView body={body} />
+      <Contradictions items={contradictions} />
       <KnownUnknowns openQuestions={openQuestions} />
     </React.Fragment>
   );
   if (t === 'timeline') return (
     <React.Fragment>
       <TimelineView body={body} />
+      <Contradictions items={contradictions} />
       <KnownUnknowns openQuestions={openQuestions} />
     </React.Fragment>
   );
-  // report / verdict / transcript / digest → prose HTML + known unknowns.
+  // report / verdict / transcript / digest → prose HTML + contradictions + known unknowns.
   return (
     <React.Fragment>
       <div dangerouslySetInnerHTML={{ __html: artifact.body_html || '<em>No content.</em>' }} />
+      <Contradictions items={contradictions} />
       <KnownUnknowns openQuestions={openQuestions} />
     </React.Fragment>
   );
@@ -963,6 +1088,20 @@ function LibraryPage({ toast }) {
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                   {artifactLabel(a.artifact_type)} · {a.created_at}
                 </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+                  marginTop: 8, flexWrap: 'wrap' }}>
+                  {(a.wep_phrase || a.wep_band) && (
+                    <window.ConfidencePill phrase={a.wep_phrase || a.wep_band}
+                      band={a.confidence} />
+                  )}
+                  {a.source_count != null && (
+                    <span style={{ fontSize: 11, color: 'var(--muted)',
+                      display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span aria-hidden="true">◆</span>
+                      {a.source_count} source{a.source_count === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </div>
               </button>
             ))}
           </div>
@@ -974,8 +1113,20 @@ function LibraryPage({ toast }) {
                 <div>
                   <div style={{ fontFamily: 'var(--serif)', fontSize: 18, fontWeight: 700,
                     color: 'var(--ink)' }}>{detail.title}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-                    {artifactLabel(detail.artifact_type)}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+                    marginTop: 5, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                      {artifactLabel(detail.artifact_type)}
+                    </span>
+                    {(detail.wep_phrase || detail.wep_band) && (
+                      <window.ConfidencePill phrase={detail.wep_phrase || detail.wep_band}
+                        band={detail.confidence} />
+                    )}
+                    {detail.source_count != null && (
+                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                        · {detail.source_count} source{detail.source_count === 1 ? '' : 's'}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0,
@@ -1021,6 +1172,17 @@ function ActivityPage({ toast }) {
   const { data: auditData } = useApi('/api/audit?limit=30', { pollMs: 15000 });
   useEvents((name) => { if (name && name.indexOf('job.') === 0) reload(); });
 
+  // Pause / resume / cancel a run via the jobs control endpoints.
+  async function control(jobId, action, label) {
+    try {
+      await apiPost(`/api/jobs/${jobId}/${action}`, {});
+      toast.show(`Run ${jobId} ${label}.`, 'info');
+      reload();
+    } catch (err) {
+      toast.show(err.message || `Could not ${action} run.`, 'error');
+    }
+  }
+
   const jobs = (data && Array.isArray(data.jobs)) ? data.jobs : [];
   const active = jobs.filter((j) => ['queued', 'running', 'paused', 'review'].includes(j.status));
   const events = (auditData && Array.isArray(auditData.events)) ? auditData.events : [];
@@ -1056,17 +1218,44 @@ function ActivityPage({ toast }) {
             {active.map((j) => {
               const meta = j.metadata || {};
               const pct = Math.round((meta.progress || 0) * 100);
+              const canPause = j.status === 'running';
+              const canResume = j.status === 'paused';
+              const canCancel = ['queued', 'running', 'paused'].includes(j.status);
               return (
-                <div key={j.id} style={{ display: 'flex', gap: 12, alignItems: 'center',
-                  padding: '8px 0', borderTop: '1px solid var(--rule-soft)' }}>
-                  <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)' }}>
-                    {meta.topic || j.id}</span>
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    {window.modeLabel ? window.modeLabel(j.mode) : j.mode}</span>
-                  <span style={{ fontSize: 12, color: 'var(--ink-2)', minWidth: 150,
-                    textAlign: 'right' }}>{statusPlain(j.status)}</span>
-                  <span style={{ width: 44, textAlign: 'right', fontSize: 12,
-                    color: 'var(--muted)' }}>{pct}%</span>
+                <div key={j.id} style={{ padding: '10px 0',
+                  borderTop: '1px solid var(--rule-soft)' }}>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)' }}>
+                      {meta.topic || j.id}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                      {window.modeLabel ? window.modeLabel(j.mode) : j.mode}</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-2)', minWidth: 150,
+                      textAlign: 'right' }}>{statusPlain(j.status)}</span>
+                    <span style={{ width: 44, textAlign: 'right', fontSize: 12,
+                      color: 'var(--muted)' }}>{pct}%</span>
+                  </div>
+                  {/* Progress bar — what's happening, at a glance. */}
+                  <div style={{ marginTop: 8 }}>
+                    <window.Bar value={pct} max={100}
+                      color={j.status === 'paused' ? 'var(--muted)' : 'var(--primary)'} />
+                  </div>
+                  {/* Pause / resume / cancel — visible, not hidden. */}
+                  {(canPause || canResume || canCancel) && (
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                      {canPause && (
+                        <Btn kind="ghost" size="sm"
+                          onClick={() => control(j.id, 'pause', 'paused')}>Pause</Btn>
+                      )}
+                      {canResume && (
+                        <Btn kind="ghost" size="sm"
+                          onClick={() => control(j.id, 'resume', 'resumed')}>Resume</Btn>
+                      )}
+                      {canCancel && (
+                        <Btn kind="danger" size="sm"
+                          onClick={() => control(j.id, 'cancel', 'cancelled')}>Cancel</Btn>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

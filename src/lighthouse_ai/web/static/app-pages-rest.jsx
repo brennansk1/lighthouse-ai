@@ -503,7 +503,16 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
   const [query, setQuery] = rUseState('');
   const [busy, setBusy] = rUseState(false);
   const [errors, setErrors] = rUseState({});
+  const [picked, setPicked] = rUseState([]); // watchable source ids
   const Btn = window.Btn;
+
+  // Only sources that expose a watchable feed can be followed over time.
+  const { data: srcData } = window.useApi('/api/sources', { pollMs: 0 });
+  const watchable = ((srcData && srcData.sources) || []).filter((s) => s.watchable);
+
+  function togglePick(id) {
+    setPicked((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  }
 
   function validate() {
     const e = {};
@@ -521,6 +530,7 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
         name: name.trim(),
         description: description.trim() || undefined,
         query: query.trim(),
+        sources: picked,
       });
       onCreated();
     } catch (e) {
@@ -565,6 +575,32 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
           style={{ ...rInput, borderColor: errors.query ? 'var(--coral-2)' : undefined }}
           aria-label="Topic query string"
         />
+      </RField>
+      <RField label="Sources to follow"
+        hint="Only sources with a live feed can be watched. Leave empty to watch general web + news.">
+        {watchable.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>
+            No watchable sources installed yet.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 140,
+            overflowY: 'auto' }}>
+            {watchable.map((s) => {
+              const on = picked.includes(s.id);
+              return (
+                <button key={s.id} type="button" onClick={() => togglePick(s.id)}
+                  aria-pressed={on}
+                  style={{ fontSize: 12, padding: '4px 10px', borderRadius: 999,
+                    cursor: 'pointer', fontFamily: 'var(--sans)',
+                    border: on ? '1px solid var(--primary)' : '1px solid var(--rule)',
+                    background: on ? 'var(--primary)' : 'var(--card)',
+                    color: on ? '#fff' : 'var(--ink-2)' }}>
+                  {s.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </RField>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
         <Btn kind="ghost" onClick={onClose} disabled={busy}>Cancel</Btn>
@@ -1402,7 +1438,54 @@ function HealthPage({ toast }) {
             </div>
           </div>
 
+          {/* ── Sources column ────────────────────────────────────────── */}
+          <RSourceHealth />
+
         </div>
+      )}
+    </div>
+  );
+}
+
+// Per-source health summary. The catalog (/api/sources) tells us which sources
+// are installed and which need extra approval; live reachability + per-outlet
+// error rates are not yet exposed by an endpoint.
+// TODO(api): a /api/sources/health endpoint (last fetch, error rate, rate-limit
+//            status, robots freshness per skill) would make this live rather
+//            than a static catalog summary.
+function RSourceHealth() {
+  const { data, loading } = window.useApi('/api/sources', { pollMs: 0 });
+  const sources = (data && Array.isArray(data.sources)) ? data.sources : [];
+  const news = sources.filter((s) => (s.category || '').toLowerCase() === 'news'
+    && s.id !== 'news_orchestrator');
+  const tierC = sources.filter((s) => s.tier === 'C' || s.tierc_escalation);
+  const noAuth = sources.length;
+
+  return (
+    <div style={{ ...window.card, padding: 20 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)',
+        textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+        Sources
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45, marginBottom: 12 }}>
+        Which research sources are available on this machine. Manage trust in
+        Settings → Sources &amp; trust.
+      </div>
+
+      {loading && !data && <RSkeleton h={14} mb={8} />}
+
+      {!loading && (
+        <React.Fragment>
+          <RRow k="Sources installed" v={noAuth || '—'} />
+          <RRow k="News outlets" v={news.length || '—'} />
+          <RRow k="Need extra approval" v={tierC.length} />
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, lineHeight: 1.5 }}>
+            For live news reachability and bias overlays, run{' '}
+            <code style={{ fontFamily: 'var(--mono)', fontSize: 11,
+              background: 'var(--rule-soft)', padding: '1px 5px', borderRadius: 3 }}>
+              lighthouse doctor news</code>.
+          </div>
+        </React.Fragment>
       )}
     </div>
   );
@@ -1447,6 +1530,232 @@ function RCheckRow({ check }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SOURCES & TRUST  (Settings §4 — News trust matrix, community skills, Tier-C)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// The catalog comes from GET /api/sources (SkillManifest.as_dict): id, name,
+// category, tier, default_grade, community, authority, enabled_by_default,
+// tierc_escalation. The §4 trust matrix also wants per-outlet *fetch status*
+// (✓ / ◐ metadata-only / ✗ paywall-with-reason) and AllSides bias ratings —
+// those are NOT in the catalog payload today (they live in the news_orchestrator
+// skill + the `lighthouse doctor news` CLI). We surface what the API gives us
+// and add the non-fetchable platform-invariant outlets from §4 as static rows
+// so the user sees them with a reason rather than a silent omission.
+//
+// Trust toggles persist to localStorage only — there is no settings endpoint
+// for per-source enablement yet. See TODO(api) notes below.
+
+// Plain-language authority labels (mirror of the wizard's source picker).
+const R_AUTHORITY_PLAIN = {
+  peer_reviewed: 'peer-reviewed', wire_service: 'wire service',
+  public_broadcaster: 'public broadcaster', investigative_nonprofit: 'investigative nonprofit',
+  newspaper: 'newspaper', multi_outlet_composite: 'multi-outlet tool',
+  government: 'government data', official: 'official data',
+};
+function rAuthorityPlain(a) {
+  if (!a) return null;
+  return R_AUTHORITY_PLAIN[a] || String(a).replace(/_/g, ' ');
+}
+
+// §4 platform-invariant outlets that are NOT fetchable (paywall / ToS) or are
+// metadata-only. These are not in /api/sources because no skill ships for them;
+// we show them so the trust matrix is honest about what cannot be read.
+// TODO(api): expose fetch-status (✓/◐/✗ + reason) + AllSides rating per outlet
+//            from the News Orchestrator so this list is data-driven, not hard-coded.
+const R_NEWS_INVARIANTS = [
+  { name: 'New York Times', status: 'partial', reason: 'metadata + abstract only (API terms)' },
+  { name: 'Fox News', status: 'partial', reason: 'headlines via RSS only' },
+  { name: 'Wall Street Journal', status: 'blocked', reason: 'paywall — body not fetchable' },
+  { name: 'Bloomberg', status: 'blocked', reason: 'paywall / ToS — not fetchable' },
+  { name: 'Financial Times', status: 'blocked', reason: 'paywall / ToS — not fetchable' },
+];
+
+const R_FETCH_STATUS = {
+  ok:      { mark: '✓', label: 'Readable',      color: 'var(--green-dark)' },
+  partial: { mark: '◐', label: 'Limited',       color: '#a07a00' },
+  blocked: { mark: '✗', label: 'Not readable',  color: 'var(--coral-2)' },
+};
+
+function RFetchStatus({ status }) {
+  const s = R_FETCH_STATUS[status] || R_FETCH_STATUS.ok;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+      fontSize: 12, fontWeight: 600, color: s.color }}>
+      <span aria-hidden="true" style={{ fontSize: 13 }}>{s.mark}</span>
+      {s.label}
+    </span>
+  );
+}
+
+// localStorage-backed trust set. Keyed by source id; absent = use default.
+function useTrustOverrides() {
+  const KEY = 'lh-source-trust';
+  const [map, setMap] = rUseState(() => {
+    try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; }
+  });
+  const setTrust = rUseCallback((id, on) => {
+    setMap((prev) => {
+      const next = { ...prev, [id]: on };
+      try { localStorage.setItem(KEY, JSON.stringify(next)); } catch (e) { /* noop */ }
+      return next;
+    });
+  }, []);
+  const isTrusted = rUseCallback((src) => {
+    if (Object.prototype.hasOwnProperty.call(map, src.id)) return !!map[src.id];
+    return !!src.enabled_by_default;
+  }, [map]);
+  return { isTrusted, setTrust };
+}
+
+function RSourcesTrust({ toast }) {
+  const { data, loading, error } = window.useApi('/api/sources', { pollMs: 0 });
+  const { isTrusted, setTrust } = useTrustOverrides();
+  const sources = (data && Array.isArray(data.sources)) ? data.sources : [];
+
+  const news = sources.filter((s) => (s.category || '').toLowerCase() === 'news'
+    && s.id !== 'news_orchestrator');
+  const community = sources.filter((s) => s.community);
+  const tierC = sources.filter((s) => s.tier === 'C' || s.tierc_escalation);
+
+  function toggle(src) {
+    const next = !isTrusted(src);
+    setTrust(src.id, next);
+    // TODO(api): persist trust to a real settings endpoint. No PATCH /api/sources
+    //            or /api/settings field exists for per-source trust today, so the
+    //            choice is remembered in this browser only.
+    toast.show(
+      `${src.name} ${next ? 'trusted' : 'muted'} (saved in this browser)`,
+      'info');
+  }
+
+  return (
+    <RSettingsSection title="Sources & trust">
+      <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginBottom: 16 }}>
+        Choose which sources Lighthouse may draw on, and see exactly what it can and
+        cannot read. What we can't fetch is shown with the reason — never silently
+        dropped.
+        <span style={{ color: 'var(--muted)' }}>
+          {' '}Trust choices are remembered in this browser.
+        </span>
+      </div>
+
+      {loading && !data && <RSkeleton h={14} mb={8} />}
+      {error && <window.ErrorBox message={`Could not load sources — ${error}`} />}
+
+      {/* ── News outlets ─────────────────────────────────────────────── */}
+      {news.length > 0 && (
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>
+            News outlets
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.45 }}>
+            The seed outlets ship trusted and readable. Toggle any off to exclude it
+            from news research.
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ textAlign: 'left' }}>
+                {['Outlet', 'Type', 'Can read?', 'Trusted'].map((h) => (
+                  <th key={h} style={{ padding: '4px 8px', fontSize: 10.5, fontWeight: 700,
+                    textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--muted)' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {news.map((s) => (
+                <tr key={s.id} style={{ borderTop: '1px solid var(--rule-soft)' }}>
+                  <td style={{ padding: '8px', fontWeight: 600, color: 'var(--ink)' }}>{s.name}</td>
+                  <td style={{ padding: '8px', color: 'var(--ink-2)' }}>
+                    {rAuthorityPlain(s.authority) || '—'}
+                  </td>
+                  <td style={{ padding: '8px' }}><RFetchStatus status="ok" /></td>
+                  <td style={{ padding: '8px' }}>
+                    <RToggle value={isTrusted(s)} onChange={() => toggle(s)} id={`trust-${s.id}`} />
+                  </td>
+                </tr>
+              ))}
+              {/* Platform-invariant outlets the user cannot enable (shown with reason). */}
+              {R_NEWS_INVARIANTS.map((o) => (
+                <tr key={o.name} style={{ borderTop: '1px solid var(--rule-soft)', opacity: 0.85 }}>
+                  <td style={{ padding: '8px', fontWeight: 600, color: 'var(--ink-2)' }}>{o.name}</td>
+                  <td style={{ padding: '8px', color: 'var(--muted)', fontSize: 11.5 }}>{o.reason}</td>
+                  <td style={{ padding: '8px' }}><RFetchStatus status={o.status} /></td>
+                  <td style={{ padding: '8px', fontSize: 11, color: 'var(--muted)' }}>
+                    {o.status === 'blocked' ? 'unavailable' : 'limited'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.45 }}>
+            Bias ratings (AllSides) and live reachability checks run from{' '}
+            <code style={{ fontFamily: 'var(--mono)' }}>lighthouse doctor news</code>.
+          </div>
+        </div>
+      )}
+
+      {/* ── Community-contributed skills ─────────────────────────────── */}
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>
+          Community-contributed sources
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.45 }}>
+          Unsigned sources from the community. They work, but findings that rely on
+          them are marked lower-confidence. Off by default for deep research.
+        </div>
+        {community.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: 'var(--muted)', fontStyle: 'italic' }}>
+            No community sources installed.
+          </div>
+        ) : (
+          community.map((s) => (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12,
+              padding: '8px 0', borderTop: '1px solid var(--rule-soft)' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{s.name}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{s.description}</div>
+              </div>
+              <RToggle value={isTrusted(s)} onChange={() => toggle(s)} id={`trust-${s.id}`} />
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* ── Tier-C trust allowlist ───────────────────────────────────── */}
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>
+          Sources needing extra approval
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.45 }}>
+          A few sources can only be reached with browser-fingerprint techniques. They
+          stay off until you approve them for a specific site.
+        </div>
+        {tierC.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: 'var(--muted)', fontStyle: 'italic' }}>
+            None — every active source uses a clean, first-party fetch path.
+          </div>
+        ) : (
+          tierC.map((s) => (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12,
+              padding: '8px 0', borderTop: '1px solid var(--rule-soft)' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{s.name}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                  {s.tierc_reason || 'Requires explicit per-site approval.'}
+                </div>
+              </div>
+              <RToggle value={isTrusted(s)} onChange={() => toggle(s)} id={`trust-${s.id}`} />
+            </div>
+          ))
+        )}
+      </div>
+    </RSettingsSection>
   );
 }
 
@@ -1532,7 +1841,7 @@ function SettingsPage({ toast }) {
     <div>
       <window.PageHeader
         title="Settings"
-        subtitle="Configure how Lighthouse runs on this machine — storage, privacy, backups, notifications, and appearance."
+        subtitle="Configure how Lighthouse runs on this machine — sources and trust, storage, privacy, backups, notifications, and appearance."
         actions={
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {/* Unsaved changes indicator */}
@@ -1584,6 +1893,9 @@ function SettingsPage({ toast }) {
             id="s-offline"
           />
         </RSettingsSection>
+
+        {/* ── Sources & trust (§4 News matrix, community, Tier-C) ───────── */}
+        <RSourcesTrust toast={toast} />
 
         {/* ── Backup ───────────────────────────────────────────────────── */}
         <RSettingsSection title="Backup">
