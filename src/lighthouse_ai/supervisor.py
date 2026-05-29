@@ -21,10 +21,13 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Protocol
 
 import structlog
 import uvicorn
@@ -37,6 +40,28 @@ from .schema import kinds_for, migrate_all
 from .subconscious import ReflectionStore, SubconsciousEngine, stale_position_escalations
 
 log = structlog.get_logger(__name__)
+
+# Sentinel used by _start_backup_loop: distinguishes "caller passed None (fake
+# runner for tests)" from "caller didn't pass runner (use production default)".
+_SENTINEL: object = object()
+
+
+class _BackupRunner(Protocol):
+    """Structural type satisfied by :class:`~lighthouse_ai.backup.ResticBackup`.
+
+    Using a Protocol (rather than a direct import) keeps the supervisor free of
+    a hard dependency on the backup module at import time — it is only imported
+    inside the loop thread.
+    """
+
+    def backup(
+        self,
+        paths: Sequence[Path],
+        *,
+        repo: str,
+    ) -> subprocess.CompletedProcess[str]: ...
+
+    def check(self, repo: str) -> subprocess.CompletedProcess[str]: ...
 
 
 def _set_state(paths: Paths, status: str, pid: int | None) -> None:
@@ -203,6 +228,114 @@ def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0) -> threading.
     return thread
 
 
+def _backup_tick(
+    paths: Paths,
+    *,
+    repo: str,
+    passphrase: str | None,
+    runner: _BackupRunner | None,
+) -> None:
+    """One scheduled backup + integrity pass.
+
+    Separated from the thread loop so tests can drive it directly with injected
+    deps (fake runner, known repo) without touching real time or real restic.
+
+    Skips silently (logs a warning) when:
+    * ``runner`` is None  — restic binary absent or not yet installed
+    * ``repo`` is empty   — no repo configured
+    * ``passphrase`` is None/empty — passphrase not in keychain/config yet
+
+    The function never raises: any failure is logged and swallowed so a single
+    bad backup never tears down the supervisor.
+    """
+    from .backup import ResticUnavailable
+
+    if runner is None:
+        log.info("backup.tick.skipped", reason="restic_unavailable")
+        return
+    if not repo:
+        log.info("backup.tick.skipped", reason="repo_not_configured")
+        return
+    if not passphrase:
+        log.info("backup.tick.skipped", reason="passphrase_not_configured")
+        return
+
+    try:
+        runner.backup(paths.all_dbs(), repo=repo)
+        log.info("backup.tick.backup_ok", repo=repo)
+    except ResticUnavailable as exc:
+        log.warning("backup.tick.restic_unavailable", exc=str(exc))
+        return
+    except Exception as exc:
+        log.warning("backup.tick.backup_error", exc=str(exc))
+        return
+
+    try:
+        runner.check(repo)
+        log.info("backup.tick.check_ok", repo=repo)
+    except ResticUnavailable as exc:
+        log.warning("backup.tick.restic_unavailable", exc=str(exc))
+    except Exception as exc:
+        log.warning("backup.tick.check_error", exc=str(exc))
+
+
+def _start_backup_loop(
+    paths: Paths,
+    *,
+    interval_s: float = 3600.0,
+    runner: _BackupRunner | None | object = _SENTINEL,
+) -> threading.Thread:
+    """Daemon thread that backs up all DBs + runs a restic integrity check hourly.
+
+    Mirrors :func:`_start_resolver_loop` in structure: a single daemon thread,
+    gated by ``SchedulerGate`` (skips while PAUSED), offline-safe (no-op when
+    the ``restic`` binary is absent or the repo/passphrase are not configured).
+
+    ``runner`` is injectable for tests: pass a ``ResticBackup``-compatible fake
+    to assert on the exact calls without spawning a real ``restic`` process.  The
+    production default (sentinel) resolves at loop-start time so the supervisor
+    never fails to boot just because restic isn't installed.
+    """
+    from .backup import ResticBackup, restic_installed
+    from .governor.scheduler_gate import Policy
+    from .secrets import SecretStore
+
+    gate_cfg = SchedulerGateConfig.from_config_file(paths.config_file)
+    gate = SchedulerGate(gate_cfg)
+
+    # Resolve production runner once so the probe happens at startup, not import.
+    resolved_runner: _BackupRunner | None
+    if runner is _SENTINEL:
+        resolved_runner = ResticBackup() if restic_installed() else None
+    else:
+        resolved_runner = runner  # type: ignore[assignment]
+
+    def _loop() -> None:
+        while True:
+            time.sleep(interval_s)
+            try:
+                policy, _ = gate.policy()
+                if policy is Policy.PAUSED:
+                    log.info("backup.tick.skipped", reason="gate_paused")
+                    continue
+                # Resolve repo + passphrase fresh each tick — the operator may
+                # have configured them after the supervisor started.
+                repo = str(paths.data_dir / "backups" / "restic")
+                try:
+                    passphrase: str | None = SecretStore(paths.data_dir).get("restic.passphrase")
+                except Exception:
+                    passphrase = None
+                _backup_tick(
+                    paths, repo=repo, passphrase=passphrase, runner=resolved_runner
+                )
+            except Exception as exc:
+                log.warning("backup.loop.error", exc=str(exc))
+
+    thread = threading.Thread(target=_loop, daemon=True, name="backup-loop")
+    thread.start()
+    return thread
+
+
 def _start_resolver_loop(paths: Paths, *, interval_s: float = 3600.0) -> threading.Thread:
     """Daemon thread that auto-resolves past-deadline calibration positions (Zone V).
 
@@ -281,6 +414,7 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
         _start_monitor_loop(p)
         _start_dispatch_loop(p)
         _start_resolver_loop(p)
+        _start_backup_loop(p)
         signal.signal(signal.SIGTERM, _on_signal)
         signal.signal(signal.SIGINT, _on_signal)
         try:

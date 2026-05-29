@@ -103,6 +103,7 @@ asyncio_mode = "auto"
 markers = [
     "integration: requires external binaries or longer-running setup",
     "litestream: requires litestream binary on PATH",
+    "slow: network I/O or heavy model load; real-backend tests only",
 ]
 
 [tool.coverage.run]

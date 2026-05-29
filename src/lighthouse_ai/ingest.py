@@ -35,12 +35,15 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import time
 import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
 
+from .governor.egress_proxy import DEFAULT_ALLOWED_DOMAINS, EgressProxy, PrivacyTier, extract_host
+from .net import EgressBlocked
 from .rag.chunker import Document
 from .sandbox.broker import SandboxBroker, Verdict
 
@@ -387,23 +390,99 @@ def ingest_file(path: str | Path, broker: SandboxBroker) -> Document | None:
                         content_type=content_type, broker=broker)
 
 
-def fetch_and_ingest(url: str, broker: SandboxBroker,
-                     client: httpx.Client | None = None) -> Document | None:
+def fetch_and_ingest(
+    url: str,
+    broker: SandboxBroker,
+    client: httpx.Client | None = None,
+    *,
+    log_path: Path | None = None,
+    proxy: EgressProxy | None = None,
+    allow_host: bool = True,
+) -> Document | None:
     """Fetch a URL over HTTP and ingest the response body.
+
+    Every outbound fetch is gated and logged through the egress proxy before any
+    bytes are transferred — the policy decision and audit record precede the
+    socket open.
 
     ``client`` is injectable so tests can mock transport (via ``respx``) without
     touching the network — the production default constructs a short-lived
     ``httpx.Client`` with redirects enabled. The server-declared Content-Type
     header is forwarded to the broker/extractor.
+
+    ``log_path`` — if provided, the proxy appends one JSON line per fetch to
+    this file (``egress.jsonl`` style). Defaults to ``None`` = no file write.
+
+    ``proxy`` — inject a pre-built :class:`~lighthouse_ai.governor.egress_proxy.EgressProxy`
+    (e.g. for test log capture). When ``None`` a proxy is constructed from
+    ``DEFAULT_ALLOWED_DOMAINS`` plus the URL's own host (when ``allow_host=True``).
+
+    ``allow_host`` (default ``True``) — when ``True`` the URL's own host is added
+    to the allowlist before the check, so an explicit user-typed URL is always
+    permitted (but still logged). Pass ``False`` for programmatic/skill fetches
+    that should be gated by the strict allowlist; a non-allowlisted host raises
+    :class:`~lighthouse_ai.net.EgressBlocked` *before* any network I/O.
     """
     import httpx
+
+    host = extract_host(url)
+
+    # Build (or use injected) egress proxy.
+    if proxy is None:
+        if allow_host and host:
+            allowed = frozenset(DEFAULT_ALLOWED_DOMAINS | {host})
+        else:
+            allowed = DEFAULT_ALLOWED_DOMAINS
+        active_proxy: EgressProxy = EgressProxy(allowed, log_path)
+    else:
+        active_proxy = proxy
+
+    # Policy decision — BEFORE any socket is opened.
+    decision = active_proxy.check(url, PrivacyTier.PUBLIC_OK)
+    if not decision.allowed:
+        # Log the denied attempt when we have a log path (proxy owns the path).
+        active_proxy.log_connection(
+            decision.host or host,
+            port=_default_port(url),
+            bytes_sent=0,
+            bytes_received=0,
+            duration_ms=0.0,
+            tier=PrivacyTier.PUBLIC_OK,
+            allowed=False,
+            reason=decision.reason,
+        )
+        raise EgressBlocked(decision.reason)
 
     owns_client = client is None
     if client is None:
         client = httpx.Client(follow_redirects=True, timeout=30.0)
     try:
+        started = time.monotonic()
         resp = client.get(url)
+        duration_ms = (time.monotonic() - started) * 1000.0
         resp.raise_for_status()
+
+        # Audit log — real byte/duration figures, post-fetch.
+        # ``resp.request.content`` raises ``RequestNotRead`` when the request
+        # body was never buffered (e.g. mocked transports or streaming GET
+        # requests). A GET body is always empty anyway, so 0 is correct.
+        try:
+            request_bytes = (
+                len(resp.request.content) if resp.request is not None else 0
+            )
+        except Exception:
+            request_bytes = 0
+        active_proxy.log_connection(
+            decision.host or host,
+            port=_default_port(url),
+            bytes_sent=request_bytes,
+            bytes_received=len(resp.content),
+            duration_ms=duration_ms,
+            tier=PrivacyTier.PUBLIC_OK,
+            allowed=True,
+            reason="fetched",
+        )
+
         content_type = resp.headers.get("content-type")
         filename = Path(httpx.URL(url).path).name or None
         return ingest_bytes(resp.content, url=url, filename=filename,
@@ -411,6 +490,16 @@ def fetch_and_ingest(url: str, broker: SandboxBroker,
     finally:
         if owns_client:
             client.close()
+
+
+def _default_port(url: str) -> int:
+    """Infer port from URL scheme when no explicit port is present."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    if parts.port is not None:
+        return parts.port
+    return 443 if parts.scheme == "https" else 80
 
 
 def _sha256(payload: bytes) -> str:

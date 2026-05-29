@@ -18,9 +18,11 @@ model load at all (pure stubs) — used by tests and for dry runs.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -444,7 +446,42 @@ class ResearchPipeline:
             conn.close()
         self._audit("draft.staged", {"draft_id": draft_id, "question": question,
                                      "backends": self.backends})
+        # Emit PROV-O sidecar — best-effort (never fail the run).
+        self._emit_prov_sidecar(
+            draft_id=draft_id,
+            job_id=job_id,
+            question=question,
+            mode=mode_key,
+            body_html=body_html,
+            source_count=source_count,
+        )
         return draft_id
+
+    def _emit_prov_sidecar(self, *, draft_id: str, job_id: str,
+                           question: str, mode: str,
+                           body_html: str, source_count: int) -> None:
+        """Write a PROV-O JSON sidecar next to the staging area. Best-effort."""
+        try:
+            from .provenance import build_run_sidecar, write_run_sidecar
+
+            content_hash = hashlib.sha256(body_html.encode()).hexdigest()
+            ended_at = datetime.now(UTC)
+            sidecar = build_run_sidecar(
+                draft_id=draft_id,
+                job_id=job_id,
+                question=question,
+                mode=mode,
+                backends=self.backends,
+                source_count=source_count,
+                content_hash=content_hash,
+                ended_at=ended_at,
+            )
+            sidecar_path = self.paths.staging_dir / f"{draft_id}.prov.json"
+            write_run_sidecar(sidecar_path, sidecar)
+            _log.info("prov_sidecar.written",
+                      draft_id=draft_id, path=str(sidecar_path))
+        except Exception as exc:
+            _log.warning("prov_sidecar.failed", draft_id=draft_id, error=repr(exc))
 
     def _audit(self, event_type: str, payload: dict) -> None:
         if not self.paths.audit_db.exists():

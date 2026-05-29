@@ -184,3 +184,140 @@ def load_provenance(path: str | Path) -> list[dict[str, Any]]:
                 continue
             out.append(json.loads(line))
     return out
+
+
+# ── per-run sidecar ────────────────────────────────────────────────────────────
+
+
+def build_run_sidecar(
+    *,
+    draft_id: str,
+    job_id: str,
+    question: str,
+    mode: str,
+    backends: dict[str, str],
+    source_count: int,
+    content_hash: str | None = None,
+    started_at: datetime | str | None = None,
+    ended_at: datetime | str | None = None,
+    models: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build a PROV-O JSON document for a single research run.
+
+    WHY a separate sidecar (not just an appended JSONL entry): a per-run
+    ``.prov.json`` file travels *with* the draft artefact. It is
+    self-contained, human-readable, and addressable by draft_id, so claim
+    traceability requires only the draft file + its sibling sidecar rather
+    than a query against the global ``provenance.jsonl`` log.
+
+    Structure (PROV-O §27.7):
+    - ``prov:Activity`` — the research run (job_id), with start/end times.
+    - ``prov:Agent`` entries — one per model/backend (``wasAttributedTo``).
+    - ``prov:Entity`` entries — the draft artefact + source slots.
+    - Top-level ``content_hash`` (SHA-256 of the body) for drift detection.
+
+    The document is a standard Python dict, ready for ``json.dumps``.
+    """
+    activity_id = f"run:{job_id}"
+    draft_urn = _urn_for_generated(draft_id)
+
+    # One agent URN per backend/model listed.
+    agent_urns: list[dict[str, str]] = []
+    for role, tag in (backends or {}).items():
+        agent_urns.append(
+            {"@id": _urn("agent", f"{role}:{tag}"), "prov:label": f"{role}={tag}"}
+        )
+    for m in models or []:
+        agent_urns.append(
+            {"@id": _urn_for_model(m), "@type": "prov:Agent", "prov:label": m}
+        )
+
+    # Source slot entities: we don't have individual source IDs at this call
+    # site, so we mint ``source_count`` placeholder entity URNs keyed by index.
+    # This preserves the PROV-O cardinality (used[] length matches source_count)
+    # while remaining deterministic and offline.
+    source_urns = [_urn("source", f"{job_id}:{i}") for i in range(source_count)]
+
+    activity: dict[str, Any] = {
+        "@context": PROV_CONTEXT,
+        "@id": _urn("action", activity_id),
+        "@type": "prov:Activity",
+        "prov:wasAssociatedWith": [a["@id"] for a in agent_urns],
+        "prov:used": source_urns,
+        "prov:generated": draft_urn,
+        "lighthouse:mode": mode,
+        "lighthouse:jobId": job_id,
+        "lighthouse:question": question,
+    }
+    started = _iso_utc(started_at)
+    ended = _iso_utc(ended_at)
+    if started is not None:
+        activity["prov:startedAtTime"] = started
+    if ended is not None:
+        activity["prov:endedAtTime"] = ended
+
+    draft_entity: dict[str, Any] = {
+        "@id": draft_urn,
+        "@type": "prov:Entity",
+        "prov:wasGeneratedBy": _urn("action", activity_id),
+        "lighthouse:draftId": draft_id,
+    }
+    if content_hash is not None:
+        draft_entity["lighthouse:contentHash"] = content_hash
+
+    source_entities: list[dict[str, str]] = [
+        {"@id": u, "@type": "prov:Entity"} for u in source_urns
+    ]
+
+    return {
+        "@context": PROV_CONTEXT,
+        "lighthouse:draftId": draft_id,
+        "lighthouse:jobId": job_id,
+        "lighthouse:sourceCount": source_count,
+        "lighthouse:contentHash": content_hash,
+        "activity": activity,
+        "agents": agent_urns,
+        "draftEntity": draft_entity,
+        "sourceEntities": source_entities,
+    }
+
+
+def write_run_sidecar(
+    sidecar_path: str | Path,
+    sidecar: dict[str, Any],
+) -> None:
+    """Write a PROV-O run sidecar to *sidecar_path*.
+
+    The file is written atomically: we write to a ``.tmp`` sibling first and
+    rename, so a crash mid-write never leaves a half-written sidecar that
+    could confuse downstream readers. ``sort_keys=True`` keeps the output
+    content-stable for diffing / hashing.
+
+    WHY a plain ``.prov.json`` (not JSONL): the sidecar is a single document
+    that travels with one artefact. JSONL is used for the global append-only
+    log because appends are O(1); here we write exactly once per draft.
+    """
+    dest = Path(sidecar_path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(".prov.tmp")
+    try:
+        tmp.write_text(json.dumps(sidecar, sort_keys=True, indent=2), encoding="utf-8")
+        tmp.replace(dest)
+    finally:
+        # Clean up the .tmp file if the rename didn't happen (e.g. on error).
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def load_run_sidecar(sidecar_path: str | Path) -> dict[str, Any]:
+    """Read a per-run ``.prov.json`` sidecar back into a dict.
+
+    Returns an empty dict when the file is missing, matching the tolerant
+    contract of :func:`load_provenance`.
+    """
+    p = Path(sidecar_path)
+    if not p.exists():
+        return {}
+    return json.loads(p.read_text(encoding="utf-8"))  # type: ignore[return-value]
