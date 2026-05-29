@@ -28,6 +28,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -54,6 +55,10 @@ _BROKER_META_KEY = "_broker"
 #: Private meta key holding the raw skill Documents (for contradiction
 #: detection). Stripped before persist alongside ``_BROKER_META_KEY``.
 _SKILL_DOCS_META_KEY = "_skill_documents"
+
+#: Private meta key handing the resolved :class:`Paths` to adapters that need
+#: the data dir (Deep-tier checkpoint/resume). Stripped before persist.
+_PATHS_META_KEY = "_paths"
 
 #: Fixed epoch handed to ``contradiction.detect`` so detection is deterministic
 #: and free of ``datetime.now()`` at import/runtime (the module forbids it).
@@ -555,6 +560,65 @@ def _adapt_ask(meta, *, gateway, gate, job_id, positions_db) -> dict:
 _DEEP_BUDGET_NODES = {"30m": 8, "1h": 15, "2h": 25, "overnight": 50}
 
 
+# ── Deep-tier checkpoint / resume (deployment gap #8) ───────────────────────
+#
+# A Deep (exhaustive) run can be many minutes; a crash mid-run must resume from
+# the last completed node rather than restart. The exhaustive engine fires an
+# ``on_checkpoint(TreeState)`` callback after every researched node; here we
+# persist that snapshot as JSON under ``data_dir/checkpoints/<job_id>.json``
+# (atomic temp+rename, no schema change). On (re)running a Deep job whose
+# checkpoint exists, we load it and pass ``resume_state`` so expansion continues;
+# a completed run deletes the file. No checkpoint == an unchanged fresh run.
+
+
+def _checkpoint_dir(paths: Paths) -> Path:
+    return paths.data_dir / "checkpoints"
+
+
+def _checkpoint_path(paths: Paths, job_id: str) -> Path:
+    return _checkpoint_dir(paths) / f"{job_id}.json"
+
+
+def _write_checkpoint(paths: Paths, job_id: str, state) -> None:
+    """Atomically persist a :class:`TreeState` snapshot (temp file + rename).
+
+    Best-effort: a checkpoint failure must never abort the Deep run, so all
+    errors are swallowed (the run simply loses crash-recovery for that tick)."""
+    try:
+        cdir = _checkpoint_dir(paths)
+        cdir.mkdir(parents=True, exist_ok=True)
+        final = _checkpoint_path(paths, job_id)
+        tmp = final.with_suffix(final.suffix + f".{uuid.uuid4().hex[:8]}.tmp")
+        tmp.write_text(json.dumps(state.to_dict()), encoding="utf-8")
+        tmp.replace(final)  # atomic on POSIX
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.warning("dispatcher.checkpoint.write_failed",
+                     job_id=job_id, error=repr(exc))
+
+
+def _load_checkpoint(paths: Paths, job_id: str) -> dict | None:
+    """Load a prior checkpoint dict for ``job_id``, or ``None`` if absent/bad."""
+    path = _checkpoint_path(paths, job_id)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.warning("dispatcher.checkpoint.load_failed",
+                     job_id=job_id, error=repr(exc))
+        return None
+
+
+def _delete_checkpoint(paths: Paths, job_id: str) -> None:
+    """Remove a completed run's checkpoint file (no-op if absent)."""
+    try:
+        _checkpoint_path(paths, job_id).unlink(missing_ok=True)
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.warning("dispatcher.checkpoint.delete_failed",
+                     job_id=job_id, error=repr(exc))
+
+
 def _serialize_tree(node) -> dict:
     return {
         "question": node.question, "depth": node.depth, "status": node.status,
@@ -570,7 +634,7 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
     citations); the tree is bounded by the Deep budget. Offline-deterministic
     (stub bodies, every node a known-unknown without a corpus)."""
     from .modes.deepdive import run_deepdive
-    from .modes.exhaustive import run_exhaustive
+    from .modes.exhaustive import TreeState, run_exhaustive
 
     topic = meta.get("topic", "") or "Investigation"
     hybrid = _build_hybrid(meta, gateway=gateway)
@@ -586,8 +650,29 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
         except Exception:
             return (f"[draft] {q}", [], False)
 
+    # Checkpoint/resume wiring (deployment gap #8). With a resolved data dir we
+    # persist a crash-recovery snapshot after every node and resume from any
+    # prior checkpoint; absent ``paths`` (or job_id) this degrades to a plain run.
+    paths = meta.get(_PATHS_META_KEY)
+    on_checkpoint = None
+    resume_state = None
+    if paths is not None and job_id:
+        resume_state = _load_checkpoint(paths, job_id)
+        if resume_state is not None:
+            _log.info("dispatcher.checkpoint.resume", job_id=job_id,
+                      done=resume_state.get("done"))
+
+        def on_checkpoint(state: TreeState) -> None:
+            _write_checkpoint(paths, job_id, state)
+
     tree = run_exhaustive(topic, research_fn=_research, gateway=gateway,
-                          job_id=job_id, max_nodes=max_nodes, max_depth=3)
+                          job_id=job_id, max_nodes=max_nodes, max_depth=3,
+                          on_checkpoint=on_checkpoint, resume_state=resume_state)
+
+    # Completed run → drop the checkpoint so a future job with this id starts
+    # fresh (and disk doesn't accumulate stale snapshots).
+    if paths is not None and job_id:
+        _delete_checkpoint(paths, job_id)
     body_json = {
         "question": topic, "depth": "deep", "engine": "exhaustive",
         "budget": meta.get("budget"),
@@ -882,6 +967,8 @@ def run_job(paths: Paths, job: ClaimedJob, *,
     job.meta.setdefault("mode", mode_key)
     job.meta.setdefault("job_id", job.id)
     job.meta[_BROKER_META_KEY] = _build_broker(paths)
+    # Hand the resolved data dir to adapters that checkpoint (Deep tier).
+    job.meta[_PATHS_META_KEY] = paths
 
     backends: dict = {}
     try:
@@ -922,6 +1009,7 @@ def run_job(paths: Paths, job: ClaimedJob, *,
     # Drop the private, non-serializable handoff keys before persisting.
     meta.pop(_BROKER_META_KEY, None)
     meta.pop(_SKILL_DOCS_META_KEY, None)
+    meta.pop(_PATHS_META_KEY, None)
     meta["progress"] = 1.0
     meta["draft_id"] = draft_id
     # Record which backend actually served this job so a "mock masquerade" (a

@@ -34,9 +34,13 @@ bit-for-bit reproducible.
 mid-run should not throw away grounded leaves. :meth:`ExhaustiveReport.to_state`
 / :func:`tree_state_to_dict` / :func:`tree_state_from_dict` give a JSON-friendly
 snapshot of the whole search state (the ``TreeNode`` tree + the pending frontier
-+ the dedup seen-set + counters). Dispatcher-level checkpoint wiring (when/where
-to persist, how to re-enter ``run_exhaustive`` from a snapshot) is out of scope
-here — this module just provides the serializable surface and round-trip helpers.
++ the dedup seen-set + counters). ``run_exhaustive`` closes the loop: it accepts
+an ``on_checkpoint(TreeState)`` callback (fired after every researched node so the
+dispatcher can persist an atomic checkpoint) and a ``resume_state`` dict (a prior
+:func:`tree_state_to_dict` snapshot) that rebuilds the partial tree + frontier +
+seen-set and continues expansion exactly where the crash left off — no
+already-researched node is visited twice. With neither argument behaviour is
+bit-for-bit identical to a fresh run (full back-compat).
 """
 
 from __future__ import annotations
@@ -226,6 +230,57 @@ def _node_at_path(root: TreeNode, path: list[int]) -> TreeNode | None:
     return node
 
 
+def _iter_nodes(root: TreeNode) -> list[TreeNode]:
+    """Flat pre-order list of every node in the tree (root first)."""
+    out: list[TreeNode] = []
+
+    def _walk(n: TreeNode) -> None:
+        out.append(n)
+        for c in n.children:
+            _walk(c)
+
+    _walk(root)
+    return out
+
+
+def _parent_grounded_map(root: TreeNode) -> dict[int, bool]:
+    """Map each node's id → whether its parent is grounded (root → False).
+
+    Used on resume to rebuild the internal frontier's ``parent_grounded`` flag
+    (which drives VOI) from the serialized tree, since :class:`TreeState` stores
+    only the pending nodes, not the (node, parent_grounded) pairs.
+    """
+    out: dict[int, bool] = {id(root): False}
+
+    def _walk(n: TreeNode) -> None:
+        for c in n.children:
+            out[id(c)] = n.status == "grounded"
+            _walk(c)
+
+    _walk(root)
+    return out
+
+
+def _order_map(root: TreeNode) -> dict[int, int]:
+    """Assign each node a stable creation-order index via pre-order DFS.
+
+    On resume the original monotonic creation counter is gone; a deterministic
+    pre-order walk re-derives a total, reproducible order so the VOI tie-break is
+    stable across a resumed run (root = 0, then children left-to-right)."""
+    out: dict[int, int] = {}
+    counter = 0
+
+    def _walk(n: TreeNode) -> None:
+        nonlocal counter
+        out[id(n)] = counter
+        counter += 1
+        for c in n.children:
+            _walk(c)
+
+    _walk(root)
+    return out
+
+
 def _norm(q: str) -> str:
     return re.sub(r"\s+", " ", q.strip().lower())
 
@@ -300,6 +355,8 @@ def run_exhaustive(
     on_node: Callable[[TreeNode, int, int], None] | None = None,
     voi_floor: float = DEFAULT_VOI_FLOOR,
     synthesize: bool = True,
+    resume_state: dict | None = None,
+    on_checkpoint: Callable[[TreeState], None] | None = None,
 ) -> ExhaustiveReport:
     """Run recursive question-tree research, bounded by ``max_nodes``/``max_depth``.
 
@@ -317,24 +374,58 @@ def run_exhaustive(
     is woven into one narrative on ``report.synthesis`` — via the gateway
     ``synthesizer`` role when present, else a deterministic structured digest.
 
+    Crash recovery (gap #8 / deployment): ``on_checkpoint(TreeState)`` is fired
+    after every researched node with a snapshot of the live search state, so the
+    dispatcher can persist an atomic checkpoint. ``resume_state`` (a prior
+    :func:`tree_state_to_dict` dict) rebuilds the partial tree, the pending
+    frontier and the dedup seen-set and continues expansion from there — already
+    researched nodes are never re-visited. With neither argument behaviour is
+    bit-for-bit identical to a fresh run.
+
     Returns an :class:`ExhaustiveReport` whose tree is always finite.
     """
     research = research_fn or _default_research_fn
     max_nodes = max(1, int(max_nodes))
     max_depth = max(0, int(max_depth))
 
-    root = TreeNode(question=question, depth=0, status="known_unknown",
-                    load_bearing=True)  # the root question is load-bearing by definition
-    seen: set[str] = {_norm(question)}
-    all_nodes: list[TreeNode] = [root]
-    # Pending frontier: (node, parent_grounded). We pop the highest-VOI node.
-    # ``order`` is a monotonic creation counter for a stable tie-break, so the
-    # ordering is a total order and a gateway-less run is reproducible.
-    order = 0
-    pending: list[tuple[TreeNode, bool, int]] = [(root, False, order)]
-    truncated = False
-    pruned = 0
-    done = 0
+    root: TreeNode
+    seen: set[str]
+    all_nodes: list[TreeNode]
+    # Pending frontier: (node, parent_grounded, order). We pop the highest-VOI
+    # node; ``order`` is a monotonic creation counter for a stable tie-break.
+    pending: list[tuple[TreeNode, bool, int]]
+    if resume_state is not None:
+        # Resume: rebuild the partial tree, frontier and seen-set from a prior
+        # snapshot and continue. The frontier (node, parent_grounded, order) is
+        # reconstructed from the serialized tree — parent_grounded from each
+        # pending node's parent, order from a stable pre-order walk.
+        state = tree_state_from_dict(resume_state)
+        root = state.root
+        all_nodes = _iter_nodes(root)
+        seen = set(state.seen) or {_norm(n.question) for n in all_nodes}
+        pg_map = _parent_grounded_map(root)
+        order_map = _order_map(root)
+        pending = [(n, pg_map.get(id(n), False), order_map.get(id(n), 0))
+                   for n in state.pending]
+        # ``order`` continues past the highest assigned index so freshly created
+        # children keep getting monotonically larger (later) creation counters.
+        order = max(order_map.values(), default=0)
+        truncated = state.truncated
+        pruned = state.pruned
+        done = state.done
+    else:
+        root = TreeNode(question=question, depth=0, status="known_unknown",
+                        load_bearing=True)  # the root question is load-bearing by definition
+        seen = {_norm(question)}
+        all_nodes = [root]
+        # Pending frontier: (node, parent_grounded). We pop the highest-VOI node.
+        # ``order`` is a monotonic creation counter for a stable tie-break, so the
+        # ordering is a total order and a gateway-less run is reproducible.
+        order = 0
+        pending = [(root, False, order)]
+        truncated = False
+        pruned = 0
+        done = 0
 
     while pending:
         # VOI selection: pick the highest-scoring pending node. Tie-break on the
@@ -376,36 +467,52 @@ def run_exhaustive(
             except Exception:
                 pass
 
-        # Decompose further only if we have depth + node budget left.
-        if node.depth >= max_depth:
-            continue
-        if len(all_nodes) >= max_nodes:
+        # Decompose further only if we have depth + node budget left. (When we
+        # can't, we skip expansion but still checkpoint below — every researched
+        # node advances the crash-recovery snapshot.)
+        if node.depth < max_depth and len(all_nodes) >= max_nodes:
             truncated = True
-            continue
+        elif node.depth < max_depth:
+            try:
+                framed = run_framing(node.question, gateway=gateway, job_id=job_id)
+                subs = framed.load_bearing or framed.sub_questions
+                load_bearing_set = {_norm(s) for s in framed.load_bearing}
+            except Exception:
+                subs = []
+                load_bearing_set = set()
 
-        try:
-            framed = run_framing(node.question, gateway=gateway, job_id=job_id)
-            subs = framed.load_bearing or framed.sub_questions
-            load_bearing_set = {_norm(s) for s in framed.load_bearing}
-        except Exception:
-            subs = []
-            load_bearing_set = set()
+            for sq in subs:
+                if len(all_nodes) >= max_nodes:
+                    truncated = True
+                    break
+                sq_key = _norm(sq)
+                if not sq_key or sq_key in seen:
+                    continue              # dedup → guarantees termination
+                seen.add(sq_key)
+                order += 1
+                child = TreeNode(question=sq, depth=node.depth + 1,
+                                 status="known_unknown",
+                                 load_bearing=sq_key in load_bearing_set)
+                node.children.append(child)
+                all_nodes.append(child)
+                pending.append((child, grounded, order))
 
-        for sq in subs:
-            if len(all_nodes) >= max_nodes:
-                truncated = True
-                break
-            sq_key = _norm(sq)
-            if not sq_key or sq_key in seen:
-                continue              # dedup → guarantees termination
-            seen.add(sq_key)
-            order += 1
-            child = TreeNode(question=sq, depth=node.depth + 1,
-                             status="known_unknown",
-                             load_bearing=sq_key in load_bearing_set)
-            node.children.append(child)
-            all_nodes.append(child)
-            pending.append((child, grounded, order))
+        # Crash-recovery checkpoint: snapshot the live search state after every
+        # researched node so the dispatcher can persist it atomically. The
+        # frontier here already reflects any children just enqueued. Best-effort;
+        # a checkpoint failure must never abort the run.
+        if on_checkpoint is not None:
+            try:
+                on_checkpoint(TreeState(
+                    root=root,
+                    pending=[n for n, _pg, _o in pending],
+                    seen=set(seen),
+                    done=done,
+                    truncated=truncated,
+                    pruned=pruned,
+                ))
+            except Exception:
+                pass
 
     grounded_count = sum(1 for n in all_nodes if n.status == "grounded")
     report = ExhaustiveReport(
