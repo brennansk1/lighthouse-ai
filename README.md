@@ -237,8 +237,12 @@ require unit tests; integration tests for real-backend paths must be gated on
 
 - [`docs/MODE_PROCESSES.md`](./docs/MODE_PROCESSES.md) — **the 7 research modes in
   full detail** (algorithm, techniques, provenance, and optimality notes per mode)
+- [`docs/WEB_SCRAPING.md`](./docs/WEB_SCRAPING.md) — web acquisition / scraping
+  capabilities + evaluation strategies
 - [`docs/research_depth_matrix.md`](./docs/research_depth_matrix.md) — depth tiers
   (Quick → Deep) × mode output
+- [`docs/research_prompts/`](./docs/research_prompts/) — ready-to-run prompts to
+  research better strategies/libraries for the modes and the scraping stack
 - [`docs/lighthouse_design.md`](./docs/lighthouse_design.md) — full design specification
 - [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md) — release-readiness status
 - [`docs/webapp_tui_design.md`](./docs/webapp_tui_design.md) — dashboard / TUI design
