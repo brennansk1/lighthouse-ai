@@ -323,11 +323,14 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
     ``gateway=None``. We serialise a JSON-safe view of the report (the full
     ``DraftReport`` carries non-serialisable evidence chunks)."""
     from .modes.deepdive import run_deepdive
+    from .modes.depth import resolve_depth
 
     topic = meta.get("topic", "") or "Investigation"
+    knobs = resolve_depth(meta.get("depth"))
     hybrid = _build_hybrid(meta, gateway=gateway)
     report = run_deepdive(topic, hybrid=hybrid, gateway=gateway,
-                          job_id=job_id, gate=gate)
+                          job_id=job_id, gate=gate,
+                          max_rounds=knobs["max_rounds"], top_k=knobs["top_k"])
     parts = []
     for s in report.sections:
         parts.append(f"<h3>{_html.escape(s.title)}</h3>")
@@ -340,6 +343,8 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
     body_json = {
         "question": report.question,
         "question_type": report.framing.question_type.value,
+        "depth": knobs["tier"],
+        "max_rounds": knobs["max_rounds"],
         "rounds_used": report.rounds_used,
         "sections": [
             {"title": s.title, "sub_question": s.sub_question,
@@ -350,6 +355,36 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
         "open_questions": list(report.open_questions),
         "ruled_out": list(report.ruled_out),
     }
+    # Coverage critic: which planned (load-bearing) sub-questions are answered?
+    # Runs from Standard up; a gap is recorded as a known-unknown.
+    if knobs.get("coverage_critic"):
+        try:
+            from .verification.coverage import assess_coverage
+            subs = [s.sub_question for s in report.sections if s.is_load_bearing] \
+                or list(report.framing.sub_questions)
+            cov = assess_coverage(subs, report.sections)
+            body_json["coverage"] = cov.coverage_ratio
+            body_json["coverage_gaps"] = cov.gaps
+        except Exception:
+            pass
+
+    # Adversarial refutation: stress-test key claims (Thorough+). Refuted/
+    # contested claims are flagged so they don't stand unchallenged.
+    if knobs.get("adversarial"):
+        try:
+            from .verification.adversarial import refute_claims, summarize
+            evidence = "\n".join(s.body for s in report.sections)
+            key_claims = [s.body.split(".")[0].strip() + "."
+                          for s in report.sections
+                          if s.is_load_bearing and s.body.strip()]
+            verdicts = refute_claims(key_claims, evidence, gateway=gateway,
+                                     job_id=job_id)
+            body_json["adversarial"] = summarize(verdicts)
+            body_json["contested_claims"] = [
+                v.claim for v in verdicts if not v.survives]
+        except Exception:
+            pass
+
     source_count = len({c for s in report.sections for c in s.citations})
     return {
         "title": topic,
