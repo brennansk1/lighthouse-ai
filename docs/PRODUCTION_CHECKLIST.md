@@ -308,7 +308,7 @@ Test-type legend: **U** unit · **I** integration (real deps, skip-if-absent) ·
 | Gate | How | Standard | Status |
 |---|---|---|---|
 | Test suite | `uv run pytest` | **100% pass**, 0 unexpected skips | ✅ 814 pass, 3 opt-in skips |
-| Coverage | `pytest --cov` | **≥80%** overall; ≥90% on persistence/governor/verification | 🟡 ~83% measured once; not gated |
+| Coverage | `pytest --cov` | **≥80%** overall; ≥90% on persistence/governor/verification | ✅ **82% overall (gate met)**; persistence 99%, governor 82–100%, verification high (adversarial/positions/hypotheses 98–100%, contradiction 92%, discipline 82%). Low spots are offline-uncoverable: `entailment.py` 34% (lazy-model path), `resolver.py` 78% (live-research path) — both need a real backend to exercise |
 | Lint | `ruff check` | 0 errors | ✅ ruff clean |
 | Types | `mypy src` | 0 errors on public modules | ✅ **0 errors across 259 files; now a blocking CI gate** |
 | CI | GitHub Actions | suite + lint + types green on every push (macOS + Linux) | ✅ `ci.yml`: ruff + **mypy (blocking)** + pytest + build on {ubuntu, macOS} × py{3.11, 3.12} |
