@@ -25,6 +25,50 @@ quality bar and the work queue. Each task lists its **Definition of Done (DoD)**
 
 ---
 
+## COMPETITIVE THESIS — beat Claude & Gemini deep research
+
+We do **not** try to out-write frontier models on fluency or out-reach them on
+raw web breadth — a local 14B can't, and chasing that loses. We win on the thing
+research actually needs: **trustworthiness**. These are the axes where frontier
+chat-research is weakest and a disciplined local instrument can be provably
+better:
+
+1. **Verifiable grounding.** Every claim in a final artifact is entailed by a
+   real, cited source — or it is removed/flagged, never asserted. Frontier deep
+   research routinely ships confident prose with weak, missing, or *fabricated*
+   citations. We refuse to.
+2. **Adversarial depth.** After synthesis, a refutation pass attacks each key
+   claim from independent perspectives; only survivors stand. Single-pass
+   frontier research skips this.
+3. **Coverage critic.** An explicit "what's missing / which angle wasn't
+   searched" pass drives another round. Depth = multi-angle coverage, not
+   one-query saturation.
+4. **Measured calibration.** Forecasts become tracked Positions scored by Brier
+   over time; the instrument reports its *own* historical accuracy. Chatbots
+   keep no score.
+5. **Triangulation.** Key claims need ≥2 independent sources; contradictions are
+   surfaced, not smoothed over.
+6. **Reproducibility.** Every artifact carries a provenance manifest (models,
+   sources, retrieval params) and is deterministic given the corpus. Frontier
+   outputs can't be reproduced.
+7. **Structured instruments.** Matrix / timeline / PRISMA evidence-table /
+   verdict-with-named-crux — research objects, not chat answers.
+
+### Measurable bar (Investigate is the flagship; others adapt)
+A real-backend Investigate artifact is "better than frontier" only when:
+- `citation_coverage ≥ 0.95` and `entailment_coverage ≥ 0.90`
+- `fabricated_citations == 0` (every cited chunk id exists in the corpus)
+- 100% of **key claims** carry ≥2 independent sources
+- a **contradictions** section is present (or explicitly "none found")
+- an **adversarial refutation pass** ran; refuted claims are dropped/flagged
+- a **coverage critic** ran; its gaps either filled or listed as known-unknowns
+- a **provenance manifest** is attached (models, sources, retrieval params, depth)
+- `rounds_used` reflects the chosen depth setting
+These are asserted by the benchmark harness (task #49) on a fixed question set —
+"better" is measured, not claimed.
+
+---
+
 ## Quality standards by feature
 
 ### Research modes (all 7)
@@ -118,15 +162,28 @@ for mode in [Watch, Ask, Investigate, Survey, Reconstruct, Decide, Adjudicate]:
 ---
 
 ## Work queue (priority order)
-P1   Real-LLM RAM-safety guard (foundation)               -> task #26
-P1.5 Per-mode test-and-refine loops, one at a time        -> tasks #35-#41
-P2   Substantive grounding (corpus retrieval/auto-fetch)  -> task #28
-P3   Wizard input completeness per mode                   -> task #29
-P4   UX polish + artifact viewers/exports                 -> tasks #30, #31
-P5   Code review + security review                         -> task #32
-P6   Test coverage hardening                               -> task #33
-P7   Documentation                                         -> task #34
+P1   Real-LLM RAM-safety guard (foundation)               -> #26 ✅
+P1.5 Mode loops with no corpus (validate real LLM fast)   -> #35 Decide, #36 Adjudicate
+P1.7 Research-quality stack (the competitive thesis):
+       - Adversarial claim-refutation pass                -> #45
+       - Coverage/completeness critic pass                -> #46
+P2   Substantive grounding (corpus retrieval/auto-fetch)  -> #28
+P2.5 Trust layer:
+       - Source triangulation + contradiction surfacing   -> #47
+       - Provenance/reproducibility manifest              -> #48
+       - Research depth control end-to-end                -> #44
+P2.7 Corpus mode loops (must clear the measurable bar)    -> #37 Ask, #38 Investigate,
+       #39 Survey, #40 Reconstruct, #41 Watch
+P3   Wizard input completeness per mode                   -> #29
+P4   UX polish + artifact viewers/exports                 -> #30, #31
+P4.5 Integrations: Telegram templates + Logseq rendering  -> #42, #43
+P5   Code review + security review                         -> #32
+P6   Test coverage hardening                               -> #33
+P6.5 Research quality benchmark harness (proves "better") -> #49
+P7   Documentation                                         -> #34
 
-Note: P2 (grounding) and P3 (wizard inputs) are pulled *into* each mode's loop
-as needed — a mode is not "done" until it is grounded and launchable. The
-standalone P2/P3 tasks remain as backstops / cross-cutting cleanup.
+Rationale: Decide/Adjudicate first (no corpus → fastest real-LLM validation of
+the RAM guard). Then build the research-quality stack (adversarial, coverage,
+triangulation, provenance, depth) BEFORE the corpus mode loops, so Ask/Investigate
+are held to the full "better-than-frontier" bar from the start. The benchmark
+(#49) is the scoreboard that proves it.
