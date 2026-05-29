@@ -1,10 +1,21 @@
 """Question framing pipeline (§10).
 
-Sprint 8 ships a deterministic, rule-based baseline so the surrounding
-system has the contract right. Production swaps in:
-  * A small classifier (DistilBERT or planner-model few-shot) for question typing.
-  * A planner LLM for critique, frame multiplication, decomposition.
-  * The Question Library lookup (golden_sets/framings.db) for warm-starting.
+The framing planner LLM is the **primary** path (Zone T, gap #10): when a
+gateway is supplied, the planner role does question typing, frame
+multiplication, decomposition, and load-bearing flagging in one structured
+JSON call. Framing quality is the highest-leverage upstream lever — every
+downstream stage (coverage critic, recursive tree, section research) inherits
+it — so we let the model do the thinking and keep the rules as a safety net.
+
+The deterministic keyword/template baseline is the **fallback**, used when:
+  * no gateway is supplied (offline / tests — bit-for-bit identical to the
+    pre-LLM behaviour), or
+  * the planner call fails, returns unparseable JSON, or omits required fields.
+
+Later upgrades (documented, not yet wired): a fine-tuned DistilBERT-class
+classifier for typing/routing, and the Question Library lookup
+(golden_sets/framings.db) for warm-starting. We do NOT add a training
+dependency now.
 """
 
 from __future__ import annotations
@@ -69,8 +80,8 @@ _TYPE_KEYWORDS: list[tuple[QuestionType, list[str]]] = [
 ]
 
 
-def classify_question(q: str) -> QuestionType:
-    """Cheap keyword classifier; replaced by ML classifier in production."""
+def _classify_keyword(q: str) -> QuestionType:
+    """Deterministic keyword classifier — the fallback for question typing."""
     text = q.lower().strip().rstrip("?")
     for qtype, keywords in _TYPE_KEYWORDS:
         for k in keywords:
@@ -82,6 +93,62 @@ def classify_question(q: str) -> QuestionType:
                 if re.search(rf"\b{re.escape(k)}\b", text):
                     return qtype
     return QuestionType.FACTUAL_LOOKUP
+
+
+# Few-shot exemplars steer the planner-model classifier toward the taxonomy
+# (gap #13). DistilBERT fine-tuning is the documented later upgrade.
+_CLASSIFY_FEWSHOT = (
+    "Should I go to grad school? -> decision_support\n"
+    "Python vs Rust for systems programming -> comparative\n"
+    "Why did the bank collapse? -> causal_explanation\n"
+    "Will AI solve coding by 2030? -> predictive_forecast\n"
+    "What's going on with the chip ban? -> exploratory_survey\n"
+    "Is the homeopathy claim disputed? -> controversy_resolution\n"
+    "Is method X good for time-series forecasting? -> methodology_evaluation\n"
+    "What is the speed of light? -> factual_lookup\n"
+)
+
+_VALID_TYPE_VALUES = {t.value for t in QuestionType}
+
+
+def classify_question(q: str, *, gateway=None, job_id: str | None = None) -> QuestionType:
+    """Classify a question's type.
+
+    Primary path (when ``gateway`` is supplied): an LLM few-shot classifier on
+    the ``planner`` role. Fallback (gateway is None, or the call/parse fails):
+    the deterministic keyword classifier — bit-for-bit identical to the
+    pre-LLM behaviour, so offline output never changes.
+    """
+    if gateway is not None:
+        llm = _classify_question_llm(q, gateway=gateway, job_id=job_id)
+        if llm is not None:
+            return llm
+    return _classify_keyword(q)
+
+
+def _classify_question_llm(q: str, *, gateway, job_id: str | None) -> QuestionType | None:
+    """Few-shot LLM question typing. Returns None on any failure so the caller
+    falls back to the keyword classifier — never raises."""
+    try:
+        prompt = (
+            "Classify the research question into exactly one type from this set:\n"
+            "factual_lookup, comparative, causal_explanation, predictive_forecast, "
+            "decision_support, exploratory_survey, controversy_resolution, "
+            "methodology_evaluation.\n\n"
+            "Examples:\n"
+            f"{_CLASSIFY_FEWSHOT}\n"
+            "Reply with ONLY the type token (no punctuation, no explanation).\n\n"
+            f"{q} ->"
+        )
+        resp = gateway.complete("planner", prompt, job_id=job_id)
+        token = resp.text.strip().lower().splitlines()[0].strip().strip(".")
+        # Tolerate a model that echoes "-> comparative" or "type: comparative".
+        for part in re.split(r"[\s:>-]+", token):
+            if part in _VALID_TYPE_VALUES:
+                return QuestionType(part)
+        return None
+    except Exception:
+        return None
 
 
 # --- Critique ----------------------------------------------------
@@ -217,7 +284,12 @@ def load_bearing_subquestions(subs: list[str]) -> list[str]:
 # --- Top-level driver -------------------------------------------
 
 def _run_framing_deterministic(question: str) -> FramedQuestion:
-    qtype = classify_question(question)
+    """Deterministic keyword/template baseline — the framing FALLBACK.
+
+    Uses the keyword classifier directly (never the gateway) so this path is
+    bit-for-bit identical to the pre-LLM behaviour: offline output never moves.
+    """
+    qtype = _classify_keyword(question)
     critique = critique_question(question)
     framings = multiply_frames(question, qtype)
     chosen = frame_question(framings, qtype)
@@ -230,16 +302,24 @@ def _run_framing_deterministic(question: str) -> FramedQuestion:
 
 
 def run_framing(question: str, *, gateway=None, job_id: str | None = None) -> FramedQuestion:
-    """Frame a research question, optionally using the planner LLM.
+    """Frame a research question.
 
-    Falls back to deterministic keyword/template baseline when gateway is
-    None, or when the LLM response cannot be parsed — so tests and offline
-    mode are unaffected.
+    PRIMARY path: when a ``gateway`` is supplied, the planner LLM does question
+    typing, frame multiplication, decomposition, and load-bearing flagging in
+    one structured-JSON call (:func:`_run_framing_llm`). This is the
+    highest-leverage upstream lever, so the model leads.
+
+    FALLBACK path: the deterministic keyword/template baseline
+    (:func:`_run_framing_deterministic`), used when ``gateway`` is None, or when
+    the planner call fails / returns unparseable / incomplete JSON. The fallback
+    is fully offline and deterministic, so existing tests and offline mode are
+    unaffected.
     """
     if gateway is not None:
         try:
             return _run_framing_llm(question, gateway=gateway, job_id=job_id)
         except Exception:
+            # Any failure (network, bad JSON, empty fields) → graceful fallback.
             pass
     return _run_framing_deterministic(question)
 
@@ -270,8 +350,13 @@ def _run_framing_llm(question: str, *, gateway, job_id: str | None) -> FramedQue
         '    {"label": "F1-label", "statement": "reframed question", "rationale": "why"}\n'
         '  ],\n'
         '  "chosen_label": "F1-label",\n'
-        '  "sub_questions": ["sub-question 1", "sub-question 2"]\n'
+        '  "sub_questions": ["sub-question 1", "sub-question 2"],\n'
+        '  "load_bearing": ["the sub-questions whose answer could flip the parent"]\n'
         "}\n\n"
+        "Produce 3-5 distinct framings, 2-5 sub-questions whose union answers the "
+        "parent, and mark as load_bearing the sub-questions whose answers would "
+        "most change the conclusion. load_bearing entries MUST be copied verbatim "
+        "from sub_questions.\n\n"
         f"Research question: {question}"
     )
     resp = gateway.complete("planner", prompt, job_id=job_id)
@@ -308,8 +393,16 @@ def _run_framing_llm(question: str, *, gateway, job_id: str | None) -> FramedQue
     subs = [str(s) for s in data.get("sub_questions", [])]
     if not subs:
         raise ValueError("planner returned no sub_questions")
+    # Load-bearing flagging is LLM-led: keep only the planner's flags that are
+    # genuine sub-questions (verbatim), so load_bearing stays a subset of
+    # sub_questions. If the planner omits/mangles the field, fall back to the
+    # deterministic keyword heuristic over the LLM's own sub-questions.
+    sub_set = set(subs)
+    load_bearing = [str(s) for s in data.get("load_bearing", []) if str(s) in sub_set]
+    if not load_bearing:
+        load_bearing = load_bearing_subquestions(subs)
     return FramedQuestion(
         original=question, question_type=qtype, critique=critique,
         framings=framings, chosen=chosen,
-        sub_questions=subs, load_bearing=load_bearing_subquestions(subs),
+        sub_questions=subs, load_bearing=load_bearing,
     )

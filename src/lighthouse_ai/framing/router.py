@@ -7,9 +7,12 @@ Classifies a query into one of five retrieval strategies:
   * ``recency`` — date-filtered vector with recency weighting.
   * ``none`` — skip retrieval; answer from parametric knowledge.
 
-Sprint 8 ships a rule-based router. Production fine-tunes a DistilBERT-class
-classifier on the Adaptive-RAG dataset (Jeong et al.) and plugs it in via
-:meth:`AdaptiveRouter.classify`.
+When a gateway is supplied, :meth:`AdaptiveRouter.classify` uses an LLM
+few-shot classifier on the ``planner`` role as the PRIMARY route picker, with
+the rule-based router as the deterministic FALLBACK (used when no gateway is
+given or the LLM call/parse fails). A fine-tuned DistilBERT-class classifier on
+the Adaptive-RAG dataset (Jeong et al.) is the documented later upgrade — we do
+NOT add a training dependency now.
 """
 
 from __future__ import annotations
@@ -50,10 +53,62 @@ _NO_RETRIEVAL_HINTS = re.compile(
 )
 
 
-class AdaptiveRouter:
-    """Pluggable router. Default rules emulate the Adaptive-RAG classifier."""
+_VALID_ROUTE_VALUES = {r.value for r in RouteKind}
 
-    def classify(self, query: str, *, qtype: QuestionType | None = None) -> AdaptiveRoute:
+_ROUTE_FEWSHOT = (
+    "Define dropout? -> none\n"
+    "What's the latest on the chip ban? -> recency\n"
+    "Compare Rust and Go on memory safety -> agentic\n"
+    "What is the impact of fed policy on bond yields? -> graph\n"
+    "Half-life of caesium-137 -> vector\n"
+)
+
+
+class AdaptiveRouter:
+    """Pluggable router. LLM few-shot is primary when a gateway is supplied;
+    deterministic rules (emulating the Adaptive-RAG classifier) are the fallback."""
+
+    def classify(self, query: str, *, qtype: QuestionType | None = None,
+                 gateway=None, job_id: str | None = None) -> AdaptiveRoute:
+        """Pick a retrieval route for ``query``.
+
+        PRIMARY (gateway supplied): LLM few-shot classifier on the ``planner``
+        role. FALLBACK (gateway None, or the call/parse fails): the deterministic
+        keyword rules below — offline output is unchanged.
+        """
+        if gateway is not None:
+            llm = self._classify_llm(query, qtype=qtype, gateway=gateway, job_id=job_id)
+            if llm is not None:
+                return llm
+        return self._classify_rules(query, qtype=qtype)
+
+    def _classify_llm(self, query: str, *, qtype: QuestionType | None,
+                      gateway, job_id: str | None) -> AdaptiveRoute | None:
+        """Few-shot LLM route classifier. Returns None on any failure so the
+        caller falls back to the rule-based router — never raises."""
+        try:
+            prompt = (
+                "Choose the best retrieval strategy for the query from this set:\n"
+                "vector (single dense+sparse lookup), agentic (multi-step "
+                "relational/comparative), graph (cross-document synthesis), "
+                "recency (date-filtered, recent events), none (answer from "
+                "parametric knowledge; short definitions).\n\n"
+                "Examples:\n"
+                f"{_ROUTE_FEWSHOT}\n"
+                "Reply with ONLY the strategy token (no punctuation, no explanation).\n\n"
+                f"{query.strip()} ->"
+            )
+            resp = gateway.complete("planner", prompt, job_id=job_id)
+            token = resp.text.strip().lower().splitlines()[0].strip().strip(".")
+            for part in re.split(r"[\s:>-]+", token):
+                if part in _VALID_ROUTE_VALUES:
+                    return AdaptiveRoute(RouteKind(part),
+                                         "planner LLM few-shot route", 0.8)
+            return None
+        except Exception:
+            return None
+
+    def _classify_rules(self, query: str, *, qtype: QuestionType | None = None) -> AdaptiveRoute:
         text = query.strip()
         lowered = text.lower()
 

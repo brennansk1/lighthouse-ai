@@ -61,10 +61,21 @@ def _ensure_extras(positions_db: Path) -> None:
 def record_position(positions_db: Path, *, claim: str, probability: float,
                     band: str | None = None,
                     resolve_by: str | None = None,
-                    resolution_criterion: str | None = None) -> Position:
+                    resolution_criterion: str | None = None,
+                    now: datetime | None = None) -> Position:
+    """Record a high-confidence claim as a scoreable calibration position.
+
+    ``resolve_by`` is the deadline at which the auto-resolver re-researches the
+    claim (default: ``now`` + 90 days). ``resolution_criterion`` is an optional
+    machine-checkable string describing what would make the claim TRUE/FALSE;
+    the resolver hands it to its research function. ``now`` is injectable so the
+    default deadline is deterministic in tests — ``datetime.now()`` is only ever
+    called inside the function body, never at import.
+    """
     _ensure_extras(positions_db)
     if resolve_by is None:
-        resolve_by = (datetime.now() + timedelta(days=90)).isoformat()
+        base = now if now is not None else datetime.now()
+        resolve_by = (base + timedelta(days=90)).isoformat()
     if band is None:
         wep = band_for_probability(probability)
     else:

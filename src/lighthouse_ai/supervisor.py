@@ -203,6 +203,49 @@ def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0) -> threading.
     return thread
 
 
+def _start_resolver_loop(paths: Paths, *, interval_s: float = 3600.0) -> threading.Thread:
+    """Daemon thread that auto-resolves past-deadline calibration positions (Zone V).
+
+    Closes the Brier loop: at its deadline a position is re-researched and, when
+    the verdict is confident, scored — so the system learns whether its stated
+    confidence was warranted. Gated two ways: it is a no-op unless live resolution
+    is opted into (``LIGHTHOUSE_REAL_BACKEND=1``), and even then it skips ticks
+    while the SchedulerGate reports PAUSED (offline / user-disabled). Offline runs
+    never touch the network. Resolution itself is delegated to
+    :func:`resolve_positions`, which is deterministic under an injected research_fn.
+    """
+    from .dispatcher import build_runtime_gateway
+    from .governor.scheduler_gate import Policy
+    from .verification.resolver import resolve_positions
+
+    live = os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1"
+    gate_cfg = SchedulerGateConfig.from_config_file(paths.config_file)
+    gate = SchedulerGate(gate_cfg)
+    gateway = build_runtime_gateway(paths) if live else None
+    log.info("resolver.gateway", live=live,
+             backend="ollama" if gateway is not None else "offline")
+
+    def _loop() -> None:
+        while True:
+            time.sleep(interval_s)
+            if not live or gateway is None:
+                continue  # offline / opt-out: no-op
+            try:
+                policy, _ = gate.policy()
+                if policy is Policy.PAUSED:
+                    continue
+                results = resolve_positions(paths.positions_db, gateway=gateway)
+                resolved = sum(1 for r in results if r.auto_resolved)
+                if results:
+                    log.info("resolver.pass", attempted=len(results), resolved=resolved)
+            except Exception as exc:
+                log.warning("resolver.pass.error", exc=str(exc))
+
+    thread = threading.Thread(target=_loop, daemon=True, name="resolver-loop")
+    thread.start()
+    return thread
+
+
 def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
           port: int = 8765, run: bool = True) -> uvicorn.Server:
     """Boot the supervisor. ``run=False`` returns the Server for tests."""
@@ -237,6 +280,7 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
         _start_subconscious_loop(p)
         _start_monitor_loop(p)
         _start_dispatch_loop(p)
+        _start_resolver_loop(p)
         signal.signal(signal.SIGTERM, _on_signal)
         signal.signal(signal.SIGINT, _on_signal)
         try:
