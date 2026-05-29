@@ -265,6 +265,7 @@ function ResearchPage({ toast }) {
   const [urls, setUrls] = useState('');
   const [depth, setDepth] = useState('auto');
   const [budget, setBudget] = useState('1h');
+  const [plan, setPlan] = useState([]);
   const [busy, setBusy] = useState(false);
 
   const modes = (data && Array.isArray(data.modes)) ? data.modes : [];
@@ -280,7 +281,7 @@ function ResearchPage({ toast }) {
   function reset() {
     setStep(1); setSelected(null); setTopic('');
     setOptions(['', '']); setCriteria([{ label: '', weight: 1.0 }]); setUrls('');
-    setDepth('standard'); setBudget('1h');
+    setDepth('auto'); setBudget('1h'); setPlan([]);
   }
 
   function chooseMode(key) {
@@ -301,16 +302,21 @@ function ResearchPage({ toast }) {
   async function goReview() {
     const err = frameError();
     if (err) { toast.show(err, 'error'); return; }
-    // Auto depth: classify the question and pick a sensible tier before review.
-    if (wantsDepth && depth === 'auto') {
+    // For research modes, classify the question to (a) resolve Auto depth and
+    // (b) fetch the research plan (load-bearing sub-questions) to show before launch.
+    if (wantsDepth) {
       try {
         const c = await apiGet(`/api/classify?q=${encodeURIComponent(topic.trim())}`);
-        const t = c.suggested_tier || 'standard';
-        setDepth(t);
-        const label = (DEPTH_TIERS.find((x) => x.key === t) || {}).label || t;
-        toast.show(`Auto chose ${label} depth (${(c.question_type || '').replace(/_/g, ' ')}).`, 'info');
+        setPlan(Array.isArray(c.sub_questions) ? c.sub_questions : []);
+        if (depth === 'auto') {
+          const t = c.suggested_tier || 'standard';
+          setDepth(t);
+          const label = (DEPTH_TIERS.find((x) => x.key === t) || {}).label || t;
+          toast.show(`Auto chose ${label} depth (${(c.question_type || '').replace(/_/g, ' ')}).`, 'info');
+        }
       } catch (e) {
-        setDepth('standard');
+        if (depth === 'auto') setDepth('standard');
+        setPlan([]);
       }
     }
     setStep(3);
@@ -487,7 +493,26 @@ function ResearchPage({ toast }) {
                   v={cleanCriteria.map((c) => `${c.label} (×${c.weight})`).join(', ')} />}
                 {wantsUrls && cleanUrls.length > 0 &&
                   <Row k="Sources" v={`${cleanUrls.length} URL${cleanUrls.length === 1 ? '' : 's'}`} />}
+                {wantsDepth && depth !== 'auto' &&
+                  <Row k="Depth" v={(DEPTH_TIERS.find((t) => t.key === depth) || {}).label || depth} />}
               </div>
+
+              {wantsDepth && plan.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)',
+                    textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                    Research plan
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>
+                    The run will work through these load-bearing sub-questions; each
+                    is answered with cited evidence or recorded as a known-unknown.
+                  </div>
+                  <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13,
+                    color: 'var(--ink-2)', lineHeight: 1.6 }}>
+                    {plan.map((q, i) => <li key={i}>{q}</li>)}
+                  </ol>
+                </div>
+              )}
 
               <p style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5,
                 margin: '0 0 16px', maxWidth: '64ch' }}>

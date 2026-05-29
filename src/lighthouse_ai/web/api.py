@@ -756,9 +756,11 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         try:
             framed = run_framing(q)
             qtype = framed.question_type.value
+            subs = list(framed.load_bearing or framed.sub_questions)
         except Exception:
-            qtype = "exploratory_survey"
-        return {"question_type": qtype, "suggested_tier": auto_tier(qtype)}
+            qtype, subs = "exploratory_survey", []
+        return {"question_type": qtype, "suggested_tier": auto_tier(qtype),
+                "sub_questions": subs}
 
     # =========================== LIBRARY ===========================
 
