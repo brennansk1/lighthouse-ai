@@ -1,9 +1,93 @@
 # Lighthouse — Production Readiness Checklist
 
-Status snapshot: **87 Python modules · ~12,800 source lines · 817 tests (814 pass, 3 opt-in skips)**.
-Legend: ✅ done & tested · 🟡 built but stubbed/needs-real-backend · 🔌 built, needs runtime wiring · ⬜ not started.
+Status snapshot: **262 Python modules · ~44,000 source lines · 102 test files · 2476 tests pass · 52 opt-in skips · 36 research-skill sources · ruff clean**.
+Legend: ✅ done & tested (offline) · 🟡 built but needs-real-backend/live-data · 🔌 built, needs runtime wiring · ⬜ not started.
 
 A "vertical slice" of the product works **end-to-end, locally, today**: ingest documents → frame the question → retrieve with real `bge-m3` embeddings → synthesize with a real local LLM (Ollama) → enforce citation discipline → record calibration positions → stage a draft → approve it in the dashboard → export to Logseq. Everything below tracks the gap from that slice to full production.
+
+> **Where we are:** the v1.0 capability surface is **built and green offline** (2476 tests).
+> The remaining gate to a distributable release is overwhelmingly **live-data validation** —
+> most subsystems were built test-first against mocked backends and still need to be exercised
+> against real LLMs, real source APIs (the 36 skills), real optional ML models, and a real
+> browser. The **Deployment readiness** section directly below is the go/no-go summary; the
+> per-feature acceptance tables (further down) hold the detail.
+
+---
+
+## Deployment readiness — what to polish + fully test with live data
+
+Everything in this section is **built and unit-green offline**; the work is to validate it with
+real data and harden it. Grouped by priority.
+
+### A. Real-LLM research quality (highest leverage — the core product claim)
+- 🟡 **Framing planner** (`framing/pipeline.py`) — run primary LLM path under
+  `LIGHTHOUSE_REAL_BACKEND=1`; standard: ≥90% question-type agreement vs the golden set, frame
+  output coherent; deterministic keyword fallback unchanged.
+- 🟡 **Synthesizer denoiser** (`modes/deepdive.py`) — real synthesizer merges sections + emits
+  `[CONTRADICTION]`/`[GAP]`; standard: RAGAS/DeepResearch-Bench faithfulness ≥ 0.80, no fabricated
+  citations, contradiction-resolution visible.
+- 🟡 **Debate LLM judge** (`modes/debate.py`) — names the load-bearing crux on real models.
+- 🟡 **Recommender LLM rerank** (`skills/recommender.py`) — measure pick quality vs the rule-only
+  path; standard: source-coverage recall@10 ≥ 0.8, gold source in top-k.
+- 🟡 **End-to-end per mode** (Investigate/Survey/Reconstruct/Decide/Adjudicate/Ask/Watch) — one
+  real-backend E2E each, artifact passes the discipline gate.
+
+### B. Live source fetching — the 36 skills (validate each against its real API)
+- 🟡 Each skill fetches through `ctx.fetch → politeness → broker`; validate per source: real
+  endpoint shape + parser holds, rate limits respected, auth keys (FRED/BEA/BLS/Census/Guardian/
+  Congress/regulations.gov/GitHub) documented + working, graceful degradation when a domain isn't
+  trust-added. Standard: per-skill **recall@k** on a held-out question set (`eval/skill_eval.py`),
+  zero unhandled exceptions, audit line per fetch.
+- 🟡 **General Web** snippet-fallback + SearXNG path on a live SearXNG.
+- 🟡 **YouTube / IA-AV transcripts** via the shared `sources/transcript.py` against real captions.
+- 🔌 **Tier-B JS rendering** (`general_web.fetch_url_js`) — currently a stub; build Crawl4AI/
+  Playwright (scheduler-gated, RAM-capped, `fetch_backend="js"` tag + downgrade) before sites that
+  need it count as covered.
+
+### C. Optional ML models (measure with the model installed, not just the fallback)
+- ⬜ **Reranker** (FlagEmbedding `bge-reranker-v2-m3`): retrieval **precision@5 ≥ 0.40** (≥ 0.55 with
+  contextual retrieval); MRR ≥ 5% over hybrid.
+- ⬜ **Entailment/HHEM** faithfulness gate on a 20-pair golden set ≥ 0.80.
+- ⬜ **ProtectAI deBERTa injection** classifier: ROC vs the regex gate, FP rate held.
+- ⬜ **Sandbox hardening** (YARA + pikepdf) against a real hostile corpus; 100% block, 0 FP on benign.
+
+### D. Surfaces & ops
+- ⬜ **Browser QA (Playwright)** of every dashboard tab — 0 console errors, axe a11y pass,
+  keyboard-reachable; verify the new source picker, contradictions, known-unknowns, trust matrix,
+  `doctor news` surfacing. (Only static/Babel checks done.)
+- 🔌 **Calibration loop live** — wire the resolver cron (`supervisor.py` hook exists, gated) and
+  observe a real Position resolve + Brier update; surface per-skill/per-mode calibration in Track.
+- 🔌 **Deep-tier resume** — serializable tree state exists; wire dispatcher-level checkpoint to
+  `state.db` and prove a resumed multi-hour run.
+- 🟡 **Persistent vectors / replication** — Qdrant up; Litestream binary installed; restore drill.
+- ⬜ **24h supervisor soak** (no OOM/leak), **cross-platform** (Linux/systemd), **packaging**
+  (`pip install` + signed app + launchd/systemd), **security review** of egress/injection/sandbox.
+
+### Deployment standard — the bar EVERY feature must clear (go/no-go)
+1. **Tested** — offline-deterministic unit tests **and** a real-backend/live integration test
+   gated on `LIGHTHOUSE_REAL_BACKEND=1`, both green in CI.
+2. **Measured** — any quality claim has a number on the golden set meeting its threshold
+   (precision@5 ≥ 0.40, faithfulness ≥ 0.80, source recall@10 ≥ 0.8, sandbox 100%/0-FP), not assumed.
+3. **Degrades safely** — absent optional dep / blocked egress / offline ⇒ a clean fallback, never a
+   crash; every silent fallback logged and surfaced.
+4. **Audited & honest** — provenance + HMAC audit record what ran; zero fabricated citations;
+   contradictions surfaced; confidence never overstated (WEP downgrade applied).
+5. **Visible** — exposed in the UI/CLI with plain-language labels and a clear failure/empty state.
+6. **Repo gates** — `ruff` clean, `mypy` clean on public modules, CI green on macOS + Linux,
+   coverage ≥ 80% overall (≥ 90% persistence/governor/verification).
+
+### Phased timeline to first deployment
+- **Phase 1 — Measure (the core claim):** A (real-LLM quality) + C-reranker/entailment on the golden
+  set + stand up CI (pytest+ruff+mypy, macOS+Linux). Exit: precision@5 + faithfulness thresholds met,
+  CI green. *This is the gate that proves "better than frontier."*
+- **Phase 2 — Live sources:** B — validate the 36 skills against real APIs in tiers (regulated-wedge
+  first: PubMed/ClinicalTrials/CourtListener/SEC EDGAR/Federal-Register; then academic/econ/news);
+  per-skill recall@k recorded. Exit: every shipped skill has a green live test + a coverage number.
+- **Phase 3 — Surfaces & ops:** D — browser QA, calibration cron + Deep-tier resume wired, Qdrant +
+  Litestream, sandbox hardening on a real corpus, security review. Exit: the go/no-go bar met for
+  every feature.
+- **Phase 4 — Package & ship:** 24h soak + DR drill, cross-platform, packaging + signing, docs pass.
+  Exit: a researcher can `pip install lighthouse-ai` and reach the Definition of done below.
 
 ---
 
@@ -234,8 +318,14 @@ Test-type legend: **U** unit · **I** integration (real deps, skip-if-absent) ·
 
 ## Top of the queue (highest-leverage gaps)
 
-1. **Golden-set retrieval eval** — harness + `lighthouse eval` CLI now ship; run it with real backends (`lighthouse eval`, Ollama bge-m3 + FlagReranker installed) to capture precision / MRR / faithfulness numbers. The core quality claim is *runnable* but still unmeasured under real backends.
-2. **Browser render QA + Playwright** for the 7 webapp pages — only static checks done.
-3. **CI** (Actions: pytest + ruff + mypy, macOS + Linux) — gates everything else.
-4. **Wire egress proxy into the fetch path**; Telegram-confirmed kill switch.
-5. **Real reranker + real isolation (bubblewrap / ClamAV)** to satisfy the §3 / §4 standards.
+The **Deployment readiness** section at the top is now the authoritative queue. The single
+highest-leverage move remains **Phase 1 — Measure**: run the golden-set + DeepResearch-Bench
+evals under real backends to put numbers on the core "better-than-frontier" claim (real-LLM
+framing/synthesis quality, retrieval precision@5, faithfulness), and stand up CI
+(pytest + ruff + mypy, macOS + Linux) to gate everything after it. Then Phase 2 validates the
+36 skills against live APIs, Phase 3 hardens surfaces/ops, Phase 4 packages and ships.
+
+(Many items previously listed here are now done offline: reranker default-on, specialty adapters
+SEC EDGAR/CourtListener/+30 more, ProtectAI deBERTa injection layer, sandbox YARA/pikepdf,
+contradiction artifact, calibration auto-resolver, deep-tier VOI+synthesis. They move to "needs
+live-data validation," not "not started.")

@@ -45,7 +45,26 @@ entire run tamper-evident.
 - **Auto-resolver** (`verification/resolver.py`): Halawi et al. style — machine-
   resolvable positions auto-resolved at deadline
 - **WEP confidence bands** (ICD-203) + Brier calibration scoring + 90-day positions
-- **Source adapters**: arXiv, OpenAlex, PubMed, Crossref (all return `Document` objects)
+- **Research-skills library** — **36 sources**, one skill per source (academic, clinical,
+  legal, U.S.-federal, financial, economic-data, engineering, reference, media, 6 news
+  outlets + a news orchestrator), each a self-contained folder discovered by directory scan;
+  capability-restricted runner (a skill can't bypass the fetch/broker path); unsigned skills
+  carry a `community` tag + WEP downgrade
+- **Mode-aware source recommender + checkbox picker** — the wizard shows sources grouped by
+  category with the recommended ones pre-checked and a reason; `recommend(question, mode,
+  depth)` blends manifest rules + `bge-m3` SKILL.md similarity + optional LLM rerank
+- **Contradiction artifact** — first-class, 3-layer detection (chunk / claim / cross-skill);
+  surfaced per mode; auto-escalates to Adjudicate on load-bearing cross-skill disputes
+- **Deep tier** — value-of-information branch prioritization + cross-node synthesis weaving +
+  serializable resumable tree state
+- **Acquisition stack** — politeness layer (robots/crawl-delay/rate budgets), ML injection
+  classifier (ProtectAI deBERTa) behind the regex gate, hardened sandbox (YARA + pikepdf),
+  full extraction chain (trafilatura → pdfplumber → pypdf → pdfminer → docling)
+- **Source adapters**: arXiv, OpenAlex, PubMed, Crossref, Semantic Scholar, SEC EDGAR,
+  CourtListener, ClinicalTrials.gov, WHO, FRED/BEA/BLS/World Bank/OECD/Census, GitHub,
+  PyPI/npm/crates, Wikidata, Wayback, news wires (all return `Document` objects)
+- **`lighthouse doctor news`** — news-outlet reachability + trust matrix; **per-skill eval**
+  (recall@k + per-skill Brier calibration)
 - **SQLite-WAL spine**: outbox + saga compensation + HMAC-chained audit log
 - **Governor**: hierarchical token buckets, loop detector, injection gate, degradation
   tiers, cost report
@@ -61,28 +80,53 @@ entire run tamper-evident.
 - **Citation source diversity**: distinct source domains counted per report
 - **CI**: GitHub Actions, ruff clean, pytest
 
+## Path to deployment
+
+The capability surface is built and **green offline** (2476 tests). The honest gap to a
+distributable release is almost entirely **live-data validation** — most subsystems were
+built test-first against mocked backends and still need to be exercised against real LLMs,
+real source APIs, and a real browser. `docs/PRODUCTION_CHECKLIST.md` is the authoritative
+go/no-go doc; the short version:
+
+**Needs polish + full live-data testing (built, not yet validated end-to-end with real data):**
+- **Real-LLM research quality** — framing planner, synthesizer denoiser, debate judge, and
+  recommender LLM rerank all work offline; run them under `LIGHTHOUSE_REAL_BACKEND=1` (Ollama
+  `bge-m3` + `qwen3` + FlagReranker) and score against the golden set / DeepResearch Bench.
+- **Live source fetching through the egress guard** — the 36 skills fetch through
+  `ctx.fetch → politeness → broker`; validate each against its real API (rate limits, auth
+  keys, parser drift, graceful degradation when a domain isn't trust-added).
+- **Optional ML models** — reranker (precision@5), entailment/HHEM (faithfulness), deBERTa
+  injection (ROC) — measured with the model installed, not just the heuristic fallback.
+- **Web dashboard** — browser QA (Playwright) of every tab; only static/Babel checks done.
+- **Calibration loop & Deep-tier resume** — wire the resolver cron + dispatcher-level
+  checkpoint and observe a real multi-day Position resolve + a resumed Deep run.
+- **Ops** — Qdrant + Litestream up; 24h supervisor soak; cross-platform (Linux/systemd);
+  packaging (`pip install` / signed app); security review of egress/injection/sandbox.
+
+**Deployment standard (every feature must clear this bar):**
+1. **Tested** — unit (offline-deterministic) **and** a real-backend/live integration test
+   gated on `LIGHTHOUSE_REAL_BACKEND=1`, green.
+2. **Measured** — where a quality claim exists, a number on the golden set meets its
+   threshold (e.g. retrieval precision@5 ≥ 0.40, faithfulness ≥ 0.80), not assumed.
+3. **Degrades safely** — absent optional dep / blocked egress / offline ⇒ a clean fallback,
+   never a crash; every fallback logged.
+4. **Audited & honest** — provenance + audit chain record what ran; no fabricated citations;
+   contradictions surfaced; confidence never overstated.
+5. **Visible** — surfaced in the UI/CLI with plain-language labels and a clear failure state.
+
 ## Known limitations / not yet wired
+- **Optional model packages** (`minicheck`, FlagEmbedding, ProtectAI deBERTa) are not pulled
+  by default — those gates degrade gracefully to heuristics until installed.
+- **Tier-B JS rendering** (`general_web.fetch_url_js`) is a declared stub; **Tier-C**
+  fingerprint browsers are spec-only (opt-in, future).
+- **Document-ingestion UI** for Survey/Reconstruct is still a CLI/programmatic path.
+- **Deep-tier checkpoint** is serializable but not yet wired to dispatcher-level resume.
+- Litestream replication (binary optional), Zotero adapter, RAPTOR/LangGraph backbone —
+  deferred by design.
 
-**Affects a new user most:**
-- **Corpus auto-fetch into the dispatcher is not wired.** Corpus-backed modes
-  (Investigate / Ask / Survey / Reconstruct) ground on documents you attach; with
-  an empty corpus they run but have little to cite. Auto-fetch (arXiv/OpenAlex,
-  behind the sandbox) is the next functional priority.
-- **No document-ingestion UI yet.** Survey/Reconstruct need documents fed in;
-  today that's a CLI/programmatic path, not a dashboard upload.
-
-**Smaller gaps / planned:**
-- Deep-tier recursive runs are **not checkpointed** — an interrupted multi-hour
-  run restarts (resume is planned).
-- `minicheck` is not on PyPI — the entailment gate degrades gracefully to the
-  citation-coverage check when it's absent.
-- SearXNG mid-loop CRAG fetch — seam in place, integration pending.
-- Litestream replication — config written, binary optional.
-- Zotero integration — adapter pending. (**Logseq + Telegram are wired.**)
-- RAPTOR long-document tree, LangGraph backbone — deferred by design.
-
-Status: **pre-alpha**. See [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md)
-for the path to a distributable release.
+Status: **pre-alpha, feature-complete for v1.0 scope; validation-phase before release.**
+See [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md) and
+[`FUTURE_FEATURES.md`](./FUTURE_FEATURES.md).
 
 ## Quick start
 
@@ -219,12 +263,12 @@ Sources (arXiv · OpenAlex · PubMed · Crossref · RSS)
 
 ## Status
 
-**1283 tests passing · 3 skipped (opt-in real-backend / litestream binary) · ruff clean · macOS M4 24 GB verified (real Ollama: Decide validated end-to-end, backend=ollama, RAM-gated)**
+**2476 tests passing · 52 skipped (opt-in real-backend / litestream binary / absent optional models) · ruff clean · 262 modules · ~44k source lines · 36 research-skill sources · macOS M4 24 GB verified (real Ollama: Decide validated end-to-end, backend=ollama, RAM-gated). Live-data validation across the 36 skills + real-LLM quality is the remaining gate — see Path to deployment.**
 
 ## Development
 
 ```bash
-uv run pytest -q                          # 1283 pass, 3 skip
+uv run pytest -q                          # 2476 pass, 52 skip
 uv run ruff check src tests               # 0 errors
 LIGHTHOUSE_REAL_BACKEND=1 uv run pytest tests/test_backends_ollama.py  # real LLM
 ```
