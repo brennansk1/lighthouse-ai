@@ -65,6 +65,8 @@ const DEPTH_MODES = new Set(['investigate', 'ask', 'survey', 'reconstruct']);
 
 // The four depth tiers (see docs/research_depth_matrix.md). Display-layer only.
 const DEPTH_TIERS = [
+  { key: 'auto', label: 'Auto', time: 'recommended',
+    blurb: 'Pick the right depth for this question automatically. You can override.' },
   { key: 'quick', label: 'Quick', time: '~1–3 min',
     blurb: 'A fast, grounded scan. Fewer rounds, top findings only.' },
   { key: 'standard', label: 'Standard', time: '~5–10 min',
@@ -261,7 +263,7 @@ function ResearchPage({ toast }) {
   const [options, setOptions] = useState(['', '']);
   const [criteria, setCriteria] = useState([{ label: '', weight: 1.0 }]);
   const [urls, setUrls] = useState('');
-  const [depth, setDepth] = useState('standard');
+  const [depth, setDepth] = useState('auto');
   const [budget, setBudget] = useState('1h');
   const [busy, setBusy] = useState(false);
 
@@ -296,9 +298,21 @@ function ResearchPage({ toast }) {
     return null;
   }
 
-  function goReview() {
+  async function goReview() {
     const err = frameError();
     if (err) { toast.show(err, 'error'); return; }
+    // Auto depth: classify the question and pick a sensible tier before review.
+    if (wantsDepth && depth === 'auto') {
+      try {
+        const c = await apiGet(`/api/classify?q=${encodeURIComponent(topic.trim())}`);
+        const t = c.suggested_tier || 'standard';
+        setDepth(t);
+        const label = (DEPTH_TIERS.find((x) => x.key === t) || {}).label || t;
+        toast.show(`Auto chose ${label} depth (${(c.question_type || '').replace(/_/g, ' ')}).`, 'info');
+      } catch (e) {
+        setDepth('standard');
+      }
+    }
     setStep(3);
   }
 

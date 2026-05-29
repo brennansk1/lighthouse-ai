@@ -745,6 +745,21 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         from ..modes.registry import all_modes
         return {"modes": [m.as_dict() for m in all_modes()]}
 
+    @app.get("/api/classify", tags=["research"])
+    def classify(q: str) -> dict[str, Any]:
+        """Classify a question (deterministic, offline) and suggest a depth tier.
+
+        Powers the wizard's 'Auto' depth default so routine work needs no
+        decision. Never calls an LLM here (framing runs with gateway=None)."""
+        from ..framing.pipeline import run_framing
+        from ..modes.depth import auto_tier
+        try:
+            framed = run_framing(q)
+            qtype = framed.question_type.value
+        except Exception:
+            qtype = "exploratory_survey"
+        return {"question_type": qtype, "suggested_tier": auto_tier(qtype)}
+
     # =========================== LIBRARY ===========================
 
     @app.get("/api/library", tags=["library"])

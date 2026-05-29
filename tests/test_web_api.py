@@ -79,6 +79,12 @@ def test_export_all_artifact_types(migrated_paths, client, mode, meta, artifact_
     assert detail.get("artifact_type") == artifact_type
 
 
+def test_classify_suggests_depth_tier(client):
+    body = client.get("/api/classify", params={"q": "What is the capital of France?"}).json()
+    assert "question_type" in body
+    assert body["suggested_tier"] in {"quick", "standard", "thorough", "deep"}
+
+
 def test_job_get_404(client):
     assert client.get("/api/jobs/nope").status_code == 404
 

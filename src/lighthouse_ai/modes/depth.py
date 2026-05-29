@@ -61,3 +61,22 @@ def resolve_depth(name: str | None) -> dict[str, Any]:
     knobs = dict(DEPTH_TIERS[tier])
     knobs["tier"] = tier
     return knobs
+
+
+#: Auto-tier: map a framing question_type to a sensible default depth so routine
+#: work needs no decision. The user can always override.
+_QTYPE_TIER = {
+    "factual_lookup": "quick",
+    "comparative": "standard",
+    "decision_support": "standard",
+    "causal_explanation": "standard",
+    "predictive_forecast": "thorough",
+    "exploratory_survey": "thorough",
+    "controversy_resolution": "thorough",
+    "methodology_evaluation": "thorough",
+}
+
+
+def auto_tier(question_type: str | None) -> str:
+    """Suggested depth tier for a classified question type (defaults to standard)."""
+    return _QTYPE_TIER.get(str(question_type or "").strip().lower(), DEFAULT_TIER)
