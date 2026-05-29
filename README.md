@@ -224,12 +224,16 @@ Contributions welcome. Open an issue to discuss before large PRs. All new featur
 require unit tests; integration tests for real-backend paths must be gated on
 `LIGHTHOUSE_REAL_BACKEND=1` and must not start background processes.
 
-## Links
+## Documentation
 
-- [`PRODUCTION_CHECKLIST.md`](./PRODUCTION_CHECKLIST.md) — line-by-line status
-- [`lighthouse_design.md`](./lighthouse_design.md) — full design specification
-- [`MODE_PROCESSES.md`](./MODE_PROCESSES.md) — per-mode process details
-- [`SPRINT_QUALITY.md`](./SPRINT_QUALITY.md) — sprint acceptance criteria
+- [`docs/MODE_PROCESSES.md`](./docs/MODE_PROCESSES.md) — **the 7 research modes in
+  full detail** (algorithm, techniques, provenance, and optimality notes per mode)
+- [`docs/research_depth_matrix.md`](./docs/research_depth_matrix.md) — depth tiers
+  (Quick → Deep) × mode output
+- [`docs/lighthouse_design.md`](./docs/lighthouse_design.md) — full design specification
+- [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md) — release-readiness status
+- [`docs/webapp_tui_design.md`](./docs/webapp_tui_design.md) — dashboard / TUI design
+- `docs/dev/` — working notes (sprint plans, build logs)
 
 ## License
 
