@@ -60,6 +60,11 @@ class ScoredCell:
     score: float           # raw rating in [0, 1] of how well option meets criterion
     contribution: float    # weight-normalised contribution to the option's total
     rationale: str = ""
+    # Additive field (§6 Decide): per-cell uncertainty band derived from
+    # evidence disagreement on this (option, criterion) pair. 0.0 means the
+    # evidence is consonant; larger values widen the ± band the sensitivity
+    # sweep perturbs the score by. Defaults keep existing constructors valid.
+    variance: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -71,6 +76,10 @@ class SensitivityResult:
     # Positive = winner's lead grows (criterion was actually helping runner-up);
     # Negative = winner's lead shrinks (criterion was helping the winner).
     margin_delta: float = 0.0
+    # Additive field (§6 Decide): True when this criterion's *evidence* is
+    # contested (some cell on it carries non-zero variance). A robust winner
+    # must survive perturbing these contested scores, not just dropping weights.
+    evidence_contested: bool = False
 
 
 @dataclass(frozen=True)
@@ -89,6 +98,18 @@ class DecideReport:
     # Additive fields — safe to add; frontend ignores unknown keys.
     decisive_criteria: list[str] = field(default_factory=list)
     primary_driver: str | None = None   # highest-weighted criterion
+    # Additive fields (§6 Decide — evidence variance):
+    # robust_to_weights mirrors the original notion (no single-criterion drop
+    # flips the winner). robust_to_evidence is the stronger test: the winner
+    # also survives perturbing every contested cell by its variance band toward
+    # the runner-up. A winner is only "robust" if BOTH hold.
+    robust_to_weights: bool = True
+    robust_to_evidence: bool = True
+    # Criteria whose evidence is contested (carry non-zero cell variance).
+    contested_criteria: list[str] = field(default_factory=list)
+    # True when a decisive criterion ALSO has contested evidence — the crux
+    # then names both ("decided by X AND the evidence on X is contested").
+    decided_on_contested_evidence: bool = False
 
 
 def _coerce_options(options: Sequence[Option | str]) -> list[Option]:
@@ -150,6 +171,7 @@ def _compute_totals(
     options: list[Option],
     criteria: list[Criterion],
     score_fn,
+    var_fn=None,
 ) -> tuple[list[ScoredCell], dict[str, float]]:
     """Score every (option, criterion) pair and return cells + weighted totals.
 
@@ -157,6 +179,10 @@ def _compute_totals(
     ``effective_score = raw`` when ``higher_is_better`` and ``1 - raw``
     otherwise, so the total always lives in [0, 1] and a higher total is always
     better regardless of individual criterion polarity.
+
+    ``var_fn(option, criterion) -> float`` (optional) supplies a per-cell
+    uncertainty band derived from evidence disagreement; it only annotates the
+    emitted ``ScoredCell.variance`` and never shifts the baseline total.
     """
     weight_sum = sum(c.weight for c in criteria) or 1.0
     cells: list[ScoredCell] = []
@@ -167,11 +193,13 @@ def _compute_totals(
             effective = raw if c.higher_is_better else (1.0 - raw)
             contribution = (c.weight / weight_sum) * effective
             totals[o.label] += contribution
+            var = float(var_fn(o.label, c.label)) if var_fn is not None else 0.0
             cells.append(ScoredCell(
                 option=o.label,
                 criterion=c.label,
                 score=round(raw, 3),
                 contribution=round(contribution, 4),
+                variance=round(var, 4),
             ))
     return cells, {k: round(v, 4) for k, v in totals.items()}
 
@@ -194,8 +222,10 @@ def _sensitivity(
     score_fn,
     baseline_winner: str,
     baseline_margin: float,
+    contested: set[str] | None = None,
 ) -> list[SensitivityResult]:
     """Drop each criterion in turn and record whether the winner changes."""
+    contested = contested or set()
     results: list[SensitivityResult] = []
     for c in criteria:
         remaining = [x for x in criteria if x.label != c.label]
@@ -206,6 +236,7 @@ def _sensitivity(
                 decisive=True,
                 swing_to=None,
                 margin_delta=0.0,
+                evidence_contested=c.label in contested,
             ))
             continue
         _, sub_totals = _compute_totals(options, remaining, score_fn)
@@ -217,8 +248,51 @@ def _sensitivity(
             decisive=decisive,
             swing_to=sub_winner if decisive else None,
             margin_delta=margin_delta,
+            evidence_contested=c.label in contested,
         ))
     return results
+
+
+def _evidence_perturbed_winner(
+    options: list[Option],
+    criteria: list[Criterion],
+    score_fn,
+    var_fn,
+    baseline_winner: str,
+) -> tuple[str, float]:
+    """Re-rank under an adversarial evidence-disagreement perturbation.
+
+    Each cell's raw score is nudged by its variance band in the direction that
+    *hurts the baseline winner*: the winner's cells move down by their variance,
+    every challenger's cells move up by theirs (after polarity folding). This is
+    the pessimistic corner of the evidence uncertainty box. If the winner still
+    leads here, it is robust to evidence disagreement, not just to weighting.
+    """
+    weight_sum = sum(c.weight for c in criteria) or 1.0
+    totals: dict[str, float] = {o.label: 0.0 for o in options}
+    for o in options:
+        for c in criteria:
+            raw = score_fn(o.label, c.label)
+            var = float(var_fn(o.label, c.label)) if var_fn is not None else 0.0
+            effective = raw if c.higher_is_better else (1.0 - raw)
+            # Push the winner toward its worst case, challengers toward best.
+            if o.label == baseline_winner:
+                effective -= var
+            else:
+                effective += var
+            effective = max(0.0, min(1.0, effective))
+            totals[o.label] += (c.weight / weight_sum) * effective
+    totals = {k: round(v, 4) for k, v in totals.items()}
+    winner, _, margin = _rank(totals)
+    return winner, margin
+
+
+def _join(labels: list[str]) -> str:
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) == 2:
+        return f"{labels[0]} and {labels[1]}"
+    return ", ".join(labels[:-1]) + f", and {labels[-1]}"
 
 
 def _build_crux(
@@ -227,32 +301,43 @@ def _build_crux(
     decisive_crits: list[str],
     sensitivity: list[SensitivityResult],
     primary_driver: str,
+    contested_crits: list[str] | None = None,
+    robust_to_evidence: bool = True,
 ) -> str:
     """Produce a falsifiable, Adjudicate-ready crux statement.
 
     The statement names the specific criterion/criteria that decide the outcome
-    and frames the comparison explicitly so it can seed a debate.
+    and frames the comparison explicitly so it can seed a debate. When the
+    decisive criterion's *evidence* is itself contested, the crux says so — the
+    decision rests on a disputed measurement, the highest-leverage thing to
+    Adjudicate.
     """
+    contested_crits = contested_crits or []
     if runner_up is None:
         return f"{winner} is the only option under evaluation."
 
+    # Decisive criteria whose evidence is also contested — the load-bearing
+    # crux per §6 (decided by X AND the evidence on X is contested).
+    decisive_contested = [c for c in decisive_crits if c in contested_crits]
+
     if not decisive_crits:
-        # No single criterion flip — lead is robust.
+        # No single weight-drop flip. The lead may still be fragile to evidence
+        # disagreement — say so explicitly rather than overclaiming robustness.
+        if contested_crits and not robust_to_evidence:
+            cc = _join(sorted(contested_crits))
+            return (
+                f"{winner} leads {runner_up} under every weighting, but the "
+                f"evidence on {cc} is contested and resolving it against "
+                f"{winner} flips the decision. "
+                f"Adjudicate: what does the evidence on {cc} actually show?"
+            )
         return (
             f"{winner} beats {runner_up} across all weighting scenarios: "
             f"no single criterion flip reverses the outcome. "
             f"The primary driver is {primary_driver}."
         )
 
-    # Build a concise list of decisive criteria.
-    if len(decisive_crits) == 1:
-        crits_phrase = decisive_crits[0]
-    elif len(decisive_crits) == 2:
-        crits_phrase = f"{decisive_crits[0]} and {decisive_crits[1]}"
-    else:
-        crits_phrase = (
-            ", ".join(decisive_crits[:-1]) + f", and {decisive_crits[-1]}"
-        )
+    crits_phrase = _join(decisive_crits)
 
     # Collect the set of alternatives that would win if decisive criteria
     # were removed (may be more than one if different criteria point to
@@ -261,19 +346,29 @@ def _build_crux(
         s.swing_to for s in sensitivity
         if s.decisive and s.swing_to is not None
     })
+
+    contested_clause = ""
+    if decisive_contested:
+        dc = _join(decisive_contested)
+        contested_clause = (
+            f" AND the evidence on {dc} is contested"
+        )
+
     if swing_targets:
         swing_phrase = " or ".join(swing_targets)
         return (
             f"The choice of {winner} over {runner_up} is decided by "
-            f"{crits_phrase}: downweighting those criteria causes "
-            f"{swing_phrase} to win instead. "
-            f"Adjudicate: is {crits_phrase} the right basis for this decision?"
+            f"{crits_phrase}{contested_clause}: downweighting those criteria "
+            f"causes {swing_phrase} to win instead. "
+            f"Adjudicate: is {crits_phrase} the right basis for this decision"
+            f"{' and what does its disputed evidence show' if decisive_contested else ''}?"
         )
 
     return (
         f"The choice of {winner} over {runner_up} is decided by "
-        f"{crits_phrase}. "
-        f"Adjudicate: is {crits_phrase} the right basis for this decision?"
+        f"{crits_phrase}{contested_clause}. "
+        f"Adjudicate: is {crits_phrase} the right basis for this decision"
+        f"{' and what does its disputed evidence show' if decisive_contested else ''}?"
     )
 
 
@@ -286,6 +381,7 @@ def run_decide(
     job_id: str | None = None,
     gate: SchedulerGate | None = None,
     positions_db=None,
+    evidence_variance: dict[tuple[str, str], float] | None = None,
 ) -> DecideReport:
     """Score ``options`` against weighted ``criteria`` and surface the crux.
 
@@ -310,6 +406,16 @@ def run_decide(
     positions_db:
         If supplied, the winner claim is recorded via
         ``verification.positions.record_position``.
+    evidence_variance:
+        Optional ``(option_label, criterion_label) -> variance`` mapping (§6
+        Decide). A non-zero variance is an uncertainty band on that cell's
+        score caused by *evidence disagreement* (a contradiction surfaced by
+        the verification layer). It is propagated into the sensitivity sweep:
+        a criterion carrying any contested cell is flagged
+        ``evidence_contested``, and a separate adversarial evidence
+        perturbation tests whether the winner survives the worst-case corner
+        of those bands. A ``robust`` winner must survive BOTH the weight sweep
+        AND this evidence perturbation. Deterministic and fully offline.
 
     Returns
     -------
@@ -353,25 +459,63 @@ def run_decide(
         def score_fn(o: str, c: str) -> float:
             return _llm_score(gateway, question, o, c, job_id=job_id, gate=gate)
 
-    cells, totals = _compute_totals(opts, crits, score_fn)
+    ev = evidence_variance or {}
+
+    def var_fn(o: str, c: str) -> float:
+        # Variance is clamped to a sane [0, 1] band; negative is meaningless.
+        return max(0.0, min(1.0, float(ev.get((o, c), 0.0))))
+
+    cells, totals = _compute_totals(opts, crits, score_fn, var_fn)
     winner, runner_up, margin = _rank(totals)
 
-    sensitivity = _sensitivity(opts, crits, score_fn, winner, margin)
+    # Criteria carrying any contested (non-zero variance) cell.
+    contested_set = {
+        cell.criterion for cell in cells if cell.variance > 0.0
+    }
+    contested_criteria = [c.label for c in crits if c.label in contested_set]
+
+    sensitivity = _sensitivity(
+        opts, crits, score_fn, winner, margin, contested=contested_set
+    )
 
     decisive_crits = [s.criterion for s in sensitivity if s.decisive]
+
+    # --- Two-axis robustness (§6 Decide) -------------------------------- #
+    # Axis 1: weight perturbation — no single criterion drop flips the winner.
+    robust_to_weights = len(decisive_crits) == 0
+    # Axis 2: evidence perturbation — winner survives the worst-case corner of
+    # every contested cell's uncertainty band. Only meaningful when something
+    # is actually contested; with no variance the evidence is consonant.
+    if contested_set:
+        ev_winner, _ = _evidence_perturbed_winner(
+            opts, crits, score_fn, var_fn, winner
+        )
+        robust_to_evidence = ev_winner == winner
+    else:
+        robust_to_evidence = True
+    decided_on_contested_evidence = any(
+        c in contested_set for c in decisive_crits
+    )
 
     # Primary driver: the criterion with the highest weight (most influential
     # by construction regardless of sensitivity).
     primary_driver = max(crits, key=lambda c: c.weight).label
 
-    crux = _build_crux(winner, runner_up, decisive_crits, sensitivity, primary_driver)
+    crux = _build_crux(
+        winner, runner_up, decisive_crits, sensitivity, primary_driver,
+        contested_crits=contested_criteria,
+        robust_to_evidence=robust_to_evidence,
+    )
 
     claims = [f"{winner} is the best option for: {question}"]
     if positions_db is not None:
         try:
             from ..verification.positions import record_position
             # Confidence scales with margin; a thin margin is a weak claim.
+            # Contested evidence on the winner is an additional discount.
             prob = max(0.5, min(0.95, 0.5 + margin))
+            if not robust_to_evidence:
+                prob = max(0.5, prob - 0.1)
             record_position(positions_db, claim=claims[0], probability=round(prob, 3))
         except Exception:
             pass
@@ -390,4 +534,8 @@ def run_decide(
         claims=claims,
         decisive_criteria=decisive_crits,
         primary_driver=primary_driver,
+        robust_to_weights=robust_to_weights,
+        robust_to_evidence=robust_to_evidence,
+        contested_criteria=contested_criteria,
+        decided_on_contested_evidence=decided_on_contested_evidence,
     )

@@ -255,6 +255,184 @@ function WizardField({ label, hint, children }) {
   );
 }
 
+// ── Source Picker ──────────────────────────────────────────────────────────
+//
+// Fetches /api/sources and /api/recommend-sources?q=&mode=&depth=, renders
+// categorized checkboxes with recommendation reasons and tier/grade badges.
+// Pre-checks recommended skill_ids and enabled_by_default sources.
+
+// Small pill badge used for tier, grade, community, and role labels.
+function SkillBadge({ label, color }) {
+  return (
+    <span style={{
+      display: 'inline-block', fontSize: 10, fontWeight: 700,
+      lineHeight: 1, padding: '2px 6px', borderRadius: 3,
+      background: color || 'var(--rule-soft)', color: 'var(--ink-2)',
+      textTransform: 'uppercase', letterSpacing: '0.04em', marginRight: 4,
+    }}>{label}</span>
+  );
+}
+
+const TIER_COLOR = { A: '#e8f5e9', B: '#fff3e0', C: '#fce4ec' };
+const GRADE_COLOR = { A: '#c8e6c9', B: '#ffe0b2', C: '#f8bbd0' };
+
+function SourcePicker({ topic, mode, depth, selectedSkills, setSelectedSkills }) {
+  const [sources, setSources] = useState([]);
+  const [recMap, setRecMap] = useState({});   // skill_id -> {score, reason, role}
+  const [loadingSources, setLoadingSources] = useState(false);
+  const [sourcesError, setSourcesError] = useState(null);
+
+  // Fetch both endpoints whenever topic/mode/depth change.
+  useEffect(() => {
+    let live = true;
+    setLoadingSources(true);
+    setSourcesError(null);
+
+    const sourcesFetch = apiGet('/api/sources').catch(() => ({ sources: [] }));
+    const recQ = encodeURIComponent(topic || '');
+    const recFetch = apiGet(
+      `/api/recommend-sources?q=${recQ}&mode=${encodeURIComponent(mode || '')}&depth=${encodeURIComponent(depth || '')}`
+    ).catch(() => ({ recommended: [] }));
+
+    Promise.all([sourcesFetch, recFetch]).then(([sData, rData]) => {
+      if (!live) return;
+      const allSources = Array.isArray(sData && sData.sources) ? sData.sources : [];
+      const recs = Array.isArray(rData && rData.recommended) ? rData.recommended : [];
+
+      // Build recommendation lookup.
+      const rm = {};
+      recs.forEach((r) => { if (r.skill_id) rm[r.skill_id] = r; });
+      setRecMap(rm);
+      setSources(allSources);
+
+      // Pre-select: recommended skill_ids + enabled_by_default, deduplicated.
+      const preSelected = new Set();
+      recs.forEach((r) => { if (r.skill_id) preSelected.add(r.skill_id); });
+      allSources.forEach((s) => { if (s.enabled_by_default) preSelected.add(s.id); });
+      // Only update selection if this is the first load (selectedSkills is empty).
+      setSelectedSkills((prev) => {
+        if (prev.length > 0) return prev;
+        return Array.from(preSelected);
+      });
+    }).catch(() => {
+      if (live) setSourcesError('Could not load sources. You can still launch.');
+    }).finally(() => {
+      if (live) setLoadingSources(false);
+    });
+
+    return () => { live = false; };
+  }, [topic, mode, depth]);
+
+  function toggleSkill(id) {
+    setSelectedSkills((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  // Group sources by category.
+  const grouped = {};
+  sources.forEach((s) => {
+    const cat = s.category || 'Other';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(s);
+  });
+  const categories = Object.keys(grouped).sort();
+
+  if (loadingSources) {
+    return (
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: '6px 0' }}>
+        Loading sources…
+      </div>
+    );
+  }
+
+  if (sourcesError) {
+    return (
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: '6px 0' }}>
+        {sourcesError}
+      </div>
+    );
+  }
+
+  if (sources.length === 0) {
+    return (
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: '8px 0',
+        fontStyle: 'italic' }}>
+        No sources configured. The run will use default corpus access.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10,
+        lineHeight: 1.45 }}>
+        Pre-checked sources are recommended for this question and mode.
+        Add or remove sources — the run uses whatever is checked.
+      </div>
+
+      {categories.map((cat) => (
+        <div key={cat} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
+            letterSpacing: '0.06em', color: 'var(--muted)', marginBottom: 6,
+            paddingBottom: 3, borderBottom: '1px solid var(--rule-soft)' }}>
+            {cat}
+          </div>
+          {grouped[cat].map((src) => {
+            const checked = selectedSkills.includes(src.id);
+            const rec = recMap[src.id];
+            return (
+              <label key={src.id} style={{ display: 'flex', alignItems: 'flex-start',
+                gap: 8, padding: '6px 0', cursor: 'pointer',
+                borderBottom: '1px solid var(--rule-soft)' }}>
+                <input type="checkbox" checked={checked}
+                  onChange={() => toggleSkill(src.id)}
+                  style={{ marginTop: 2, flexShrink: 0, accentColor: 'var(--primary)' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center',
+                    flexWrap: 'wrap', gap: 4, marginBottom: 2 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600,
+                      color: 'var(--ink)' }}>{src.name}</span>
+                    {src.tier && (
+                      <SkillBadge label={`Tier ${src.tier}`}
+                        color={TIER_COLOR[src.tier] || 'var(--rule-soft)'} />
+                    )}
+                    {src.default_grade && (
+                      <SkillBadge label={`Grade ${src.default_grade}`}
+                        color={GRADE_COLOR[src.default_grade] || 'var(--rule-soft)'} />
+                    )}
+                    {src.community && (
+                      <SkillBadge label="community" color="#f3e5f5" />
+                    )}
+                    {rec && rec.role && (
+                      <SkillBadge label={rec.role.replace(/_/g, ' ')}
+                        color="#e3f2fd" />
+                    )}
+                  </div>
+                  {src.description && (
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)',
+                      lineHeight: 1.4 }}>{src.description}</div>
+                  )}
+                  {rec && rec.reason && (
+                    <div style={{ fontSize: 11, color: 'var(--primary)',
+                      marginTop: 2, lineHeight: 1.35 }}>
+                      Recommended: {rec.reason}
+                    </div>
+                  )}
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      ))}
+
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+        {selectedSkills.length} source{selectedSkills.length === 1 ? '' : 's'} selected
+      </div>
+    </div>
+  );
+}
+
 function ResearchPage({ toast }) {
   const { data, loading, error } = useApi('/api/modes', { pollMs: 0 });
   const [step, setStep] = useState(1);
@@ -267,6 +445,7 @@ function ResearchPage({ toast }) {
   const [budget, setBudget] = useState('1h');
   const [plan, setPlan] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [selectedSkills, setSelectedSkills] = useState([]);
 
   const modes = (data && Array.isArray(data.modes)) ? data.modes : [];
   const sel = modes.find((m) => m.key === selected) || null;
@@ -281,7 +460,7 @@ function ResearchPage({ toast }) {
   function reset() {
     setStep(1); setSelected(null); setTopic('');
     setOptions(['', '']); setCriteria([{ label: '', weight: 1.0 }]); setUrls('');
-    setDepth('auto'); setBudget('1h'); setPlan([]);
+    setDepth('auto'); setBudget('1h'); setPlan([]); setSelectedSkills([]);
   }
 
   function chooseMode(key) {
@@ -336,6 +515,7 @@ function ResearchPage({ toast }) {
         if (depth === 'deep') body.budget = budget;
       }
       if (wantsUrls && cleanUrls.length) body.source_urls = cleanUrls;
+      if (selectedSkills.length) body.selected_skills = selectedSkills;
       const r = await apiPost('/api/jobs', body);
       toast.show(`Started ${sel.label}. Track it in Activity (run ${r.id}).`, 'success');
       reset();
@@ -465,6 +645,16 @@ function ResearchPage({ toast }) {
                 </WizardField>
               )}
 
+              <WizardField label="Sources"
+                hint="Select the sources the run should draw on. Recommended sources are pre-checked based on your question and mode.">
+                <SourcePicker
+                  topic={topic}
+                  mode={selected}
+                  depth={depth}
+                  selectedSkills={selectedSkills}
+                  setSelectedSkills={setSelectedSkills} />
+              </WizardField>
+
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <Btn kind="ghost" onClick={() => setStep(1)}>Back</Btn>
                 <Btn onClick={goReview}>Next: review</Btn>
@@ -492,9 +682,13 @@ function ResearchPage({ toast }) {
                 {isDecide && <Row k="Criteria"
                   v={cleanCriteria.map((c) => `${c.label} (×${c.weight})`).join(', ')} />}
                 {wantsUrls && cleanUrls.length > 0 &&
-                  <Row k="Sources" v={`${cleanUrls.length} URL${cleanUrls.length === 1 ? '' : 's'}`} />}
+                  <Row k="Source URLs" v={`${cleanUrls.length} URL${cleanUrls.length === 1 ? '' : 's'}`} />}
                 {wantsDepth && depth !== 'auto' &&
                   <Row k="Depth" v={(DEPTH_TIERS.find((t) => t.key === depth) || {}).label || depth} />}
+                <Row k="Research sources"
+                  v={selectedSkills.length
+                    ? `${selectedSkills.length} source${selectedSkills.length === 1 ? '' : 's'} selected`
+                    : 'Default corpus access'} />
               </div>
 
               {wantsDepth && plan.length > 0 && (
@@ -625,14 +819,70 @@ function TimelineView({ body }) {
   );
 }
 
+// KnownUnknowns: renders the open_questions section if present on the artifact.
+// These are surfaced as a clearly-labeled "Known unknowns" block — questions the
+// run identified but could not answer. They are distinct from the main content.
+function KnownUnknowns({ openQuestions }) {
+  if (!openQuestions || openQuestions.length === 0) return null;
+  return (
+    <div style={{ marginTop: 22, borderTop: '2px solid var(--rule)', paddingTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+          letterSpacing: '0.06em', color: 'var(--muted)' }}>Known unknowns</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>
+          — questions the run identified but could not answer
+        </span>
+      </div>
+      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--ink-2)',
+        lineHeight: 1.65 }}>
+        {openQuestions.map((q, i) => (
+          <li key={i} style={{ marginBottom: 4 }}>{q}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ArtifactBody({ artifact }) {
   const t = artifact.artifact_type;
   const body = artifact.body;
-  if (t === 'matrix') return <MatrixView body={body} />;
-  if (t === 'table') return <TableView body={body} />;
-  if (t === 'timeline') return <TimelineView body={body} />;
-  // report / verdict / transcript / digest → prose HTML.
-  return <div dangerouslySetInnerHTML={{ __html: artifact.body_html || '<em>No content.</em>' }} />;
+
+  // Normalize open_questions from body.open_questions or top-level artifact.open_questions.
+  const openQuestions = (
+    (body && Array.isArray(body.open_questions) && body.open_questions.length > 0
+      ? body.open_questions
+      : null) ||
+    (Array.isArray(artifact.open_questions) && artifact.open_questions.length > 0
+      ? artifact.open_questions
+      : null) ||
+    []
+  );
+
+  if (t === 'matrix') return (
+    <React.Fragment>
+      <MatrixView body={body} />
+      <KnownUnknowns openQuestions={openQuestions} />
+    </React.Fragment>
+  );
+  if (t === 'table') return (
+    <React.Fragment>
+      <TableView body={body} />
+      <KnownUnknowns openQuestions={openQuestions} />
+    </React.Fragment>
+  );
+  if (t === 'timeline') return (
+    <React.Fragment>
+      <TimelineView body={body} />
+      <KnownUnknowns openQuestions={openQuestions} />
+    </React.Fragment>
+  );
+  // report / verdict / transcript / digest → prose HTML + known unknowns.
+  return (
+    <React.Fragment>
+      <div dangerouslySetInnerHTML={{ __html: artifact.body_html || '<em>No content.</em>' }} />
+      <KnownUnknowns openQuestions={openQuestions} />
+    </React.Fragment>
+  );
 }
 
 const LIBRARY_FILTERS = [

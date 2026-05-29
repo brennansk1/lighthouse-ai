@@ -155,6 +155,10 @@ class SourcedDate:
     source_id: str
 
 
+_DISPUTED_DATE_THRESHOLD: float = 0.6
+"""Certainty below this value → ``disputed_date=True`` badge (§6.2)."""
+
+
 @dataclass(frozen=True)
 class TimelineEvent:
     event_id: str
@@ -169,6 +173,14 @@ class TimelineEvent:
     winning_source_count: int = 0
     # Additive: total distinct sources for this event.
     total_source_count: int = 0
+    # Additive: True when certainty < _DISPUTED_DATE_THRESHOLD (§6.2).
+    disputed_date: bool = False
+    # Additive: alternate resolved dates retained from losing vote clusters.
+    # Each entry is (normalized_date, winning_source_count_for_that_date).
+    alternate_dates: tuple[tuple[str, int], ...] = ()
+    # Additive: cross-reference to a sibling event_id when this event was
+    # produced by splitting a factual contradiction (§6.2).
+    factual_split_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -178,6 +190,8 @@ class ReconstructReport:
     claims: list[str] = field(default_factory=list)
     # Additive: how many documents were processed.
     doc_count: int = 0
+    # Additive: synthesis notes aggregated across events (gap #20).
+    synthesis_notes: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +309,166 @@ def _llm_extract(gateway: Gateway, question: str, doc: Document, *,
 
 
 # ---------------------------------------------------------------------------
+# Synthesis pass (gap #20) — trend / pattern detection across events
+# ---------------------------------------------------------------------------
+
+def _stub_synthesis_reconstruct(events: list[TimelineEvent]) -> list[str]:
+    """Deterministic offline synthesis: surface patterns without an LLM.
+
+    Detects:
+    * Disputed-date events (certainty < threshold).
+    * Factual-split events (cross-referenced pairs).
+    * Simple chronological span and event density.
+    """
+    notes: list[str] = []
+    if not events:
+        return notes
+
+    disputed = [e for e in events if e.disputed_date]
+    splits = [e for e in events if e.factual_split_ref is not None]
+
+    if disputed:
+        notes.append(
+            f"{len(disputed)} event(s) carry a disputed-date badge "
+            f"(certainty < {_DISPUTED_DATE_THRESHOLD}): "
+            + ", ".join(e.event_id for e in disputed) + "."
+        )
+    if splits:
+        pairs: set[frozenset[str]] = set()
+        for e in splits:
+            if e.factual_split_ref:
+                pairs.add(frozenset({e.event_id, e.factual_split_ref}))
+        notes.append(
+            f"{len(pairs)} factual contradiction(s) were split into paired "
+            "cross-referenced timeline entries."
+        )
+
+    dates = sorted(e.date for e in events)
+    if len(dates) >= 2:
+        notes.append(
+            f"Timeline spans {dates[0]} to {dates[-1]} "
+            f"across {len(events)} event(s)."
+        )
+
+    return notes
+
+
+def _llm_synthesis_reconstruct(
+    gateway: Gateway,
+    question: str,
+    events: list[TimelineEvent],
+    *,
+    job_id: str | None,
+    gate: SchedulerGate | None,
+) -> list[str]:
+    """Gateway-backed synthesis: detect trends/patterns across events (gap #20).
+
+    Falls back to ``_stub_synthesis_reconstruct`` on any exception.
+    """
+    if not events:
+        return _stub_synthesis_reconstruct(events)
+
+    lines = [f"Reconstruction question: {question}", "Timeline events:"]
+    for e in events:
+        badge = " [disputed date]" if e.disputed_date else ""
+        split = f" [factual split ↔ {e.factual_split_ref}]" if e.factual_split_ref else ""
+        lines.append(f"  {e.date}{badge}{split}: {e.action[:120]}")
+
+    prompt = (
+        "\n".join(lines)
+        + "\n\nIdentify key trends, patterns, and recurring actors across this "
+        "timeline. Note any disputed dates or factual contradictions. "
+        "Reply with one observation per line."
+    )
+    try:
+        with gate_ctx(gate):
+            resp = gateway.complete_structured(prompt, job_id=job_id)
+        raw = [ln.strip(" -•*") for ln in resp.text.splitlines() if ln.strip()]
+        return raw if raw else _stub_synthesis_reconstruct(events)
+    except Exception:
+        return _stub_synthesis_reconstruct(events)
+
+
+# ---------------------------------------------------------------------------
+# Factual-split helper (§6.2 — split different actor/action contradictions)
+# ---------------------------------------------------------------------------
+
+def _actor_overlap(actors_a: tuple[str, ...], actors_b: tuple[str, ...]) -> bool:
+    """True when two actor sets share at least one actor (same event core)."""
+    return bool(set(actors_a) & set(actors_b))
+
+
+def _split_factual_contradictions(
+    events: list[TimelineEvent],
+) -> list[TimelineEvent]:
+    """Detect and split FACTUAL contradictions: same date, different actors.
+
+    When two timeline events share the *same resolved date* but have *no actor
+    overlap* (different actor/action), they represent a factual contradiction
+    rather than a deduplication collision.  §6.2 says to split them into two
+    cross-referenced entries.
+
+    We add ``factual_split_ref`` pointing to the sibling event_id on both
+    entries.  Existing data (date, certainty, sources) is preserved; we only
+    add the cross-reference field.
+
+    Note: events arriving here have already been deduplicated by action-hash,
+    so two events with the same hash are the *same* underlying event.  Two
+    events with *different* hashes but the *same date* and *no actor overlap*
+    are the contradiction case.
+
+    Returns a new list (input is not mutated).
+    """
+    # Group by resolved date.
+    by_date: dict[str, list[TimelineEvent]] = {}
+    for ev in events:
+        by_date.setdefault(ev.date, []).append(ev)
+
+    # Build a mapping of event_id → factual_split_ref (partner event_id).
+    splits: dict[str, str] = {}
+    for _date, group in by_date.items():
+        if len(group) < 2:
+            continue
+        # Check every pair in the group.
+        for i in range(len(group)):
+            for j in range(i + 1, len(group)):
+                a, b = group[i], group[j]
+                # No actor overlap → factual contradiction.
+                if not _actor_overlap(a.actors, b.actors):
+                    # If already assigned a ref, keep the first one.
+                    if a.event_id not in splits:
+                        splits[a.event_id] = b.event_id
+                    if b.event_id not in splits:
+                        splits[b.event_id] = a.event_id
+
+    if not splits:
+        return events
+
+    out: list[TimelineEvent] = []
+    for ev in events:
+        ref = splits.get(ev.event_id)
+        if ref is not None:
+            out.append(TimelineEvent(
+                event_id=ev.event_id,
+                date=ev.date,
+                actors=ev.actors,
+                action=ev.action,
+                sources=ev.sources,
+                certainty=ev.certainty,
+                inferred=ev.inferred,
+                date_conflicts=ev.date_conflicts,
+                winning_source_count=ev.winning_source_count,
+                total_source_count=ev.total_source_count,
+                disputed_date=ev.disputed_date,
+                alternate_dates=ev.alternate_dates,
+                factual_split_ref=ref,
+            ))
+        else:
+            out.append(ev)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Main entrypoint
 # ---------------------------------------------------------------------------
 
@@ -306,6 +480,7 @@ def run_reconstruct(
     job_id: str | None = None,
     gate: SchedulerGate | None = None,
     positions_db=None,
+    source_grades: dict[str, float] | None = None,
 ) -> ReconstructReport:
     """Extract dated events from ``documents`` and resolve them into a timeline.
 
@@ -327,12 +502,20 @@ def run_reconstruct(
     positions_db:
         Optional positions database handle; when provided the engine records
         the top-level claim with probability 0.7.
+    source_grades:
+        Optional mapping of ``doc_id → float`` grade weight in ``[0.0, 1.0]``.
+        When provided, each source's vote is *multiplied* by its grade weight
+        before the modal vote.  A grade of ``0.0`` effectively silences a
+        source; ``1.0`` (the default for unlisted sources) is full weight.
+        This allows authoritative sources (grade A ≈ 1.0) to out-vote less
+        reliable ones (grade C ≈ 0.5) deterministically.
 
     Returns
     -------
     ReconstructReport
         Contains a list of :class:`TimelineEvent` sorted ascending by
-        (date, event_id) for stable ordering.
+        (date, event_id) for stable ordering.  Events with
+        ``certainty < 0.6`` carry ``disputed_date=True`` (§6.2).
 
     Raises
     ------
@@ -372,12 +555,19 @@ def run_reconstruct(
     # ------------------------------------------------------------------
     # Step 2 — resolve date conflicts, compute certainty, build events.
     #
-    # Certainty = winning_source_count / total_source_count
+    # Certainty = weighted_winning_sources / total_weighted_sources
     #
-    # "winning" means the source's *modal* date (per-source) agrees with
-    # the globally winning date.  Each document gets one vote regardless
-    # of how many times it mentions the date.
+    # "winning" means the source's *modal* date (per-source) agrees with the
+    # globally winning date.  Each document gets one vote; that vote is
+    # multiplied by its ``source_grades`` weight (default 1.0) before the
+    # modal comparison.  This allows authoritative sources to out-vote less
+    # reliable ones deterministically.
+    #
+    # When ``certainty < _DISPUTED_DATE_THRESHOLD`` the event is badged
+    # ``disputed_date=True`` (§6.2).  Alternate date clusters are preserved
+    # in ``alternate_dates`` so the UI can show them on hover.
     # ------------------------------------------------------------------
+    grades = source_grades or {}
     events: list[TimelineEvent] = []
     for key, slot in grouped.items():
         dates_by_source: dict[str, list[str]] = slot["dates_by_source"]
@@ -391,12 +581,17 @@ def run_reconstruct(
             candidates = sorted(d for d, cnt in c.items() if cnt == max_count)
             source_votes[src] = candidates[0]
 
-        # Global modal vote across source votes.
-        vote_counter = Counter(source_votes.values())
-        max_votes = max(vote_counter.values())
+        # Grade-weighted global modal vote across source votes.
+        # Each source contributes its weight (default 1.0) to its voted date.
+        weighted_votes: dict[str, float] = {}
+        for src, date in source_votes.items():
+            w = grades.get(src, 1.0)
+            weighted_votes[date] = weighted_votes.get(date, 0.0) + w
+
+        max_weight = max(weighted_votes.values())
         # Deterministic tiebreak: chronologically earliest winning date.
         winning_candidates = sorted(
-            d for d, cnt in vote_counter.items() if cnt == max_votes
+            d for d, w in weighted_votes.items() if w >= max_weight - 1e-9
         )
         winning = winning_candidates[0]
 
@@ -404,20 +599,34 @@ def run_reconstruct(
         winning_sources = [s for s, d in source_votes.items() if d == winning]
         losing_sources = [s for s, d in source_votes.items() if d != winning]
 
+        # Certainty uses raw source counts (grade weights affect the winner
+        # selection, but the published certainty stays proportional to source
+        # agreement so it remains on a [0, 1] scale the UI understands).
         certainty = round(len(winning_sources) / len(total_sources), 3)
+        is_disputed = certainty < _DISPUTED_DATE_THRESHOLD
 
-        # Build SourcedDate conflict list — one entry per *losing* source
-        # showing the date that source actually reported.
+        # Build SourcedDate conflict list — one entry per *losing* source.
         conflicts: list[SourcedDate] = []
         for src in losing_sources:
             reported = source_votes[src]
-            # Use the raw dates list to pick a representative raw string;
-            # prefer the modal raw string within that source.
             raw_counter = Counter(dates_by_source[src])
             raw_modal = max(raw_counter, key=lambda x: (raw_counter[x], x))
             conflicts.append(SourcedDate(
                 raw=raw_modal, normalized=reported, source_id=src,
             ))
+
+        # Alternate dates — one entry per distinct losing date cluster,
+        # sorted by their weighted vote count descending, then date ascending.
+        alt_date_weights: dict[str, float] = {
+            d: w for d, w in weighted_votes.items() if d != winning
+        }
+        alternate_dates: tuple[tuple[str, int], ...] = tuple(
+            (d, round(alt_date_weights[d]))
+            for d in sorted(
+                alt_date_weights,
+                key=lambda d: (-alt_date_weights[d], d),
+            )
+        )
 
         actors = _extract_actors(slot["action"])
 
@@ -432,10 +641,28 @@ def run_reconstruct(
             date_conflicts=tuple(conflicts),
             winning_source_count=len(winning_sources),
             total_source_count=len(total_sources),
+            disputed_date=is_disputed,
+            alternate_dates=alternate_dates,
         ))
+
+    # ------------------------------------------------------------------
+    # Step 3 — split factual contradictions (different actor/action at
+    # same date) into cross-referenced pairs (§6.2).
+    # ------------------------------------------------------------------
+    events = _split_factual_contradictions(events)
 
     # Stable sort: primary ascending date, secondary stable event_id.
     events.sort(key=lambda e: (e.date, e.event_id))
+
+    # ------------------------------------------------------------------
+    # Synthesis pass (gap #20) — trends / patterns across events.
+    # ------------------------------------------------------------------
+    if gateway is None:
+        synthesis_notes = _stub_synthesis_reconstruct(events)
+    else:
+        synthesis_notes = _llm_synthesis_reconstruct(
+            gateway, question, events, job_id=job_id, gate=gate
+        )
 
     claims = [f"Reconstructed {len(events)} dated events for: {question}"]
     if positions_db is not None:
@@ -450,4 +677,5 @@ def run_reconstruct(
         events=events,
         claims=claims,
         doc_count=len(docs),
+        synthesis_notes=synthesis_notes,
     )

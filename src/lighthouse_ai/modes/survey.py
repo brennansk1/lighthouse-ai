@@ -127,6 +127,13 @@ class EvidenceCell:
         scorer is available (graceful degradation).
     entailed:
         ``True`` when ``entailment_score >= MINICHECK_THRESHOLD``.
+    contested:
+        ``True`` when at least one other included document reports a *different*
+        non-empty value for this attribute (§6.2 Survey cell badging).  Survey
+        surfaces, never arbitrates — no value is silently dropped.
+    contested_by:
+        ``doc_id`` values of conflicting documents, in deterministic order.
+        Empty when ``contested=False``.
     """
 
     attribute: str
@@ -134,6 +141,8 @@ class EvidenceCell:
     citation_chunk_ids: tuple[str, ...]
     entailment_score: float
     entailed: bool
+    contested: bool = False
+    contested_by: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -178,6 +187,13 @@ class PrismaFlow:
     excluded_reasons:
         Additive field — mapping of ``doc_id → reason`` for every excluded
         document, supporting downstream audit without re-running screening.
+    discordant_findings:
+        Additive field — mapping of ``attribute_label → list[doc_id]`` for
+        every attribute where included documents disagree on the value (§6.2).
+        Empty when all included documents agree on every extracted attribute.
+    discordant_count:
+        Number of (attribute, document) pairs carrying a ``⚠ contested``
+        marker.  Handy summary without scanning ``discordant_findings``.
     """
 
     identified: int
@@ -185,6 +201,8 @@ class PrismaFlow:
     included: int
     excluded: int
     excluded_reasons: dict[str, str] = field(default_factory=dict)
+    discordant_findings: dict[str, list[str]] = field(default_factory=dict)
+    discordant_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -207,6 +225,12 @@ class SurveyReport:
         PRISMA-style funnel counts.
     claims:
         Human-readable summary sentences suitable for citation or audit.
+    synthesis_notes:
+        Additive field — multi-doc synthesis observations aggregated across the
+        evidence table (gap #20).  Each entry is a plain string describing a
+        cross-document pattern or contradiction.  Populated deterministically
+        offline (contested-cell count + discordant attribute list); optionally
+        enriched by a gateway synthesis pass when ``gateway`` is provided.
     """
 
     question: str
@@ -216,6 +240,7 @@ class SurveyReport:
     rows: list[EvidenceRow]
     prisma: PrismaFlow
     claims: list[str] = field(default_factory=list)
+    synthesis_notes: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +380,181 @@ def _stub_extract(doc: Document, attr: AttributeSpec) -> str:
         return ""
     # Prefer the most specific (shortest) matching sentence.
     return min(matches, key=len)
+
+
+# ---------------------------------------------------------------------------
+# Contested-cell detection (cross-document disagreement, §6.2 Survey)
+# ---------------------------------------------------------------------------
+
+def _mark_contested(rows: list[EvidenceRow]) -> list[EvidenceRow]:
+    """Return new EvidenceRow list with contested cells flagged.
+
+    A cell is *contested* when at least one other included document provides a
+    *different* non-empty value for the same attribute.  Empty values ("") are
+    not counted as disagreements — a missing extraction does not refute a
+    present one.
+
+    Survey surfaces, never arbitrates: both the original value and the
+    ``contested_by`` set are preserved.  No value is dropped or rewritten.
+
+    Algorithm: for each attribute label, collect the set of non-empty values
+    across all rows.  When the set has more than one distinct element, every
+    row that has a non-empty value for that attribute is marked contested, with
+    ``contested_by`` pointing to the other disagreeing doc_ids.
+
+    Deterministic: ``contested_by`` tuples are sorted for stable output.
+    """
+    if not rows:
+        return rows
+
+    # Collect non-empty values per attribute: attr_label → {doc_id: value}
+    attr_values: dict[str, dict[str, str]] = {}
+    for row in rows:
+        for cell in row.cells:
+            if cell.value:
+                attr_values.setdefault(cell.attribute, {})[row.doc_id] = cell.value
+
+    # Determine which attributes are contested (more than one distinct value).
+    contested_attrs: dict[str, set[str]] = {}  # attr → set of doc_ids with a value
+    for attr, doc_map in attr_values.items():
+        distinct_values = set(doc_map.values())
+        if len(distinct_values) > 1:
+            contested_attrs[attr] = set(doc_map.keys())
+
+    if not contested_attrs:
+        return rows
+
+    # Rebuild rows with updated cells.
+    new_rows: list[EvidenceRow] = []
+    for row in rows:
+        new_cells: list[EvidenceCell] = []
+        for cell in row.cells:
+            if cell.attribute in contested_attrs and cell.value:
+                # This doc has a value for a contested attribute.
+                others = sorted(
+                    doc_id for doc_id in contested_attrs[cell.attribute]
+                    if doc_id != row.doc_id
+                    and attr_values[cell.attribute].get(doc_id, "") != cell.value
+                )
+                if others:
+                    new_cells.append(EvidenceCell(
+                        attribute=cell.attribute,
+                        value=cell.value,
+                        citation_chunk_ids=cell.citation_chunk_ids,
+                        entailment_score=cell.entailment_score,
+                        entailed=cell.entailed,
+                        contested=True,
+                        contested_by=tuple(others),
+                    ))
+                    continue
+            new_cells.append(cell)
+        new_rows.append(EvidenceRow(
+            doc_id=row.doc_id,
+            title=row.title,
+            cells=new_cells,
+            missing_attrs=row.missing_attrs,
+        ))
+    return new_rows
+
+
+def _build_discordant_findings(rows: list[EvidenceRow]) -> dict[str, list[str]]:
+    """Build the PRISMA ``discordant_findings`` annotation from marked rows.
+
+    Returns a mapping of ``attribute_label → sorted list of contested doc_ids``
+    for every attribute that has at least one contested cell.
+    """
+    findings: dict[str, set[str]] = {}
+    for row in rows:
+        for cell in row.cells:
+            if cell.contested:
+                findings.setdefault(cell.attribute, set()).add(row.doc_id)
+    return {attr: sorted(doc_ids) for attr, doc_ids in sorted(findings.items())}
+
+
+def _stub_synthesis(rows: list[EvidenceRow], discordant: dict[str, list[str]]) -> list[str]:
+    """Deterministic offline synthesis notes (gap #20).
+
+    Aggregates cross-document findings without an LLM:
+
+    * Notes the total number of contested attributes.
+    * For each contested attribute, names the conflicting documents.
+    * Notes attributes for which all included documents agree.
+
+    Never arbitrates — just surfaces.
+    """
+    notes: list[str] = []
+    if not rows:
+        return notes
+
+    all_attrs = sorted({cell.attribute for row in rows for cell in row.cells})
+    if not discordant:
+        if all_attrs:
+            notes.append(
+                f"All included documents agree on extracted attributes: "
+                f"{', '.join(all_attrs)}."
+            )
+        return notes
+
+    notes.append(
+        f"{len(discordant)} attribute(s) show discordant findings across included "
+        f"documents: {', '.join(sorted(discordant))}."
+    )
+    for attr, doc_ids in sorted(discordant.items()):
+        notes.append(
+            f"Contested attribute ⋄{attr!r}: documents {doc_ids} report "
+            "different values — survey surfaces, does not arbitrate."
+        )
+    agreed = sorted(a for a in all_attrs if a not in discordant)
+    if agreed:
+        notes.append(
+            f"Attributes with consistent findings across all sources: "
+            f"{', '.join(agreed)}."
+        )
+    return notes
+
+
+def _llm_synthesis(
+    gateway: Gateway,
+    question: str,
+    rows: list[EvidenceRow],
+    discordant: dict[str, list[str]],
+    *,
+    job_id: str | None,
+    gate: SchedulerGate | None,
+) -> list[str]:
+    """Gateway-backed multi-doc synthesis pass (gap #20).
+
+    Asks the synthesizer role to identify trends and patterns across the
+    evidence table.  Falls back to ``_stub_synthesis`` on any exception so the
+    offline path is always available.
+    """
+    if not rows:
+        return _stub_synthesis(rows, discordant)
+
+    # Build a compact table summary for the prompt.
+    lines: list[str] = [f"Survey question: {question}", "Evidence table (included documents):"]
+    for row in rows:
+        cell_strs = []
+        for cell in row.cells:
+            marker = " ⚠" if cell.contested else ""
+            cell_strs.append(f"{cell.attribute}={cell.value!r}{marker}")
+        lines.append(f"  [{row.doc_id}] {row.title}: {'; '.join(cell_strs)}")
+
+    if discordant:
+        lines.append(f"\nContested attributes: {', '.join(sorted(discordant))}")
+
+    prompt = (
+        "\n".join(lines)
+        + "\n\nIdentify key trends, patterns, and cross-document contradictions. "
+        "Do NOT arbitrate contested values. Reply with one observation per line."
+    )
+    try:
+        with gate_ctx(gate):
+            resp = gateway.complete_structured(prompt, job_id=job_id)
+        raw_notes = [ln.strip(" -•*") for ln in resp.text.splitlines() if ln.strip()]
+        return raw_notes if raw_notes else _stub_synthesis(rows, discordant)
+    except Exception:
+        return _stub_synthesis(rows, discordant)
 
 
 # ---------------------------------------------------------------------------
@@ -549,6 +749,17 @@ def run_survey(
         ))
 
     # ------------------------------------------------------------------
+    # Contested-cell detection — cross-document disagreement (§6.2).
+    # Must run before PRISMA accounting so discordant_findings is
+    # populated from the already-marked rows.
+    # ------------------------------------------------------------------
+    rows = _mark_contested(rows)
+    discordant = _build_discordant_findings(rows)
+    discordant_count = sum(
+        1 for row in rows for cell in row.cells if cell.contested
+    )
+
+    # ------------------------------------------------------------------
     # PRISMA accounting — internally consistent by construction.
     # ------------------------------------------------------------------
     n_identified = len(docs)
@@ -559,7 +770,20 @@ def run_survey(
         included=n_included,
         excluded=n_identified - n_included,
         excluded_reasons=excluded_reasons,
+        discordant_findings=discordant,
+        discordant_count=discordant_count,
     )
+
+    # ------------------------------------------------------------------
+    # Multi-doc synthesis pass (gap #20) — aggregates findings + flags
+    # cross-doc contradictions.  Deterministic offline fallback always.
+    # ------------------------------------------------------------------
+    if gateway is None:
+        synthesis_notes = _stub_synthesis(rows, discordant)
+    else:
+        synthesis_notes = _llm_synthesis(
+            gateway, question, rows, discordant, job_id=job_id, gate=gate
+        )
 
     claims = [
         f"{n_included} of {n_identified} documents met the criteria "
@@ -580,4 +804,5 @@ def run_survey(
         rows=rows,
         prisma=prisma,
         claims=claims,
+        synthesis_notes=synthesis_notes,
     )

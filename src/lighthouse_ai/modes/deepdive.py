@@ -23,12 +23,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from ..framing import FramedQuestion, run_framing
 from ..gateway import Gateway
 from ..governor.scheduler_gate import SchedulerGate
 from ..rag.compaction import compact as compact_evidence
 from ..rag.hybrid import HybridResult, HybridSearch
+from ..verification import contradiction as _contradiction
+from ..verification.contradiction import Contradiction
+
+# Fixed, deterministic timestamp stamped onto contradictions when a caller does
+# not supply one. NEVER datetime.now() at import — the epoch keeps offline runs
+# byte-reproducible; live dispatch passes a real `detected_at` through.
+DEFAULT_DETECTED_AT = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def _gate_ctx(gate: SchedulerGate | None):
@@ -60,6 +68,12 @@ class DraftReport:
     ruled_out: list[str] = field(default_factory=list)
     rounds_used: int = 0
     evidence_chunks: list[HybridResult] = field(default_factory=list)
+    # First-class contradiction artifacts surfaced during denoise (§6.3). Default
+    # empty so every existing DraftReport(...) constructor keeps working.
+    contradictions: list[Contradiction] = field(default_factory=list)
+    # contradiction_ids that meet the §6.4 auto-Adjudicate preconditions. The
+    # dispatcher spawns the sub-jobs (already stubbed); we only flag them here.
+    auto_adjudicate_candidates: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -162,6 +176,98 @@ def _discovery_progress(evidence_rounds: list[list[HybridResult]]) -> float:
     return len(new) / len(latest)
 
 
+def _saturation_slope(cumulative_unique: list[int]) -> float:
+    """Marginal-utility slope of the evidence-saturation learning curve.
+
+    ``cumulative_unique[i]`` is the count of distinct evidence chunk ids seen
+    through round ``i+1``. The slope we return is the *normalized marginal gain*
+    of the latest round: how many NEW unique chunks the last round added,
+    divided by the total seen so far. As research saturates, each round adds
+    proportionally fewer new findings and this curve flattens toward 0.
+
+    Deterministic and bounded in [0, 1]. Returns 1.0 before there's enough
+    history to judge (never terminates on the strength of a single round).
+    """
+    if len(cumulative_unique) < 2:
+        return 1.0
+    total = cumulative_unique[-1]
+    if total <= 0:
+        return 0.0
+    marginal = cumulative_unique[-1] - cumulative_unique[-2]
+    return marginal / total
+
+
+def _saturated(
+    cumulative_unique: list[int],
+    *,
+    slope_floor: float,
+    round_idx: int,
+) -> bool:
+    """True when the saturation curve has flattened below ``slope_floor``.
+
+    Replaces the old hard-coded 0.1 marginal-info threshold: instead of looking
+    only at the latest round in isolation, we track cumulative unique findings
+    across rounds and stop when the *slope* of that learning curve drops below
+    the floor — i.e. the run has stopped yielding meaningfully new evidence.
+    Never fires on round 1 (needs a prior point to measure a slope).
+    """
+    if round_idx <= 1:
+        return False
+    return _saturation_slope(cumulative_unique) < slope_floor
+
+
+def _emit_contradictions(
+    sections: list[Section],
+    evidence_chunks: list[HybridResult],
+    *,
+    job_id: str | None,
+    detected_at: datetime,
+    depth_tier: str,
+    auto_adjudicate_disabled: bool,
+) -> tuple[list[Contradiction], list[str]]:
+    """Build claims + evidence and run :func:`contradiction.detect` over a draft.
+
+    Each section's first-sentence-ish claim is the unit of detection; the full
+    evidence pool (carrying ``metadata.skill_id`` / ``metadata.entailment_score``)
+    feeds the claim + cross_skill layers. Load-bearing-ness flows from the
+    section so balanced cross-skill disputes on load-bearing claims reach the
+    ``high`` severity that the §6.4 auto-Adjudicate gate keys on.
+
+    Returns ``(contradictions, auto_adjudicate_candidate_ids)``.
+    """
+    from ..verification.discipline import Claim as _Claim
+
+    claims: list[_Claim] = []
+    load_bearing_by_idx: list[bool] = []
+    for sec in sections:
+        body = (sec.body or "").strip()
+        claim_text = body.split(".")[0].strip() if body else sec.sub_question
+        if not claim_text:
+            continue
+        claims.append(_Claim(text=claim_text))
+        load_bearing_by_idx.append(sec.is_load_bearing)
+
+    if not claims:
+        return [], []
+
+    found = _contradiction.detect(
+        claims,
+        evidence_chunks,
+        job_id=job_id or "deepdive",
+        detected_at=detected_at,
+        load_bearing=load_bearing_by_idx,
+    )
+
+    candidates = [
+        c.contradiction_id
+        for c in found
+        if _contradiction.should_auto_adjudicate(
+            c, depth_tier=depth_tier, user_disabled=auto_adjudicate_disabled
+        )
+    ]
+    return found, candidates
+
+
 def _parse_synthesizer_sections(text: str, originals: list[Section]) -> list[Section]:
     """Parse synthesizer output back into Section objects by matching ### headings."""
     import re
@@ -191,26 +297,64 @@ def _denoise(
     gateway: Gateway | None,
     job_id: str | None,
     gate: SchedulerGate | None = None,
+    section_evidence: dict[str, list[HybridResult]] | None = None,
 ) -> list[Section]:
-    """Merge step — dedupes citations (stub) or uses synthesizer LLM (real)."""
+    """The TTD-DR denoiser — "the single biggest report-quality lever".
+
+    Two paths, both deterministic for a given input:
+
+    * **gateway is None** (offline / tests): the historical citation-dedup
+      fallback. Each section keeps its body; duplicate citation ids are
+      collapsed in first-seen order. No prose is changed.
+    * **gateway present**: a real ``synthesizer`` pass. We hand the synthesizer
+      every section draft *with its evidence* and instruct it to (1) merge the
+      drafts into coherent cross-referenced prose, (2) resolve or explicitly
+      mark ``[CONTRADICTION]`` between sections, and (3) mark ``[GAP]`` where a
+      sub-question is left unanswered. The result is parsed back into the same
+      section skeleton (titles preserved); citations are then deduped.
+
+    ``section_evidence`` maps ``section.title`` → its evidence chunks so the
+    synthesizer can ground the merge. Missing entries degrade gracefully.
+    """
     from dataclasses import replace as dc_replace
 
-    # Stub path: gateway absent (tests, offline mode)
+    # Stub path: gateway absent (tests, offline mode) — pure citation dedup.
     if gateway is None:
-        return [dc_replace(s, citations=list(dict.fromkeys(s.citations))) for s in sections]
+        return [dc_replace(s, citations=list(dict.fromkeys(s.citations)))
+                for s in sections]
 
-    # Build synthesizer prompt
+    section_evidence = section_evidence or {}
+
+    def _evidence_block(s: Section) -> str:
+        evid = section_evidence.get(s.title, [])
+        if not evid:
+            return "(no retrieved evidence)"
+        lines = [f"  [{e.chunk.id}] {e.chunk.text[:200]}" for e in evid[:5]]
+        return "\n".join(lines)
+
     section_texts = "\n\n".join(
-        f"### {s.title}\n{s.body or '[empty]'}" for s in sections
+        f"### {s.title}\n"
+        f"Sub-question: {s.sub_question}\n"
+        f"Draft:\n{s.body or '[empty]'}\n"
+        f"Evidence:\n{_evidence_block(s)}"
+        for s in sections
     )
     prompt = (
-        "You are a research synthesis assistant. Below are draft research sections.\n\n"
+        "You are the synthesizer in a deep-research pipeline. Below are draft "
+        "sections, each with its sub-question and retrieved evidence.\n\n"
         f"{section_texts}\n\n"
-        "Tasks:\n"
-        "1. Note cross-section contradictions with [CONTRADICTION].\n"
-        "2. Note content gaps with [GAP].\n"
-        "3. Merge overlapping content into the most relevant section.\n"
-        "4. Return ALL sections in this exact format (preserve titles exactly):\n"
+        "Synthesize a single coherent report body:\n"
+        "1. Merge overlapping content; rewrite each section as flowing prose.\n"
+        "2. Add cross-section references where sections relate (cite the other "
+        "section by title).\n"
+        "3. Where two sections disagree, resolve it on evidence weight if one "
+        "side clearly dominates; otherwise mark it explicitly with "
+        "[CONTRADICTION] and name both sides. Never silently smooth a "
+        "disagreement away.\n"
+        "4. Where a sub-question is left unanswered by the evidence, mark "
+        "[GAP] and say what is missing.\n"
+        "5. Preserve [N] / [chunk-id] citations from the drafts.\n"
+        "Return ALL sections in this exact format (preserve titles exactly):\n"
         "### <original title>\n<revised body>\n\n"
         "Do not add new sections or change section titles."
     )
@@ -275,10 +419,23 @@ def run_deepdive(
     on_round: Callable[[int, list[Section]], None] | None = None,
     min_entailment_for_early_stop: float = 0.0,
     gate: SchedulerGate | None = None,
+    detected_at: datetime | None = None,
+    depth_tier: str = "thorough",
+    auto_adjudicate_disabled: bool = False,
+    saturation_slope_floor: float | None = None,
 ) -> DraftReport:
     framed = run_framing(question)
     sections = _skeleton(framed)
     evidence_rounds: list[list[HybridResult]] = []
+    # Cumulative count of distinct evidence chunk ids seen through round i.
+    cumulative_unique: list[int] = []
+    seen_chunk_ids: set[str] = set()
+    if detected_at is None:
+        detected_at = DEFAULT_DETECTED_AT
+    # The saturation slope floor mirrors the legacy marginal-info threshold when
+    # the caller does not override it, so existing tuning still applies.
+    if saturation_slope_floor is None:
+        saturation_slope_floor = progress_threshold
 
     rounds_used = 0
     prev_open_count: int | None = None
@@ -286,6 +443,7 @@ def run_deepdive(
     for round_idx in range(1, max_rounds + 1):
         round_evidence: list[HybridResult] = []
         new_sections: list[Section] = []
+        section_evidence: dict[str, list[HybridResult]] = {}
         for sec in sections:
             sec2, evid = _research_section(
                 sec, hybrid, gateway, job_id=job_id,
@@ -295,8 +453,10 @@ def run_deepdive(
                 gate=gate,
             )
             new_sections.append(sec2)
+            section_evidence[sec2.title] = evid
             round_evidence.extend(evid)
-        sections = _denoise(new_sections, gateway=gateway, job_id=job_id, gate=gate)
+        sections = _denoise(new_sections, gateway=gateway, job_id=job_id,
+                            gate=gate, section_evidence=section_evidence)
 
         # Debate auto-wiring: trigger on load-bearing sections with contradictions
         if gateway is not None and round_idx < max_rounds:
@@ -311,6 +471,13 @@ def run_deepdive(
         evidence_rounds.append(round_evidence)
         rounds_used = round_idx
 
+        # Evidence-saturation learning curve (gap #25): accumulate distinct
+        # chunk ids and record the running total so the slope of the curve can
+        # be measured across rounds.
+        for r in round_evidence:
+            seen_chunk_ids.add(r.chunk.id)
+        cumulative_unique.append(len(seen_chunk_ids))
+
         # Build compacted context for next round
         provisional = DraftReport(
             question=question, framing=framed, sections=sections,
@@ -322,11 +489,15 @@ def run_deepdive(
         if on_round:
             on_round(round_idx, sections)
 
-        # Terminate when the discovery curve has flattened AND no new open
-        # questions were resolved/created since the prior round (§Sprint 28).
+        # Terminate when the evidence-saturation curve has flattened AND no new
+        # open questions were resolved/created since the prior round (§Sprint 28,
+        # gap #25). The saturation curve replaces the old hard-coded 0.1
+        # single-round marginal-info threshold with a slope over cumulative
+        # unique findings — a run that stops yielding new evidence flattens out
+        # and is stopped.
         open_count = sum(1 for s in sections if not s.body.strip())
-        progress = _discovery_progress(evidence_rounds)
-        stuck = progress < progress_threshold
+        stuck = _saturated(cumulative_unique, slope_floor=saturation_slope_floor,
+                           round_idx=round_idx)
         open_unchanged = prev_open_count is not None and open_count == prev_open_count
         # Entailment gate (seam for pipeline.py to pass a threshold later)
         entailment_ok = True
@@ -339,11 +510,25 @@ def run_deepdive(
     # Anything with an empty body remains an open question.
     open_questions = [s.sub_question for s in sections if not s.body.strip()]
     all_evidence: list[HybridResult] = [e for rnd in evidence_rounds for e in rnd]
+
+    # Contradiction emission (§6.3): detect disagreements across the final
+    # sections + evidence, attach them as first-class artifacts, and flag the
+    # ones that meet the §6.4 auto-Adjudicate preconditions (load-bearing,
+    # balanced, cross_skill, Thorough+). Sub-job spawn is dispatcher-side.
+    contradictions, auto_candidates = _emit_contradictions(
+        sections, all_evidence,
+        job_id=job_id, detected_at=detected_at,
+        depth_tier=depth_tier,
+        auto_adjudicate_disabled=auto_adjudicate_disabled,
+    )
+
     return DraftReport(
         question=question, framing=framed, sections=sections,
         open_questions=open_questions, ruled_out=[],
         rounds_used=rounds_used,
         evidence_chunks=all_evidence,
+        contradictions=contradictions,
+        auto_adjudicate_candidates=auto_candidates,
     )
 
 
