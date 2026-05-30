@@ -57,7 +57,7 @@ const APP_PAGES = [
   { id: 'activity',  label: 'Activity',  icon: 'activity',  group: 'Work',   counter: 'jobs_running',  get C() { return window.ActivityPage; } },
   { id: 'sandbox',   label: 'Sandbox',   icon: 'sandbox',   group: 'System', get C() { return window.SandboxPage; } },
   { id: 'health',    label: 'Health',    icon: 'system',    group: 'System', get C() { return window.HealthPage; } },
-  { id: 'info',      label: 'Info',      icon: 'info',      group: 'System', get C() { return window.InfoPage; } },
+  { id: 'info',      label: 'Guide',     icon: 'info',      group: 'System', get C() { return window.InfoPage; } },
   { id: 'settings',  label: 'Settings',  icon: 'settings',  group: 'System', get C() { return window.SettingsPage; } },
 ];
 

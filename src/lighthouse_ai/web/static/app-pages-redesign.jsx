@@ -337,7 +337,7 @@ function FirstRunCard({ onDismiss }) {
         <a href="#settings" style={{ color: 'var(--primary)', fontWeight: 600 }}>
           Settings → Sources &amp; approval</a>. New to the options?{' '}
         <a href="#info" style={{ color: 'var(--primary)', fontWeight: 600 }}>
-          Read the primer</a>.
+          Read the guide</a>.
       </div>
     </div>
   );
@@ -1239,8 +1239,8 @@ function TableView({ body }) {
     <div>
       {body.prisma && (
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
-          PRISMA — identified {body.prisma.identified}, included {body.prisma.included},
-          excluded {body.prisma.excluded}
+          Documents — {body.prisma.identified} found, {body.prisma.included} kept,
+          {' '}{body.prisma.excluded} set aside
         </div>
       )}
       <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>

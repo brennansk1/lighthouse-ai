@@ -895,7 +895,7 @@ function PositionsPage({ toast }) {
   return (
     <div>
       <window.PageHeader
-        title="Track"
+        title="Predictions"
         subtitle="Review the predictions Lighthouse has made and see how accurate they turn out to be."
         tabs={['Open', 'Decided']}
         activeTab={tab}
