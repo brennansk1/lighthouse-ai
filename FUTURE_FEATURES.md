@@ -181,3 +181,11 @@ Each item is weighed (pro / con) and only the on-mission ones are adopted.
 
 *This is a menu, not a commitment. Pull an item into a sprint when a real user keeps hitting its
 absence.*
+
+## 9. Minor polish (from live testing, 2026-05-29)
+- **Pre-flight API-key check for key-gated skills.** FRED/Congress/GovInfo/regulations.gov/CourtListener
+  currently fire the live request even when no key is configured and rely on the server to reject it
+  (400/401/403), then degrade gracefully with a `lighthouse trust add <domain>` note. This is correct and
+  safe, just slightly wasteful — a pre-flight "this source needs a free key (set it in Settings)"
+  short-circuit would skip the wasted round-trip and give the user a clearer up-front message. Low
+  priority; touches each key-gated adapter's key-resolution + their tests.

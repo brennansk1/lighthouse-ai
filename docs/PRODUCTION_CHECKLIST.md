@@ -43,12 +43,14 @@ real data and harden it. Grouped by priority.
   citation_coverage, no fabrication). Watch exposed + fixed a real dead-wire: `_adapt_watch` wasn't
   threading `topic_interests` to the LLM salience scorer (gap #15) — now wired, with regression tests.
 
-### B. Live source fetching — the 36 skills (validate each against its real API)
-- 🟡 Each skill fetches through `ctx.fetch → politeness → broker`; validate per source: real
-  endpoint shape + parser holds, rate limits respected, auth keys (FRED/BEA/BLS/Census/Guardian/
-  Congress/regulations.gov/GitHub) documented + working, graceful degradation when a domain isn't
-  trust-added. Standard: per-skill **recall@k** on a held-out question set (`eval/skill_eval.py`),
-  zero unhandled exceptions, audit line per fetch.
+### B. Live source fetching — the 37 skills (validate each against its real API)
+- ✅ **37/37 skills live-fetched** (2026-05-29, `test_real_skills_fetch.py`, bounded `max_results=2`):
+  no endpoint-shape drift, **zero unhandled exceptions**, audit line per fetch. Keyless sources returned
+  real documents (arxiv, AP, BBC, BLS, census, clinicaltrials, crossref, federal_register, github,
+  guardian, internet_archive, news_orchestrator, npr, oecd, openalex, pubmed, sec_edgar, semantic_scholar,
+  wikidata, wikipedia, world_bank, …). Key-gated sources with no key configured degraded gracefully with
+  an actionable `lighthouse trust add <domain>` note (congress 403, fred 400, govinfo 401). Remaining:
+  validate the key-gated sources *with* keys set, and per-skill recall@k on a held-out set.
 - 🟡 **General Web** snippet-fallback + SearXNG path on a live SearXNG.
 - 🟡 **YouTube / IA-AV transcripts** via the shared `sources/transcript.py` against real captions.
 - 🔌 **Tier-B JS rendering** (`general_web.fetch_url_js`) — currently a stub; build Crawl4AI/

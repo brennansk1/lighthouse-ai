@@ -60,9 +60,20 @@ Running the gated real-backend suite (`LIGHTHOUSE_REAL_BACKEND=1`, macOS arm64, 
   pin both directions; the E2E `_assert_artifact` now accepts `backend='none'` as a valid deterministic
   state for watch.
 
+- **Phase 2 — live source APIs (all 37 skills) ✓.** `test_real_skills_fetch.py` ran one bounded
+  (`max_results=2`, politeness) live fetch per skill: **37/37 pass**, no endpoint-shape drift, no crashes.
+  Keyless sources returned real documents (arxiv, AP, BBC, BLS, census, clinicaltrials, crossref,
+  federal_register, github, guardian[public test key], internet_archive, news_orchestrator[multi-outlet],
+  npr, oecd, openalex, pubmed, sec_edgar, semantic_scholar, wikidata, wikipedia, world_bank, …). Key-gated
+  sources with no key configured degraded **gracefully** with an actionable `lighthouse trust add <domain>`
+  note (congress 403, fred 400, govinfo 401). Minor polish observation (logged to FUTURE_FEATURES, not a
+  bug): key-required skills fire the request with an empty key and let the server reject it rather than a
+  pre-flight "key required" short-circuit — already graceful, just slightly wasteful.
+
 All fixes are offline-deterministic with regression tests; full suite **2867 pass / 103 skip**, mypy 0,
-ruff clean. Per-mode E2E (7/7) green on real hardware. Next live phases (when RAM/time allow): live
-source-API validation (Phase 2), faithfulness gate (needs the `faithfulness` extra), browser QA (Phase 3).
+ruff clean. Live validation: Phase 1 (core quality) ✓, per-mode E2E 7/7 ✓, Phase 2 source APIs 37/37 ✓.
+Remaining live phases (heavier setup): faithfulness gate (needs the `faithfulness` extra — torch/
+sentence-transformers), Playwright browser QA (Phase 3), 24 h soak + packaging (Phase 4).
 
 ## Milestone (this session) — offline product feature-complete
 Suite **2850 pass / 103 skip**, mypy 0 (269 modules), ruff clean, coverage ~82%. Shipped + pushed:
