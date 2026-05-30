@@ -357,7 +357,13 @@ function ErrorBox({ message, onRetry }) {
       gap: 12,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span aria-hidden="true" style={{ fontSize: 16, color: '#c62828', flexShrink: 0 }}>⚠</span>
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="#c62828" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+          style={{ flexShrink: 0 }}>
+          <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+          <line x1="12" y1="9" x2="12" y2="13" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
         <span style={{ color: '#b71c1c' }}>{message || 'Something went wrong.'}</span>
       </div>
       {onRetry && (
@@ -677,7 +683,7 @@ function BrierScore({ score }) {
     <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 600, color }}>
       {isNaN(n) ? '—' : n.toFixed(3)}
       <span style={{ fontFamily: 'var(--sans)', fontSize: 10, fontWeight: 500,
-        color: 'var(--muted)', marginLeft: 4 }}>Brier</span>
+        color: 'var(--muted)', marginLeft: 4 }}>accuracy</span>
     </span>
   );
 }

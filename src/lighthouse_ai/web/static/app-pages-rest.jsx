@@ -336,7 +336,7 @@ function TopicsPage({ toast }) {
       await window.apiDelete(`/api/topics/${topic.id}`);
       setConfirmDel(null);
       reload();
-      toast.show('Topic deleted', 'info');
+      toast.show('Stopped following', 'info');
     } catch (e) {
       toast.show(e.message || 'Delete failed', 'error');
     }
@@ -346,22 +346,22 @@ function TopicsPage({ toast }) {
     <div>
       <window.PageHeader
         title="Watch"
-        subtitle="Define topics to follow over time, then schedule sessions that collect new material from your sources."
+        subtitle="Pick something to follow, then let Lighthouse check your sources for it on a schedule."
         actions={
-          <Btn onClick={() => setShowNew(true)} aria-label="Add a topic to monitor">
-            + Add topic
+          <Btn onClick={() => setShowNew(true)} aria-label="Watch something new">
+            + Watch something
           </Btn>
         }
       />
 
-      {/* What this tab is for — shown only when the researcher has topics,
-          so the empty state can carry the explanation otherwise. */}
+      {/* What this tab is for — shown only when the researcher has things to
+          follow, so the empty state can carry the explanation otherwise. */}
       {!loading && !error && topics.length > 0 && (
         <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6,
           marginBottom: 22, maxWidth: '70ch' }}>
-          A topic is a subject you want to keep an eye on — an entity, an issue, or a
-          question. Each topic carries a query that guides what gets collected. Use the
-          scheduler below to run a time-bounded session against specific sources.
+          Each item below is something to follow — a person, an issue, or a question.
+          Lighthouse keeps an eye on it for you. Use the schedule below to check your
+          sources for new material on a regular basis.
         </div>
       )}
 
@@ -390,9 +390,9 @@ function TopicsPage({ toast }) {
       {!loading && !error && topics.length === 0 && (
         <window.EmptyState
           icon="◎"
-          title="No topics yet"
-          hint="A topic is a subject you want to follow over time — an entity, an issue, or a question. Add one to start collecting material from your sources as it appears."
-          action={<Btn onClick={() => setShowNew(true)}>+ Add your first topic</Btn>}
+          title="Nothing being followed yet"
+          hint="Pick something to follow — a person, an issue, or a question. Lighthouse will check your sources for new material as it appears."
+          action={<Btn onClick={() => setShowNew(true)}>+ Watch your first thing</Btn>}
         />
       )}
 
@@ -421,22 +421,22 @@ function TopicsPage({ toast }) {
           onCreated={() => {
             setShowNew(false);
             reload();
-            toast.show('Topic created', 'success');
+            toast.show('Now following', 'success');
           }}
         />
       )}
 
       {/* Delete confirm modal */}
       {confirmDel && (
-        <RModal title={`Delete "${confirmDel.name}"?`} onClose={() => setConfirmDel(null)} width={400}>
+        <RModal title={`Stop following "${confirmDel.name}"?`} onClose={() => setConfirmDel(null)} width={400}>
           <div style={{ fontSize: 14, color: 'var(--ink-2)', marginBottom: 22, lineHeight: 1.6 }}>
-            Delete topic <strong style={{ color: 'var(--ink)' }}>{confirmDel.name}</strong>?
-            This won't delete existing jobs but will stop future collection for this topic.
+            Stop following <strong style={{ color: 'var(--ink)' }}>{confirmDel.name}</strong>?
+            This won't delete existing results, but Lighthouse will stop collecting new material for it.
             This action cannot be undone.
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <Btn kind="ghost" onClick={() => setConfirmDel(null)}>Cancel</Btn>
-            <Btn kind="danger" onClick={() => deleteTopic(confirmDel)}>Delete topic</Btn>
+            <Btn kind="danger" onClick={() => deleteTopic(confirmDel)}>Stop following</Btn>
           </div>
         </RModal>
       )}
@@ -513,7 +513,7 @@ function RTopicCard({ topic: t, accent, onDelete }) {
 
 function RAddTopicCard({ onClick }) {
   return (
-    <button onClick={onClick} aria-label="Add new topic"
+    <button onClick={onClick} aria-label="Watch something new"
       style={{ ...window.card, padding: 20, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 140,
         border: '2px dashed var(--rule)', background: 'transparent', cursor: 'pointer',
@@ -529,7 +529,7 @@ function RAddTopicCard({ onClick }) {
       }}>
       <span style={{ fontSize: 28, color: 'var(--muted)', lineHeight: 1 }}>+</span>
       <span style={{ fontSize: 13, color: 'var(--muted)', fontFamily: 'var(--sans)' }}>
-        Add topic
+        Watch something
       </span>
     </button>
   );
@@ -555,7 +555,7 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
   function validate() {
     const e = {};
     if (!name.trim()) e.name = 'Name is required.';
-    if (!query.trim()) e.query = 'Query string is required.';
+    if (!query.trim()) e.query = 'Keywords are required.';
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -578,11 +578,11 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
   }
 
   return (
-    <RModal title="Add a topic" onClose={onClose}>
+    <RModal title="Watch something" onClose={onClose}>
       <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.55,
         marginBottom: 16 }}>
-        Name the subject you want to follow, then give a query that tells Lighthouse
-        what to collect for it.
+        Name the thing you want to follow, then give a few keywords that tell Lighthouse
+        what to look for.
       </div>
       <RField label="Name *" error={errors.name}>
         <input
@@ -601,17 +601,17 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
           rows={3}
           placeholder="Regulatory developments and enforcement decisions…"
           style={{ ...rInput, resize: 'vertical' }}
-          aria-label="Topic description"
+          aria-label="Description"
         />
       </RField>
-      <RField label="Query *" error={errors.query}
-        hint={!errors.query ? 'Keywords that decide what gets collected. Combine terms with OR, and quote exact phrases.' : undefined}>
+      <RField label="Keywords *" error={errors.query}
+        hint={!errors.query ? 'Words that decide what gets collected. Combine terms with OR, and quote exact phrases.' : undefined}>
         <input
           value={query}
           onChange={(e) => { setQuery(e.target.value); setErrors((er) => ({ ...er, query: '' })); }}
           placeholder='e.g. AI regulation OR "foundation models"'
           style={{ ...rInput, borderColor: errors.query ? 'var(--coral-2)' : undefined }}
-          aria-label="Topic query string"
+          aria-label="Keywords to watch for"
         />
       </RField>
       <RField label="Sources to follow"
@@ -642,7 +642,7 @@ function RNewTopicModal({ toast, onClose, onCreated }) {
       </RField>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
         <Btn kind="ghost" onClick={onClose} disabled={busy}>Cancel</Btn>
-        <Btn onClick={submit} disabled={busy}>{busy ? 'Creating…' : 'Create topic'}</Btn>
+        <Btn onClick={submit} disabled={busy}>{busy ? 'Saving…' : 'Watch it'}</Btn>
       </div>
     </RModal>
   );
@@ -666,7 +666,7 @@ function RMonitorSessions({ toast }) {
     try {
       await window.apiPost(`/api/monitor/sessions/${s.id}/stop`, {});
       reload();
-      toast.show('Session stopped', 'info');
+      toast.show('Scheduled check stopped', 'info');
     } catch (e) {
       toast.show(e.message || 'Stop failed', 'error');
     }
@@ -677,14 +677,14 @@ function RMonitorSessions({ toast }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         marginBottom: 14 }}>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Scheduled sessions</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Scheduled checks</div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-            A session checks a set of sources on a fixed interval. It ends at a time you set,
+            A scheduled check looks at a set of sources on a regular basis. It ends at a time you set,
             or stops on its own once the sources go quiet.
           </div>
         </div>
-        <Btn onClick={() => setShowNew(true)} aria-label="Schedule a new session">
-          + Schedule session
+        <Btn onClick={() => setShowNew(true)} aria-label="Schedule a new check">
+          + Schedule a check
         </Btn>
       </div>
 
@@ -692,7 +692,7 @@ function RMonitorSessions({ toast }) {
 
       {!loading && sessions.length === 0 && (
         <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>
-          No sessions scheduled. Schedule one to collect from a set of sources over a
+          No checks scheduled. Schedule one to collect from a set of sources over a
           fixed window — useful for following a hearing, a release, or a developing story.
         </div>
       )}
@@ -732,7 +732,7 @@ function RMonitorSessions({ toast }) {
         <RNewSessionModal
           toast={toast}
           onClose={() => setShowNew(false)}
-          onCreated={() => { setShowNew(false); reload(); toast.show('Session created', 'success'); }}
+          onCreated={() => { setShowNew(false); reload(); toast.show('Scheduled check created', 'success'); }}
         />
       )}
     </div>
@@ -753,7 +753,7 @@ function RNewSessionModal({ toast, onClose, onCreated }) {
     const e = {};
     if (!label.trim()) e.label = 'Label is required.';
     if (!urls.trim()) e.urls = 'At least one source URL is required.';
-    if (mode === 'time' && !endsAt.trim()) e.endsAt = 'End time is required for a timed session.';
+    if (mode === 'time' && !endsAt.trim()) e.endsAt = 'End time is required for a timed check.';
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -778,11 +778,11 @@ function RNewSessionModal({ toast, onClose, onCreated }) {
   }
 
   return (
-    <RModal title="Schedule a session" onClose={onClose}>
+    <RModal title="Schedule a check" onClose={onClose}>
       <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.55,
         marginBottom: 16 }}>
-        Point a session at one or more source feeds. Lighthouse checks them on the
-        interval you set and stops at the end time, or once the feeds go quiet.
+        Point a scheduled check at one or more source feeds. Lighthouse looks at them on the
+        schedule you set and stops at the end time, or once the feeds go quiet.
       </div>
       <RField label="Label *" error={errors.label}>
         <input
@@ -790,7 +790,7 @@ function RNewSessionModal({ toast, onClose, onCreated }) {
           onChange={(e) => { setLabel(e.target.value); setErrors((er) => ({ ...er, label: '' })); }}
           placeholder="e.g. Pam Bondi confirmation hearing"
           style={{ ...rInput, borderColor: errors.label ? 'var(--coral-2)' : undefined }}
-          aria-label="Session label"
+          aria-label="Check label"
           autoFocus
         />
       </RField>
@@ -843,7 +843,7 @@ function RNewSessionModal({ toast, onClose, onCreated }) {
       </RField>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
         <Btn kind="ghost" onClick={onClose} disabled={busy}>Cancel</Btn>
-        <Btn onClick={submit} disabled={busy}>{busy ? 'Creating…' : 'Create session'}</Btn>
+        <Btn onClick={submit} disabled={busy}>{busy ? 'Saving…' : 'Schedule it'}</Btn>
       </div>
     </RModal>
   );
@@ -853,7 +853,7 @@ function RNewSessionModal({ toast, onClose, onCreated }) {
 //  POSITIONS PAGE
 // ════════════════════════════════════════════════════════════════════════════
 function PositionsPage({ toast }) {
-  const [tab, setTab] = rUseState('Pending');
+  const [tab, setTab] = rUseState('Open');
   const { data: allData, reload: reloadAll } = window.useApi('/api/positions');
   const allPositions = (allData && allData.positions) || [];
 
@@ -897,7 +897,7 @@ function PositionsPage({ toast }) {
       <window.PageHeader
         title="Track"
         subtitle="Review the predictions Lighthouse has made and see how accurate they turn out to be."
-        tabs={['Pending', 'Resolved']}
+        tabs={['Open', 'Decided']}
         activeTab={tab}
         onTab={setTab}
       />
@@ -905,20 +905,19 @@ function PositionsPage({ toast }) {
       {/* Plain-language primer */}
       <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6,
         marginBottom: 18, maxWidth: '72ch' }}>
-        A position is a forecast about a claim, stated as a probability. It stays
-        <strong> pending</strong> until the real outcome is known, then you mark it
-        <strong> resolved</strong> as confirmed or refuted. Over many resolved positions,
-        the Brier score below measures how well the stated probabilities matched reality —
-        lower is better.
+        Track records clear predictions we can later check as right or wrong. A prediction
+        stays <strong>open</strong> until the real outcome is known, then you mark it
+        <strong> decided</strong> — right or wrong. Across many decided predictions, the
+        accuracy score below shows how well the stated chances matched what actually happened.
       </div>
 
-      {/* Calibration summary — always visible */}
+      {/* Accuracy summary — always visible */}
       <div style={{ ...window.card, padding: '16px 22px', marginBottom: 20,
         display: 'flex', gap: 36, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        {/* Brier score */}
+        {/* Accuracy score */}
         <div>
           <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase',
-            letterSpacing: '0.07em', marginBottom: 4 }}>Brier Score</div>
+            letterSpacing: '0.07em', marginBottom: 4 }}>Accuracy score</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
             {/* Optionally use window.BrierScore if available */}
             {window.BrierScore && resolved.length > 0
@@ -933,14 +932,14 @@ function PositionsPage({ toast }) {
             <span style={{ fontSize: 12, color: bi.color, fontWeight: 600 }}>{bi.label}</span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, maxWidth: '24ch' }}>
-            0 is perfect; lower means better-calibrated forecasts.
+            0 is a perfect track record; lower is better.
           </div>
         </div>
 
-        {/* Resolved count */}
+        {/* Decided count */}
         <div>
           <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase',
-            letterSpacing: '0.07em', marginBottom: 4 }}>Resolved</div>
+            letterSpacing: '0.07em', marginBottom: 4 }}>Decided</div>
           <span className="num" style={{ fontSize: 26, fontWeight: 700,
             color: 'var(--ink)' }}>{resolved.length}</span>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
@@ -948,10 +947,10 @@ function PositionsPage({ toast }) {
           </div>
         </div>
 
-        {/* Pending count */}
+        {/* Open count */}
         <div>
           <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase',
-            letterSpacing: '0.07em', marginBottom: 4 }}>Pending</div>
+            letterSpacing: '0.07em', marginBottom: 4 }}>Open</div>
           <span className="num" style={{ fontSize: 26, fontWeight: 700,
             color: 'var(--ink)' }}>{pending.length}</span>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
@@ -960,11 +959,11 @@ function PositionsPage({ toast }) {
         </div>
       </div>
 
-      {tab === 'Pending'  && (
+      {tab === 'Open'  && (
         <RPositionList key="pending"  filterFn={(p) => !p.resolved && p.outcome == null}
           isPending toast={toast} />
       )}
-      {tab === 'Resolved' && (
+      {tab === 'Decided' && (
         <RPositionList key="resolved" filterFn={(p) => p.resolved || p.outcome != null}
           isResolved toast={toast} />
       )}
@@ -989,7 +988,7 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
       await window.apiPost(`/api/positions/${id}/resolve`, { outcome });
       reload();
       toast.show(
-        outcome === 'defer' ? 'Position deferred 30 days' : 'Position resolved',
+        outcome === 'defer' ? 'Prediction deferred 30 days' : 'Prediction decided',
         'success'
       );
       setSel(null);
@@ -1008,10 +1007,10 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
         <div style={{ fontSize: 28, marginBottom: 8 }}>✓</div>
         <div style={{ fontFamily: 'var(--serif)', fontSize: 17, color: 'var(--green-dark)',
           fontWeight: 700, marginBottom: 4 }}>
-          All positions are resolved
+          Every prediction is decided
         </div>
         <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
-          Calibration is up to date. Every prediction has been resolved or is still on the clock.
+          The track record is up to date. Every prediction has been decided or is still on the clock.
         </div>
       </div>
     );
@@ -1021,8 +1020,8 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
     return (
       <window.EmptyState
         icon="◎"
-        title="No resolved positions yet"
-        hint="Once you mark a pending position as confirmed or refuted, it moves here with its outcome and its contribution to the Brier score."
+        title="Nothing decided yet"
+        hint="Once you mark an open prediction as right or wrong, it moves here with its outcome and how it affected the accuracy score."
       />
     );
   }
@@ -1151,7 +1150,7 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
 
       {/* Detail pane */}
       {sel && (
-        <RSidePane title="Position" onClose={() => setSel(null)}>
+        <RSidePane title="Prediction" onClose={() => setSel(null)}>
           {/* Full claim text */}
           <div style={{ fontFamily: 'var(--serif)', fontSize: 15.5, color: 'var(--ink)',
             lineHeight: 1.6, marginBottom: 18 }}>
@@ -1191,7 +1190,7 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
             );
           })()}
 
-          {/* Resolved outcome + Brier */}
+          {/* Decided outcome + accuracy */}
           {(sel.resolved || sel.outcome != null) && (
             <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 8,
               background: (sel.outcome === false || sel.outcome === 'refuted')
@@ -1210,7 +1209,7 @@ function RPositionList({ filterFn, isPending, isResolved, toast }) {
               </div>
               {sel.brier != null && (
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                  Brier score: <strong>{Number(sel.brier).toFixed(3)}</strong>
+                  Accuracy score: <strong>{Number(sel.brier).toFixed(3)}</strong>
                 </div>
               )}
             </div>
@@ -1363,9 +1362,9 @@ function HealthPage({ toast }) {
           color: allOk ? 'var(--green-dark)' : failCount > 0 ? '#c05a20' : 'var(--muted)',
           border: `1px solid ${allOk ? 'var(--green-dark)' : failCount > 0 ? '#c05a20' : 'var(--rule)'}` }}>
           {allOk
-            ? '✓ All systems operational'
-            : failCount > 0 ? `⚠ ${failCount} check${failCount > 1 ? 's' : ''} need attention`
-            : '— Gathering diagnostics…'}
+            ? 'Everything is running'
+            : failCount > 0 ? `${failCount} thing${failCount > 1 ? 's' : ''} need attention`
+            : 'Checking…'}
         </div>
       )}
 
@@ -1386,30 +1385,30 @@ function HealthPage({ toast }) {
               System
             </div>
 
-            {/* Status light + tier badge */}
+            {/* Status light + plain status word */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
               <span
                 role="img"
-                aria-label={tripped ? 'tripped' : degraded ? 'degraded' : 'healthy'}
+                aria-label={tripped ? 'Problem' : degraded ? 'Slow' : 'OK'}
                 style={{ width: 10, height: 10, borderRadius: '50%',
                   background: statusColor, display: 'inline-block', flexShrink: 0,
                   boxShadow: `0 0 6px ${statusColor}` }}
               />
               <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
-                {tripped ? 'Tripped' : degraded ? 'Degraded' : 'Healthy'}
+                {tripped ? 'Problem' : degraded ? 'Slow' : 'OK'}
               </span>
             </div>
 
-            {/* Hardware tier — big badge */}
+            {/* Your computer — capability + which models it can run */}
             {hw.tier && (
               <div style={{ marginBottom: 14 }}>
                 <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase',
-                  letterSpacing: '0.06em', marginBottom: 5 }}>Hardware tier</div>
+                  letterSpacing: '0.06em', marginBottom: 5 }}>Your computer</div>
                 <span className={govChipClass(hw.tier)} style={{ fontSize: 12 }}>
                   {hw.tier}
                 </span>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.45 }}>
-                  The capability band measured for this machine. It sets which models Lighthouse can run.
+                  How much Lighthouse can do on this computer. It sets which AI models can run here.
                 </div>
               </div>
             )}
@@ -1441,10 +1440,9 @@ function HealthPage({ toast }) {
               Models for this hardware
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45, marginBottom: 12 }}>
-              These local models were chosen automatically to fit your hardware
-              {hw.tier ? ` — tier ${hw.tier}` : ''}
-              {hw.total_ram_gb != null ? `, ${hw.total_ram_gb} GB RAM` : ''}.
-              Bigger machines use larger models.
+              These models run on your computer and were picked automatically to fit it
+              {hw.total_ram_gb != null ? ` (${hw.total_ram_gb} GB RAM)` : ''}.
+              Bigger computers use larger models.
             </div>
 
             {Object.keys(models).length === 0 ? (
@@ -1461,25 +1459,7 @@ function HealthPage({ toast }) {
           </div>
 
           {/* ── Checks column ─────────────────────────────────────────── */}
-          <div style={{ ...window.card, padding: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)',
-              textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
-              Services and integrity
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45, marginBottom: 12 }}>
-              Databases, local services, and data integrity. Select a failing row to see the detail.
-            </div>
-
-            {checks.length === 0 && (
-              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-                No checks reported yet.
-              </div>
-            )}
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {checks.map((c, i) => <RCheckRow key={c.name || i} check={c} />)}
-            </div>
-          </div>
+          <RChecksPanel checks={checks} />
 
           {/* ── Sources column ────────────────────────────────────────── */}
           <RSourceHealth />
@@ -1492,9 +1472,9 @@ function HealthPage({ toast }) {
 
 // Status label → display config.
 const R_SOURCE_STATUS = {
-  ready:       { mark: '✓', label: 'Ready',         color: 'var(--green-dark)' },
-  needs_key:   { mark: '⚿', label: 'Key missing',   color: '#a07a00' },
-  needs_trust: { mark: '⊘', label: 'Not trusted',   color: 'var(--coral-2)' },
+  ready:       { mark: '✓', label: 'Ready',           color: 'var(--green-dark)' },
+  needs_key:   { mark: '⚿', label: 'Key missing',     color: '#a07a00' },
+  needs_trust: { mark: '⊘', label: 'Needs approval',  color: 'var(--coral-2)' },
 };
 
 // Per-source health card — driven by /api/sources/health.
@@ -1551,7 +1531,7 @@ function RSourceHealth() {
                 <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px',
                   borderRadius: 12, background: 'rgba(220,80,60,0.08)',
                   color: 'var(--coral-2)', border: '1px solid var(--coral-2)' }}>
-                  {summary.needs_trust} {summary.needs_trust === 1 ? 'needs' : 'need'} trust
+                  {summary.needs_trust} {summary.needs_trust === 1 ? 'needs' : 'need'} approval
                 </span>
               )}
             </div>
@@ -1613,7 +1593,7 @@ function RSourceHealth() {
                             <a href="#settings"
                               style={{ color: 'var(--primary)',
                                 textDecoration: 'none', fontWeight: 600 }}>
-                              Settings → Sources &amp; trust →
+                              Approve it in Settings →
                             </a>
                           )}
                         </div>
@@ -1631,6 +1611,54 @@ function RSourceHealth() {
             </div>
           )}
         </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+// Collapses the dense service/integrity rows behind a "Details" expander.
+// The summary line on top is the only thing a first-timer needs: one green
+// "all good" or one amber "N need attention" — open Details for the rows.
+function RChecksPanel({ checks }) {
+  const failing = checks.filter((c) => !(c.ok !== false && c.status !== 'fail'));
+  const allOk = checks.length > 0 && failing.length === 0;
+  // Auto-open when something is wrong so problems aren't hidden.
+  const [open, setOpen] = rUseState(false);
+  rUseEffect(() => { if (failing.length > 0) setOpen(true); }, [failing.length]);
+
+  const summaryColor = checks.length === 0 ? 'var(--muted)'
+    : allOk ? 'var(--green-dark)' : '#c05a20';
+  const summaryText = checks.length === 0 ? 'No checks reported yet'
+    : allOk ? `All ${checks.length} services OK`
+    : `${failing.length} of ${checks.length} need attention`;
+
+  return (
+    <div style={{ ...window.card, padding: 20 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)',
+        textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+        Behind the scenes
+      </div>
+
+      {/* Single green/amber summary line */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+        <span style={{ width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+          background: summaryColor }} aria-hidden="true" />
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+          {summaryText}
+        </span>
+        {checks.length > 0 && (
+          <button onClick={() => setOpen((o) => !o)} className="btn-ghost"
+            aria-expanded={open}
+            style={{ fontSize: 11.5, padding: '3px 10px' }}>
+            {open ? 'Hide details' : 'Details'}
+          </button>
+        )}
+      </div>
+
+      {open && checks.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 10 }}>
+          {checks.map((c, i) => <RCheckRow key={c.name || i} check={c} />)}
+        </div>
       )}
     </div>
   );
@@ -1773,18 +1801,18 @@ function RSourcesTrust({ toast }) {
     //            or /api/settings field exists for per-source trust today, so the
     //            choice is remembered in this browser only.
     toast.show(
-      `${src.name} ${next ? 'trusted' : 'muted'} (saved in this browser)`,
+      `${src.name} ${next ? 'approved' : 'turned off'} (saved in this browser)`,
       'info');
   }
 
   return (
-    <RSettingsSection title="Sources & trust">
+    <RSettingsSection title="Sources & approval">
       <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginBottom: 16 }}>
         Choose which sources Lighthouse may draw on, and see exactly what it can and
-        cannot read. What we can't fetch is shown with the reason — never silently
-        dropped.
+        cannot read. Lighthouse asks before fetching from a site that needs approval, and
+        shows the reason when something can't be read — never silently dropped.
         <span style={{ color: 'var(--muted)' }}>
-          {' '}Trust choices are remembered in this browser.
+          {' '}Your choices are remembered in this browser.
         </span>
       </div>
 
@@ -1798,13 +1826,13 @@ function RSourcesTrust({ toast }) {
             News outlets
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.45 }}>
-            The seed outlets ship trusted and readable. Toggle any off to exclude it
+            The built-in outlets are approved and readable. Toggle any off to exclude it
             from news research.
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ textAlign: 'left' }}>
-                {['Outlet', 'Type', 'Can read?', 'Trusted'].map((h) => (
+                {['Outlet', 'Type', 'Can read?', 'Approved'].map((h) => (
                   <th key={h} style={{ padding: '4px 8px', fontSize: 10.5, fontWeight: 700,
                     textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--muted)' }}>
                     {h}
@@ -2403,7 +2431,7 @@ function SettingsPage({ toast }) {
     <div>
       <window.PageHeader
         title="Settings"
-        subtitle="Configure how Lighthouse runs on this machine — sources and trust, storage, privacy, backups, notifications, and appearance."
+        subtitle="Configure how Lighthouse runs on this machine — sources and approval, storage, privacy, backups, notifications, and appearance."
         actions={
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {/* Unsaved changes indicator */}
@@ -2427,7 +2455,7 @@ function SettingsPage({ toast }) {
         {/* ── General ──────────────────────────────────────────────────── */}
         <RSettingsSection title="General">
           {/* Data dir — read-only + copy button */}
-          <RField label="Data directory" hint="Where Lighthouse keeps your collected material, databases, and logs on this machine.">
+          <RField label="Where your data is stored" hint="The folder on this computer where Lighthouse keeps your sources, results, databases, and logs.">
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input
                 readOnly
@@ -2449,7 +2477,7 @@ function SettingsPage({ toast }) {
           </RField>
           <RToggleRow
             label="Offline mode"
-            hint="Keep all work on this machine. No data leaves your hardware; only local models are used."
+            hint="Use only sources already on your machine; no internet."
             value={form.offline_mode}
             onChange={(v) => patch('offline_mode', v)}
             id="s-offline"
@@ -2518,8 +2546,8 @@ function SettingsPage({ toast }) {
                 border: `1px solid ${doctorFailCount === 0
                   ? 'var(--green-dark)' : '#c05a20'}` }}>
                 {doctorFailCount === 0
-                  ? '✓ All good — no issues found'
-                  : `⚠ ${doctorFailCount} issue${doctorFailCount > 1 ? 's' : ''} found`}
+                  ? 'All good — no issues found'
+                  : `${doctorFailCount} issue${doctorFailCount > 1 ? 's' : ''} found`}
               </div>
 
               {doctorChecks.length === 0 && (

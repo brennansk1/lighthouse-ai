@@ -10,7 +10,7 @@
 // /api/sandbox/upload, pins/deletes, and sets the size via /api/sandbox/config.
 // Pure babel-standalone JSX — primitives come from window.* (app-lib.jsx).
 
-const SB_ZONE_LABEL = { uploads: 'Your uploads', workspace: 'Assistant workspace' };
+const SB_ZONE_LABEL = { uploads: 'Your uploads', workspace: 'Results' };
 const SB_VERDICT = {
   admit: { label: 'Scanned · clean', color: '#1a7f4b', bg: '#e6f4ec' },
   quarantine: { label: 'Quarantined', color: '#8a5a00', bg: '#fbeecf' },
@@ -140,7 +140,7 @@ function SandboxPage() {
     <div>
       <window.PageHeader
         title="Sandbox"
-        subtitle="Your data & analysis workspace — every file is security-scanned on the way in."
+        subtitle="Upload data for Lighthouse to analyze — every file is virus-scanned first."
         actions={
           <span style={{ display: 'flex', gap: 8 }}>
             <Btn kind="ghost" onClick={onSetLimit}>Size limit</Btn>
@@ -175,8 +175,8 @@ function SandboxPage() {
               Near the limit — oldest unpinned items are removed first. Pin anything you want to keep.</div>}
             <div style={{ display: 'flex', gap: 18, marginTop: 10, fontSize: 12, color: 'var(--ink-2,#666)' }}>
               <span>Your uploads: {sbFmtBytes((usage.by_zone || {}).uploads || 0)}</span>
-              <span>Assistant workspace: {sbFmtBytes((usage.by_zone || {}).workspace || 0)}</span>
-              {quarantined > 0 && <span style={{ color: '#8a5a00' }}>⚠ {quarantined} quarantined</span>}
+              <span>Results: {sbFmtBytes((usage.by_zone || {}).workspace || 0)}</span>
+              {quarantined > 0 && <span style={{ color: '#8a5a00' }}>{quarantined} quarantined</span>}
             </div>
           </div>
 
@@ -226,7 +226,10 @@ function SandboxPage() {
                     return (
                       <tr key={it.id} style={{ borderTop: '1px solid var(--line,#eee)' }}>
                         <td style={{ padding: '8px 12px' }}>
-                          {it.pinned && <span title="Pinned — never auto-removed" style={{ marginRight: 5 }}>📌</span>}
+                          {it.pinned && <span title="Pinned — never auto-removed" aria-label="Pinned"
+                            style={{ marginRight: 5, display: 'inline-flex', verticalAlign: 'middle',
+                              color: 'var(--primary)' }}>
+                            <window.NavIcon name="pin" size={13} /></span>}
                           {it.filename || <em>untitled</em>}
                         </td>
                         <td style={{ padding: '8px 12px' }}>

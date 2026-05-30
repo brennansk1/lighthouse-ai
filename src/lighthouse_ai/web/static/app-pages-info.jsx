@@ -251,21 +251,21 @@ const TABS = [
   {
     id: 'tab-track', icon: 'track', name: 'Track',
     summary: 'Hold predictions accountable over time.',
-    body: 'A position is a prediction you have committed to with a probability. As positions resolve, Lighthouse scores how calibrated you were (Brier score) and plots the trend. The tab also holds the register of open and resolved positions and any escalations that need your attention.',
+    body: 'Track records clear predictions — specific claims with a stated chance. As predictions are decided, Lighthouse scores how accurate they were (an accuracy score, technically the Brier score) and plots the trend. The tab also holds the list of Open and Decided predictions and anything that needs your attention.',
     points: [
-      'See whether your stated probabilities matched real outcomes.',
-      'Manage the register of open and resolved positions.',
-      'Review escalations — contested claims that were promoted for a closer look.',
+      'See whether the stated chances matched real outcomes.',
+      'Work through the list of Open and Decided predictions.',
+      'Review items that were flagged for a closer look.',
     ],
   },
   {
     id: 'tab-activity', icon: 'activity', name: 'Activity',
-    summary: 'Watch runs in flight and follow the audit trail.',
-    body: 'See every research run move from queued, to running, to ready for review — and pause, resume, or cancel any of them. Below the live runs, the audit trail lists what happened: each state transition, source fetch, and model call.',
+    summary: 'Watch runs in flight and see each step the AI took.',
+    body: 'See every research run move from queued, to running, to ready for review — and pause, resume, or cancel any of them. Below the live runs, the History panel lists what happened: each step, source fetch, and model call.',
     points: [
       'Live status for queued, running, paused, and review-ready jobs.',
       'Per-run controls: pause, resume, cancel.',
-      'The audit trail is HMAC-chained, so tampering breaks the chain.',
+      'History is tamper-evident (HMAC-chained), so any edit breaks the chain.',
     ],
   },
   {
@@ -314,10 +314,10 @@ const HOWTOS = [
   {
     title: 'Watch a website or topic',
     steps: [
-      'Open the Watch tab and click "+ Add topic".',
-      'Give it a name and a query string — the terms Lighthouse searches with.',
-      'Choose from the watchable sources (RSS, news outlets, arXiv, GitHub, general web).',
-      'Run a session. Alerts and a digest land in the Library; set up notifications in Settings to be pinged.',
+      'Open the Watch tab and click "+ Watch something".',
+      'Give it a name and a few keywords — the terms Lighthouse searches with.',
+      'Choose from the sources that can be followed (RSS, news outlets, arXiv, GitHub, general web).',
+      'Schedule a check. Alerts and a summary land in the Library; set up notifications in Settings to be pinged.',
     ],
   },
   {
@@ -332,10 +332,10 @@ const HOWTOS = [
   {
     title: 'Free up your machine with Pause',
     steps: [
-      'At the top of the sidebar, click Pause all.',
-      'All background work stops immediately — scheduled Watch sessions, calibration runs, pending jobs.',
+      'At the bottom of the sidebar, click Pause all work.',
+      'All background work stops immediately — scheduled checks, accuracy updates, pending jobs.',
       'Do the CPU- or RAM-heavy thing you need to do; nothing is lost or cancelled.',
-      'Click Resume work and in-progress jobs pick up where they left off.',
+      'Click Resume and in-progress jobs pick up where they left off.',
     ],
   },
   {
@@ -758,7 +758,7 @@ function InfoPage() {
   return (
     <div>
       <window.PageHeader
-        title="Documentation"
+        title="Guide"
         subtitle="Learn Lighthouse from one place: what it is, every tab, and how to do the common tasks."
       />
 

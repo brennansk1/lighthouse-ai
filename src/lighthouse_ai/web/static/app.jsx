@@ -26,6 +26,12 @@ const NAV_ICONS = {
   system:      '<path d="M2 3h20v14H2z"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
   sandbox:     '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M9 4v5"/><path d="M9 20v-5"/>',
   settings:    '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+  pause:       '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
+  play:        '<path d="M7 5l12 7-12 7V5z"/>',
+  sun:         '<circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.2" y1="4.2" x2="5.6" y2="5.6"/><line x1="18.4" y1="18.4" x2="19.8" y2="19.8"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.2" y1="19.8" x2="5.6" y2="18.4"/><line x1="18.4" y1="5.6" x2="19.8" y2="4.2"/>',
+  moon:        '<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>',
+  alert:       '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  pin:         '<path d="M9 4h6l-1 6 3 3v2H7v-2l3-3-1-6z"/><line x1="12" y1="15" x2="12" y2="21"/>',
 };
 
 function NavIcon({ name, size = 16 }) {
@@ -44,15 +50,15 @@ window.NavIcon = NavIcon;
 // overdue positions; Activity shows in-flight runs. Info sits at the end near
 // Health. Page ids are stable internal keys; labels are user-facing.
 const APP_PAGES = [
-  { id: 'research',  label: 'Research',  icon: 'research',  counter: 'jobs_running',  get C() { return window.ResearchPage; } },
-  { id: 'library',   label: 'Library',   icon: 'library',   counter: 'drafts_staged', get C() { return window.LibraryPage; } },
-  { id: 'watch',     label: 'Watch',     icon: 'watch',     get C() { return window.WatchPage; } },
-  { id: 'track',     label: 'Track',     icon: 'track',     counter: 'positions_overdue', get C() { return window.TrackPage; } },
-  { id: 'activity',  label: 'Activity',  icon: 'activity',  counter: 'jobs_running',  get C() { return window.ActivityPage; } },
-  { id: 'sandbox',   label: 'Sandbox',   icon: 'sandbox',   get C() { return window.SandboxPage; } },
-  { id: 'health',    label: 'Health',    icon: 'system',    get C() { return window.HealthPage; } },
-  { id: 'info',      label: 'Info',      icon: 'info',      get C() { return window.InfoPage; } },
-  { id: 'settings',  label: 'Settings',  icon: 'settings',  get C() { return window.SettingsPage; } },
+  { id: 'research',  label: 'Research',  icon: 'research',  group: 'Work',   counter: 'jobs_running',  get C() { return window.ResearchPage; } },
+  { id: 'library',   label: 'Library',   icon: 'library',   group: 'Work',   counter: 'drafts_staged', get C() { return window.LibraryPage; } },
+  { id: 'watch',     label: 'Watch',     icon: 'watch',     group: 'Work',   get C() { return window.WatchPage; } },
+  { id: 'track',     label: 'Track',     icon: 'track',     group: 'Work',   counter: 'positions_overdue', get C() { return window.TrackPage; } },
+  { id: 'activity',  label: 'Activity',  icon: 'activity',  group: 'Work',   counter: 'jobs_running',  get C() { return window.ActivityPage; } },
+  { id: 'sandbox',   label: 'Sandbox',   icon: 'sandbox',   group: 'System', get C() { return window.SandboxPage; } },
+  { id: 'health',    label: 'Health',    icon: 'system',    group: 'System', get C() { return window.HealthPage; } },
+  { id: 'info',      label: 'Info',      icon: 'info',      group: 'System', get C() { return window.InfoPage; } },
+  { id: 'settings',  label: 'Settings',  icon: 'settings',  group: 'System', get C() { return window.SettingsPage; } },
 ];
 
 // Research is always the landing page; an explicit #hash always wins.
@@ -164,6 +170,19 @@ function tierChipClass(tier) {
   return `lh-tier-chip lh-tier-${t}`;
 }
 
+// Map internal governor tier keys to plain status words a first-timer reads:
+// healthy → "OK", reduced/throttled → "Slow", anything stopped → "Problem".
+function tierStatusWord(tier) {
+  if (!tier || tier === '—') return '—';
+  const t = String(tier).toLowerCase();
+  if (t === 'green' || t === 'ok' || t === 'healthy') return 'OK';
+  if (t === 'tripped' || t === 'error' || t === 'down') return 'Problem';
+  if (t === 'local_only') return 'Offline';
+  // warn / degrade / drain / reduced → the machine is fine but Lighthouse eased off
+  return 'Slow';
+}
+window.tierStatusWord = tierStatusWord;
+
 function useTheme() {
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('lh-theme') || 'light'; } catch (e) { return 'light'; }
@@ -192,7 +211,9 @@ class PageBoundary extends React.Component {
       return (
         <div role="alert" style={{ ...window.card, padding: '40px 28px', maxWidth: 560,
           margin: '40px auto', textAlign: 'center' }}>
-          <div style={{ fontSize: 30, marginBottom: 10, opacity: 0.6 }}>⚠</div>
+          <div style={{ marginBottom: 10, opacity: 0.6, display: 'flex', justifyContent: 'center' }}>
+            <NavIcon name="alert" size={30} />
+          </div>
           <div style={{ fontFamily: 'var(--serif)', fontSize: 19, color: 'var(--ink)' }}>
             This page hit a snag.
           </div>
@@ -240,14 +261,16 @@ function GlobalPauseButton() {
   return (
     <button onClick={toggle} disabled={busy} className="btn-ghost"
       style={{ width: '100%', padding: '6px 8px', fontSize: 11.5, marginBottom: 8,
-        fontWeight: 600,
+        fontWeight: 600, display: 'inline-flex', alignItems: 'center',
+        justifyContent: 'center', gap: 6,
         color: paused ? '#1a7f4b' : 'var(--ink)',
         borderColor: paused ? '#1a7f4b' : undefined }}
       title={paused
         ? 'Background work is paused — click to resume'
         : 'Pause all background work to free up your machine'}
       aria-pressed={paused}>
-      {paused ? '▶ Resume work' : '⏸ Pause all'}
+      <NavIcon name={paused ? 'play' : 'pause'} size={13} />
+      <span>{paused ? 'Resume' : 'Pause all work'}</span>
     </button>
   );
 }
@@ -266,41 +289,55 @@ function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
       </div>
 
       <nav className="lh-nav" aria-label="Primary">
-        {APP_PAGES.map((p) => {
+        {APP_PAGES.map((p, i) => {
           const count = p.counter ? counters[p.counter] : null;
           const isActive = p.id === active;
+          const showGroup = p.group && (i === 0 || APP_PAGES[i - 1].group !== p.group);
           return (
-            <a key={p.id} href={`#${p.id}`} className={isActive ? 'active' : ''}
-              aria-current={isActive ? 'page' : undefined}>
-              {/* Icon cell — fixed width so labels align */}
-              <span aria-hidden="true" style={{ width: 18, display: 'inline-flex',
-                justifyContent: 'center', flexShrink: 0 }}>
-                <NavIcon name={p.icon} />
-              </span>
-              {/* Label — expands to fill available space */}
-              <span style={{ flex: 1 }}>{p.label}</span>
-              {/* Count badge — stays on the right */}
-              {count ? <span className="count">{count}</span> : null}
-            </a>
+            <React.Fragment key={p.id}>
+              {showGroup ? (
+                <div className="lh-nav-group" aria-hidden="true" style={{
+                  fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em',
+                  textTransform: 'uppercase', color: 'var(--muted)',
+                  padding: '10px 0 4px 8px', opacity: 0.7 }}>{p.group}</div>
+              ) : null}
+              <a href={`#${p.id}`} className={isActive ? 'active' : ''}
+                aria-current={isActive ? 'page' : undefined}>
+                {/* Icon cell — fixed width so labels align */}
+                <span aria-hidden="true" style={{ width: 18, display: 'inline-flex',
+                  justifyContent: 'center', flexShrink: 0 }}>
+                  <NavIcon name={p.icon} />
+                </span>
+                {/* Label — expands to fill available space */}
+                <span style={{ flex: 1 }}>{p.label}</span>
+                {/* Count badge — stays on the right */}
+                {count ? <span className="count">{count}</span> : null}
+              </a>
+            </React.Fragment>
           );
         })}
       </nav>
 
       <div className="lh-foot">
-        {/* Hardware tier chip */}
+        {/* Your-computer status chip — plain word, not the internal tier key */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center',
           gap: '4px 8px', marginBottom: 10 }}>
           <span style={{ fontSize: 10.5, color: 'var(--muted)', fontFamily: 'var(--sans)',
-            textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tier</span>
-          <span className={tierChipClass(tier)}>{tier}</span>
+            textTransform: 'uppercase', letterSpacing: '0.05em' }}>Computer</span>
+          <span className={tierChipClass(tier)}
+            title="How smoothly Lighthouse is running on your computer">
+            {tierStatusWord(tier)}
+          </span>
         </div>
 
         {/* Theme toggle + help shortcut */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
           <button onClick={onToggleTheme} className="btn-ghost"
-            style={{ flex: 1, padding: '5px 8px', fontSize: 11.5 }}
+            style={{ flex: 1, padding: '5px 8px', fontSize: 11.5,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
             aria-label="Toggle light or dark theme" aria-pressed={theme === 'dark'}>
-            {theme === 'dark' ? '☾ Dark' : '☀ Light'}
+            <NavIcon name={theme === 'dark' ? 'moon' : 'sun'} size={13} />
+            <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
           </button>
           <button onClick={onHelp} className="btn-ghost"
             style={{ padding: '5px 10px', fontSize: 11.5 }}

@@ -53,8 +53,8 @@ function artifactLabel(t) {
 const INTENT_RECIPES = [
   {
     id: 'literature-review',
-    label: 'Draft a literature review',
-    blurb: 'Survey academic sources and produce an evidence table with a PRISMA screen.',
+    label: 'Review the research on a topic',
+    blurb: 'Go through academic sources and lay them out in a clear evidence table.',
     mode: 'investigate',
     depth: 'thorough',
     suggestedSkills: ['openalex', 'pubmed', 'arxiv', 'semantic_scholar'],
@@ -63,7 +63,7 @@ const INTENT_RECIPES = [
   {
     id: 'fact-check',
     label: 'Fact-check a claim',
-    blurb: 'Put a specific assertion through a structured debate — steelman, devil\'s advocate, base rate, fragility.',
+    blurb: 'Weigh the case for and against a specific claim, then give a clear verdict.',
     mode: 'adjudicate',
     depth: 'standard',
     suggestedSkills: ['general_web', 'wikipedia', 'news_orchestrator'],
@@ -81,7 +81,7 @@ const INTENT_RECIPES = [
   {
     id: 'compare-options',
     label: 'Compare options to decide',
-    blurb: 'Score choices against weighted criteria, find the winner, and name the crux that could flip it.',
+    blurb: 'Score your choices against what matters to you, pick a winner, and flag what could change it.',
     mode: 'decide',
     depth: 'standard',
     suggestedSkills: [],
@@ -89,8 +89,8 @@ const INTENT_RECIPES = [
   },
   {
     id: 'monitor-topic',
-    label: 'Monitor a topic',
-    blurb: 'Set up a continuous watch on named sources — get alerts for high-salience items and a digest of the rest.',
+    label: 'Keep an eye on something',
+    blurb: 'Follow a set of sources over time — get alerts for the important items and a summary of the rest.',
     mode: 'watch',
     depth: 'auto',
     suggestedSkills: [],
@@ -99,11 +99,11 @@ const INTENT_RECIPES = [
   {
     id: 'quick-question',
     label: 'Quick question',
-    blurb: 'Get a fast, cited answer from the corpus. Best for pointed factual questions.',
+    blurb: 'Get a fast, cited answer from your sources. Best for pointed factual questions.',
     mode: 'ask',
     depth: 'quick',
     suggestedSkills: ['general_web', 'wikipedia'],
-    examplePrompt: 'e.g. What does our corpus say about the 2023 supply agreement?',
+    examplePrompt: 'e.g. What do your sources say about the 2023 supply agreement?',
   },
 ];
 
@@ -201,7 +201,7 @@ function RecipeRow({ onRecipeSelect }) {
 // kind of input that fits the chosen mode rather than a generic prompt.
 const MODE_PLACEHOLDER = {
   watch: 'e.g. New filings and statements from the three largest lithium producers',
-  ask: 'e.g. What does our corpus say about the 2023 supply agreement?',
+  ask: 'e.g. What do your sources say about the 2023 supply agreement?',
   investigate: 'e.g. What is driving the recent change in regional grid prices?',
   survey: 'e.g. Clinical trials of GLP-1 drugs for weight maintenance since 2020',
   reconstruct: 'e.g. The sequence of events in the 2022 plant shutdown',
@@ -209,16 +209,16 @@ const MODE_PLACEHOLDER = {
   adjudicate: 'e.g. Will the proposed merger clear regulatory review?',
 };
 
-// One short line, per mode, describing what the produced artifact contains.
-// Used in the review step to set expectations in researcher language.
+// One short line, per mode, describing what the finished research contains.
+// Used in the review step to set expectations in plain language.
 const MODE_OUTCOME = {
-  watch: 'a digest of the most salient new items from the sources you name',
-  ask: 'a cited transcript of the question and its grounded answer',
-  investigate: 'a bounded, sourced report that answers the question',
-  survey: 'an evidence table screening the documents, with a PRISMA flow',
-  reconstruct: 'a sourced chronology of dated events',
-  decide: 'a decision matrix scoring each option against your criteria',
-  adjudicate: 'a verdict naming the crux of disagreement after a structured debate',
+  watch: 'a summary of the most important new items from the sources you name',
+  ask: 'a cited answer to your question, with the question kept alongside it',
+  investigate: 'a focused, sourced report that answers the question',
+  survey: 'a clear evidence table laying out what the sources say',
+  reconstruct: 'a sourced timeline of dated events',
+  decide: 'a scorecard rating each option against what matters to you',
+  adjudicate: 'a clear verdict, naming the main point the disagreement turns on',
 };
 
 // Modes for which a list of source URLs is a sensible optional input. The API
@@ -232,17 +232,17 @@ const DEPTH_MODES = new Set(['investigate', 'ask', 'survey', 'reconstruct']);
 // The four depth tiers (see docs/research_depth_matrix.md). Display-layer only.
 const DEPTH_TIERS = [
   { key: 'auto', label: 'Auto', time: 'recommended',
-    blurb: 'Pick the right depth for this question automatically. You can override.' },
+    blurb: 'Lighthouse picks the right amount of effort for this question. You can change it.' },
   { key: 'quick', label: 'Quick', time: '~1–3 min',
-    blurb: 'A fast, grounded scan. Fewer rounds, top findings only.' },
+    blurb: 'A fast look. Just the top findings.' },
   { key: 'standard', label: 'Standard', time: '~5–10 min',
-    blurb: 'Balanced. Multi-round with coverage check. ≈ frontier deep research.' },
+    blurb: 'A balanced pass that checks it covered the question.' },
   { key: 'thorough', label: 'Thorough', time: '~20–60 min',
-    blurb: 'Doing it properly: more rounds, adversarial refutation, triangulation.' },
-  { key: 'deep', label: 'Deep', time: 'hours (budgeted)',
-    blurb: 'Overnight. Recursive question-tree to exhaustion — depth frontier tools can’t reach.' },
+    blurb: 'A careful pass: more rounds and double-checking from several angles.' },
+  { key: 'deep', label: 'Deep', time: 'hours (you set a limit)',
+    blurb: 'The deepest option. Best left to run in the background, even overnight.' },
 ];
-const DEPTH_INVARIANT = 'Depth scales coverage and confidence, never trust — every tier stays grounded.';
+const DEPTH_INVARIANT = 'More effort means wider coverage — it never lowers the bar on what counts as a reliable source.';
 const DEEP_BUDGETS = [
   { key: '30m', label: '30 min' }, { key: '1h', label: '1 hour' },
   { key: '2h', label: '2 hours' }, { key: 'overnight', label: 'Overnight' },
@@ -335,7 +335,7 @@ function FirstRunCard({ onDismiss }) {
       <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>
         Want to turn outlets on or off, or add your own feeds? Visit{' '}
         <a href="#settings" style={{ color: 'var(--primary)', fontWeight: 600 }}>
-          Settings → Sources &amp; trust</a>. New to the modes?{' '}
+          Settings → Sources &amp; approval</a>. New to the options?{' '}
         <a href="#info" style={{ color: 'var(--primary)', fontWeight: 600 }}>
           Read the primer</a>.
       </div>
@@ -352,23 +352,42 @@ function FirstRunCard({ onDismiss }) {
 // Launch POSTs to /api/jobs, which normalizes the mode key and validates Decide
 // server-side; on success we route to #activity.
 
-function ModeCard({ mode, selected, onSelect }) {
+function ModeCard({ mode, selected, onSelect, primary }) {
+  // Ask is shown "primary": a wider, accent-bordered card that reads as the
+  // simple, get-started option above the deeper research modes.
+  const summary = primary
+    ? 'Get a quick, cited answer to a pointed question.'
+    : mode.summary;
   return (
     <button
       onClick={() => onSelect(mode.key)}
       aria-pressed={selected}
       style={{
-        ...card, textAlign: 'left', padding: '14px 16px', cursor: 'pointer',
-        border: selected ? '2px solid var(--primary)' : '1px solid var(--rule)',
-        background: selected ? 'var(--rule-soft)' : 'var(--card)',
+        ...card, textAlign: 'left', padding: primary ? '16px 18px' : '14px 16px',
+        cursor: 'pointer', width: '100%',
+        border: selected ? '2px solid var(--primary)'
+          : primary ? '2px solid var(--primary)' : '1px solid var(--rule)',
+        background: selected ? 'var(--rule-soft)'
+          : primary ? 'rgba(2,136,209,0.04)' : 'var(--card)',
       }}>
-      <div style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 700,
-        color: 'var(--ink)' }}>{mode.label}</div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4,
-        lineHeight: 1.45 }}>{mode.summary}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontFamily: 'var(--serif)',
+          fontSize: primary ? 17 : 15, fontWeight: 700, color: 'var(--ink)' }}>
+          {mode.label}
+        </span>
+        {primary && (
+          <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em',
+            textTransform: 'uppercase', color: 'var(--primary)',
+            background: 'rgba(2,136,209,0.10)', padding: '2px 7px', borderRadius: 3 }}>
+            Simplest
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: primary ? 12.5 : 12, color: 'var(--muted)', marginTop: 4,
+        lineHeight: 1.45 }}>{summary}</div>
       <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 8,
         textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-        Produces: {artifactLabel(mode.artifact_type)}
+        You get: {artifactLabel(mode.artifact_type)}
       </div>
     </button>
   );
@@ -700,7 +719,7 @@ function SourcePicker({ topic, mode, depth, selectedSkills, setSelectedSkills })
     return (
       <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: '8px 0',
         fontStyle: 'italic' }}>
-        No sources configured. The run will use default corpus access.
+        No sources configured. The run will use your default sources.
       </div>
     );
   }
@@ -957,7 +976,7 @@ function ResearchPage({ toast }) {
   // sentence reads naturally and stays easy to translate).
   let reviewSentence = '';
   if (sel) {
-    const outcome = MODE_OUTCOME[sel.key] || 'a research artifact';
+    const outcome = MODE_OUTCOME[sel.key] || 'a finished piece of research';
     const decideTail = isDecide
       ? `, comparing ${cleanOptions.length} option${cleanOptions.length === 1 ? '' : 's'} `
         + `across ${cleanCriteria.length} criteri${cleanCriteria.length === 1 ? 'on' : 'a'}`
@@ -967,7 +986,7 @@ function ResearchPage({ toast }) {
         + (depth === 'deep' ? ` (budget: ${(DEEP_BUDGETS.find((b) => b.key === budget) || {}).label || budget})` : '')
       : '';
     reviewSentence = `You are about to run ${sel.label} on "${topic.trim()}"${depthTail}. `
-      + `This produces ${outcome}${decideTail}.`;
+      + `You'll get ${outcome}${decideTail}.`;
   }
 
   return (
@@ -992,17 +1011,34 @@ function ResearchPage({ toast }) {
 
               <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 14px',
                 lineHeight: 1.5, maxWidth: '60ch' }}>
-                Each mode produces one kind of research artifact. Pick the one
-                that matches the question you are asking.
+                Pick what you want. Just need a quick cited answer? Start with
+                <strong style={{ color: 'var(--ink-2)' }}> Ask</strong>. The other
+                options do deeper kinds of research.
               </p>
-              <div style={{ display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-                gap: 12 }}>
-                {modes.map((m) => (
-                  <ModeCard key={m.key} mode={m} selected={m.key === selected}
-                    onSelect={chooseMode} />
-                ))}
-              </div>
+              {/* Ask first, primary — the simple "quick cited answer" option. The
+                  remaining six modes follow in their API order. */}
+              {(() => {
+                const askMode = modes.find((m) => m.key === 'ask');
+                const rest = modes.filter((m) => m.key !== 'ask');
+                return (
+                  <React.Fragment>
+                    {askMode && (
+                      <div style={{ marginBottom: 14 }}>
+                        <ModeCard mode={askMode} primary
+                          selected={askMode.key === selected} onSelect={chooseMode} />
+                      </div>
+                    )}
+                    <div style={{ display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                      gap: 12 }}>
+                      {rest.map((m) => (
+                        <ModeCard key={m.key} mode={m} selected={m.key === selected}
+                          onSelect={chooseMode} />
+                      ))}
+                    </div>
+                  </React.Fragment>
+                );
+              })()}
             </div>
           )}
 
@@ -1012,7 +1048,7 @@ function ResearchPage({ toast }) {
               <div style={{ fontFamily: 'var(--serif)', fontSize: 17, fontWeight: 700,
                 color: 'var(--ink)', marginBottom: 4 }}>Frame your {sel.label} run</div>
               <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 18 }}>
-                This run will produce {MODE_OUTCOME[sel.key] || 'a research artifact'}.
+                You'll get {MODE_OUTCOME[sel.key] || 'a finished piece of research'}.
               </div>
 
               <WizardField
@@ -1059,7 +1095,7 @@ function ResearchPage({ toast }) {
 
               {wantsUrls && (
                 <WizardField label="Source URLs (optional)"
-                  hint="Paste one URL per line to point the run at specific sources. Leave blank to use the corpus.">
+                  hint="Paste one URL per line to point the run at specific sources. Leave blank to use your sources.">
                   <textarea value={urls} onChange={(e) => setUrls(e.target.value)}
                     rows={3} placeholder={'https://example.com/report\nhttps://example.com/filing'}
                     style={{ width: '100%', padding: '8px 11px',
@@ -1070,8 +1106,8 @@ function ResearchPage({ toast }) {
               )}
 
               {wantsDepth && (
-                <WizardField label="Research depth"
-                  hint="How far the run goes. Quick for a fast answer; Deep runs overnight on a recursive question-tree.">
+                <WizardField label="How much effort"
+                  hint="How far Lighthouse goes. Quick for a fast answer; Deep can run in the background, even overnight.">
                   <DepthSelector depth={depth} setDepth={setDepth}
                     budget={budget} setBudget={setBudget} />
                 </WizardField>
@@ -1108,7 +1144,7 @@ function ResearchPage({ toast }) {
               <div style={{ background: 'var(--rule-soft)', borderRadius: 8,
                 padding: '12px 14px', marginBottom: 16 }}>
                 <Row k="Mode" v={sel.label} />
-                <Row k="Artifact" v={artifactLabel(sel.artifact_type)} />
+                <Row k="You get" v={artifactLabel(sel.artifact_type)} />
                 <Row k="Question" v={topic.trim()} />
                 {isDecide && <Row k="Options" v={cleanOptions.join(', ')} />}
                 {isDecide && <Row k="Criteria"
@@ -1120,18 +1156,18 @@ function ResearchPage({ toast }) {
                 <Row k="Research sources"
                   v={selectedSkills.length
                     ? `${selectedSkills.length} source${selectedSkills.length === 1 ? '' : 's'} selected`
-                    : 'Default corpus access'} />
+                    : 'Your default sources'} />
               </div>
 
               {wantsDepth && plan.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)',
                     textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
-                    Research plan
+                    What we'll look into
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>
-                    The run will work through these load-bearing sub-questions; each
-                    is answered with cited evidence or recorded as a known-unknown.
+                    Lighthouse will work through these key questions; each one gets a
+                    cited answer, or is flagged as something it couldn't pin down.
                   </div>
                   <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13,
                     color: 'var(--ink-2)', lineHeight: 1.6 }}>
@@ -1283,7 +1319,8 @@ function Contradictions({ items }) {
   return (
     <div style={{ marginTop: 22, borderTop: '2px solid var(--rule)', paddingTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <span aria-hidden="true" style={{ fontSize: 13, color: '#a83269' }}>⚠</span>
+        <span aria-hidden="true" style={{ color: '#a83269', display: 'inline-flex' }}>
+          <window.NavIcon name="alert" size={14} /></span>
         <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
           letterSpacing: '0.06em', color: '#880e4f' }}>Contradictions</span>
         <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>
@@ -1868,9 +1905,11 @@ function LibraryPage({ toast }) {
             onClick={() => { setTypeFilter(f.key); setSelId(null); }}>{f.label}</Btn>
         ))}
       </div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: GAP }}>
-        {artifacts.length} artifact{artifacts.length === 1 ? '' : 's'} shown
-      </div>
+      {artifacts.length > 0 && (
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: GAP }}>
+          {artifacts.length} item{artifacts.length === 1 ? '' : 's'}
+        </div>
+      )}
 
       {loading && !data && <Loading />}
       {error && <ErrorBox message={error} onRetry={reload} />}
@@ -1917,7 +1956,7 @@ function LibraryPage({ toast }) {
           {selId && detail && (
             // Full-screen reading mode — covers the sidebar + top chrome so the
             // researcher reads the document without distraction. Back returns.
-            <div role="dialog" aria-modal="true" aria-label={detail.title || 'Artifact'}
+            <div role="dialog" aria-modal="true" aria-label={detail.title || 'Result'}
               style={{ position: 'fixed', inset: 0, zIndex: 1000,
                 background: 'var(--paper)', display: 'flex', flexDirection: 'column',
                 animation: 'lh-fade-in .15s ease' }}>
@@ -2027,7 +2066,7 @@ function ActivityPage({ toast }) {
   return (
     <div style={{ padding: PAD, maxWidth: 1100 }}>
       <PageHeader title="Activity"
-        subtitle="Research that is running or recently finished. Watch a run live as it progresses, and follow the trail of what happened." />
+        subtitle="Research that is running or recently finished. Watch a run live as it progresses, and see each step the AI took." />
       {loading && !data && <Loading />}
       {error && <ErrorBox message={error} onRetry={reload} />}
 
@@ -2104,10 +2143,10 @@ function ActivityPage({ toast }) {
 
           <div style={{ ...card, padding: '14px 16px' }}>
             <div style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 700,
-              color: 'var(--ink)', marginBottom: 2 }}>Audit trail</div>
+              color: 'var(--ink)', marginBottom: 2 }}>History</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
-              A tamper-evident, time-ordered record of every action the system
-              took — useful for verifying how a result was produced.
+              A time-ordered record of every step Lighthouse took — handy for seeing
+              exactly how a result was produced.
             </div>
             {events.length === 0 && (
               <div style={{ fontSize: 13, color: 'var(--muted)' }}>
@@ -2658,13 +2697,13 @@ function CalibrationTimeline({ toast }) {
     return (
       <div style={{ ...card, padding: '14px 16px', marginBottom: GAP }}>
         <div style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 700,
-          color: 'var(--ink)', marginBottom: 6 }}>Calibration over time</div>
+          color: 'var(--ink)', marginBottom: 6 }}>How accurate the predictions have been</div>
         <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.55,
           maxWidth: '70ch' }}>
-          Calibration measures how well your stated probabilities match what
-          actually happened. Once you record predictions and resolve them as
-          confirmed or refuted, this chart will track whether you are over- or
-          under-confident over time. Nothing to plot yet.
+          This shows how well the stated chances matched what actually happened.
+          Once predictions are recorded and decided as right or wrong, this chart
+          tracks whether they tend to be over- or under-confident over time.
+          Nothing to show yet.
         </div>
       </div>
     );
@@ -2672,19 +2711,19 @@ function CalibrationTimeline({ toast }) {
   return (
     <div style={{ ...card, padding: '14px 16px', marginBottom: GAP }}>
       <div style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 700,
-        color: 'var(--ink)', marginBottom: 4 }}>Calibration over time (weekly)</div>
+        color: 'var(--ink)', marginBottom: 4 }}>How accurate the predictions have been (by week)</div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10,
         lineHeight: 1.5, maxWidth: '70ch' }}>
-        How closely your stated confidence matched what actually happened, week by
+        How closely the stated confidence matched what actually happened, week by
         week. A lower accuracy score is better. When "how often right" lands near
-        your average confidence, your predictions are well calibrated.
+        the average confidence, the predictions are on the mark.
       </div>
       <table style={{ borderCollapse: 'collapse', fontSize: 12, width: '100%' }}>
         <thead><tr>
           {[
             { h: 'Week', t: '' },
             { h: 'Predictions', t: 'How many predictions resolved that week.' },
-            { h: 'Accuracy score', t: 'The Brier score: 0 is perfect, lower is better-calibrated.' },
+            { h: 'Accuracy score', t: '0 is a perfect track record; lower is better.' },
             { h: 'Avg. confidence', t: 'The average probability you stated.' },
             { h: 'How often right', t: 'The share of those predictions that actually came true.' },
           ].map(({ h, t }) => (
@@ -2768,12 +2807,12 @@ function TrackPage(props) {
       <PageHeader title="Track"
         subtitle="Predictions Lighthouse is tracking, and how accurate they turn out to be." />
       <SectionIntro title="What this tab is for">
-        Lighthouse records falsifiable predictions — clear claims with a stated
-        confidence. Each one stays open until the real outcome is known, then it
-        is marked confirmed or refuted. Over time you can see how well its
-        confidence matches reality: a lower accuracy score means better-calibrated
-        predictions. Below you will find that accuracy trend, the list of open and
-        resolved predictions, and any items that need attention.
+        Lighthouse records clear predictions we can later check as right or wrong —
+        each one a specific claim with a stated chance. A prediction stays open
+        until the real outcome is known, then it is marked right or wrong. Over
+        time you can see how well those chances matched reality: a lower accuracy
+        score is better. Below you'll find that trend, the list of open and decided
+        predictions, and anything that needs attention.
       </SectionIntro>
       <ConfidenceLegend />
       <CalibrationTimeline {...props} />
