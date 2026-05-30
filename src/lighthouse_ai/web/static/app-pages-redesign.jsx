@@ -12,6 +12,7 @@
 const { useState, useEffect, useCallback } = React;
 const { apiGet, apiPost, useApi, useEvents } = window;
 const { PageHeader, EmptyState, Loading, ErrorBox, Btn, StatusPill, card, Row } = window;
+const { SidePane } = window;
 
 const PAD = '4px 0 40px';
 const GAP = 18;
@@ -1639,7 +1640,9 @@ function statusPlain(s) {
 function ActivityPage({ toast }) {
   const { data, loading, error, reload } = useApi('/api/jobs', { pollMs: 5000 });
   const { data: auditData } = useApi('/api/audit?limit=30', { pollMs: 15000 });
-  useEvents((name) => { if (name && name.indexOf('job.') === 0) reload(); });
+  const [watchId, setWatchId] = useState(null);
+  // Only reload on job lifecycle events, not the high-frequency job.step stream.
+  useEvents((name) => { if (name && name.indexOf('job.') === 0 && name !== 'job.step') reload(); });
 
   // Pause / resume / cancel a run via the jobs control endpoints.
   async function control(jobId, action, label) {
@@ -1708,7 +1711,12 @@ function ActivityPage({ toast }) {
                     <window.Bar value={pct} max={100}
                       color={j.status === 'paused' ? 'var(--muted)' : 'var(--primary)'} />
                   </div>
-                  {/* Pause / resume / cancel — visible, not hidden. */}
+                  {/* Watch live + pause / resume / cancel — visible, not hidden. */}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    <Btn kind="ghost" size="sm" icon="◎"
+                      onClick={() => setWatchId(j.id)}
+                      aria-label={`Watch live: ${meta.topic || j.id}`}>Watch live</Btn>
+                  </div>
                   {(canPause || canResume || canCancel) && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                       {canPause && (
@@ -1754,6 +1762,12 @@ function ActivityPage({ toast }) {
             ))}
           </div>
         </React.Fragment>
+      )}
+
+      {watchId && window.JobTrace && (
+        <SidePane title="Live research trace" onClose={() => setWatchId(null)}>
+          <window.JobTrace jobId={watchId} onClose={() => setWatchId(null)} />
+        </SidePane>
       )}
     </div>
   );

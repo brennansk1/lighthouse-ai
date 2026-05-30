@@ -60,6 +60,11 @@ _SKILL_DOCS_META_KEY = "_skill_documents"
 #: the data dir (Deep-tier checkpoint/resume). Stripped before persist.
 _PATHS_META_KEY = "_paths"
 
+#: Private meta key handing the per-job :class:`ProgressEmitter` to the
+#: investigate adapters so they can wire the engine progress callbacks
+#: (on_round / on_node / on_checkpoint). Stripped before persist.
+_PROGRESS_META_KEY = "_progress"
+
 #: Fixed epoch handed to ``contradiction.detect`` so detection is deterministic
 #: and free of ``datetime.now()`` at import/runtime (the module forbids it).
 _DETECTED_AT = datetime(2026, 1, 1, tzinfo=UTC)
@@ -357,7 +362,17 @@ def _inject_skill_documents(meta: dict, *, gateway) -> list:
             str(meta.get("mode") or "") == "decide" and meta.get("options")):
         return []
     broker = meta.get(_BROKER_META_KEY)
+    emitter = meta.get(_PROGRESS_META_KEY)
+    if emitter is not None:
+        emitter.emit("sources", "sources_start", "Gathering sources", 12.0,
+                     {"skills": _selected_skill_ids(meta)})
     documents = _run_selected_skills(meta, gateway=gateway, broker=broker)
+    if emitter is not None:
+        # One skill_done step per selected skill (best-effort; we don't have a
+        # per-skill document split here, so report the aggregate corpus size).
+        for sid in _selected_skill_ids(meta):
+            emitter.emit("sources", "skill_done", str(sid), 18.0,
+                         {"skill_id": sid, "documents": len(documents)})
     if not documents:
         return []
     existing = _meta_documents(meta)
@@ -660,7 +675,7 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
     # persist a crash-recovery snapshot after every node and resume from any
     # prior checkpoint; absent ``paths`` (or job_id) this degrades to a plain run.
     paths = meta.get(_PATHS_META_KEY)
-    on_checkpoint = None
+    emitter = meta.get(_PROGRESS_META_KEY)
     resume_state = None
     if paths is not None and job_id:
         resume_state = _load_checkpoint(paths, job_id)
@@ -668,11 +683,18 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
             _log.info("dispatcher.checkpoint.resume", job_id=job_id,
                       done=resume_state.get("done"))
 
-        def on_checkpoint(state: TreeState) -> None:
+    # Wire the progress trace: a node step per researched node and a checkpoint
+    # heartbeat. Both are best-effort (the emitter swallows its own errors).
+    def on_checkpoint(state: TreeState) -> None:
+        if paths is not None and job_id:
             _write_checkpoint(paths, job_id, state)
+        if emitter is not None:
+            emitter.checkpoint_cb(state)
 
+    on_node = emitter.node_cb if emitter is not None else None
     tree = run_exhaustive(topic, research_fn=_research, gateway=gateway,
                           job_id=job_id, max_nodes=max_nodes, max_depth=3,
+                          on_node=on_node,
                           on_checkpoint=on_checkpoint, resume_state=resume_state)
 
     # Completed run → drop the checkpoint so a future job with this id starts
@@ -719,8 +741,10 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
         return _adapt_investigate_deep(meta, knobs, gateway=gateway, gate=gate,
                                        job_id=job_id)
     hybrid = _build_hybrid(meta, gateway=gateway)
+    emitter = meta.get(_PROGRESS_META_KEY)
+    on_round = emitter.round_cb if emitter is not None else None
     report = run_deepdive(topic, hybrid=hybrid, gateway=gateway,
-                          job_id=job_id, gate=gate,
+                          job_id=job_id, gate=gate, on_round=on_round,
                           max_rounds=knobs["max_rounds"], top_k=knobs["top_k"])
     parts = []
     for s in report.sections:
@@ -938,6 +962,39 @@ def _provenance_manifest(*, mode_key: str, meta: dict, summary: dict,
     return payload
 
 
+def _emit_verification(progress, summary: dict) -> None:
+    """Emit ``verification`` steps off a produced artifact body (best-effort).
+
+    Surfaces a coverage step (with gap count), a ``contradiction`` step when the
+    body flags an auto-adjudicate, and one ``known_unknown`` per open question.
+    Pulls only from the JSON body so it works across modes; never raises."""
+    try:
+        body = summary.get("body_json")
+        if not isinstance(body, dict):
+            return
+        if "coverage" in body or "coverage_gaps" in body:
+            gaps = body.get("coverage_gaps") or []
+            progress.emit("verification", "coverage", "Coverage check", 82.0, {
+                "coverage": body.get("coverage"),
+                "gaps": len(gaps) if isinstance(gaps, list) else 0,
+            })
+        contested = body.get("contested_claims") or []
+        if contested or body.get("auto_adjudicate"):
+            progress.emit("verification", "contradiction",
+                          "Contested claims", 84.0, {
+                              "contested": len(contested)
+                              if isinstance(contested, list) else 0,
+                              "auto_adjudicate": body.get("auto_adjudicate"),
+                          })
+        open_qs = body.get("open_questions") or body.get("known_unknowns") or []
+        if isinstance(open_qs, list):
+            for q in open_qs:
+                progress.emit("verification", "known_unknown", str(q)[:120],
+                              86.0, {"question": str(q)})
+    except Exception:  # pragma: no cover - defensive
+        pass
+
+
 def run_job(paths: Paths, job: ClaimedJob, *,
             gateway: Gateway | None = None,
             gate: SchedulerGate | None = None,
@@ -975,11 +1032,26 @@ def run_job(paths: Paths, job: ClaimedJob, *,
     job.meta[_BROKER_META_KEY] = _build_broker(paths)
     # Hand the resolved data dir to adapters that checkpoint (Deep tier).
     job.meta[_PATHS_META_KEY] = paths
+    # Per-job progress trace. Best-effort: a ProgressEmitter never raises, so a
+    # trace failure can never fail the job. The emitter is handed to the
+    # investigate adapters (via meta) to wire the engine progress callbacks.
+    from .progress import ProgressEmitter
+    progress = ProgressEmitter(job.id, paths, bus)
+    job.meta[_PROGRESS_META_KEY] = progress
+    progress.emit("framing", "start", f"Framing: {mode_key}", 5.0,
+                  {"mode": mode_key, "depth": job.meta.get("depth")})
 
     backends: dict = {}
     try:
         summary = adapter(job.meta, gateway=gateway, gate=gate, job_id=job.id,
                           positions_db=paths.positions_db)
+        # Modes without rich engine callbacks (ask/survey/reconstruct/decide/
+        # adjudicate/watch) still get a minimal trace: framing→drafting→done.
+        progress.emit("drafting", "drafted", summary.get("title", mode_key),
+                      75.0, {"source_count": summary.get("source_count", 0)})
+        # Verification: surface contradictions/coverage gaps and a known_unknown
+        # per open question off the produced artifact body (best-effort).
+        _emit_verification(progress, summary)
         # Auto-Adjudicate trigger (§6.4): detect contradictions over the run's
         # skill corpus and flag a follow-up when the five conditions hold.
         if mode_key in _MULTISOURCE_MODES:
@@ -1011,11 +1083,16 @@ def run_job(paths: Paths, job: ClaimedJob, *,
             bus.publish("job.status", {"id": job.id, "status": "failed"})
         return None
 
+    # Final progress step: done at 100. This also nudges metadata_json.progress
+    # to 1.0, but we set it explicitly below for the persisted snapshot too.
+    progress.emit("done", "done", "Complete", 100.0, {"draft_id": draft_id})
+
     meta = dict(job.meta)
     # Drop the private, non-serializable handoff keys before persisting.
     meta.pop(_BROKER_META_KEY, None)
     meta.pop(_SKILL_DOCS_META_KEY, None)
     meta.pop(_PATHS_META_KEY, None)
+    meta.pop(_PROGRESS_META_KEY, None)
     meta["progress"] = 1.0
     meta["draft_id"] = draft_id
     # Record which backend actually served this job so a "mock masquerade" (a

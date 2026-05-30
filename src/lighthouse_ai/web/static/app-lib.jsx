@@ -129,7 +129,7 @@ function useApi(path, { pollMs = 0, deps = [] } = {}) {
 
 // ── useEvents: subscribe to the SSE channel with auto-reconnect ──────────
 const SSE_EVENTS = [
-  'job.progress', 'job.status', 'draft.staged', 'draft.approved',
+  'job.progress', 'job.status', 'job.step', 'draft.staged', 'draft.approved',
   'draft.rejected', 'position.resolved', 'audit.appended',
   'governor.tier', 'governor.tripped',
 ];
@@ -728,9 +728,438 @@ function ProgressRing({ value, max, size = 40, stroke = 4 }) {
   );
 }
 
+// ── JobTrace: "watch the deep research happen" live process viewer ─────────
+//
+// Consumes the Zone-A contract:
+//   GET /api/jobs/{id}/trace → {job_id, status, pct, events:[{seq,ts,phase,
+//     kind,label,pct,data}, ...]}  (poll-safe; empty for unknown jobs)
+//   SSE 'job.step' → {job_id, seq, phase, kind, label, pct, data}
+//
+// Live streaming: useEvents appends each job.step (matched by job_id), deduped
+// by seq, merged with the polled backlog into one sorted-unique list. Polling
+// (2s) is the fallback/backlog source and relaxes once the job is terminal.
+// Post-hoc review: the very same path renders a completed job's persisted
+// trace, plus a "View artifact" button and (when a draft_id is known) the
+// entity graph + contradictions / known-unknowns summary.
+
+(function injectTraceStyles() {
+  if (document.getElementById('lh-trace-styles')) return;
+  const el = document.createElement('style');
+  el.id = 'lh-trace-styles';
+  el.textContent = `
+    @keyframes lh-trace-pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(2,136,209,0.32); }
+      50%     { box-shadow: 0 0 0 6px rgba(2,136,209,0); }
+    }
+    @keyframes lh-trace-beam { to { transform: rotate(360deg); } }
+    .lh-trace-active-dot { animation: lh-trace-pulse 1.6s ease-in-out infinite; }
+  `;
+  document.head.appendChild(el);
+})();
+
+// Monochrome line-icon set (matches the NavIcon house style: 24×24, no fill,
+// stroke=currentColor) so the trace reads professionally — no emoji anywhere.
+const TRACE_ICONS = {
+  framing: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.2"/>',
+  sources: '<line x1="5" y1="7" x2="19" y2="7"/><line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="17" x2="13" y2="17"/>',
+  retrieval: '<circle cx="11" cy="11" r="6.5"/><line x1="20" y1="20" x2="16" y2="16"/>',
+  drafting: '<path d="M14 3v5h5"/><path d="M7 3h7l5 5v11a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>',
+  verification: '<path d="M12 3l7 3v5c0 4.5-3 7.2-7 8.4C8 18.2 5 15.5 5 11V6z"/><path d="M9 11.6l2 2 4-4.3"/>',
+  synthesis: '<path d="M12 4l8 4.2-8 4.2-8-4.2z"/><path d="M4 13l8 4.2 8-4.2"/>',
+  done: '<circle cx="12" cy="12" r="8.5"/><path d="M8.4 12.3l2.5 2.4 4.7-5"/>',
+  round: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4v4h-4"/>',
+  contradiction: '<path d="M12 4l8.5 15h-17z"/><line x1="12" y1="10" x2="12" y2="14"/><circle cx="12" cy="16.6" r="0.5" fill="currentColor" stroke="none"/>',
+  known_unknown: '<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.7 1c0 1.6-2.1 2-2.3 3.4"/><circle cx="12" cy="16.6" r="0.5" fill="currentColor" stroke="none"/>',
+  coverage: '<line x1="6" y1="20" x2="6" y2="13"/><line x1="12" y1="20" x2="12" y2="7"/><line x1="18" y1="20" x2="18" y2="11"/>',
+  checkpoint: '<path d="M6 21V4"/><path d="M6 5h10l-2 3 2 3H6"/>',
+  node: '<circle cx="7" cy="7" r="2.2"/><circle cx="17" cy="17" r="2.2"/><path d="M9 7h4a4 4 0 0 1 4 4v4"/>',
+};
+
+// Renders one trace icon by name. Mirrors NavIcon (stroke=currentColor) so the
+// glyph inherits the surrounding text colour/tone.
+function TraceIcon({ name, size = 14 }) {
+  return React.createElement('svg', {
+    width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round',
+    strokeLinejoin: 'round', 'aria-hidden': 'true', style: { display: 'block' },
+    dangerouslySetInnerHTML: { __html: TRACE_ICONS[name] || TRACE_ICONS.framing },
+  });
+}
+
+// Phase → plain-language label + icon name. Ordered to match the backend
+// vocabulary; labels read like steps a person would recognise, not jargon.
+const TRACE_PHASES = [
+  { key: 'framing',      label: 'Understanding the question', icon: 'framing' },
+  { key: 'sources',      label: 'Choosing sources',           icon: 'sources' },
+  { key: 'retrieval',    label: 'Gathering evidence',         icon: 'retrieval' },
+  { key: 'drafting',     label: 'Reading & drafting',         icon: 'drafting' },
+  { key: 'verification', label: 'Checking gaps & conflicts',  icon: 'verification' },
+  { key: 'synthesis',    label: 'Writing it up',              icon: 'synthesis' },
+  { key: 'done',         label: 'Finished',                   icon: 'done' },
+];
+const TRACE_PHASE_INDEX = TRACE_PHASES.reduce((m, p, i) => { m[p.key] = i; return m; }, {});
+
+// kind → small chip (icon name + tone + plain-language text).
+function traceKindChip(kind, data) {
+  const d = data || {};
+  switch (kind) {
+    case 'section_drafted':
+      return { icon: 'drafting', tone: 'var(--primary)',
+        text: d.is_load_bearing ? 'answered a key question' : 'drafted a section' };
+    case 'round':
+      return { icon: 'round', tone: 'var(--primary)', text: 'drafting pass' };
+    case 'skill_done':
+    case 'sources_start':
+      return { icon: 'retrieval', tone: 'var(--primary)', text: 'checked a source' };
+    case 'contradiction':
+      return { icon: 'contradiction', tone: 'var(--coral-2, #c62828)', text: 'found a conflict' };
+    case 'known_unknown':
+      return { icon: 'known_unknown', tone: '#d97706', text: 'open question' };
+    case 'coverage':
+      return { icon: 'coverage', tone: 'var(--green-dark)', text: 'coverage check' };
+    case 'checkpoint':
+      return { icon: 'checkpoint', tone: 'var(--muted)', text: 'progress saved' };
+    case 'node':
+      return { icon: 'node', tone: 'var(--primary)',
+        text: d.depth != null ? `explored (level ${d.depth})` : 'explored a question' };
+    case 'done':
+      return { icon: 'done', tone: 'var(--green-dark)', text: 'complete' };
+    case 'start':
+    case 'framing':
+      return { icon: 'framing', tone: 'var(--muted)', text: 'started' };
+    case 'drafted':
+      return { icon: 'drafting', tone: 'var(--primary)', text: 'draft ready' };
+    default:
+      return { icon: 'framing', tone: 'var(--muted)', text: kind || '' };
+  }
+}
+
+const TRACE_TERMINAL = ['review', 'done', 'completed', 'failed', 'cancelled', 'rejected', 'staged'];
+function traceIsTerminal(status) {
+  return TRACE_TERMINAL.indexOf((status || '').toString()) !== -1;
+}
+
+// Merge two event lists into a seq-sorted, seq-unique array (no mutation).
+function traceMergeEvents(existing, incoming) {
+  const bySeq = new Map();
+  (existing || []).forEach((e) => { if (e && e.seq != null) bySeq.set(e.seq, e); });
+  (incoming || []).forEach((e) => { if (e && e.seq != null && !bySeq.has(e.seq)) bySeq.set(e.seq, e); });
+  return Array.from(bySeq.values()).sort((a, b) => (a.seq || 0) - (b.seq || 0));
+}
+
+// One step row in the vertical timeline.
+function TraceStep({ ev, phaseIcon, active }) {
+  const chip = traceKindChip(ev.kind, ev.data);
+  const depth = ev.data && ev.data.depth != null ? Number(ev.data.depth) : null;
+  const indent = depth != null && depth > 0 ? Math.min(depth, 6) * 14 : 0;
+  return (
+    <div className="lh-slide-up"
+      style={{ display: 'flex', gap: 10, padding: '6px 0', alignItems: 'flex-start',
+        marginLeft: indent }}>
+      <span
+        className={active ? 'lh-trace-active-dot' : undefined}
+        aria-hidden="true"
+        style={{
+          width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          color: active ? 'var(--primary)' : 'var(--muted)',
+          lineHeight: 1, marginTop: 1,
+          background: active ? 'rgba(2,136,209,0.12)' : 'var(--rule-soft)',
+          border: `1px solid ${active ? 'var(--primary)' : 'var(--rule)'}`,
+        }}><TraceIcon name={phaseIcon} size={13} /></span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--ink)',
+          lineHeight: 1.4, wordBreak: 'break-word' }}>
+          {ev.label || ev.kind || 'step'}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2,
+          flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: 'var(--sans)', fontSize: 10.5, fontWeight: 600,
+            color: chip.tone, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <TraceIcon name={chip.icon} size={12} />{chip.text}
+          </span>
+          {ev.data && ev.data.voi != null && (
+            <span style={{ fontFamily: 'var(--mono, monospace)', fontSize: 10,
+              color: 'var(--muted)' }}>VOI {Number(ev.data.voi).toFixed(2)}</span>
+          )}
+          {ev.data && ev.data.status && ev.kind === 'node' && (
+            <span style={{ fontSize: 10, color: 'var(--muted)' }}>· {ev.data.status}</span>
+          )}
+          {ev.data && ev.data.citations != null && ev.data.citations > 0 && (
+            <span style={{ fontSize: 10, color: 'var(--muted)' }}>· {ev.data.citations} cites</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Live tree for deep-tier (exhaustive) jobs, built from node/checkpoint events.
+function TraceTree({ events }) {
+  const nodes = events.filter((e) => e.kind === 'node');
+  if (nodes.length === 0) return null;
+  // Last-status-wins per question, preserving first-seen order.
+  const order = [];
+  const byQ = new Map();
+  nodes.forEach((e) => {
+    const q = (e.data && e.data.question) || e.label || `seq-${e.seq}`;
+    if (!byQ.has(q)) order.push(q);
+    byQ.set(q, e);
+  });
+  const statusTone = (s) => {
+    const v = (s || '').toString().toLowerCase();
+    if (v.indexOf('ground') !== -1) return 'var(--green-dark)';
+    if (v.indexOf('prun') !== -1) return 'var(--muted)';
+    if (v.indexOf('unknown') !== -1) return '#f57c00';
+    return 'var(--primary)';
+  };
+  return (
+    <details open style={{ marginTop: 14, ...card, padding: '10px 14px' }}>
+      <summary style={{ cursor: 'pointer', fontFamily: 'var(--sans)', fontSize: 12,
+        fontWeight: 700, color: 'var(--ink)', letterSpacing: '0.03em' }}>
+        Research tree · {order.length} question{order.length === 1 ? '' : 's'}
+      </summary>
+      <div style={{ marginTop: 8 }}>
+        {order.map((q) => {
+          const e = byQ.get(q);
+          const d = e.data || {};
+          const depth = d.depth != null ? Math.min(Number(d.depth), 6) : 0;
+          return (
+            <div key={q} style={{ display: 'flex', gap: 6, alignItems: 'baseline',
+              padding: '3px 0', marginLeft: depth * 16, fontSize: 12 }}>
+              <span aria-hidden="true" style={{ color: statusTone(d.status), flexShrink: 0 }}>•</span>
+              <span style={{ color: 'var(--ink)', flex: 1, minWidth: 0, wordBreak: 'break-word' }}>{q}</span>
+              {d.status && <span style={{ fontSize: 10, color: statusTone(d.status),
+                fontWeight: 600, flexShrink: 0 }}>{d.status}</span>}
+              {d.voi != null && <span style={{ fontFamily: 'var(--mono, monospace)',
+                fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>{Number(d.voi).toFixed(2)}</span>}
+            </div>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
+// Post-completion entity graph (top entities) + verification summary.
+function TraceCompletion({ draftId, events }) {
+  const { data: graph } = useApi(
+    draftId ? `/api/graph/draft/${draftId}` : '/api/__noop_trace_graph__',
+    { pollMs: 0, deps: [draftId] });
+  const contradictions = events.filter((e) => e.kind === 'contradiction');
+  const knownUnknowns = events.filter((e) => e.kind === 'known_unknown');
+  const entities = (graph && Array.isArray(graph.entities)) ? graph.entities.slice(0, 12) : [];
+
+  const hasSummary = entities.length > 0 || contradictions.length > 0 || knownUnknowns.length > 0;
+  if (!hasSummary) return null;
+  return (
+    <div style={{ marginTop: 14 }}>
+      {entities.length > 0 && (
+        <div style={{ ...card, padding: '10px 14px', marginBottom: 10 }}>
+          <div style={{ fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 700,
+            letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--muted)',
+            marginBottom: 8 }}>Key entities</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {entities.map((en, i) => (
+              <span key={i} style={{ fontFamily: 'var(--sans)', fontSize: 12,
+                padding: '3px 9px', borderRadius: 999, background: 'rgba(2,136,209,0.08)',
+                border: '1px solid var(--rule)', color: 'var(--ink)' }}>
+                {en.label}
+                {en.weight > 1 && <span style={{ color: 'var(--muted)', marginLeft: 4 }}>×{en.weight}</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {contradictions.length > 0 && (
+        <div style={{ ...card, padding: '10px 14px', marginBottom: 10,
+          borderLeft: '3px solid var(--coral-2, #c62828)' }}>
+          <div style={{ fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 700,
+            letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--coral-2, #c62828)',
+            marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <TraceIcon name="contradiction" size={13} />Conflicts found ({contradictions.length})</div>
+          {contradictions.map((e) => (
+            <div key={e.seq} style={{ fontSize: 12, color: 'var(--ink)', padding: '2px 0' }}>{e.label}</div>
+          ))}
+        </div>
+      )}
+      {knownUnknowns.length > 0 && (
+        <div style={{ ...card, padding: '10px 14px', borderLeft: '3px solid #f57c00' }}>
+          <div style={{ fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 700,
+            letterSpacing: '0.05em', textTransform: 'uppercase', color: '#d97706',
+            marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <TraceIcon name="known_unknown" size={13} />Open questions ({knownUnknowns.length})</div>
+          {knownUnknowns.map((e) => (
+            <div key={e.seq} style={{ fontSize: 12, color: 'var(--ink)', padding: '2px 0' }}>{e.label}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JobTrace({ jobId, onClose }) {
+  const [events, setEvents] = useState([]);
+  const [started] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+
+  // Backlog / poll fallback. Stays at 2s; effectively idle once terminal
+  // because nothing changes (we simply stop merging new rows).
+  const { data: job } = useApi(jobId ? `/api/jobs/${jobId}` : '/api/__noop_trace_job__',
+    { pollMs: 4000, deps: [jobId] });
+  const { data: trace, loading: traceLoading } = useApi(
+    jobId ? `/api/jobs/${jobId}/trace` : '/api/__noop_trace__',
+    { pollMs: 2000, deps: [jobId] });
+
+  const status = (trace && trace.status) || (job && job.status) || 'queued';
+  const terminal = traceIsTerminal(status);
+
+  // Merge polled backlog into the live list.
+  useEffect(() => {
+    if (trace && Array.isArray(trace.events) && trace.events.length) {
+      setEvents((prev) => traceMergeEvents(prev, trace.events));
+    }
+  }, [trace]);
+
+  // Live SSE append — only for our job, deduped by seq.
+  useEvents((name, data) => {
+    if (name !== 'job.step' || !data || data.job_id !== jobId) return;
+    setEvents((prev) => traceMergeEvents(prev, [{
+      seq: data.seq, ts: data.ts, phase: data.phase, kind: data.kind,
+      label: data.label, pct: data.pct, data: data.data || {},
+    }]));
+  });
+
+  // Elapsed ticker — stop once terminal.
+  useEffect(() => {
+    if (terminal) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [terminal]);
+
+  const pct = events.length ? Number(events[events.length - 1].pct) || 0
+    : (trace && trace.pct) || 0;
+  const meta = (job && job.metadata) || {};
+  const topic = meta.topic || (job && job.topic) || jobId;
+  const mode = window.modeLabel ? window.modeLabel(job && job.mode) : (job && job.mode);
+  const draftId = (() => {
+    const doneEv = events.find((e) => e.kind === 'done' && e.data && e.data.draft_id);
+    if (doneEv) return doneEv.data.draft_id;
+    return meta.draft_id || null;
+  })();
+
+  const elapsedMs = (terminal && job && job.updated_at
+    ? Date.parse(job.updated_at) - (job.created_at ? Date.parse(job.created_at) : started)
+    : now - started);
+  const elapsed = (() => {
+    const s = Math.max(0, Math.floor((elapsedMs || 0) / 1000));
+    if (!isFinite(s)) return '—';
+    const m = Math.floor(s / 60);
+    return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
+  })();
+
+  // Group events by phase, in canonical phase order.
+  const grouped = TRACE_PHASES.map((p) => ({
+    phase: p,
+    rows: events.filter((e) => e.phase === p.key),
+  })).filter((g) => g.rows.length > 0);
+  const lastSeq = events.length ? events[events.length - 1].seq : null;
+  const isDeep = events.some((e) => e.kind === 'node');
+  const initialLoading = traceLoading && events.length === 0 && !job;
+
+  const done = terminal && (status === 'done' || status === 'completed'
+    || status === 'review' || status === 'staged');
+
+  return (
+    <div style={{ animation: 'lh-fade-in .18s ease' }}>
+      {/* Header — progress ring wrapped by a sweeping beam mark while working */}
+      <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ position: 'relative', width: 56, height: 56, flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {!terminal && (
+            <div aria-hidden="true" style={{ position: 'absolute', inset: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              animation: 'lh-trace-beam 3.2s linear infinite', opacity: 0.65 }}>
+              {window.LighthouseMark
+                ? <window.LighthouseMark size={56} beamRotating={false} />
+                : null}
+            </div>
+          )}
+          <ProgressRing value={pct} max={100} size={48} stroke={4} />
+          <span style={{ position: 'absolute', fontFamily: 'var(--sans)', fontSize: 12,
+            fontWeight: 700, color: terminal ? 'var(--green-dark)' : 'var(--primary)' }}>
+            {done && pct >= 100 ? '✓' : `${Math.round(pct)}%`}
+          </span>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 700,
+            color: 'var(--ink)', lineHeight: 1.3, wordBreak: 'break-word' }}>{topic}</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 5,
+            flexWrap: 'wrap' }}>
+            <StatusPill status={status} />
+            {mode && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{mode}</span>}
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {elapsed} elapsed</span>
+          </div>
+        </div>
+      </div>
+
+      {initialLoading && (
+        window.LighthouseLoader
+          ? <window.LighthouseLoader size={72} label="Opening the trace…" />
+          : <Loading label="Opening the trace…" />
+      )}
+
+      {!initialLoading && events.length === 0 && (
+        <EmptyState icon="◌" title={terminal ? 'No recorded steps' : 'Waiting for the first step…'}
+          hint={terminal
+            ? 'This run finished without a detailed process trace.'
+            : 'The research process will stream here as the run progresses.'} />
+      )}
+
+      {/* Vertical phase-grouped timeline */}
+      {grouped.map((g) => (
+        <div key={g.phase.key} style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+            <span aria-hidden="true" style={{ color: 'var(--primary)', display: 'inline-flex' }}>
+              <TraceIcon name={g.phase.icon} size={15} /></span>
+            <span style={{ fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 700,
+              letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+              {g.phase.label}
+            </span>
+            <span style={{ flex: 1, height: 1, background: 'var(--rule-soft)' }} />
+          </div>
+          <div style={{ borderLeft: '2px solid var(--rule-soft)', paddingLeft: 12, marginLeft: 6 }}>
+            {g.rows.map((ev) => (
+              <TraceStep key={ev.seq} ev={ev} phaseIcon={g.phase.icon}
+                active={!terminal && ev.seq === lastSeq} />
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Deep-tier live tree */}
+      {isDeep && <TraceTree events={events} />}
+
+      {/* Post-completion review: artifact link, entity graph, verification */}
+      {terminal && (
+        <React.Fragment>
+          <TraceCompletion draftId={draftId} events={events} />
+          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            <Btn kind="primary" onClick={() => {
+              window.location.hash = 'library';
+              if (onClose) onClose();
+            }}>View artifact</Btn>
+            {onClose && <Btn kind="ghost" onClick={onClose}>Close</Btn>}
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
 Object.assign(window, {
   apiGet, apiPost, apiPatch, apiDelete, useApi, useEvents, useToast,
   Toast, PageHeader, EmptyState, Loading, Skeleton, SkeletonGroup, ErrorBox, Btn, DataTable,
   ConfidencePill, StatusPill, Bar, SidePane, Modal, Field, Row, Metric, card,
-  BrierScore, WepBar, ProgressRing,
+  BrierScore, WepBar, ProgressRing, JobTrace,
 });

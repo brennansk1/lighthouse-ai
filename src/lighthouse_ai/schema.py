@@ -186,6 +186,26 @@ STATE_MIGRATIONS: list[Migration] = [
         CREATE INDEX idx_ask_sessions_status ON ask_sessions (status);
         """,
     ),
+    Migration(
+        "0005_job_events",
+        """
+        -- Per-job research progress trace: one row per emitted step, ordered by
+        -- a monotonic per-job ``seq``. Powers the live SSE ``job.step`` stream
+        -- and the ``GET /api/jobs/{id}/trace`` replay endpoint.
+        CREATE TABLE job_events (
+            job_id TEXT NOT NULL,
+            seq INTEGER NOT NULL,
+            ts TEXT NOT NULL DEFAULT (datetime('now')),
+            phase TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            label TEXT NOT NULL DEFAULT '',
+            pct REAL NOT NULL DEFAULT 0,
+            payload_json TEXT,
+            PRIMARY KEY (job_id, seq)
+        );
+        CREATE INDEX idx_job_events_job_seq ON job_events (job_id, seq);
+        """,
+    ),
 ]
 
 # --- audit.db: append-only audit spine; HMAC chain in later sprint ---

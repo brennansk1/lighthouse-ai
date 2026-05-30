@@ -447,5 +447,132 @@ function useDashboard(intervalMs = 10000) {
   return data;
 }
 
+// ── Branded page loader ───────────────────────────────────────────────────
+// LighthouseLoader — the brand mark with its light revolving over a rocky
+// shore + sea. Used for app-shell first paint and route transitions.
+//
+// The shared `beam` keyframe (index.html) is a narrow ±18° easing sweep meant
+// for the static mark; for a loader we want a continuous, legible revolution,
+// so the beam here is drawn inline and spun by `lh-loader-sweep` (a full 360°
+// rotation). The shore is a compact inline SVG (rocks + wave strokes) drawn
+// with design tokens, with a gentle drifting shimmer over the sea.
+
+(function ensureLoaderCSS() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('lh-loader-styles')) return;
+  const el = document.createElement('style');
+  el.id = 'lh-loader-styles';
+  el.textContent = `
+@keyframes lh-loader-sweep {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes lh-loader-glow {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.95; }
+}
+@keyframes lh-loader-shimmer {
+  0%, 100% { transform: translateX(0); opacity: 0.5; }
+  50%      { transform: translateX(6px); opacity: 0.85; }
+}
+.lh-loader-beam   { animation: lh-loader-sweep 3.2s linear infinite; transform-origin: 60px 30px; }
+.lh-loader-lamp   { animation: lh-loader-glow 1.6s ease-in-out infinite; }
+.lh-loader-wave-a { animation: lh-loader-shimmer 2.6s ease-in-out infinite; }
+.lh-loader-wave-b { animation: lh-loader-shimmer 3.4s ease-in-out infinite reverse; }
+@media (prefers-reduced-motion: reduce) {
+  .lh-loader-beam,
+  .lh-loader-lamp,
+  .lh-loader-wave-a,
+  .lh-loader-wave-b { animation: none !important; }
+}
+`;
+  document.head && document.head.appendChild(el);
+})();
+
+function LighthouseLoader({ size = 96, label = 'Loading…', fullscreen = false }) {
+  // Scene is drawn in a 120×120 viewBox: lighthouse tower upper-centre with a
+  // wedge beam revolving from its lamp (60,30), rocky shore + sea beneath.
+  const scene = (
+    <svg width={size} height={size} viewBox="0 0 120 120" fill="none"
+      role="img" aria-hidden="true"
+      style={{ display: 'block', overflow: 'visible' }}>
+      <defs>
+        <clipPath id="lh-loader-water">
+          <rect x="0" y="84" width="120" height="36" />
+        </clipPath>
+      </defs>
+
+      {/* sea band behind the rocks */}
+      <rect x="0" y="84" width="120" height="36" rx="6"
+        fill="var(--primary)" opacity="0.16" />
+      {/* drifting wave shimmer (clipped to the sea band) */}
+      <g clipPath="url(#lh-loader-water)" stroke="var(--primary)" strokeWidth="1.4"
+        fill="none" strokeLinecap="round">
+        <path className="lh-loader-wave-a"
+          d="M-6 94 Q12 89 30 94 T66 94 T102 94 T138 94" opacity="0.45" />
+        <path className="lh-loader-wave-b"
+          d="M-6 104 Q14 99 32 104 T68 104 T104 104 T140 104" opacity="0.35" />
+      </g>
+
+      {/* revolving light beam — a soft wedge from the lamp at (60,30) */}
+      <g className="lh-loader-beam">
+        <path d="M60 30 L4 8 L4 52 Z" fill="var(--sand)" opacity="0.55" />
+        <path d="M60 30 L8 24 L8 36 Z" fill="var(--sand)" opacity="0.85" />
+      </g>
+
+      {/* rocky shore — layered rounded rocks */}
+      <path d="M2 96 Q20 80 40 92 Q56 100 74 90 Q94 80 118 94 L118 118 L2 118 Z"
+        fill="var(--ink)" opacity="0.85" />
+      <path d="M18 100 Q34 90 52 98 Q70 106 92 96 L96 118 L14 118 Z"
+        fill="var(--ink)" opacity="0.55" />
+
+      {/* lighthouse tower (tapered) sitting on the rocks */}
+      <path d="M50 92 L70 92 L66 40 L54 40 Z"
+        fill="#ffffff" stroke="var(--ink)" strokeWidth="1.4" strokeLinejoin="round" />
+      {/* tower stripe */}
+      <path d="M53 70 L67 70 L66.4 62 L53.6 62 Z" fill="var(--primary)" opacity="0.55" />
+      {/* gallery deck */}
+      <rect x="51" y="37" width="18" height="3.4" rx="1" fill="var(--ink)" />
+      {/* lantern room */}
+      <rect x="54" y="24" width="12" height="13" rx="1.4"
+        fill="var(--coral)" stroke="var(--ink)" strokeWidth="1.2" />
+      {/* glowing lamp glass */}
+      <rect className="lh-loader-lamp" x="55.5" y="26" width="9" height="9"
+        rx="1" fill="var(--sand)" />
+      {/* dome + finial */}
+      <path d="M52 24 Q60 14 68 24 Z" fill="var(--ink)" />
+      <circle cx="60" cy="12.5" r="2" fill="var(--ink)" />
+    </svg>
+  );
+
+  const block = (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', gap: 14 }}>
+      {scene}
+      <span style={{ fontFamily: 'var(--serif)', fontSize: 15, color: 'var(--ink-2, var(--ink))',
+        letterSpacing: '0.01em' }}>{label}</span>
+    </div>
+  );
+
+  if (fullscreen) {
+    return (
+      <div role="status" aria-live="polite" aria-label={label}
+        style={{ position: 'fixed', inset: 0, zIndex: 700,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'color-mix(in srgb, var(--paper) 88%, transparent)',
+          backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)' }}>
+        {block}
+      </div>
+    );
+  }
+
+  return (
+    <div role="status" aria-live="polite" aria-label={label}
+      style={{ padding: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {block}
+    </div>
+  );
+}
+
 Object.assign(window, { LighthouseMark, BackgroundLighthouse, BackgroundPattern,
-  Sidebar, NAV, MOCK, IconCtx, ICON_VARIANTS, useDashboard });
+  Sidebar, NAV, MOCK, IconCtx, ICON_VARIANTS, useDashboard, LighthouseLoader });

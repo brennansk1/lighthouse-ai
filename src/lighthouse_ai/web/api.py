@@ -313,6 +313,50 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         job["model_calls"] = [c for c in calls if c.get("model")]
         return job
 
+    @app.get("/api/jobs/{job_id}/trace", tags=["jobs"])
+    def get_job_trace(job_id: str) -> dict[str, Any]:
+        """Replay a job's persisted progress trace (the ``job.step`` history).
+
+        Returns ``{job_id, status, pct, events:[...]}`` with events ordered by
+        the monotonic per-job ``seq``. Pure SQLite read; an unknown job yields
+        an empty (but well-formed) trace rather than a 404 so the UI can poll a
+        just-created job without racing the row insert."""
+        conn = open_db(paths.state_db)
+        try:
+            job_row = conn.execute(
+                "SELECT status, metadata_json FROM jobs WHERE id=?",
+                (job_id,)).fetchone()
+            ev_rows = conn.execute(
+                "SELECT seq, ts, phase, kind, label, pct, payload_json "
+                "FROM job_events WHERE job_id=? ORDER BY seq", (job_id,)
+            ).fetchall()
+        finally:
+            conn.close()
+        status = job_row[0] if job_row else None
+        pct = 0.0
+        if job_row and job_row[1]:
+            try:
+                meta = json.loads(job_row[1])
+                if isinstance(meta, dict):
+                    pct = float(meta.get("progress", 0.0)) * 100.0
+            except (TypeError, ValueError):
+                pct = 0.0
+        events: list[dict[str, Any]] = []
+        for r in ev_rows:
+            try:
+                data = json.loads(r[6]) if r[6] else {}
+            except (TypeError, ValueError):
+                data = {}
+            events.append({
+                "seq": r[0], "ts": r[1], "phase": r[2], "kind": r[3],
+                "label": r[4], "pct": r[5], "data": data,
+            })
+        # If events exist, trust the last event's pct as the live figure.
+        if events:
+            pct = float(events[-1]["pct"])
+        return {"job_id": job_id, "status": status, "pct": pct,
+                "events": events}
+
     @app.post("/api/jobs", tags=["jobs"])
     def create_job(body: NewJob) -> dict[str, Any]:
         import uuid

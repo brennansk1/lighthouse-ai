@@ -527,7 +527,7 @@ function App() {
         <PageBoundary pageKey={page}>
           {PageComp
             ? <PageComp {...pageProps} />
-            : <window.ErrorBox message={`Page "${pageDef.label}" failed to load.`} />}
+            : <window.LighthouseLoader fullscreen label="Starting Lighthouse…" />}
         </PageBoundary>
       </main>
       <div aria-live="polite" aria-atomic="true">

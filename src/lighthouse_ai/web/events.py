@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 KNOWN_EVENTS = {
-    "job.progress", "job.status",
+    "job.progress", "job.status", "job.step",
     "draft.staged", "draft.approved", "draft.rejected",
     "position.created", "position.resolved",
     "audit.appended",

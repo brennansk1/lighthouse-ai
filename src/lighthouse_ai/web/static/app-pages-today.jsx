@@ -768,8 +768,11 @@
     const [detail, setDetail] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [actionBusy, setActionBusy] = useState(null);
+    const [watchId, setWatchId] = useState(null);
 
-    useEvents((name) => { if (name && (name.indexOf('job.') === 0)) reload(); });
+    // job.step is high-frequency; the trace viewer consumes it directly, so we
+    // skip a full job-list reload on it and only refresh on lifecycle events.
+    useEvents((name) => { if (name && name.indexOf('job.') === 0 && name !== 'job.step') reload(); });
     useEffect(() => { if (error) toast.show(`Jobs failed to load: ${error}`, 'error'); }, [error]);
 
     const allJobs = (data && Array.isArray(data.jobs)) ? data.jobs : [];
@@ -999,6 +1002,12 @@
                   padding: '12px 18px', borderTop: '1px solid var(--rule-soft)',
                   display: 'flex', gap: 8, flexWrap: 'wrap', background: 'var(--card)',
                 }}>
+                  <Btn
+                    kind="ghost"
+                    icon="◎"
+                    aria-label="Watch this job's research process live"
+                    onClick={() => setWatchId(detail.id)}
+                  >Watch live</Btn>
                   {(detail.status === 'review' || detail.status === 'staged') && (
                     <>
                       <Btn
@@ -1052,6 +1061,13 @@
             onClose={() => setShowNew(false)}
             onCreated={() => { setShowNew(false); reload(); toast.show('Research job queued', 'success'); }}
           />
+        )}
+
+        {/* Live research-process trace */}
+        {watchId && window.JobTrace && (
+          <SidePane title="Live research trace" onClose={() => setWatchId(null)}>
+            <window.JobTrace jobId={watchId} onClose={() => setWatchId(null)} />
+          </SidePane>
         )}
       </div>
     );

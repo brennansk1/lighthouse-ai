@@ -285,13 +285,18 @@ def _start_monitor_loop(paths: Paths, *, interval_s: float = 60.0) -> threading.
     return thread
 
 
-def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0) -> threading.Thread:
+def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0,
+                         bus=None) -> threading.Thread:
     """Daemon thread that runs one queued job per tick.
 
     Mirrors the monitor loop: a single daemon thread, one job per tick, gated by
     the SchedulerGate so a paused host stops claiming work. RAM admission is
     inherited through ``Gateway.complete`` — no second queue here. Stuck
     ``running`` jobs from a previous process are re-queued once at startup.
+
+    ``bus`` is the FastAPI app's :class:`EventBus`; passing it through lets a job
+    publish live ``job.step`` progress events to the dashboard's SSE stream as it
+    runs (the persisted trace is written regardless).
     """
     from .dispatcher import (
         build_runtime_gateway,
@@ -331,7 +336,7 @@ def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0) -> threading.
                 if gateway is not None and not runtime_ram_ok():
                     log.info("dispatch.deferred", reason="low_free_ram")
                     continue
-                dispatch_once(paths, gateway=gateway, gate=gate)
+                dispatch_once(paths, gateway=gateway, gate=gate, bus=bus)
             except Exception as exc:
                 log.warning("dispatch.tick.error", exc=str(exc))
 
@@ -550,9 +555,12 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
         # Outbox recovery: reclaim in_flight intents orphaned by a prior crash
         # BEFORE any effector/dispatch loop starts (mirrors reap_stuck_jobs).
         _recover_orphaned_intents(p)
+        # Share the app's EventBus with the dispatch loop so a running job can
+        # push live job.step progress to the dashboard SSE stream.
+        _bus = getattr(app.state, "event_bus", None)
         _start_subconscious_loop(p)
         _start_monitor_loop(p)
-        _start_dispatch_loop(p)
+        _start_dispatch_loop(p, bus=_bus)
         _start_resolver_loop(p)
         _start_backup_loop(p)
         signal.signal(signal.SIGTERM, _on_signal)
