@@ -4,6 +4,14 @@
 > resuming (e.g. after a token-limit reset) to know exactly where things stand and what's next.
 > Update it as work lands. The git history is the source of truth; this is the map.
 
+## Guiding principle — design for the user
+Every feature is designed and built from the **end-user's** mental model and need first, not the
+implementation's. Concretely: plain-language labels (no internal jargon — "we can read this page", not
+"extract_tier=static"), discoverable in the UI, sane defaults, clear empty/error states, and a real
+answer to "what does this let me *do*?". Target users: regulated-industry researchers (trust,
+provenance, reproducibility) AND the general public (one-click, no terminal). When in doubt, optimize
+for the user's clarity and control over engineering elegance.
+
 ## Operating mode
 - I (the assistant) act as the senior developer with full oversight; the user is the manager and does
   not need to hand me tasks. I set my own tasks, work the backlog to a finished project, and commit +

@@ -109,6 +109,121 @@ class PauseBody(BaseModel):
     hard: bool = False
 
 
+class WatchVerifyBody(BaseModel):
+    url: str
+
+
+class WatchWebBody(BaseModel):
+    url: str
+    name: str | None = None
+    criteria: dict[str, Any] | None = None
+    cadence_minutes: int | None = None
+
+
+# ---- Watch v2 live fetch (injectable so tests never hit the network) -------
+
+
+def _watch_fetch(url: str) -> Any:
+    """Single guarded fetch of a user-typed URL for Watch v2.
+
+    Mirrors ingest's user-explicit fetch: the URL's own host is added to the
+    egress allowlist (the user explicitly asked to watch this page) and the
+    request is gated + logged by the egress proxy before any socket opens. Tests
+    monkeypatch this module-level function so they never touch the network.
+
+    Returns a small object exposing ``status_code`` / ``headers`` / ``content``
+    so it can be adapted to scrapability's ``FetchResult``.
+    """
+    from ..governor.egress_proxy import DEFAULT_ALLOWED_DOMAINS, extract_host
+    from ..net import guarded_get
+
+    host = extract_host(url)
+    allowed = frozenset(DEFAULT_ALLOWED_DOMAINS | {host}) if host else None
+    return guarded_get(url, allowed_domains=allowed)
+
+
+def _plain_language_verdict(url: str, verdict: Any) -> dict[str, Any]:
+    """Translate a :class:`ScrapeVerdict` into a user-facing payload.
+
+    No internal jargon leaks: the user sees ``can_watch`` + a headline + a
+    one-line detail, never ``extract_tier`` / ``robots_ok`` and friends. The
+    three roll-up verdicts map to:
+
+      * ``good``    → "We can watch this page" (can_watch=True);
+      * ``limited`` → either heavier ("needs a browser to read it fully") or a
+        trust prompt when the host isn't reachable yet (can_watch=False until
+        trusted);
+      * ``blocked`` → robots disallow ("doesn't allow automated reading") or no
+        readable content.
+    """
+    v = verdict.verdict
+    if v == "good":
+        return {
+            "can_watch": True,
+            "status": "good",
+            "headline": "We can watch this page",
+            "detail": "Lighthouse can read this page and tell you when it changes.",
+            "change_method": verdict.change_method,
+            "needs_trust": False,
+            "trust_hint": "",
+            "url": url,
+        }
+
+    if v == "limited":
+        if not verdict.reachable:
+            # Monitorable, but the host must be trusted first.
+            return {
+                "can_watch": False,
+                "status": "blocked",
+                "headline": "Not reachable yet — add it to trusted sites first",
+                "detail": (
+                    "Add this site to your trusted list and Lighthouse can "
+                    "start watching it."
+                ),
+                "change_method": verdict.change_method,
+                "needs_trust": True,
+                "trust_hint": verdict.trust_add_hint,
+                "url": url,
+            }
+        return {
+            "can_watch": True,
+            "status": "limited",
+            "headline": "We can watch it, but it's heavier (needs a browser to read it fully)",
+            "detail": (
+                "This page loads its content with scripts, so reading it takes "
+                "more work — but Lighthouse can still track changes."
+            ),
+            "change_method": verdict.change_method,
+            "needs_trust": False,
+            "trust_hint": "",
+            "url": url,
+        }
+
+    # blocked
+    if not verdict.robots_ok:
+        headline = "This site doesn't allow automated reading"
+        detail = (
+            "The site's rules (robots.txt) ask tools not to read it "
+            "automatically, so Lighthouse won't watch it."
+        )
+    else:
+        headline = "There's nothing readable to watch on this page"
+        detail = (
+            "Lighthouse couldn't find readable text or a feed here — the page "
+            "may be empty, paywalled, or fully script-rendered."
+        )
+    return {
+        "can_watch": False,
+        "status": "blocked",
+        "headline": headline,
+        "detail": detail,
+        "change_method": verdict.change_method,
+        "needs_trust": False,
+        "trust_hint": "",
+        "url": url,
+    }
+
+
 # ---- helpers --------------------------------------------------------------
 
 def _rows(conn, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
@@ -433,6 +548,103 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         if s is None:
             raise HTTPException(404, f"session {session_id} not found")
         return asdict(s)
+
+    # ============================ WATCH v2 ============================
+
+    @app.post("/api/watch/verify", tags=["watch"])
+    def watch_verify(body: WatchVerifyBody) -> dict[str, Any]:
+        """Pre-flight a page the user wants to watch — plain-language answer.
+
+        Runs ONE guarded fetch (the URL's own host is permitted, like an
+        explicit user-typed ingest) and the scrapability check, then translates
+        the internal verdict into words a non-technical user can act on. The
+        fetch goes through ``_watch_fetch`` so tests monkeypatch it offline.
+        """
+        from ..governor.egress_proxy import DEFAULT_ALLOWED_DOMAINS, extract_host
+        from ..net import EgressBlocked
+        from ..sources.scrapability import FetchResult, verify_scrapable
+
+        url = (body.url or "").strip()
+        if not url:
+            raise HTTPException(422, "url is required")
+
+        def _adapt(resp: Any) -> FetchResult:
+            headers = dict(getattr(resp, "headers", {}) or {})
+            return FetchResult(
+                status=getattr(resp, "status_code", 200),
+                headers=headers,
+                body=getattr(resp, "content", b"") or b"",
+                content_type=headers.get("content-type"),
+            )
+
+        host = extract_host(url)
+
+        def fetch(target: str) -> FetchResult:
+            return _adapt(_watch_fetch(target))
+
+        # Run the guarded fetch up front so a true egress block (host not
+        # trusted) is caught *here* and surfaced as a plain-language trust
+        # prompt — scrapability swallows fetch errors into its verdict, so we
+        # must distinguish "not trusted" before handing off.
+        try:
+            fetch(url)
+        except EgressBlocked:
+            return {
+                "can_watch": False,
+                "status": "blocked",
+                "headline": "Not reachable yet — add it to trusted sites first",
+                "detail": (
+                    "This site isn't on your trusted list yet, so Lighthouse "
+                    "won't reach out to it automatically. Add it to trusted "
+                    "sites and try again."
+                ),
+                "change_method": "diff",
+                "needs_trust": True,
+                "trust_hint": host,
+                "url": url,
+            }
+
+        # Pass the DEFAULT allowlist (NOT host-augmented) so the verdict's
+        # ``reachable`` reflects whether the user has actually trusted this host
+        # — that drives the "add it to trusted sites first" prompt for a
+        # not-yet-trusted host. The fetch above already permitted the host.
+        verdict = verify_scrapable(
+            url, fetch=fetch, allowlist=DEFAULT_ALLOWED_DOMAINS
+        )
+        return _plain_language_verdict(url, verdict)
+
+    @app.post("/api/watch/web", tags=["watch"])
+    def watch_web_create(body: WatchWebBody) -> dict[str, Any]:
+        """Register a page to watch. Defaults: any change, every 60 minutes."""
+        from ..modes.web_monitor_store import create_web_monitor
+
+        url = (body.url or "").strip()
+        if not url:
+            raise HTTPException(422, "url is required")
+        cadence_minutes = body.cadence_minutes if body.cadence_minutes else 60
+        if cadence_minutes <= 0:
+            cadence_minutes = 60
+        monitor = create_web_monitor(
+            paths.state_db,
+            url=url,
+            name=body.name,
+            criteria=body.criteria or {"kind": "any_change"},
+            cadence_seconds=cadence_minutes * 60,
+            now=datetime.now(UTC).isoformat(timespec="seconds"),
+        )
+        return monitor
+
+    @app.get("/api/watch/web", tags=["watch"])
+    def watch_web_list() -> dict[str, Any]:
+        from ..modes.web_monitor_store import list_web_monitors
+        return {"monitors": list_web_monitors(paths.state_db)}
+
+    @app.delete("/api/watch/web/{monitor_id}", tags=["watch"])
+    def watch_web_delete(monitor_id: str) -> dict[str, Any]:
+        from ..modes.web_monitor_store import delete_web_monitor
+        if not delete_web_monitor(paths.state_db, monitor_id):
+            raise HTTPException(404, f"monitor {monitor_id} not found")
+        return {"deleted": monitor_id}
 
     # ========================== POSITIONS ==========================
 

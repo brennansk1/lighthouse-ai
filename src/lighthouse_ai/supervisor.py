@@ -194,11 +194,31 @@ def _start_monitor_loop(paths: Paths, *, interval_s: float = 60.0) -> threading.
     still gated by the SchedulerGate: while the host is paused/offline we skip
     the tick entirely rather than poll the network.
     """
+    from datetime import UTC, datetime
+
     from .governor.scheduler_gate import Policy
     from .modes.monitor_session import due_sessions, run_session_cycle
+    from .modes.web_monitor_store import run_web_monitor_tick
 
     gate_cfg = SchedulerGateConfig.from_config_file(paths.config_file)
     gate = SchedulerGate(gate_cfg)
+
+    def _web_monitor_fetch(url: str) -> str:
+        """Production fetch for Watch v2: guarded, user-explicit host permitted.
+
+        The page text is extracted from the guarded response. Offline-safe at the
+        tick level — any error raised here is caught per-monitor inside
+        ``run_web_monitor_tick`` and that monitor is skipped, never the sweep.
+        """
+        from .governor.egress_proxy import DEFAULT_ALLOWED_DOMAINS, extract_host
+        from .ingest import extract_text
+        from .net import guarded_get
+
+        host = extract_host(url)
+        allowed = frozenset(DEFAULT_ALLOWED_DOMAINS | {host}) if host else None
+        resp = guarded_get(url, allowed_domains=allowed)
+        ctype = dict(resp.headers or {}).get("content-type")
+        return extract_text(resp.content or b"", ctype, None)
 
     def _loop() -> None:
         while True:
@@ -212,6 +232,17 @@ def _start_monitor_loop(paths: Paths, *, interval_s: float = 60.0) -> threading.
                         run_session_cycle(paths.state_db, s.id)
                     except Exception as exc:
                         log.warning("monitor.cycle.error", session=s.id, exc=str(exc))
+                # Watch v2 web-monitor sweep. Wrapped so a failure here never
+                # kills the loop; the tick is itself offline-safe (per-monitor
+                # fetch errors are caught inside run_web_monitor_tick).
+                try:
+                    run_web_monitor_tick(
+                        paths.state_db,
+                        fetch=_web_monitor_fetch,
+                        now=datetime.now(UTC).isoformat(timespec="seconds"),
+                    )
+                except Exception as exc:
+                    log.warning("web_monitor.tick.error", exc=str(exc))
             except Exception as exc:
                 log.warning("monitor.sweep.error", exc=str(exc))
 

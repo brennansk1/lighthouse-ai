@@ -1502,10 +1502,495 @@ function SectionIntro({ title, children }) {
 // reflections feed) owned by other files. TopicsPage already renders its own
 // "Watch" PageHeader and intro, so we compose it directly rather than wrap it
 // in a second, competing header.
+//
+// WebMonitorSection adds a "Monitor a website" card below the topic surface.
+
+// ── Plain-language cadence options ──────────────────────────────────────────
+const CADENCE_OPTIONS = [
+  { key: 60,    label: 'Hourly',             hint: 'Checks once an hour' },
+  { key: 360,   label: 'A few times a day',  hint: 'Checks every 6 hours' },
+  { key: 1440,  label: 'Daily',              hint: 'Checks once a day' },
+];
+
+// ── Plain-language criteria chooser options ──────────────────────────────────
+// Maps to the API criteria shape: {kind, ...kind-specific fields}
+const CRITERIA_KINDS = [
+  { key: 'any_change',    label: 'Any change to the page',        hint: 'Alert me whenever anything on the page is different from last time.' },
+  { key: 'keyword',       label: 'When it mentions…',             hint: 'Alert me only when specific words or phrases appear.' },
+  { key: 'threshold',     label: 'When a number crosses…',        hint: 'Alert me when a number on the page goes above or below a value you set.' },
+  { key: 'selector_text', label: 'When a specific section changes', hint: 'Alert me when a particular part of the page (identified by a text fragment) changes.' },
+];
+
+// ── Verdict display ──────────────────────────────────────────────────────────
+// Maps backend status values to plain-language labels and visual style.
+// No internal terminology ("scrapability", "egress", "extract_tier") shown.
+function verdictStyle(status) {
+  if (status === 'good') return { icon: '✓', iconColor: '#2e7d32', bg: '#f1f8e9', border: '#aed581', label: 'Ready to monitor' };
+  if (status === 'limited') return { icon: '◐', iconColor: '#e65100', bg: '#fff8e1', border: '#ffcc02', label: 'Can monitor with limitations' };
+  return { icon: '✗', iconColor: '#c62828', bg: '#ffebee', border: '#ef9a9a', label: 'Cannot be monitored' };
+}
+
+// ── WebMonitorSection ────────────────────────────────────────────────────────
+function WebMonitorSection({ toast }) {
+  // URL entry + verify state
+  const [url, setUrl] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [verdict, setVerdict] = useState(null);   // result of /api/watch/verify
+
+  // New monitor form state (shown after a good/limited verdict)
+  const [name, setName] = useState('');
+  const [criteriaKind, setCriteriaKind] = useState('any_change');
+  const [kwTermsRaw, setKwTermsRaw] = useState('');  // comma-separated for keyword
+  const [thresholdOp, setThresholdOp] = useState('>');
+  const [thresholdValue, setThresholdValue] = useState('');
+  const [selectorNeedle, setSelectorNeedle] = useState('');
+  const [cadence, setCadence] = useState(360);
+  const [saving, setSaving] = useState(false);
+
+  // Existing web monitors list
+  const { data: listData, loading: listLoading, reload: listReload } = useApi('/api/watch/web', { pollMs: 0 });
+  const [confirmDel, setConfirmDel] = useState(null);  // monitor id to confirm deletion
+
+  const monitors = (listData && Array.isArray(listData.monitors)) ? listData.monitors
+    : (Array.isArray(listData) ? listData : []);
+
+  // Check whether a URL can be monitored
+  async function handleCheck(e) {
+    if (e) e.preventDefault();
+    const trimmed = url.trim();
+    if (!trimmed) { toast.show('Paste a URL first.', 'error'); return; }
+    setChecking(true);
+    setVerdict(null);
+    try {
+      const result = await apiPost('/api/watch/verify', { url: trimmed });
+      setVerdict(result);
+      // Pre-fill name from headline if available and name is blank
+      if (result && result.headline && !name) {
+        setName(result.headline.slice(0, 60));
+      }
+    } catch (err) {
+      toast.show(err.message || 'Could not check that URL. Try again.', 'error');
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  // Build the criteria object from the current chooser state
+  function buildCriteria() {
+    if (criteriaKind === 'keyword') {
+      const terms = kwTermsRaw.split(',').map((t) => t.trim()).filter(Boolean);
+      return { kind: 'keyword', terms };
+    }
+    if (criteriaKind === 'threshold') {
+      return { kind: 'threshold', op: thresholdOp, value: parseFloat(thresholdValue) || 0 };
+    }
+    if (criteriaKind === 'selector_text') {
+      return { kind: 'selector_text', needle: selectorNeedle.trim() };
+    }
+    return { kind: 'any_change' };
+  }
+
+  // Human-readable summary of the criteria (used in the list view)
+  function criteriaSummary(c) {
+    if (!c) return 'Any change';
+    if (c.kind === 'keyword') return `Mentions: ${(c.terms || []).join(', ') || '—'}`;
+    if (c.kind === 'threshold') return `Number ${c.op || '>'} ${c.value != null ? c.value : '—'}`;
+    if (c.kind === 'selector_text') return `Section: "${c.needle || '—'}"`;
+    return 'Any change';
+  }
+
+  // Save the new monitor
+  async function handleSave() {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) { toast.show('Enter a URL first.', 'error'); return; }
+    if (!verdict || !verdict.can_watch) { toast.show('Check the URL first.', 'error'); return; }
+    setSaving(true);
+    try {
+      const body = {
+        url: trimmedUrl,
+        criteria: buildCriteria(),
+        cadence_minutes: cadence,
+      };
+      if (name.trim()) body.name = name.trim();
+      await apiPost('/api/watch/web', body);
+      toast.show('Website monitor saved.', 'success');
+      // Reset form
+      setUrl('');
+      setVerdict(null);
+      setName('');
+      setCriteriaKind('any_change');
+      setKwTermsRaw('');
+      setThresholdOp('>');
+      setThresholdValue('');
+      setSelectorNeedle('');
+      setCadence(360);
+      listReload();
+    } catch (err) {
+      toast.show(err.message || 'Could not save. Try again.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Delete a monitor (after confirmation)
+  async function handleDelete(id) {
+    try {
+      await apiDelete(`/api/watch/web/${id}`);
+      setConfirmDel(null);
+      toast.show('Monitor removed.', 'info');
+      listReload();
+    } catch (err) {
+      toast.show(err.message || 'Could not delete. Try again.', 'error');
+    }
+  }
+
+  const vs = verdict ? verdictStyle(verdict.status) : null;
+  const canSave = verdict && verdict.can_watch === true;
+
+  // Validation for keyword/threshold/selector_text before saving
+  function saveDisabled() {
+    if (!canSave) return true;
+    if (criteriaKind === 'keyword' && !kwTermsRaw.trim()) return true;
+    if (criteriaKind === 'threshold' && !thresholdValue.toString().trim()) return true;
+    if (criteriaKind === 'selector_text' && !selectorNeedle.trim()) return true;
+    return false;
+  }
+
+  return (
+    <div style={{ marginTop: 36 }}>
+      {/* Section divider */}
+      <div style={{ borderTop: '1px solid var(--rule)', paddingTop: 28, marginBottom: 18 }}>
+        <div style={{ fontFamily: 'var(--serif)', fontSize: 18, fontWeight: 700,
+          color: 'var(--ink)', marginBottom: 4 }}>Monitor a website</div>
+        <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55, maxWidth: '68ch' }}>
+          Paste a link to any public webpage and Lighthouse will check it regularly,
+          alerting you when something you care about changes.
+        </div>
+      </div>
+
+      {/* ── Step 1: URL entry + Check button ── */}
+      <div style={{ ...card, padding: '18px 20px', marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink)', marginBottom: 10 }}>
+          Which website would you like to watch?
+        </div>
+        <form onSubmit={handleCheck} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => { setUrl(e.target.value); setVerdict(null); }}
+            placeholder="https://example.com/page-to-watch"
+            aria-label="URL to monitor"
+            style={{
+              flex: '1 1 260px', padding: '9px 12px',
+              border: '1px solid var(--rule)', borderRadius: 'var(--radius-sm)',
+              fontSize: 14, fontFamily: 'var(--mono, monospace)',
+              boxSizing: 'border-box',
+            }}
+          />
+          <Btn loading={checking} onClick={handleCheck}>
+            {checking ? 'Checking…' : 'Check'}
+          </Btn>
+        </form>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
+          We'll tell you right away whether this page can be monitored.
+        </div>
+
+        {/* ── Verdict card ── */}
+        {verdict && vs && (
+          <div style={{
+            marginTop: 14, padding: '14px 16px',
+            background: vs.bg, border: `1px solid ${vs.border}`,
+            borderRadius: 'var(--radius-sm)',
+            display: 'flex', flexDirection: 'column', gap: 4,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span aria-hidden="true" style={{ fontSize: 18, color: vs.iconColor, lineHeight: 1 }}>
+                {vs.icon}
+              </span>
+              <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>
+                {verdict.headline || vs.label}
+              </span>
+            </div>
+            {verdict.detail && (
+              <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5, marginLeft: 26 }}>
+                {verdict.detail}
+              </div>
+            )}
+            {verdict.needs_trust && verdict.trust_hint && (
+              <div style={{
+                marginTop: 6, marginLeft: 26, fontSize: 12.5,
+                color: '#7b1fa2', lineHeight: 1.5,
+              }}>
+                This site needs to be trusted first. Run{' '}
+                <code style={{
+                  background: 'rgba(123,31,162,0.08)', padding: '1px 5px',
+                  borderRadius: 3, fontFamily: 'var(--mono, monospace)', fontSize: 12,
+                }}>
+                  {verdict.trust_hint}
+                </code>
+                {' '}in the terminal, then try again.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Step 2 & 3: Change criteria + cadence (only when can_watch) ── */}
+      {canSave && (
+        <div style={{ ...card, padding: '18px 20px', marginBottom: 16 }}>
+          {/* Optional name */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)',
+              display: 'block', marginBottom: 4 }}>
+              Give it a name <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Company pricing page"
+              style={{
+                width: '100%', padding: '8px 11px', boxSizing: 'border-box',
+                border: '1px solid var(--rule)', borderRadius: 'var(--radius-sm)', fontSize: 13,
+              }}
+            />
+          </div>
+
+          {/* What counts as a change */}
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 8 }}>
+              What counts as a change?
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {CRITERIA_KINDS.map((ck) => {
+                const on = criteriaKind === ck.key;
+                return (
+                  <label key={ck.key} style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 10,
+                    padding: '10px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                    border: on ? '2px solid var(--primary)' : '1px solid var(--rule)',
+                    background: on ? 'var(--rule-soft)' : 'var(--card)',
+                    transition: 'border-color .12s ease, background .12s ease',
+                  }}>
+                    <input
+                      type="radio"
+                      name="criteria-kind"
+                      value={ck.key}
+                      checked={on}
+                      onChange={() => setCriteriaKind(ck.key)}
+                      style={{ marginTop: 2, accentColor: 'var(--primary)', flexShrink: 0 }}
+                    />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: on ? 700 : 500, color: 'var(--ink)', lineHeight: 1.3 }}>
+                        {ck.label}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2, lineHeight: 1.4 }}>
+                        {ck.hint}
+                      </div>
+
+                      {/* Inline inputs for each criteria kind */}
+                      {on && ck.key === 'keyword' && (
+                        <input
+                          type="text"
+                          value={kwTermsRaw}
+                          onChange={(e) => setKwTermsRaw(e.target.value)}
+                          placeholder="e.g. price increase, new feature, sold out"
+                          aria-label="Words or phrases to watch for (comma-separated)"
+                          style={{
+                            marginTop: 8, width: '100%', padding: '7px 10px',
+                            border: '1px solid var(--rule)', borderRadius: 'var(--radius-sm)',
+                            fontSize: 13, boxSizing: 'border-box',
+                          }}
+                        />
+                      )}
+                      {on && ck.key === 'threshold' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>Alert me when the number goes</span>
+                          <select
+                            value={thresholdOp}
+                            onChange={(e) => setThresholdOp(e.target.value)}
+                            aria-label="above or below"
+                            style={{
+                              padding: '5px 8px', border: '1px solid var(--rule)',
+                              borderRadius: 'var(--radius-sm)', fontSize: 13,
+                              background: 'var(--card)', color: 'var(--ink)',
+                            }}
+                          >
+                            <option value=">">above</option>
+                            <option value="<">below</option>
+                          </select>
+                          <input
+                            type="number"
+                            value={thresholdValue}
+                            onChange={(e) => setThresholdValue(e.target.value)}
+                            placeholder="e.g. 100"
+                            aria-label="Threshold value"
+                            style={{
+                              width: 100, padding: '5px 8px',
+                              border: '1px solid var(--rule)', borderRadius: 'var(--radius-sm)', fontSize: 13,
+                            }}
+                          />
+                        </div>
+                      )}
+                      {on && ck.key === 'selector_text' && (
+                        <input
+                          type="text"
+                          value={selectorNeedle}
+                          onChange={(e) => setSelectorNeedle(e.target.value)}
+                          placeholder="Paste a short snippet of text from that section"
+                          aria-label="Text from the section to watch"
+                          style={{
+                            marginTop: 8, width: '100%', padding: '7px 10px',
+                            border: '1px solid var(--rule)', borderRadius: 'var(--radius-sm)',
+                            fontSize: 13, boxSizing: 'border-box',
+                          }}
+                        />
+                      )}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* How often */}
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 8 }}>
+              How often should we check?
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {CADENCE_OPTIONS.map((co) => {
+                const on = cadence === co.key;
+                return (
+                  <button
+                    key={co.key}
+                    type="button"
+                    onClick={() => setCadence(co.key)}
+                    aria-pressed={on}
+                    style={{
+                      ...card, padding: '10px 14px', cursor: 'pointer', textAlign: 'left',
+                      border: on ? '2px solid var(--primary)' : '1px solid var(--rule)',
+                      background: on ? 'var(--rule-soft)' : 'var(--card)',
+                      transition: 'border-color .12s ease, background .12s ease',
+                      flex: '1 1 120px',
+                    }}
+                  >
+                    <div style={{ fontWeight: on ? 700 : 500, fontSize: 13, color: 'var(--ink)' }}>
+                      {co.label}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
+                      {co.hint}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Save button */}
+          <Btn onClick={handleSave} loading={saving} disabled={saveDisabled()}>
+            {saving ? 'Saving…' : 'Start monitoring'}
+          </Btn>
+        </div>
+      )}
+
+      {/* ── Existing website monitors list ── */}
+      <div style={{ marginTop: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em',
+          textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 10 }}>
+          Your website monitors
+        </div>
+
+        {listLoading && (
+          <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>Loading…</div>
+        )}
+
+        {!listLoading && monitors.length === 0 && (
+          <div style={{
+            ...card, padding: '28px 20px', textAlign: 'center',
+            color: 'var(--muted)', fontSize: 13, lineHeight: 1.55,
+          }}>
+            You're not monitoring any websites yet. Paste a link above to start.
+          </div>
+        )}
+
+        {!listLoading && monitors.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {monitors.map((m) => {
+              const mCriteria = m.criteria || {};
+              // TODO(api): last_checked, status fields may use different key names at integration time
+              const lastChecked = m.last_checked || m.last_checked_at || null;
+              const status = m.status || 'active';
+              return (
+                <div key={m.id} style={{
+                  ...card, padding: '13px 16px',
+                  display: 'flex', alignItems: 'flex-start', gap: 12,
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink)',
+                      marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {m.name || m.url || 'Unnamed monitor'}
+                    </div>
+                    {m.name && (
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {m.url}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+                        Watching for: <strong>{criteriaSummary(mCriteria)}</strong>
+                      </span>
+                      {lastChecked && (
+                        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                          Last checked: {lastChecked}
+                        </span>
+                      )}
+                      <StatusPill status={status} />
+                    </div>
+                  </div>
+                  <Btn kind="danger" size="sm" onClick={() => setConfirmDel(m.id)}>
+                    Remove
+                  </Btn>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Delete confirm modal ── */}
+      {confirmDel && (
+        <Modal title="Remove this monitor?" onClose={() => setConfirmDel(null)} size="sm">
+          <div style={{ fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.6, marginBottom: 20 }}>
+            This will stop Lighthouse from checking that website. Any alerts already
+            sent are not affected. You can add it back any time.
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Btn kind="ghost" onClick={() => setConfirmDel(null)}>Keep it</Btn>
+            <Btn kind="danger" onClick={() => handleDelete(confirmDel)}>Yes, remove</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// WatchPage composes the existing topic monitor surface with the new website
+// monitor section. TopicsPage owns its own PageHeader so we don't add another.
 function WatchPage(props) {
   const C = window.TopicsPage;
-  return C ? React.createElement(C, props)
-    : React.createElement(window.ErrorBox, { message: 'Watch surface failed to load.' });
+  if (!C) {
+    return React.createElement(window.ErrorBox, { message: 'Watch surface failed to load.' });
+  }
+  return (
+    <div>
+      {React.createElement(C, props)}
+      <div style={{ padding: '0 0 40px' }}>
+        <WebMonitorSection toast={props.toast} />
+      </div>
+    </div>
+  );
 }
 
 // ───────────────────── Track (positions + calibration + escalations) ──────
