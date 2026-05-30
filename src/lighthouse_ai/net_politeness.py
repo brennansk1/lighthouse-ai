@@ -329,10 +329,27 @@ class RateBudget:
                 self._buckets[host] = self._make_bucket()
             return self._buckets[host]
 
+    def _window_seconds(self) -> int:
+        """Window (in seconds) for the pyrate-limiter Rate of ``burst`` requests.
+
+        Guards two degenerate cases that would otherwise break the limiter:
+
+        * ``rate <= 0`` — integer division ``burst / rate`` raises
+          ``ZeroDivisionError``. Treat a non-positive rate as effectively
+          unlimited by collapsing the window to its 1-second floor (burst
+          requests are permitted immediately).
+        * ``burst < rate`` — ``int(burst / rate)`` floors to ``0``, and
+          ``Duration.SECOND * 0`` is an invalid (zero-length) window. Clamp the
+          multiplier to ``>= 1`` so the Rate is always well-formed.
+        """
+        if self._rate <= 0:
+            return 1
+        return max(1, int(self._burst / self._rate))
+
     def _make_bucket(self) -> Any:
         if _HAS_PYRATE:
             # pyrate-limiter ≥ 3.x API: Rate + Limiter
-            rate = Rate(self._burst, Duration.SECOND * int(self._burst / self._rate))
+            rate = Rate(self._burst, Duration.SECOND * self._window_seconds())
             return Limiter(rate)
         return _PureTokenBucket(self._rate, float(self._burst))
 

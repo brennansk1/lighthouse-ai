@@ -379,6 +379,31 @@ def _start_resolver_loop(paths: Paths, *, interval_s: float = 3600.0) -> threadi
     return thread
 
 
+def _recover_orphaned_intents(paths: Paths) -> int:
+    """Reclaim ``in_flight`` intents orphaned by a previous crash.
+
+    Mirrors the ``reap_stuck_jobs`` recovery in :func:`_start_dispatch_loop`:
+    a crash between :func:`intents.claim_one` (which marks an intent
+    ``in_flight``) and :func:`intents.mark_applied`/``mark_failed`` would leave
+    the row stuck forever, since ``claim_one`` only selects ``pending`` rows.
+    Run once at startup *before* any effector begins so the outbox drains.
+
+    Offline-safe: a missing intents DB (or any error) is logged and swallowed —
+    it never blocks the supervisor from booting. Returns the number of intents
+    requeued (0 on no-op / error).
+    """
+    from . import intents
+
+    try:
+        requeued = intents.requeue_stuck(paths.intents_db)
+        if requeued:
+            log.info("supervisor.intents_requeued", intents=requeued)
+        return requeued
+    except Exception as exc:
+        log.warning("supervisor.intents_requeue.error", exc=str(exc))
+        return 0
+
+
 def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
           port: int = 8765, run: bool = True) -> uvicorn.Server:
     """Boot the supervisor. ``run=False`` returns the Server for tests."""
@@ -410,6 +435,9 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
         server.should_exit = True
 
     if run:
+        # Outbox recovery: reclaim in_flight intents orphaned by a prior crash
+        # BEFORE any effector/dispatch loop starts (mirrors reap_stuck_jobs).
+        _recover_orphaned_intents(p)
         _start_subconscious_loop(p)
         _start_monitor_loop(p)
         _start_dispatch_loop(p)

@@ -105,8 +105,16 @@ def run_debate(
                 f"{p.prompt_template.format(claim=claim)}\n\n"
                 f"DRAFT:\n{draft}\n\nCritique in 3-4 sentences."
             )
-            resp = gateway.complete("researcher", prompt, job_id=job_id)
-            critique = resp.text
+            # A gateway error on a *single* perspective must not abort the whole
+            # debate (the "never crashes" contract). Degrade that perspective to
+            # its deterministic heuristic stub and continue — only the judge call
+            # was previously guarded, so one failing PERSPECTIVE took everything
+            # down.
+            try:
+                resp = gateway.complete("researcher", prompt, job_id=job_id)
+                critique = resp.text
+            except Exception:
+                critique = _heuristic_response(p, claim, draft)
         agrees = (agree_predicate or _default_agree)(critique)
         responses.append(PerspectiveResponse(perspective=p, critique=critique,
                                              agrees=agrees))

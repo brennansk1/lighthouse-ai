@@ -39,6 +39,15 @@ class BM25Index:
 
     def add(self, chunks: Iterable[Chunk]) -> None:
         for c in chunks:
+            # Re-adding an existing chunk id is an update: retract the old
+            # document's contribution to the document frequencies first, else
+            # df inflates past n_docs and idf/scores corrupt.
+            old = self._docs.get(c.id)
+            if old is not None:
+                for term in old.tf.keys():
+                    self._df[term] -= 1
+                    if self._df[term] <= 0:
+                        del self._df[term]
             tokens = _tokenize(c.text)
             tf = Counter(tokens)
             self._docs[c.id] = _Doc(chunk=c, tokens=tokens, length=len(tokens), tf=tf)

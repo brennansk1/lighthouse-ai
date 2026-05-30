@@ -180,6 +180,30 @@ def test_find_date_written_mdy():
     assert _find_date("Jan 5, 2020 event") == "2020-01-05"
 
 
+def test_find_date_written_dmy():
+    # Day-first: "3 March 2019" previously matched "March 2019" and dropped the
+    # leading day, returning 2019-03-01. It must now keep the day → 2019-03-03.
+    assert _find_date("3 March 2019 event") == "2019-03-03"
+
+
+def test_find_date_written_dmy_ordinal():
+    assert _find_date("On 21st June 2020 it happened") == "2020-06-21"
+
+
+def test_find_date_written_dmy_abbrev_zero_padded():
+    assert _find_date("03 Mar 2019 release") == "2019-03-03"
+
+
+def test_find_date_my_still_parses_without_day():
+    # Regression guard: a bare "Month YYYY" still parses to day=01.
+    assert _find_date("March 2019 event") == "2019-03-01"
+
+
+def test_find_date_mdy_still_parses():
+    # Regression guard: "Month D, YYYY" still works (MDY tried first).
+    assert _find_date("Jan 5, 2020 event") == "2020-01-05"
+
+
 def test_find_date_none():
     assert _find_date("No dates here at all") is None
 

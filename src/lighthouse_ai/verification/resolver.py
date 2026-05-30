@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -48,6 +48,14 @@ def is_past_deadline(resolve_by: str | None, *, now: datetime | None = None) -> 
     try:
         due = datetime.fromisoformat(resolve_by)
         ref = now if now is not None else datetime.now()
+        # tz-robust comparison: a naive and an aware datetime cannot be compared
+        # (TypeError). Normalize both sides — treat any naive value as UTC — so
+        # an aware ``resolve_by`` (e.g. "...+00:00") resolves instead of being
+        # silently swallowed by the except below and NEVER resolving.
+        if due.tzinfo is None and ref.tzinfo is not None:
+            due = due.replace(tzinfo=UTC)
+        elif due.tzinfo is not None and ref.tzinfo is None:
+            ref = ref.replace(tzinfo=UTC)
         return ref >= due
     except Exception:
         return False

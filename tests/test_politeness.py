@@ -261,6 +261,39 @@ class TestRateBudget:
         assert elapsed < 1.0
 
 
+class TestRateBudgetWindowMath:
+    """Window math for the pyrate-limiter ``Rate`` (exercised library-free).
+
+    The bug: ``int(burst / rate)`` raised ZeroDivisionError when ``rate == 0``
+    and produced an invalid ``* 0`` window when ``burst < rate``. We test the
+    pure math helper directly so the test needs no pyrate-limiter install.
+    """
+
+    def test_zero_rate_does_not_divide_by_zero(self) -> None:
+        # rate == 0 previously raised ZeroDivisionError on bucket creation.
+        budget = RateBudget(default_rate=0.0, default_burst=5)
+        assert budget._window_seconds() == 1
+
+    def test_negative_rate_is_unlimited_floor(self) -> None:
+        budget = RateBudget(default_rate=-3.0, default_burst=5)
+        assert budget._window_seconds() == 1
+
+    def test_burst_smaller_than_rate_keeps_window_at_least_one(self) -> None:
+        # burst < rate → int(1/10) == 0 → invalid zero-length window.
+        budget = RateBudget(default_rate=10.0, default_burst=1)
+        assert budget._window_seconds() >= 1
+
+    def test_normal_rate_window_unchanged(self) -> None:
+        # 5 burst / 1 rate → 5-second window, as before.
+        budget = RateBudget(default_rate=1.0, default_burst=5)
+        assert budget._window_seconds() == 5
+
+    def test_zero_rate_bucket_creation_does_not_raise(self) -> None:
+        # End-to-end: a bucket can be made and used even with rate 0.
+        budget = RateBudget(default_rate=0.0, default_burst=3)
+        assert budget.try_acquire("any.com") is True
+
+
 # ---------------------------------------------------------------------------
 # PolitenessGate
 # ---------------------------------------------------------------------------

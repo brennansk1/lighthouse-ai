@@ -11,6 +11,7 @@ Date formats recognized (offline / deterministic path):
   - ISO-ish:  2024, 2024-05, 2024-05-28
   - Month-Year: March 2019, Mar 2019, march 2019
   - Month-Day-Year: March 3 2019, Mar 3, 2019
+  - Day-Month-Year: 3 March 2019, 3rd March 2019, 03 Mar 2019
   - Year-Month numeric: 2019-03
 
 Certainty formula
@@ -73,6 +74,11 @@ _WRITTEN_MDY_RE = re.compile(
     rf"\b({_MONTH_NAMES})\s+(\d{{1,2}})(?:st|nd|rd|th)?\s*,?\s*(\d{{4}})\b",
     re.IGNORECASE,
 )
+#   "3 March 2019"  "3rd March 2019"  "03 Mar 2019"  (day-first / D Month YYYY)
+_WRITTEN_DMY_RE = re.compile(
+    rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_NAMES})\s+(\d{{4}})\b",
+    re.IGNORECASE,
+)
 #   "March 2019"  "Mar 2019"
 _WRITTEN_MY_RE = re.compile(
     rf"\b({_MONTH_NAMES})\s+(\d{{4}})\b",
@@ -81,8 +87,11 @@ _WRITTEN_MY_RE = re.compile(
 
 # Combined regex for stripping date tokens from action text before hashing.
 # Order: try written forms first so "March 2019" is consumed before "2019".
+# The day-first form must precede the month-year form so "3 March 2019" is
+# consumed whole rather than leaving the day behind.
 _DATE_STRIP_RE = re.compile(
-    rf"(?:{_WRITTEN_MDY_RE.pattern}|{_WRITTEN_MY_RE.pattern}|{_ISO_DATE_RE.pattern})",
+    rf"(?:{_WRITTEN_MDY_RE.pattern}|{_WRITTEN_DMY_RE.pattern}|"
+    rf"{_WRITTEN_MY_RE.pattern}|{_ISO_DATE_RE.pattern})",
     re.IGNORECASE,
 )
 
@@ -108,6 +117,16 @@ def _parse_written_date(text: str) -> tuple[str, int] | None:
     if m:
         month = _MONTH_MAP[m.group(1).lower()]
         day = m.group(2).zfill(2)
+        year = m.group(3)
+        return f"{year}-{month}-{day}", m.end()
+
+    # Day-first ("D Month YYYY") must be tried BEFORE the month-year form, else
+    # "3 March 2019" matches "March 2019" and silently drops the leading day,
+    # yielding 2019-03-01 instead of 2019-03-03.
+    m = _WRITTEN_DMY_RE.search(text)
+    if m:
+        day = m.group(1).zfill(2)
+        month = _MONTH_MAP[m.group(2).lower()]
         year = m.group(3)
         return f"{year}-{month}-{day}", m.end()
 

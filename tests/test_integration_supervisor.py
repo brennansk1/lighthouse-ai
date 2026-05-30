@@ -7,7 +7,9 @@ import time
 import httpx
 import pytest
 
-from lighthouse_ai.supervisor import serve_in_thread
+from lighthouse_ai import intents
+from lighthouse_ai.persistence import open_db
+from lighthouse_ai.supervisor import _recover_orphaned_intents, serve_in_thread
 
 
 @pytest.mark.integration
@@ -61,6 +63,55 @@ def test_governor_endpoint_reachable(tmp_paths):
     finally:
         server.should_exit = True
         thread.join(timeout=5)
+
+
+# ---------------------------------------------------------------------------
+# Outbox recovery at startup: orphaned in_flight intents must be requeued.
+# ---------------------------------------------------------------------------
+
+
+def _backdate_claimed_at(db, intent_id: int, seconds: int) -> None:
+    conn = open_db(db)
+    try:
+        conn.execute(
+            "UPDATE intents SET claimed_at = datetime('now', ?) WHERE id = ?",
+            (f"-{seconds} seconds", intent_id),
+        )
+    finally:
+        conn.close()
+
+
+def _status(db, intent_id: int) -> str:
+    conn = open_db(db)
+    try:
+        row = conn.execute(
+            "SELECT status FROM intents WHERE id = ?", (intent_id,)
+        ).fetchone()
+        return str(row[0])
+    finally:
+        conn.close()
+
+
+def test_recover_orphaned_intents_requeues_stuck(migrated_paths):
+    db = migrated_paths.intents_db
+    iid = intents.write_intent(
+        db, target="audit", op="noop", payload={}, idempotency_key="orphan-1",
+    )
+    # Simulate a crash mid-apply: claim it (→ in_flight) then backdate the claim
+    # past the requeue threshold so it counts as orphaned.
+    intents.claim_one(db)
+    _backdate_claimed_at(db, iid, 600)
+    assert _status(db, iid) == "in_flight"
+
+    n = _recover_orphaned_intents(migrated_paths)
+
+    assert n == 1
+    assert _status(db, iid) == "pending"
+
+
+def test_recover_orphaned_intents_offline_safe_missing_db(tmp_paths):
+    # No migrations run → intents table absent. Must not raise; returns 0.
+    assert _recover_orphaned_intents(tmp_paths) == 0
 
 
 @pytest.mark.integration

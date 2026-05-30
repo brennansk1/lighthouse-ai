@@ -6,11 +6,11 @@ fake ``research_fn`` drives the verdict, so no clock or network is touched.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from lighthouse_ai.persistence import open_db
 from lighthouse_ai.verification.positions import record_position
-from lighthouse_ai.verification.resolver import resolve_positions
+from lighthouse_ai.verification.resolver import is_past_deadline, resolve_positions
 
 # A clock far enough out that a 2020 deadline is in the past.
 NOW = datetime(2026, 1, 1, 0, 0, 0)
@@ -128,3 +128,37 @@ def test_resolve_positions_noop_without_fn_or_gateway(migrated_paths):
     db = migrated_paths.positions_db
     record_position(db, claim="Will it ship by 2024?", probability=0.7, resolve_by=PAST)
     assert resolve_positions(db, now=NOW) == []
+
+
+# A tz-AWARE past deadline against a naive ``now``: the old code raised
+# TypeError on ``ref >= due`` (can't compare naive vs aware), the bare except
+# swallowed it, and the position NEVER resolved.
+PAST_AWARE = "2020-01-01T00:00:00+00:00"
+
+
+def test_is_past_deadline_tz_aware_resolve_by_past():
+    # Aware resolve_by, naive now → must still recognize the deadline passed.
+    assert is_past_deadline(PAST_AWARE, now=NOW) is True
+
+
+def test_is_past_deadline_tz_aware_now_vs_naive_resolve_by():
+    # Symmetric case: naive resolve_by, aware now.
+    now_aware = datetime(2026, 1, 1, tzinfo=UTC)
+    assert is_past_deadline(PAST, now=now_aware) is True
+
+
+def test_resolve_positions_resolves_tz_aware_deadline(migrated_paths):
+    db = migrated_paths.positions_db
+    pos = record_position(db, claim="Will drug Z be approved by 2024?",
+                          probability=0.8, resolve_by=PAST_AWARE,
+                          resolution_criterion="FDA approval granted")
+
+    def fake_research(claim: str, criterion: str | None):
+        return True, 0.92, "Approved per the registry."
+
+    results = resolve_positions(db, research_fn=fake_research, now=NOW)
+
+    assert len(results) == 1
+    assert results[0].auto_resolved is True
+    outcome, _ = _outcome(db, pos.id)
+    assert outcome == 1

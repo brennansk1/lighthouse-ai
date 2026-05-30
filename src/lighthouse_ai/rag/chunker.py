@@ -84,7 +84,10 @@ def _pack_sentences(sentences: list[str], max_tokens: int,
     for s in sentences:
         t = _approx_tokens(s)
         if t > max_tokens:
-            # Hard-split overlong sentence on whitespace.
+            # Flush whatever we've buffered first so its tokens aren't lost,
+            # then hard-split the overlong sentence on whitespace.
+            if current:
+                chunks.append(" ".join(current))
             words = s.split()
             for i in range(0, len(words), max_tokens):
                 chunks.append(" ".join(words[i:i + max_tokens]))

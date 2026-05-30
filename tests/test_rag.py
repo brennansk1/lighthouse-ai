@@ -66,6 +66,21 @@ def test_max_tokens_zero_rejected():
         chunk_document(Document(id="x", text="hi"), max_tokens=0)
 
 
+def test_buffered_text_not_lost_before_overlong_sentence():
+    """Regression: a buffered short sentence followed by an over-long sentence
+    must not be silently dropped. The overlong-sentence hard-split branch used
+    to reset `current` without emitting it, losing tokens."""
+    keep = "keep me please now"
+    overlong = " ".join(["big"] * 60)
+    text = keep + ". " + overlong + "."
+    chunks = chunk_document(Document(id="d", text=text), max_tokens=10,
+                            overlap_tokens=0)
+    joined = " ".join(c.text for c in chunks)
+    # Every word of the buffered sentence must survive somewhere.
+    for w in keep.split():
+        assert w in joined, f"lost token {w!r}; chunks={[c.text for c in chunks]}"
+
+
 # --- embedder ---
 
 def test_hash_embedder_is_deterministic():
@@ -139,6 +154,27 @@ def test_bm25_returns_high_score_for_match():
 
 def test_bm25_empty_returns_nothing():
     assert BM25Index().search("x") == []
+
+
+def test_bm25_readd_same_id_does_not_corrupt_df():
+    """Regression: re-adding a chunk with an existing id is an update, not a
+    second document. df must not exceed n_docs, otherwise idf/scores corrupt."""
+    from lighthouse_ai.rag.chunker import Chunk
+    bm = BM25Index()
+    a = Chunk(id="x", document_id="d", text="alpha beta", position=0)
+    b = Chunk(id="y", document_id="d", text="gamma delta", position=0)
+    bm.add([a, b])
+    bm.add([a])  # re-ingest x (update)
+    assert len(bm) == 2
+    # No term's document frequency may exceed the number of documents.
+    assert all(df <= len(bm) for df in bm._df.values()), dict(bm._df)
+    # "alpha" appears in exactly one of the two docs.
+    assert bm._df["alpha"] == 1
+
+    # And updating the text actually retires the old terms.
+    bm.add([Chunk(id="x", document_id="d", text="omega", position=0)])
+    assert "alpha" not in bm._df
+    assert bm._df["omega"] == 1
 
 
 # --- RRF ---

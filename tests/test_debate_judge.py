@@ -146,6 +146,38 @@ def test_llm_judge_falls_back_on_gateway_error():
     assert res.crux == ""
 
 
+def test_perspective_gateway_error_degrades_and_continues():
+    """A gateway error during a PERSPECTIVE (researcher) call must NOT abort the
+    debate — that perspective degrades to its heuristic stub and the run finishes
+    with the full set of perspectives ('never crashes' contract)."""
+
+    class PerspectiveBoomGateway:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete(self, role, prompt, *, job_id=None, allow_drift=True):
+            if role == "researcher":
+                self.calls += 1
+                # Fail the second perspective only.
+                if self.calls == 2:
+                    raise RuntimeError("perspective model crashed")
+                return _Resp("a critique")
+            return _Resp(
+                "CRUX: none\nPERSPECTIVE: none\nRESOLVES_WITH: n/a\nSUMMARY: ok"
+            )
+
+    gw = PerspectiveBoomGateway()
+    res = run_debate("Claim.", "Draft.", gateway=gw)
+
+    # All perspectives present despite one failing mid-loop.
+    assert len(res.responses) == len(PERSPECTIVES)
+    assert all(r.critique for r in res.responses)
+    # The failed perspective fell back to the deterministic stub text.
+    assert any("proceed with caution" in r.critique for r in res.responses)
+    # Judge still ran → llm backend, no crash.
+    assert res.judge_backend == "llm"
+
+
 def test_llm_judge_unparseable_reply_degrades_gracefully():
     gw = FakeJudgeGateway(judge_text="totally unstructured blob with no tags")
     res = run_debate("Claim.", "Draft.", gateway=gw)

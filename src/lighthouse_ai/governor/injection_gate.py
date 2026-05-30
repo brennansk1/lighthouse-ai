@@ -325,6 +325,13 @@ class InjectionGate:
         if not text:
             return InjectionVerdict(score=0.0, blocked=False, threshold=self._threshold)
 
+        # NFKC-fold before matching so homoglyph/decorated keywords (e.g.
+        # fullwidth or compatibility characters in "ignore previous
+        # instructions") collapse to their canonical ASCII form and the regex
+        # signatures fire. For plain ASCII NFKC is a no-op, so existing behaviour
+        # — and every existing test — is unchanged.
+        text = normalize_unicode(text)
+
         regex_score, reasons = self._regex_score(text)
 
         ml_scorer = self._get_ml_scorer()
