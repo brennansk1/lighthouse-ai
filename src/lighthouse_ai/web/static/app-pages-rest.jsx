@@ -1447,19 +1447,26 @@ function HealthPage({ toast }) {
   );
 }
 
-// Per-source health summary. The catalog (/api/sources) tells us which sources
-// are installed and which need extra approval; live reachability + per-outlet
-// error rates are not yet exposed by an endpoint.
-// TODO(api): a /api/sources/health endpoint (last fetch, error rate, rate-limit
-//            status, robots freshness per skill) would make this live rather
-//            than a static catalog summary.
+// Status label → display config.
+const R_SOURCE_STATUS = {
+  ready:       { mark: '✓', label: 'Ready',         color: 'var(--green-dark)' },
+  needs_key:   { mark: '⚿', label: 'Key missing',   color: '#a07a00' },
+  needs_trust: { mark: '⊘', label: 'Not trusted',   color: 'var(--coral-2)' },
+};
+
+// Per-source health card — driven by /api/sources/health.
+// Shows a plain-language summary (X ready · Y need a key · Z need trust) and a
+// compact list grouped by status with a one-line "how to fix" for each issue.
 function RSourceHealth() {
-  const { data, loading } = window.useApi('/api/sources', { pollMs: 0 });
+  const { data, loading, error } = window.useApi('/api/sources/health', { pollMs: 0 });
   const sources = (data && Array.isArray(data.sources)) ? data.sources : [];
-  const news = sources.filter((s) => (s.category || '').toLowerCase() === 'news'
-    && s.id !== 'news_orchestrator');
-  const tierC = sources.filter((s) => s.tier === 'C' || s.tierc_escalation);
-  const noAuth = sources.length;
+  const summary = (data && data.summary) ? data.summary : {};
+
+  const groups = [
+    { key: 'needs_trust', items: sources.filter((s) => s.status === 'needs_trust') },
+    { key: 'needs_key',   items: sources.filter((s) => s.status === 'needs_key') },
+    { key: 'ready',       items: sources.filter((s) => s.status === 'ready') },
+  ].filter((g) => g.items.length > 0);
 
   return (
     <div style={{ ...window.card, padding: 20 }}>
@@ -1468,23 +1475,118 @@ function RSourceHealth() {
         Sources
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45, marginBottom: 12 }}>
-        Which research sources are available on this machine. Manage trust in
-        Settings → Sources &amp; trust.
+        Which research sources are ready to use, and what needs attention.
       </div>
 
       {loading && !data && <RSkeleton h={14} mb={8} />}
+      {error && (
+        <div style={{ fontSize: 12, color: 'var(--coral-2)', marginBottom: 10 }}>
+          Could not load source status.
+        </div>
+      )}
 
-      {!loading && (
+      {!loading && data && (
         <React.Fragment>
-          <RRow k="Sources installed" v={noAuth || '—'} />
-          <RRow k="News outlets" v={news.length || '—'} />
-          <RRow k="Need extra approval" v={tierC.length} />
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, lineHeight: 1.5 }}>
-            For live news reachability and bias overlays, run{' '}
-            <code style={{ fontFamily: 'var(--mono)', fontSize: 11,
-              background: 'var(--rule-soft)', padding: '1px 5px', borderRadius: 3 }}>
-              lighthouse doctor news</code>.
-          </div>
+          {/* Summary chips */}
+          {summary.total > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+              {summary.ready > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px',
+                  borderRadius: 12, background: 'rgba(6,214,160,0.12)',
+                  color: 'var(--green-dark)', border: '1px solid var(--green-dark)' }}>
+                  {summary.ready} ready
+                </span>
+              )}
+              {summary.needs_key > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px',
+                  borderRadius: 12, background: 'rgba(160,122,0,0.10)',
+                  color: '#a07a00', border: '1px solid #a07a00' }}>
+                  {summary.needs_key} {summary.needs_key === 1 ? 'needs' : 'need'} a key
+                </span>
+              )}
+              {summary.needs_trust > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px',
+                  borderRadius: 12, background: 'rgba(220,80,60,0.08)',
+                  color: 'var(--coral-2)', border: '1px solid var(--coral-2)' }}>
+                  {summary.needs_trust} {summary.needs_trust === 1 ? 'needs' : 'need'} trust
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Grouped source rows — issues first, then ready */}
+          {groups.map((g) => {
+            const cfg = R_SOURCE_STATUS[g.key] || R_SOURCE_STATUS.ready;
+            const isIssue = g.key !== 'ready';
+            return (
+              <div key={g.key} style={{ marginBottom: isIssue ? 14 : 0 }}>
+                {isIssue && (
+                  <div style={{ fontSize: 10.5, fontWeight: 700,
+                    color: cfg.color, textTransform: 'uppercase',
+                    letterSpacing: '0.07em', marginBottom: 6 }}>
+                    {cfg.label} ({g.items.length})
+                  </div>
+                )}
+                {g.key === 'ready' && g.items.length > 0 && (
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)',
+                    marginBottom: 4, marginTop: 4 }}>
+                    {g.items.length} source{g.items.length === 1 ? '' : 's'} ready to use
+                  </div>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {g.items.map((src) => (
+                    <div key={src.id}
+                      style={{ display: 'flex', flexDirection: 'column',
+                        padding: '6px 0',
+                        borderBottom: '1px solid var(--rule-soft)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span aria-label={cfg.label}
+                          style={{ color: cfg.color, fontSize: 13, flexShrink: 0,
+                            lineHeight: 1 }}>
+                          {cfg.mark}
+                        </span>
+                        <span style={{ fontSize: 13, fontWeight: 500,
+                          color: 'var(--ink)', flex: 1 }}>
+                          {src.name}
+                        </span>
+                        <span style={{ fontSize: 10.5,
+                          color: 'var(--muted)', textTransform: 'uppercase',
+                          letterSpacing: '0.04em', flexShrink: 0 }}>
+                          {src.category}
+                        </span>
+                      </div>
+                      {isIssue && src.reason && (
+                        <div style={{ fontSize: 11, color: 'var(--ink-2)',
+                          lineHeight: 1.45, paddingLeft: 21, marginTop: 3 }}>
+                          {src.reason}{' '}
+                          {src.status === 'needs_key' && (
+                            <a href="#settings"
+                              style={{ color: 'var(--primary)',
+                                textDecoration: 'none', fontWeight: 600 }}>
+                              Settings →
+                            </a>
+                          )}
+                          {src.status === 'needs_trust' && (
+                            <a href="#settings"
+                              style={{ color: 'var(--primary)',
+                                textDecoration: 'none', fontWeight: 600 }}>
+                              Settings → Sources &amp; trust →
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {sources.length === 0 && (
+            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+              No sources found in the library.
+            </div>
+          )}
         </React.Fragment>
       )}
     </div>

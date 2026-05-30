@@ -1152,6 +1152,112 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
             sources = []
         return {"sources": sources}
 
+    @app.get("/api/sources/health", tags=["research"])
+    def sources_health() -> dict[str, Any]:
+        """Per-source readiness in plain language.
+
+        For each skill in the catalog, reports one of three statuses:
+
+        * ``"ready"``      — reachable (all declared domains on the platform
+                             allowlist) and no API key required, or the key
+                             is already configured.
+        * ``"needs_key"``  — this source needs a free API key and none has
+                             been saved yet.
+        * ``"needs_trust"``— at least one of the source's declared domains is
+                             not on the platform allowlist, so Lighthouse
+                             won't reach it until the user adds it via
+                             Settings → Sources & trust.
+
+        The ``summary`` field rolls up the per-source counts.  Secrets are
+        never returned — only a boolean ``configured`` flag is used internally.
+        """
+        from ..governor.egress_proxy import DEFAULT_ALLOWED_DOMAINS
+        from ..secrets import SecretStore
+        from ..skills.registry import all_skills
+
+        # Build a quick lookup: source_id → key_name from the key catalogue.
+        key_required: dict[str, str] = {
+            entry["source_id"]: entry["key_name"]
+            for entry in _SOURCE_KEY_CATALOGUE
+        }
+
+        store = SecretStore(paths.data_dir)
+        configured_keys: frozenset[str] = frozenset(store.list())
+
+        def _domain_trusted(domain: str) -> bool:
+            """True when domain (or a parent) is on the platform allowlist."""
+            d = domain.lower().rstrip(".")
+            if d in DEFAULT_ALLOWED_DOMAINS:
+                return True
+            return any(d.endswith("." + allowed) for allowed in DEFAULT_ALLOWED_DOMAINS)
+
+        result: list[dict[str, Any]] = []
+        try:
+            manifests = all_skills()
+        except Exception:
+            manifests = []
+
+        for m in manifests:
+            # 1. Check domain reachability.
+            domains = list(m.allowed_domains)
+            untrusted = [d for d in domains if not _domain_trusted(d)]
+            if untrusted:
+                result.append({
+                    "id": m.id,
+                    "name": m.name,
+                    "category": m.category,
+                    "tier": m.tier,
+                    "status": "needs_trust",
+                    "reason": (
+                        f"The domain{'s' if len(untrusted) > 1 else ''} "
+                        f"{', '.join(untrusted)} "
+                        f"{'are' if len(untrusted) > 1 else 'is'} not on "
+                        "the trusted list yet. Add it in Settings → "
+                        "Sources & trust, then Lighthouse can reach it."
+                    ),
+                })
+                continue
+
+            # 2. Check key requirement.
+            key_name = key_required.get(m.id)
+            if key_name and key_name not in configured_keys:
+                result.append({
+                    "id": m.id,
+                    "name": m.name,
+                    "category": m.category,
+                    "tier": m.tier,
+                    "status": "needs_key",
+                    "reason": (
+                        f"{m.name} works without a key at a lower rate limit. "
+                        "Add your free API key in Settings → Connect your data "
+                        "sources to unlock higher limits."
+                    ),
+                })
+                continue
+
+            # 3. Ready.
+            result.append({
+                "id": m.id,
+                "name": m.name,
+                "category": m.category,
+                "tier": m.tier,
+                "status": "ready",
+                "reason": "",
+            })
+
+        ready = sum(1 for s in result if s["status"] == "ready")
+        needs_key = sum(1 for s in result if s["status"] == "needs_key")
+        needs_trust = sum(1 for s in result if s["status"] == "needs_trust")
+        return {
+            "sources": result,
+            "summary": {
+                "ready": ready,
+                "needs_key": needs_key,
+                "needs_trust": needs_trust,
+                "total": len(result),
+            },
+        }
+
     @app.get("/api/recommend-sources", tags=["research"])
     def recommend_sources(q: str, mode: str = "investigate",
                           depth: str | None = None) -> dict[str, Any]:

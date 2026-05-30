@@ -104,20 +104,36 @@ class StatusBar(Static):
         self.update("supervisor offline — run `lighthouse start`   ·   ? help")
 
     def set_health(self, health: dict, jobs: list[dict]) -> None:
+        """Update the status bar from a health or dashboard payload.
+
+        Accepts both the ``/api/health`` shape (no ``budget`` key) and the
+        ``/api/dashboard`` shape (has ``budget.cloud``).  When budget data is
+        absent the budget chip is hidden rather than showing ``$— of $—``.
+        """
         self.remove_class("-offline")
-        hw = (health or {}).get("hardware", {})
-        budget = (health or {}).get("budget", {})
-        usd = budget.get("usd", {})
+        h = health or {}
+        hw = h.get("hardware") or {}
         running = sum(1 for j in jobs if j.get("status") == "running")
         review = sum(1 for j in jobs if j.get("status") == "review")
         job_bits = f"{running} running"
         if review:
             job_bits += f", {review} need{'s' if review == 1 else ''} review"
-        tier = hw.get("tier", "—")
-        used = usd.get("used", "—")
-        cap = usd.get("cap", "—")
+        tier = hw.get("tier") or "—"
+
+        # Budget is present only in the /api/dashboard shape.  /api/health
+        # does not emit it, so guard every level with .get() and tolerate None.
+        budget_chip = ""
+        budget = h.get("budget")
+        if isinstance(budget, dict):
+            cloud = budget.get("cloud")
+            if isinstance(cloud, dict):
+                used = cloud.get("used")
+                cap = cloud.get("cap")
+                if used is not None and cap is not None:
+                    budget_chip = f"  ·  ${used} of ${cap}"
+
         self.update(
-            f"tier {tier}  ·  ${used} of ${cap}  ·  {job_bits}  ·  ? help"
+            f"tier {tier}{budget_chip}  ·  {job_bits}  ·  ? help"
         )
 
 
