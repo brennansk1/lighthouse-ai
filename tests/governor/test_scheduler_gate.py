@@ -218,6 +218,49 @@ def test_max_concurrent_one_serialises() -> None:
     assert max_seen == 1
 
 
+def test_throttled_serialises_even_with_multi_slot_config() -> None:
+    """THROTTLED policy must force concurrency to 1 even when max_concurrent_llm > 1.
+
+    Regression test for the audit finding: previously THROTTLED only slept the
+    backoff but still acquired one of the N semaphore slots, so N calls could
+    run concurrently under THROTTLED on T3+ configs.
+    """
+    # max_concurrent_llm=4 (T3+ tier) but policy is THROTTLED (high CPU).
+    gate = SchedulerGate(
+        SchedulerGateConfig(max_concurrent_llm=4, throttled_backoff_ms=0),
+        signals_provider=lambda: _sig(cpu=99),  # forces THROTTLED
+        sleep=lambda s: None,
+    )
+    concurrent = 0
+    max_seen = 0
+    results_lock = threading.Lock()
+    ready = threading.Barrier(2, timeout=2)
+
+    def worker():
+        nonlocal concurrent, max_seen
+        with gate.permit():
+            with results_lock:
+                concurrent += 1
+                max_seen = max(max_seen, concurrent)
+            # Rendezvous: if both are inside simultaneously, max_seen will be 2.
+            try:
+                ready.wait()
+            except threading.BrokenBarrierError:
+                pass
+            with results_lock:
+                concurrent -= 1
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=2)
+    # THROTTLED must serialise: max concurrent inside permit() is 1
+    assert max_seen == 1, (
+        f"THROTTLED with max_concurrent_llm=4 allowed {max_seen} concurrent holders"
+    )
+
+
 def test_two_slots_allow_two_holders() -> None:
     gate = SchedulerGate(SchedulerGateConfig(max_concurrent_llm=2),
                          signals_provider=lambda: _sig(cpu=10),

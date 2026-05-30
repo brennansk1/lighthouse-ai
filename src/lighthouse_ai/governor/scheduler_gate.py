@@ -217,6 +217,9 @@ class SchedulerGate:
     ) -> None:
         self.cfg = cfg or SchedulerGateConfig()
         self._sem = threading.Semaphore(max(1, self.cfg.max_concurrent_llm))
+        # Separate single-permit semaphore used ONLY when THROTTLED so that
+        # serialisation (concurrency=1) is enforced regardless of max_concurrent_llm.
+        self._throttle_sem = threading.Semaphore(1)
         self._sleep = sleep
         self._cached: Signals | None = None
         self._cached_at = 0.0
@@ -249,10 +252,27 @@ class SchedulerGate:
 
     @contextmanager
     def permit(self):
-        """Block until the host is polite, then hold a global concurrency slot."""
+        """Block until the host is polite, then hold a global concurrency slot.
+
+        Under THROTTLED policy the gate uses a dedicated single-permit semaphore
+        (``_throttle_sem``) to enforce concurrency=1, regardless of
+        ``max_concurrent_llm``.  This satisfies the "serialise + slow down"
+        contract: the backoff sleep + single-permit path together ensure throttled
+        LLM calls run one at a time.  AGGRESSIVE/NORMAL use the normal N-slot
+        ``_sem`` as before.
+        """
         self._block_until_capacity()
-        self._sem.acquire()
-        try:
-            yield self
-        finally:
-            self._sem.release()
+        # Re-check policy after the backoff so we use the right semaphore.
+        policy, _ = self.policy()
+        if policy is Policy.THROTTLED:
+            self._throttle_sem.acquire()
+            try:
+                yield self
+            finally:
+                self._throttle_sem.release()
+        else:
+            self._sem.acquire()
+            try:
+                yield self
+            finally:
+                self._sem.release()

@@ -43,6 +43,69 @@ Role = Literal["planner", "researcher", "synthesizer", "aux_context",
 
 
 @dataclass(frozen=True)
+class SamplingParams:
+    """Granular generation-steerability knobs for one call/role (§6 + §27).
+
+    All fields are optional: ``None`` means "leave the model/catalog default
+    untouched", so an unset :class:`SamplingParams` is a no-op overlay that
+    preserves current behavior. Setting a field pins it for reproducibility,
+    and the effective value is recorded in provenance.
+
+      * ``seed`` — RNG seed. Pinning it makes sampling reproducible run-to-run.
+      * ``temperature`` — 0.0 is greedy/deterministic; higher is more diverse.
+      * ``top_p`` — nucleus-sampling cutoff.
+
+    Frozen so a locked experiment's params can't be mutated mid-run (itself a
+    reproducibility hazard, like the provenance log).
+    """
+
+    seed: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+
+    @classmethod
+    def locked(cls, *, seed: int = 0, top_p: float | None = None) -> SamplingParams:
+        """Deterministic preset: fixed ``seed`` + ``temperature == 0`` (greedy).
+
+        This is the "locked" reproducible mode — given the same model digest and
+        prompt, Ollama produces byte-stable output. ``top_p`` is left untouched
+        unless supplied (greedy decoding ignores it anyway).
+        """
+        return cls(seed=seed, temperature=0.0, top_p=top_p)
+
+    def is_empty(self) -> bool:
+        """True when no knob is set — applying this overlay changes nothing."""
+        return self.seed is None and self.temperature is None and self.top_p is None
+
+    def overlay(self, base: dict[str, Any]) -> dict[str, Any]:
+        """Return ``base`` with this overlay's set (non-``None``) fields applied.
+
+        ``base`` (e.g. a binding's catalog sampling dict) is not mutated; only
+        explicitly-set fields override it, so unset knobs keep the default. The
+        result is the gateway's sampling dict shape, ready for the backend.
+        """
+        out = dict(base)
+        if self.seed is not None:
+            out["seed"] = self.seed
+        if self.temperature is not None:
+            out["temperature"] = self.temperature
+        if self.top_p is not None:
+            out["top_p"] = self.top_p
+        return out
+
+    def to_dict(self) -> dict[str, Any]:
+        """Only the set fields, for recording the effective params in provenance."""
+        out: dict[str, Any] = {}
+        if self.seed is not None:
+            out["seed"] = self.seed
+        if self.temperature is not None:
+            out["temperature"] = self.temperature
+        if self.top_p is not None:
+            out["top_p"] = self.top_p
+        return out
+
+
+@dataclass(frozen=True)
 class ModelBinding:
     role: str
     model: str
@@ -582,7 +645,11 @@ class Gateway:
                  profile: HardwareProfile | None = None,
                  ollama=None,
                  prefer_real_backends: bool = True,
-                 overrides: dict[str, str] | None = None):
+                 overrides: dict[str, str] | None = None,
+                 *,
+                 sampling: dict[str, SamplingParams] | None = None,
+                 default_sampling: SamplingParams | None = None,
+                 locked: bool = False):
         self.governor = governor
         self.audit_db = audit_db
         self.profile = profile or probe()
@@ -630,6 +697,18 @@ class Gateway:
         # silently degraded to the mock because RAM was tight.
         from collections import Counter
         self._backend_counts: Counter = Counter()
+        # Granular generation steerability (§6 + §27). Three overlays, applied
+        # over each binding's catalog sampling dict in increasing precedence:
+        #   1. ``default_sampling`` — applies to every role unless overridden.
+        #   2. ``locked`` — a deterministic preset (fixed seed + temperature 0)
+        #      so a run is reproducible; pinned here it cannot be mutated mid-run.
+        #   3. ``sampling`` — per-role overrides (a researcher can lock just the
+        #      synthesizer, say). Per-call overrides (passed to ``complete``)
+        #      sit above all of these.
+        # Unset (the default) leaves behavior identical to before.
+        self._locked = locked
+        self._default_sampling = default_sampling or SamplingParams()
+        self._sampling: dict[str, SamplingParams] = dict(sampling or {})
 
     # --- backend access (lazy) ---
     def _get_ollama(self):
@@ -659,6 +738,44 @@ class Gateway:
             raise KeyError(f"no model bound for role {role!r}")
         return self._bindings[role]
 
+    def effective_sampling(self, role: str,
+                           override: SamplingParams | None = None) -> dict[str, Any]:
+        """Resolve the sampling dict that *would* be sent to the backend for ``role``.
+
+        Precedence (lowest → highest), each only touching its set fields:
+        binding's catalog sampling → ``default_sampling`` → locked preset →
+        per-role override → per-call ``override``. The result is the gateway's
+        sampling-dict shape (``temperature``/``top_p``/``seed``/``max_tokens``),
+        the same value passed to ``ollama.chat`` and recorded in provenance.
+
+        Pure/side-effect-free, so callers (and tests) can record or assert the
+        effective params without issuing a completion.
+        """
+        base = dict(self.binding(role).sampling)
+        out = self._default_sampling.overlay(base)
+        if self._locked:
+            out = SamplingParams.locked().overlay(out)
+        per_role = self._sampling.get(role)
+        if per_role is not None:
+            out = per_role.overlay(out)
+        if override is not None:
+            out = override.overlay(out)
+        return out
+
+    def sampling_provenance(self) -> dict[str, Any]:
+        """The effective sampling params per role, for the run sidecar (§27).
+
+        Records the steerability configuration that governed the run so it is
+        reproducible-on-paper: ``{"locked": bool, "roles": {role: {...}}}``. A
+        researcher reading the sidecar can re-pin the exact seed/temperature/
+        top_p that produced the artefact.
+        """
+        return {
+            "locked": self._locked,
+            "roles": {role: self.effective_sampling(role)
+                      for role in self._bindings},
+        }
+
     def complete_structured(self, prompt: str, *, job_id: str | None = None,
                             allow_drift: bool = True) -> CompletionResponse:
         """Complete a low-creativity *structured* task (scoring, extraction,
@@ -671,8 +788,14 @@ class Gateway:
         return self.complete(role, prompt, job_id=job_id, allow_drift=allow_drift)
 
     def complete(self, role: str, prompt: str, *, job_id: str | None = None,
-                 allow_drift: bool = True) -> CompletionResponse:
+                 allow_drift: bool = True,
+                 sampling: SamplingParams | None = None) -> CompletionResponse:
         b = self.binding(role)
+        # Resolve the effective sampling overlay once (catalog base + configured
+        # default/locked/per-role overlays + this call's optional override). When
+        # nothing is configured this equals the binding's catalog sampling, so
+        # behavior is unchanged.
+        effective_sampling = self.effective_sampling(role, sampling)
         # Loop guard (§24.6): count calls per job/role; a runaway loop trips
         # the per-job (default 1500) or per-node (25) cap and raises before an
         # obviously stuck job spins forever.
@@ -712,7 +835,8 @@ class Gateway:
                         backend_used = "mock-lowmem"
                     else:
                         try:
-                            chat_resp = ollama.chat(b.model, prompt, sampling=b.sampling)
+                            chat_resp = ollama.chat(b.model, prompt,
+                                                    sampling=effective_sampling)
                             text = chat_resp.text
                             prompt_tokens = chat_resp.prompt_tokens
                             completion_tokens = chat_resp.completion_tokens
@@ -740,7 +864,8 @@ class Gateway:
             fingerprint=fp,
         )
         self._backend_counts[backend_used] += 1
-        self._record(resp, job_id=job_id, prompt=prompt, backend_used=backend_used)
+        self._record(resp, job_id=job_id, prompt=prompt, backend_used=backend_used,
+                     sampling=effective_sampling)
         return resp
 
     def drain_backends(self) -> dict[str, int]:
@@ -772,7 +897,8 @@ class Gateway:
         return estimate_resident_gb(model)
 
     def _record(self, resp: CompletionResponse, *, job_id: str | None, prompt: str,
-                backend_used: str | None = None) -> None:
+                backend_used: str | None = None,
+                sampling: dict[str, Any] | None = None) -> None:
         payload = {
             "role": resp.role,
             "model": resp.model,
@@ -783,6 +909,7 @@ class Gateway:
             "prompt_preview": prompt[:120],
             "job_id": job_id,
             "backend_used": backend_used,
+            "sampling": sampling or {},
         }
         from .verification.audit_chain import append_event
         append_event(self.audit_db, actor=f"gateway:{resp.role}",

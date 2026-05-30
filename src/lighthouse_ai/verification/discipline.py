@@ -195,7 +195,39 @@ def check(text: str, *, min_coverage: float = 0.6,
                                 notes=["no extractable claims"])
     sourced = sum(1 for c in claims if c.is_sourced)
     unsourced = len(claims) - sourced
-    two = sum(1 for c in claims if c.is_two_sourced)
+
+    # Build skill map early so the high-stakes two-source check can use it.
+    # When evidence_chunks is supplied we count independent sources per-claim
+    # (distinct skill_ids); without evidence we fall back to the naive
+    # citation-id uniqueness check preserved on Claim.is_two_sourced.
+    _skill_map: dict[int, str | None] = (
+        _skill_by_id(evidence_chunks) if evidence_chunks is not None else {}
+    )
+
+    def _is_independently_two_sourced(claim: Claim) -> bool:
+        """Return True iff *claim* cites >=2 INDEPENDENT sources.
+
+        Independence requires distinct skill_ids (when available). Falls back
+        to ``Claim.is_two_sourced`` (citation-id uniqueness) when no evidence
+        chunks are supplied.
+        """
+        if not _skill_map:
+            return claim.is_two_sourced
+        cited = claim.citation_ids
+        if len(set(cited)) < 2:
+            return False
+        # Collect skill_ids for all cited chunks that have one.
+        cited_skills = {_skill_map[cid] for cid in cited
+                        if cid in _skill_map and _skill_map[cid] is not None}
+        # If every cited chunk has a skill_id and they all share one → NOT independent.
+        all_have_skill = all(
+            cid in _skill_map and _skill_map[cid] is not None for cid in cited
+        )
+        if all_have_skill and len(cited_skills) == 1:
+            return False
+        return True
+
+    two = sum(1 for c in claims if _is_independently_two_sourced(c))
     coverage = sourced / len(claims)
     notes: list[str] = []
     passed = coverage >= min_coverage

@@ -129,9 +129,22 @@ class ArchiveBombScanner:
 
     Heuristic: if the *declared* uncompressed total is more than
     ``max_ratio`` × the compressed payload, treat as a bomb.
+
+    Recursive inspection (bounded): archive entries that are themselves zip
+    archives are opened up to ``_NESTED_DEPTH_CAP`` levels deep and their
+    declared-uncompressed sizes are added to the running total, so a
+    zip-in-zip where the outer stores the inner bomb verbatim (ratio≈1) is
+    caught.  A cap on total entries across all recursion levels prevents a
+    scan-time bomb.
     """
 
     name = "archive_bomb"
+
+    _NESTED_DEPTH_CAP: int = 3   # max recursion depth for nested zips
+    _NESTED_ENTRY_CAP: int = 500  # max total entries examined across all levels
+
+    # Zip-like filename suffixes that warrant recursive inspection.
+    _ZIP_EXTENSIONS: tuple[str, ...] = (".zip", ".docx", ".xlsx", ".epub")
 
     def __init__(self, max_ratio: float = 100.0, max_uncompressed_mb: int = 1024):
         self.max_ratio = max_ratio
@@ -145,14 +158,68 @@ class ArchiveBombScanner:
             return True
         return False
 
+    def _sum_uncompressed(
+        self, data: bytes, depth: int, entry_counter: list[int]
+    ) -> int:
+        """Recursively sum declared uncompressed sizes for *data* (a zip blob).
+
+        Parameters
+        ----------
+        data:
+            Raw bytes of a zip file.
+        depth:
+            Current recursion depth (0 = top level).
+        entry_counter:
+            Single-element list used as a mutable counter shared across all
+            recursive calls.  Incremented per entry; inspection stops when the
+            cap is reached to prevent a scan-time bomb.
+
+        Returns
+        -------
+        int
+            Total declared uncompressed bytes, including nested archives.
+        """
+        import io as _io
+
+        total = 0
+        try:
+            with zipfile.ZipFile(_io.BytesIO(data)) as zf:
+                for zi in zf.infolist():
+                    entry_counter[0] += 1
+                    if entry_counter[0] > self._NESTED_ENTRY_CAP:
+                        break
+                    total += zi.file_size
+                    # Recurse into nested zips if within depth cap.
+                    if (
+                        depth < self._NESTED_DEPTH_CAP
+                        and zi.filename.lower().endswith(self._ZIP_EXTENSIONS)
+                    ):
+                        try:
+                            nested_data = zf.read(zi.filename)
+                        except Exception:
+                            continue
+                        nested = self._sum_uncompressed(
+                            nested_data, depth + 1, entry_counter
+                        )
+                        total += nested
+        except zipfile.BadZipFile:
+            pass
+        return total
+
     def scan(self, payload: bytes, *, filename: str | None = None) -> ScanResult:
         import io
         compressed_size = max(len(payload), 1)
+        # Validate the outer zip first.
         try:
-            with zipfile.ZipFile(io.BytesIO(payload)) as zf:
-                uncompressed = sum(zi.file_size for zi in zf.infolist())
+            with zipfile.ZipFile(io.BytesIO(payload)):
+                pass
         except zipfile.BadZipFile:
             return ScanResult(self.name, "reject", "not a valid zip archive")
+
+        entry_counter: list[int] = [0]
+        uncompressed = self._sum_uncompressed(payload, depth=0,
+                                              entry_counter=entry_counter)
+
         ratio = uncompressed / compressed_size
         if uncompressed > self.max_uncompressed_mb * 1024 * 1024:
             return ScanResult(self.name, "reject",

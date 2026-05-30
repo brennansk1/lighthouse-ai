@@ -407,7 +407,9 @@ class PolitenessGate:
 
     1. Consult :class:`RobotsPolicy` — a disallowed path raises
        :class:`~lighthouse_ai.net.EgressBlocked`.
-    2. Call :meth:`RateBudget.acquire` — blocks until capacity is available.
+    2. Honour the ``Crawl-delay`` directive — sleeps the required interval
+       since the last fetch for this host (per-host timestamp tracking).
+    3. Call :meth:`RateBudget.acquire` — blocks until capacity is available.
 
     Both components are optional in the constructor; when omitted the gate is
     fully permissive (no robots check, no rate limiting).
@@ -421,6 +423,8 @@ class PolitenessGate:
     * The gate is deterministic given the same robots bytes and token bucket
       state — no hidden randomness, no wall-clock sensitivity beyond what the
       token bucket already requires.
+    * ``sleeper`` is injectable (default ``time.sleep``) so tests can
+      intercept sleep calls without real wall-clock delays.
     """
 
     def __init__(
@@ -429,29 +433,40 @@ class PolitenessGate:
         budget: RateBudget | None = None,
         *,
         user_agent: str = "LighthouseBot",
+        sleeper: Callable[[float], None] | None = None,
     ) -> None:
         """
         Parameters
         ----------
         robots:
             A :class:`RobotsPolicy` instance.  When ``None`` the robots check
-            is skipped (permissive).
+            and crawl-delay enforcement are skipped (permissive).
         budget:
             A :class:`RateBudget` instance.  When ``None`` rate limiting is
             skipped.
         user_agent:
             The user-agent string used for robots.txt allow/deny checks.
+        sleeper:
+            Callable ``(seconds: float) -> None`` used when honouring
+            ``Crawl-delay``.  Defaults to ``time.sleep``.  Inject a recorder
+            in tests to avoid real wall-clock waits.
         """
         self._robots = robots
         self._budget = budget
         self._user_agent = user_agent
+        self._sleeper: Callable[[float], None] = sleeper if sleeper is not None else time.sleep
+        # Per-host last-fetch timestamp (monotonic seconds) for crawl-delay.
+        self._last_fetch: dict[str, float] = {}
+        self._crawl_lock = threading.Lock()
 
     def check(self, url: str) -> None:
         """Enforce politeness for *url*, blocking or raising as necessary.
 
         Raises :class:`~lighthouse_ai.net.EgressBlocked` if the robots policy
-        disallows the URL. Blocks (via rate budget) if the per-domain token
-        bucket is empty. Returns normally when the request may proceed.
+        disallows the URL. Sleeps the required crawl-delay interval when a
+        ``Crawl-delay`` directive is present.  Blocks (via rate budget) if the
+        per-domain token bucket is empty.  Returns normally when the request
+        may proceed.
         """
         # Lazy import to avoid circular dependency: net imports net_politeness,
         # net_politeness must not import net at module level.
@@ -469,7 +484,24 @@ class PolitenessGate:
                 raise EgressBlocked(reason)
             logger.debug("PolitenessGate: robots OK for %s", url)
 
-        # 2. Rate budget
+            # 2. Crawl-delay enforcement (only when a robots policy is present).
+            delay = self._robots.crawl_delay(host)
+            if delay > 0.0:
+                with self._crawl_lock:
+                    last = self._last_fetch.get(host)
+                    now = time.monotonic()
+                    if last is not None:
+                        elapsed = now - last
+                        wait = delay - elapsed
+                        if wait > 0.0:
+                            logger.debug(
+                                "PolitenessGate: crawl-delay %.1fs for %s (sleeping %.3fs)",
+                                delay, host, wait,
+                            )
+                            self._sleeper(wait)
+                    self._last_fetch[host] = time.monotonic()
+
+        # 3. Rate budget
         if self._budget is not None:
             logger.debug("PolitenessGate: acquiring rate token for %s", host)
             self._budget.acquire(host)

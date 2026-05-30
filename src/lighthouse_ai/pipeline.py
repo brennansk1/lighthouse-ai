@@ -466,6 +466,14 @@ class ResearchPipeline:
 
             content_hash = hashlib.sha256(body_html.encode()).hexdigest()
             ended_at = datetime.now(UTC)
+            # Record the effective sampling params so the run is reproducible on
+            # paper (seed/temperature/top-p per role + locked flag).
+            sampling = None
+            if self.gateway is not None and hasattr(self.gateway, "sampling_provenance"):
+                try:
+                    sampling = self.gateway.sampling_provenance()
+                except Exception:
+                    sampling = None
             sidecar = build_run_sidecar(
                 draft_id=draft_id,
                 job_id=job_id,
@@ -475,6 +483,7 @@ class ResearchPipeline:
                 source_count=source_count,
                 content_hash=content_hash,
                 ended_at=ended_at,
+                sampling=sampling,
             )
             sidecar_path = self.paths.staging_dir / f"{draft_id}.prov.json"
             write_run_sidecar(sidecar_path, sidecar)

@@ -195,6 +195,54 @@ OPENALEX_JSON = {
 }
 
 
+class _SkillChunk:
+    """Minimal chunk stub carrying skill_id metadata for independence tests."""
+    def __init__(self, text: str, source: str, skill_id: str | None = None):
+        self.text = text
+        self.metadata: dict = {"source": source}
+        if skill_id is not None:
+            self.metadata["skill_id"] = skill_id
+
+
+def test_two_source_rule_same_skill_fails():
+    """Two citations from the SAME skill_id must NOT satisfy the two-source rule.
+
+    Regression for the audit finding: previously is_two_sourced used
+    ``len(set(citation_ids)) >= 2`` which admitted two citations to the same
+    skill_id/document as "independent".
+    """
+    ev = [
+        _SkillChunk("excerpt A", "doc-a", skill_id="skill-x"),
+        _SkillChunk("excerpt B", "doc-b", skill_id="skill-x"),  # SAME skill
+    ]
+    # Both claims cite different citation IDs but the same underlying skill.
+    rep = check(
+        "The treatment is effective [1,2].",
+        high_stakes=True,
+        evidence_chunks=ev,
+        min_coverage=0.0,
+    )
+    # The two citations are from skill-x (same skill) → not independent → fail.
+    assert not rep.passed, "expected failure: same-skill citations are not independent"
+    assert any("two-source" in n for n in rep.notes), rep.notes
+
+
+def test_two_source_rule_distinct_skills_passes():
+    """Two citations from DISTINCT skill_ids must satisfy the two-source rule."""
+    ev = [
+        _SkillChunk("excerpt A", "doc-a", skill_id="skill-x"),
+        _SkillChunk("excerpt B", "doc-b", skill_id="skill-y"),  # DIFFERENT skill
+    ]
+    rep = check(
+        "The treatment is effective [1,2].",
+        high_stakes=True,
+        evidence_chunks=ev,
+        min_coverage=0.0,
+    )
+    assert rep.passed, f"expected pass: distinct-skill citations ARE independent; notes={rep.notes}"
+    assert not any("two-source" in n for n in rep.notes), rep.notes
+
+
 def test_check_source_diversity_counts_distinct_domains():
     from lighthouse_ai.rag.chunker import Chunk
     from lighthouse_ai.rag.hybrid import HybridResult

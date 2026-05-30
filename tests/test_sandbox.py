@@ -120,6 +120,47 @@ def test_invalid_zip_rejected():
     assert r.verdict == "reject"
 
 
+def test_nested_zip_bomb_rejected():
+    """A zip-in-zip where the inner zip is a bomb must be rejected.
+
+    The outer zip stores the inner zip nearly verbatim (ratio≈1), so the
+    top-level check passes.  Only recursive inspection reveals the bomb
+    inside.  Regression for the audit finding.
+    """
+    # Build inner bomb zip: many large entries compressed to very little.
+    inner_buf = io.BytesIO()
+    huge = b"A" * (10 * 1024 * 1024)  # 10 MB per entry
+    with zipfile.ZipFile(inner_buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+        for i in range(120):
+            zf.writestr(f"f{i}.txt", huge)
+    inner_bytes = inner_buf.getvalue()
+
+    # Wrap it in an outer zip stored without compression (ratio≈1 at outer level).
+    outer_buf = io.BytesIO()
+    with zipfile.ZipFile(outer_buf, "w", zipfile.ZIP_STORED) as zf:
+        zf.writestr("bomb.zip", inner_bytes)
+
+    s = ArchiveBombScanner(max_ratio=50.0, max_uncompressed_mb=2048)
+    r = s.scan(outer_buf.getvalue(), filename="outer.zip")
+    assert r.verdict == "reject", f"expected reject, got {r.verdict}: {r.reason}"
+
+
+def test_nested_zip_benign_passes():
+    """A clean zip containing a small zip must be admitted (no false positive)."""
+    inner_buf = io.BytesIO()
+    with zipfile.ZipFile(inner_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("readme.txt", "hello from inner zip")
+    inner_bytes = inner_buf.getvalue()
+
+    outer_buf = io.BytesIO()
+    with zipfile.ZipFile(outer_buf, "w", zipfile.ZIP_STORED) as zf:
+        zf.writestr("inner.zip", inner_bytes)
+
+    s = ArchiveBombScanner(max_ratio=100.0, max_uncompressed_mb=1024)
+    r = s.scan(outer_buf.getvalue(), filename="outer.zip")
+    assert r.verdict == "clean", f"expected clean, got {r.verdict}: {r.reason}"
+
+
 def test_eicar_detected():
     s = EICARScanner()
     payload = b"prefix " + EICAR_SIGNATURE + b" suffix"

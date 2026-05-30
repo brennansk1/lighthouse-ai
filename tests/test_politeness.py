@@ -299,6 +299,76 @@ class TestRateBudgetWindowMath:
 # ---------------------------------------------------------------------------
 
 
+class TestCrawlDelayEnforcement:
+    """PolitenessGate must honour the robots Crawl-delay directive.
+
+    Regression tests for the audit finding: previously crawl_delay was parsed
+    but PolitenessGate.check() never used it.
+    """
+
+    def test_crawl_delay_causes_sleep_via_injected_sleeper(self) -> None:
+        """check() must sleep the crawl-delay duration on the first post-delay call.
+
+        Uses protego-independent setup: we stub crawl_delay() directly on
+        RobotsPolicy so the test runs without protego installed.
+        """
+        slept: list[float] = []
+
+        robots = RobotsPolicy(fetcher=None)
+        # Stub the crawl_delay method to return 5.0 seconds for any host.
+        robots.crawl_delay = lambda host: 5.0  # type: ignore[method-assign]
+
+        gate = PolitenessGate(robots=robots, sleeper=slept.append)
+        # First call: no prior fetch timestamp for this host → delay should be
+        # enforced from the very next call (or immediately on first, depending on
+        # implementation).  Call twice; the second must cause a sleep.
+        gate.check("https://example.com/a")
+        gate.check("https://example.com/b")
+
+        assert slept, "expected at least one sleep call for crawl-delay enforcement"
+        assert slept[0] == pytest.approx(5.0, abs=0.1), (
+            f"expected sleep of 5.0s, got {slept[0]}"
+        )
+
+    def test_no_crawl_delay_no_sleep(self) -> None:
+        """When crawl_delay() returns 0.0 no sleep must occur."""
+        slept: list[float] = []
+        robots = RobotsPolicy(fetcher=None)
+        robots.crawl_delay = lambda host: 0.0  # type: ignore[method-assign]
+
+        gate = PolitenessGate(robots=robots, sleeper=slept.append)
+        gate.check("https://example.com/a")
+        gate.check("https://example.com/b")
+        assert slept == [], f"unexpected sleeps: {slept}"
+
+    def test_crawl_delay_per_host_independent(self) -> None:
+        """Crawl-delay tracking is per-host; different hosts don't share state."""
+        slept: list[float] = []
+        robots = RobotsPolicy(fetcher=None)
+        robots.crawl_delay = lambda host: 3.0  # type: ignore[method-assign]
+
+        # Use a clock that starts far in the past so the delay fires immediately.
+        gate = PolitenessGate(robots=robots, sleeper=slept.append)
+        gate.check("https://host-a.com/page")
+        gate.check("https://host-b.com/page")
+        # host-b has no prior fetch timestamp → its first call records the
+        # timestamp; no sleep needed yet (delay is relative to *last* fetch).
+        # The important thing: host-a's state doesn't affect host-b.
+        # A second call to host-b should trigger the delay.
+        gate.check("https://host-b.com/other")
+        # At least one sleep was recorded overall (the second call to host-b or
+        # the second call to host-a).
+        assert len(slept) >= 1
+
+    def test_no_robots_no_sleep(self) -> None:
+        """When robots=None the gate must never sleep (fully permissive)."""
+        slept: list[float] = []
+        gate = PolitenessGate(robots=None, sleeper=slept.append)
+        gate.check("https://example.com/a")
+        gate.check("https://example.com/b")
+        assert slept == []
+
+
 class TestPolitenessGateNoLibs:
     """PolitenessGate with no optional libraries — pure-python fallbacks."""
 

@@ -135,3 +135,71 @@ run.ok, run.thin  # diagnostics; run.thin is the dispatcher's cue to fall back t
 5. Write `SKILL.md` (the planner's guide + tool playbook + biases).
 6. Add `examples/` and `tests/` (offline-deterministic).
 7. `discover_skills()` and `/api/sources` pick it up automatically.
+
+## 8a. Authoring a skill with the generator
+
+The scaffold generator automates steps 1–5 above, producing a folder that passes the import guard
+and loads cleanly before you write a single line of source-specific logic.
+
+**Generate a new skill:**
+
+```bash
+# Into the in-tree library (will be picked up by discover_skills automatically):
+lighthouse skill new my_source --name "My Source" --category academic
+
+# Into a custom directory (useful for community/experimental skills):
+lighthouse skill new my_source --dir ~/my-skills --name "My Source" --category academic
+
+# With Pattern-2 watch support (adds run_watchable stub):
+lighthouse skill new my_source --watchable
+```
+
+This creates `<dir>/my_source/` with:
+
+| File | Purpose |
+|---|---|
+| `__init__.py` | Python package marker |
+| `manifest.toml` | Valid manifest (id, tier A, signed=false, sensible defaults) |
+| `skill.py` | `run(ctx, question, *, max_results=5) → list[Document]` stub (+ `run_watchable` if `--watchable`) |
+| `SKILL.md` | Planner guide template (fill in: when-to-use, query translation, biases, citation) |
+| `examples/example.md` | Worked example template |
+
+The `skill_id` must be a valid Python identifier (underscores, not hyphens). The generator
+rejects `my-source` and suggests `my_source`.
+
+**Validate your skill after editing:**
+
+```bash
+lighthouse skill validate my_source                   # in-tree library
+lighthouse skill validate my_source --dir ~/my-skills # custom dir
+```
+
+Validation runs the full load pipeline: manifest parse → import guard → entrypoint import. Exit
+code 0 = all checks pass; exit code 1 = specific error printed.
+
+**Browse the catalog:**
+
+```bash
+lighthouse skill list                   # in-tree library (table: id / name / category / tier / signed)
+lighthouse skill list --dir ~/my-skills # custom dir
+lighthouse skill list --json            # machine-readable
+```
+
+**Python API:**
+
+```python
+from lighthouse_ai.skills.scaffold import scaffold_skill
+from pathlib import Path
+
+skill_dir = scaffold_skill(
+    "my_source",
+    dest_dir=Path("/tmp/skills"),
+    name="My Source",
+    category="academic",
+    tier="A",
+    watchable=False,
+)
+# → /tmp/skills/my_source/  ready to load_skill(...)
+```
+
+`scaffold_skill` raises `ScaffoldError` on an invalid id or if the folder already exists.

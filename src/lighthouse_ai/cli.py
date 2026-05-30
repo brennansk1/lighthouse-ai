@@ -1477,5 +1477,143 @@ def subconscious_tick() -> None:
         )
 
 
+# --------------------------------------------------- skill --
+
+skill_app = typer.Typer(help="Skill library management — scaffold, list, validate.", no_args_is_help=True)
+app.add_typer(skill_app, name="skill")
+
+
+@skill_app.command("new")
+def skill_new(
+    skill_id: str = typer.Argument(..., help="New skill id (Python identifier, no hyphens)."),
+    dest_dir: str = typer.Option(
+        None, "--dir",
+        help="Parent directory for the new skill folder. Defaults to the in-tree library.",
+    ),
+    name: str = typer.Option(None, "--name", help="Human-readable display name."),
+    category: str = typer.Option("general", "--category", help="Skill category (e.g. academic, news, government)."),
+    tier: str = typer.Option("A", "--tier", help="Fetch tier: A (default), B, or C."),
+    watchable: bool = typer.Option(False, "--watchable", help="Add run_watchable stub (Pattern-2)."),
+) -> None:
+    """Scaffold a new research skill into the library (or a custom directory).
+
+    Creates <dir>/<id>/ with a manifest.toml, skill.py, SKILL.md,
+    __init__.py, and examples/example.md — all passing the import guard.
+
+    After scaffolding, edit manifest.toml and skill.py to wire up your
+    source, then run ``lighthouse skill validate <id> --dir <dir>`` to
+    confirm everything loads cleanly.
+    """
+    from .skills.registry import LIBRARY_DIR
+    from .skills.scaffold import ScaffoldError, scaffold_skill
+
+    target = Path(dest_dir) if dest_dir else LIBRARY_DIR
+    try:
+        skill_dir = scaffold_skill(
+            skill_id, target,
+            name=name, category=category, tier=tier, watchable=watchable,
+        )
+    except ScaffoldError as exc:
+        err_console.print(f"[red]scaffold error:[/red] {exc}")
+        raise typer.Exit(1) from None
+
+    console.print(f"[green]created skill scaffold →[/green] {skill_dir}")
+    console.print("  [bold]Next steps:[/bold]")
+    console.print(f"  1. Edit [cyan]{skill_dir / 'manifest.toml'}[/cyan]")
+    console.print("     — set base_url, allowed_domains, description, scoring fields.")
+    console.print(f"  2. Edit [cyan]{skill_dir / 'skill.py'}[/cyan]")
+    console.print("     — implement run() using ctx.fetch / ctx.make_document.")
+    console.print(f"  3. Edit [cyan]{skill_dir / 'SKILL.md'}[/cyan]")
+    console.print("     — complete the planner guide (when to use, query translation, biases).")
+    console.print(f"  4. Validate: [cyan]lighthouse skill validate {skill_id}"
+                  + (f" --dir {dest_dir}" if dest_dir else "") + "[/cyan]")
+
+
+@skill_app.command("list")
+def skill_list(
+    dest_dir: str = typer.Option(
+        None, "--dir",
+        help="Custom skill library directory. Defaults to the in-tree library.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
+) -> None:
+    """List all discovered skills (id / name / category / tier / signed)."""
+
+    from .skills.registry import LIBRARY_DIR, discover_skills
+
+    target: Path | None = Path(dest_dir) if dest_dir else None
+    skills = discover_skills(target or LIBRARY_DIR)
+
+    if json_out:
+        console.print_json(data={sid: m.as_dict() for sid, m in skills.items()})
+        return
+
+    if not skills:
+        console.print("[yellow]no skills discovered.[/yellow]")
+        return
+
+    table = Table("id", "name", "category", "tier", "signed", "watchable", show_lines=False)
+    for sid, m in sorted(skills.items()):
+        signed_cell = "[green]✓[/green]" if m.signed else "[dim]community[/dim]"
+        watch_cell = "[cyan]✓[/cyan]" if m.watchable else "—"
+        table.add_row(sid, m.name, m.category, m.tier, signed_cell, watch_cell)
+    console.print(table)
+    console.print(f"  [dim]{len(skills)} skill(s)[/dim]")
+
+
+@skill_app.command("validate")
+def skill_validate(
+    skill_id: str = typer.Argument(..., help="Skill id to validate."),
+    dest_dir: str = typer.Option(
+        None, "--dir",
+        help="Custom skill library directory containing the skill folder.",
+    ),
+) -> None:
+    """Load a skill and report pass / fail (manifest + import guard + entrypoints).
+
+    Exit code 0 on success, 1 on any failure.
+    """
+    from .skills.registry import LIBRARY_DIR, SkillLoadError, SkillNotFound, load_skill
+    from .skills.schema import SkillManifestError
+
+    target: Path | None = Path(dest_dir) if dest_dir else None
+    try:
+        loaded = load_skill(skill_id, library_dir=target)
+    except SkillNotFound:
+        err_console.print(f"[red]skill not found:[/red] {skill_id!r} "
+                          f"in {target or LIBRARY_DIR}")
+        raise typer.Exit(1) from None
+    except SkillManifestError as exc:
+        err_console.print(f"[red]manifest error:[/red] {exc}")
+        raise typer.Exit(1) from None
+    except SkillLoadError as exc:
+        err_console.print(f"[red]load error:[/red] {exc}")
+        raise typer.Exit(1) from None
+    except Exception as exc:
+        err_console.print(f"[red]unexpected error:[/red] {exc}")
+        raise typer.Exit(1) from None
+
+    m = loaded.manifest
+    table = Table("field", "value", show_lines=False, title=f"skill: {skill_id}")
+    table.add_row("id", m.id)
+    table.add_row("name", m.name)
+    table.add_row("category", m.category)
+    table.add_row("version", m.version)
+    table.add_row("tier", m.tier)
+    table.add_row("signed", str(m.signed))
+    table.add_row("watchable", str(m.watchable))
+    table.add_row("entrypoint", m.entrypoint)
+    table.add_row("output_shape", m.output_shape)
+    if m.watchable:
+        watch_status = (
+            "[green]✓ run_watchable present[/green]"
+            if loaded.watchable_entrypoint is not None
+            else "[red]✗ run_watchable missing[/red]"
+        )
+        table.add_row("run_watchable", watch_status)
+    console.print(table)
+    console.print(f"[green]✓ {skill_id} passes all checks[/green]")
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()

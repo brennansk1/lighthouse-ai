@@ -215,6 +215,7 @@ def build_run_sidecar(
     started_at: datetime | str | None = None,
     ended_at: datetime | str | None = None,
     models: list[str] | None = None,
+    sampling: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a PROV-O JSON document for a single research run.
 
@@ -229,6 +230,13 @@ def build_run_sidecar(
     - ``prov:Agent`` entries — one per model/backend (``wasAttributedTo``).
     - ``prov:Entity`` entries — the draft artefact + source slots.
     - Top-level ``content_hash`` (SHA-256 of the body) for drift detection.
+
+    ``sampling`` (optional) records the effective generation-steerability
+    params — e.g. ``{"locked": true, "roles": {"planner": {"seed": 0,
+    "temperature": 0.0, ...}}}`` from ``Gateway.sampling_provenance()`` — so a
+    run is reproducible-on-paper: a researcher can re-pin the exact seed /
+    temperature / top_p that produced this artefact. Omitting it (the default)
+    leaves the sidecar shape unchanged.
 
     The document is a standard Python dict, ready for ``json.dumps``.
     """
@@ -283,7 +291,12 @@ def build_run_sidecar(
         {"@id": u, "@type": "prov:Entity"} for u in source_urns
     ]
 
-    return {
+    if sampling is not None:
+        # Record the steerability config on the activity (the thing the params
+        # governed) and at top level for easy lookup by reproducibility tooling.
+        activity["lighthouse:sampling"] = sampling
+
+    sidecar: dict[str, Any] = {
         "@context": PROV_CONTEXT,
         "lighthouse:draftId": draft_id,
         "lighthouse:jobId": job_id,
@@ -294,6 +307,9 @@ def build_run_sidecar(
         "draftEntity": draft_entity,
         "sourceEntities": source_entities,
     }
+    if sampling is not None:
+        sidecar["lighthouse:sampling"] = sampling
+    return sidecar
 
 
 def write_run_sidecar(
