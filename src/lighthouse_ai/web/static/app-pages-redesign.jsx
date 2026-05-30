@@ -1148,6 +1148,278 @@ function Contradictions({ items }) {
   );
 }
 
+// EvidenceConnections — "How the evidence connects" panel.
+//
+// Fetches /api/graph/draft/{id} on first expand and renders a plain-language
+// view of the key people, places, and concepts the report connects.
+//
+// Design choices:
+//   • Collapsed by default — non-intrusive, progressive disclosure.
+//   • Zero jargon: no "entity", "co-occurrence", "subgraph" visible to the user.
+//   • Chip list is the primary interaction; clicking a chip reveals neighbors.
+//   • A compact SVG node-edge map is shown alongside when the graph has edges.
+//   • Empty state: plain sentence, no error shown.
+
+function _buildSvgLayout(nodes, edges) {
+  // Simple deterministic circular layout for up to 40 nodes.
+  // Returns { positions: {id: {x,y}}, r: radius }.
+  const n = nodes.length;
+  if (n === 0) return { positions: {}, r: 0 };
+  const R = Math.min(160, Math.max(80, n * 12));
+  const cx = 200, cy = 160;
+  const positions = {};
+  nodes.forEach((node, i) => {
+    const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+    positions[node.id] = { x: cx + R * Math.cos(angle), y: cy + R * Math.sin(angle) };
+  });
+  return { positions, cx, cy, R };
+}
+
+function EvidenceConnections({ artifactId }) {
+  const [open, setOpen] = useState(false);
+  const [graphData, setGraphData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [fetched, setFetched] = useState(false);
+  const [activeChip, setActiveChip] = useState(null);
+
+  function handleToggle() {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    if (nextOpen && !fetched) {
+      setLoading(true);
+      apiGet('/api/graph/draft/' + artifactId)
+        .then((d) => { setGraphData(d); setFetched(true); setLoading(false); })
+        .catch(() => { setGraphData(null); setFetched(true); setLoading(false); });
+    }
+  }
+
+  const hasData = graphData && graphData.entities && graphData.entities.length > 0;
+  const entities = hasData ? graphData.entities : [];
+  const graphNodes = (graphData && graphData.graph && graphData.graph.nodes) || [];
+  const graphEdges = (graphData && graphData.graph && graphData.graph.edges) || [];
+
+  // Find neighbors of the active chip from graph edges.
+  function neighborsOf(label) {
+    if (!graphData || !graphData.graph) return [];
+    const nodeById = {};
+    graphNodes.forEach((n) => { nodeById[n.id] = n.label; });
+    // Find the id for this label.
+    const matchNode = graphNodes.find(
+      (n) => n.label.toLowerCase() === label.toLowerCase()
+    );
+    if (!matchNode) return [];
+    const nbrIds = new Set();
+    graphEdges.forEach((e) => {
+      if (e.source === matchNode.id) nbrIds.add(e.target);
+      if (e.target === matchNode.id) nbrIds.add(e.source);
+    });
+    return Array.from(nbrIds)
+      .map((id) => nodeById[id])
+      .filter(Boolean)
+      .sort();
+  }
+
+  const neighbors = activeChip ? neighborsOf(activeChip) : [];
+
+  // SVG map — only when there are edges and enough nodes.
+  const showSvg = graphEdges.length > 0 && graphNodes.length >= 2;
+  const { positions } = showSvg ? _buildSvgLayout(graphNodes, graphEdges) : { positions: {} };
+
+  // Highlight the active chip's node in the SVG.
+  const activeNodeId = activeChip
+    ? (graphNodes.find((n) => n.label.toLowerCase() === activeChip.toLowerCase()) || {}).id
+    : null;
+  const connectedIds = activeNodeId
+    ? new Set(
+        graphEdges
+          .filter((e) => e.source === activeNodeId || e.target === activeNodeId)
+          .flatMap((e) => [e.source, e.target])
+      )
+    : new Set();
+
+  return (
+    <div style={{ marginTop: 22, borderTop: '2px solid var(--rule)', paddingTop: 14 }}>
+      <button
+        onClick={handleToggle}
+        style={{
+          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+        }}
+        aria-expanded={open}
+      >
+        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+          letterSpacing: '0.06em', color: 'var(--muted)' }}>
+          How the evidence connects
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+          — the people, places, and concepts this report links together
+        </span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)',
+          transform: open ? 'rotate(180deg)' : 'none', display: 'inline-block',
+          transition: 'transform 0.15s' }}>
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 12 }}>
+          {loading && (
+            <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>
+              Building connection map…
+            </div>
+          )}
+          {fetched && !loading && !hasData && (
+            <div style={{ fontSize: 13, color: 'var(--muted)', padding: '4px 0' }}>
+              Not enough text to map relationships yet.
+            </div>
+          )}
+          {hasData && (
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+                Click any term to see what else it connects to in this report.
+              </div>
+              {/* Chip list */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                {entities.map((e) => {
+                  const isActive = activeChip === e.label;
+                  return (
+                    <button
+                      key={e.label}
+                      onClick={() => setActiveChip(isActive ? null : e.label)}
+                      style={{
+                        border: isActive
+                          ? '1.5px solid var(--primary)'
+                          : '1px solid var(--rule)',
+                        borderRadius: 20,
+                        padding: '3px 11px',
+                        fontSize: 12,
+                        cursor: 'pointer',
+                        background: isActive ? 'var(--rule-soft)' : 'var(--card)',
+                        color: isActive ? 'var(--primary)' : 'var(--ink)',
+                        fontWeight: isActive ? 600 : 400,
+                      }}
+                    >
+                      {e.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Neighbor panel */}
+              {activeChip && (
+                <div style={{ marginBottom: 14, padding: '10px 14px',
+                  background: 'var(--rule-soft)', borderRadius: 6,
+                  fontSize: 13, color: 'var(--ink)' }}>
+                  <span style={{ fontWeight: 600 }}>{activeChip}</span>
+                  {neighbors.length > 0 ? (
+                    <span>
+                      {' '}connects in this report to:{' '}
+                      {neighbors.map((n, i) => (
+                        <React.Fragment key={n}>
+                          <button
+                            onClick={() => setActiveChip(n)}
+                            style={{
+                              background: 'none', border: 'none', padding: 0,
+                              cursor: 'pointer', color: 'var(--primary)',
+                              fontWeight: 500, fontSize: 13, textDecoration: 'underline',
+                              textDecorationStyle: 'dotted',
+                            }}
+                          >
+                            {n}
+                          </button>
+                          {i < neighbors.length - 1 ? ', ' : ''}
+                        </React.Fragment>
+                      ))}
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--muted)' }}>
+                      {' '}appears in this report but has no strong connection to other terms here.
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Compact SVG node-edge map */}
+              {showSvg && (
+                <div style={{ marginTop: 4, overflowX: 'auto' }}>
+                  <svg
+                    viewBox="0 0 400 320"
+                    style={{ width: '100%', maxWidth: 400, height: 'auto',
+                      display: 'block', margin: '0 auto' }}
+                    aria-label="Connection map of key terms in this report"
+                    role="img"
+                  >
+                    {/* Edges */}
+                    {graphEdges.map((e, i) => {
+                      const s = positions[e.source];
+                      const t = positions[e.target];
+                      if (!s || !t) return null;
+                      const isHighlighted = activeNodeId &&
+                        (e.source === activeNodeId || e.target === activeNodeId);
+                      return (
+                        <line
+                          key={'e' + i}
+                          x1={s.x} y1={s.y} x2={t.x} y2={t.y}
+                          stroke={isHighlighted ? 'var(--primary, #2563eb)' : 'var(--rule, #ddd)'}
+                          strokeWidth={isHighlighted ? 2 : 1}
+                          opacity={isHighlighted ? 0.8 : 0.5}
+                        />
+                      );
+                    })}
+                    {/* Nodes */}
+                    {graphNodes.map((node) => {
+                      const pos = positions[node.id];
+                      if (!pos) return null;
+                      const isActive = node.id === activeNodeId;
+                      const isConnected = connectedIds.has(node.id);
+                      const r = isActive ? 7 : isConnected ? 5 : 4;
+                      return (
+                        <g
+                          key={node.id}
+                          onClick={() => setActiveChip(
+                            activeChip === node.label ? null : node.label
+                          )}
+                          style={{ cursor: 'pointer' }}
+                          role="button"
+                          aria-label={node.label}
+                        >
+                          <circle
+                            cx={pos.x} cy={pos.y} r={r}
+                            fill={isActive ? 'var(--primary, #2563eb)'
+                              : isConnected ? 'var(--primary-light, #93c5fd)'
+                              : 'var(--muted, #999)'}
+                            opacity={0.85}
+                          />
+                          {(isActive || isConnected || graphNodes.length <= 15) && (
+                            <text
+                              x={pos.x} y={pos.y - r - 3}
+                              fontSize={9} fill="var(--ink-2, #555)"
+                              textAnchor="middle"
+                              style={{ userSelect: 'none', pointerEvents: 'none' }}
+                            >
+                              {node.label.length > 18
+                                ? node.label.slice(0, 17) + '…'
+                                : node.label}
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })}
+                  </svg>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center',
+                    marginTop: 2 }}>
+                    Lines show terms that appear together in the same section of this report.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ArtifactBody({ artifact }) {
   const t = artifact.artifact_type;
   const body = artifact.body;
@@ -1177,6 +1449,7 @@ function ArtifactBody({ artifact }) {
       <MatrixView body={body} />
       <Contradictions items={contradictions} />
       <KnownUnknowns openQuestions={openQuestions} />
+      {artifact.id && <EvidenceConnections artifactId={artifact.id} />}
     </React.Fragment>
   );
   if (t === 'table') return (
@@ -1184,6 +1457,7 @@ function ArtifactBody({ artifact }) {
       <TableView body={body} />
       <Contradictions items={contradictions} />
       <KnownUnknowns openQuestions={openQuestions} />
+      {artifact.id && <EvidenceConnections artifactId={artifact.id} />}
     </React.Fragment>
   );
   if (t === 'timeline') return (
@@ -1191,6 +1465,7 @@ function ArtifactBody({ artifact }) {
       <TimelineView body={body} />
       <Contradictions items={contradictions} />
       <KnownUnknowns openQuestions={openQuestions} />
+      {artifact.id && <EvidenceConnections artifactId={artifact.id} />}
     </React.Fragment>
   );
   // report / verdict / transcript / digest → prose HTML + contradictions + known unknowns.
@@ -1199,6 +1474,7 @@ function ArtifactBody({ artifact }) {
       <div dangerouslySetInnerHTML={{ __html: artifact.body_html || '<em>No content.</em>' }} />
       <Contradictions items={contradictions} />
       <KnownUnknowns openQuestions={openQuestions} />
+      {artifact.id && <EvidenceConnections artifactId={artifact.id} />}
     </React.Fragment>
   );
 }

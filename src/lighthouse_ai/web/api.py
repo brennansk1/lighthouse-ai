@@ -1484,6 +1484,185 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         return {"bucket": bucket,
                 "buckets": timeline(paths.positions_db, bucket=bucket)}
 
+    # ============================ GRAPH ============================
+
+    @app.get("/api/graph/draft/{draft_id}", tags=["library"])
+    def get_draft_graph(draft_id: str) -> dict[str, Any]:
+        """Return the entity-connection graph for a research artifact.
+
+        Harvests readable text from the draft's ``body_json`` (walking all
+        known mode shapes: investigate sections, survey rows, reconstruct
+        events, decide matrix cells, adjudicate verdict, ask transcript turns),
+        plus a stripped ``body_html`` fallback.  Each logical section/turn/row
+        becomes one chunk so co-occurrence is meaningful.
+
+        Response shape::
+
+            {
+              "entities": [{"label": str, "weight": int}, ...],  # top 25
+              "graph": {
+                "nodes": [{"id": str, "label": str, "weight": int}, ...],
+                "edges": [{"source": str, "target": str, "weight": int}, ...],
+              }
+            }
+
+        Empty/short artifacts return ``{"entities": [], "graph": {"nodes": [],
+        "edges": []}}`` (200).  Draft not found → 404.
+        """
+        import re as _re
+
+        from ..rag.graph import build_corpus_graph
+
+        conn = open_db(paths.state_db)
+        try:
+            rows = _rows(conn, "SELECT * FROM drafts WHERE id=?", (draft_id,))
+        finally:
+            conn.close()
+        if not rows:
+            raise HTTPException(404, f"draft {draft_id} not found")
+        row = rows[0]
+
+        # ---- harvest text chunks from body_json -------------------------
+        body_json: dict[str, Any] = {}
+        if row.get("body_json"):
+            try:
+                body_json = json.loads(row["body_json"])
+            except (TypeError, ValueError):
+                body_json = {}
+
+        _MAX_CHUNKS = 200      # cap total chunks harvested
+        _MIN_CHUNK_LEN = 30   # skip trivially short chunks
+
+        chunks: list[dict[str, str]] = []
+
+        def _add(chunk_id: str, text: str) -> None:
+            if len(chunks) >= _MAX_CHUNKS:
+                return
+            t = (text or "").strip()
+            if len(t) >= _MIN_CHUNK_LEN:
+                chunks.append({"id": chunk_id, "text": t})
+
+        # investigate/report: sections[{title, sub_question, body, citations}]
+        sections = body_json.get("sections") if isinstance(body_json, dict) else None
+        if isinstance(sections, list):
+            for i, s in enumerate(sections):
+                if not isinstance(s, dict):
+                    continue
+                combined = " ".join(
+                    filter(None, [s.get("title", ""), s.get("sub_question", ""),
+                                  s.get("body", "")])
+                )
+                _add(f"section:{i}", combined)
+
+        # survey/table: rows[{doc_id, title, cells[{attribute, value}]}]
+        table_rows = body_json.get("rows") if isinstance(body_json, dict) else None
+        if isinstance(table_rows, list):
+            for i, r in enumerate(table_rows):
+                if not isinstance(r, dict):
+                    continue
+                cells_text = " ".join(
+                    str(c.get("value", ""))
+                    for c in (r.get("cells") or [])
+                    if isinstance(c, dict)
+                )
+                combined = " ".join(
+                    filter(None, [r.get("title", ""), r.get("doc_id", ""), cells_text])
+                )
+                _add(f"row:{i}", combined)
+
+        # reconstruct/timeline: events[{date, action, sources, certainty}]
+        events = body_json.get("events") if isinstance(body_json, dict) else None
+        if isinstance(events, list):
+            for i, e in enumerate(events):
+                if not isinstance(e, dict):
+                    continue
+                combined = " ".join(
+                    filter(None, [e.get("date", ""), e.get("action", ""),
+                                  e.get("description", ""),
+                                  e.get("significance", "")])
+                )
+                _add(f"event:{i}", combined)
+
+        # decide/matrix: cells[{option, criterion, rationale}] + summary/finding
+        matrix_cells = body_json.get("cells") if isinstance(body_json, dict) else None
+        if isinstance(matrix_cells, list):
+            # Group by option for better co-occurrence.
+            by_option: dict[str, list[str]] = {}
+            for c in matrix_cells:
+                if not isinstance(c, dict):
+                    continue
+                opt = c.get("option", "option")
+                by_option.setdefault(opt, [])
+                for f in ("rationale", "notes", "criterion"):
+                    v = c.get(f, "")
+                    if v:
+                        by_option[opt].append(str(v))
+            for opt, parts in by_option.items():
+                _add(f"option:{opt}", " ".join(parts))
+
+        # adjudicate/verdict: finding, steelman, critique, verdict, perspectives
+        verdict_fields = ("finding", "steelman", "critique", "summary",
+                          "verdict", "recommendation")
+        if isinstance(body_json, dict):
+            for vf in verdict_fields:
+                v = body_json.get(vf)
+                if isinstance(v, str) and v.strip():
+                    _add(f"verdict:{vf}", v)
+                elif isinstance(v, list):
+                    for j, item in enumerate(v):
+                        t2 = item.get("body", "") if isinstance(item, dict) else str(item)
+                        _add(f"verdict:{vf}:{j}", t2)
+
+        # ask/transcript: turns[{role, text, citations}]
+        turns = body_json.get("turns") if isinstance(body_json, dict) else None
+        if isinstance(turns, list):
+            for i, t in enumerate(turns):
+                if not isinstance(t, dict):
+                    continue
+                _add(f"turn:{i}", t.get("text", ""))
+
+        # perspectives (adjudicate deep mode): perspectives[{label, argument}]
+        perspectives = body_json.get("perspectives") if isinstance(body_json, dict) else None
+        if isinstance(perspectives, list):
+            for i, p in enumerate(perspectives):
+                if not isinstance(p, dict):
+                    continue
+                combined = " ".join(
+                    filter(None, [p.get("label", ""), p.get("argument", ""),
+                                  p.get("body", "")])
+                )
+                _add(f"perspective:{i}", combined)
+
+        # ---- body_html fallback -----------------------------------------
+        if not chunks:
+            html = row.get("body_html") or ""
+            plain = _re.sub(r"<[^>]+>", " ", html)
+            plain = _re.sub(r"\s+", " ", plain).strip()
+            # Split into ~300-char chunks so co-occurrence is local.
+            words = plain.split()
+            chunk_size = 60  # words per pseudo-section
+            for i in range(0, min(len(words), _MAX_CHUNKS * chunk_size), chunk_size):
+                _add(f"html:{i}", " ".join(words[i:i + chunk_size]))
+
+        # ---- build graph ------------------------------------------------
+        _EMPTY: dict[str, Any] = {"entities": [], "graph": {"nodes": [], "edges": []}}
+        if not chunks:
+            return _EMPTY
+
+        g = build_corpus_graph(chunks)
+        if g.node_count == 0:
+            return _EMPTY
+
+        top_entities = g.entities()[:25]
+        top_labels = [lbl for lbl, _ in top_entities]
+        # Use the top entities (or all if fewer than 25) as seeds for subgraph.
+        graph_data = g.subgraph(top_labels, hops=1, max_nodes=40)
+
+        return {
+            "entities": [{"label": lbl, "weight": w} for lbl, w in top_entities],
+            "graph": graph_data,
+        }
+
 
 # ---- health payload -------------------------------------------------------
 
