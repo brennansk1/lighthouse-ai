@@ -260,11 +260,17 @@ def test_attempt_auto_resolve_success():
     gw.complete.return_value = MagicMock(
         text="TRUE: 0.85 — Drug X received FDA approval in Q2 2024."
     )
-    result = attempt_auto_resolve(1, "Will drug X be approved by 2024?", 0.8, gateway=gw)
+    # Evidence-grounded contract: a criterion + a retriever supplying evidence are
+    # required; the resolver decides only from that evidence, never from memory.
+    retriever = lambda c, cr, a: ("FDA approval notice for drug X, Q2 2024.", "u1")  # noqa: E731
+    result = attempt_auto_resolve(1, "Will drug X be approved by 2024?", 0.8,
+                                  criterion="An FDA approval notice exists",
+                                  retriever=retriever, gateway=gw)
     assert result.auto_resolved is True
     assert result.outcome is True
     assert abs(result.confidence - 0.85) < 0.01
     assert result.brier is not None
+    assert result.resolved_via == "retrieval"
 
 def test_parse_resolution_true():
     from lighthouse_ai.verification.resolver import _parse_resolution

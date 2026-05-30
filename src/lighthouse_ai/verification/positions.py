@@ -53,6 +53,24 @@ def _ensure_extras(positions_db: Path) -> None:
             statements.append("ALTER TABLE positions ADD COLUMN resolve_by TEXT")
         if "resolution_criterion" not in cols:
             statements.append("ALTER TABLE positions ADD COLUMN resolution_criterion TEXT")
+        # Resolution provenance (memo change 1): record HOW a position was decided
+        # so a verdict is never an unexplained, self-graded guess.
+        if "resolver_kind" not in cols:
+            statements.append("ALTER TABLE positions ADD COLUMN resolver_kind TEXT")
+        if "evidence_snapshot" not in cols:
+            statements.append("ALTER TABLE positions ADD COLUMN evidence_snapshot TEXT")
+        if "resolution_source" not in cols:
+            statements.append("ALTER TABLE positions ADD COLUMN resolution_source TEXT")
+        if "resolver_confidence" not in cols:
+            statements.append("ALTER TABLE positions ADD COLUMN resolver_confidence REAL")
+        if "resolved_via" not in cols:
+            statements.append("ALTER TABLE positions ADD COLUMN resolved_via TEXT")
+        # Human-deferral queue: positions we refuse to auto-resolve (no criterion,
+        # human-only, no grounded evidence, or low resolver confidence) land here
+        # for a person to decide rather than being silently left open or guessed.
+        statements.append(
+            "CREATE TABLE IF NOT EXISTS human_resolution_queue ("
+            "position_id INTEGER PRIMARY KEY, enqueued_at TEXT, reason TEXT)")
         for s in statements:
             try:
                 conn.execute(s)
@@ -123,6 +141,39 @@ def resolve_position(positions_db: Path, position_id: int, outcome: bool) -> Pos
         conn.close()
     return Position(id=row[0], claim=row[1], wep_band=row[2], confidence=row[3],
                     outcome=outcome, brier=bs)
+
+
+def enqueue_human_resolution(positions_db: Path, position_id: int,
+                             reason: str) -> None:
+    """Mark a position for human decision (idempotent). Best-effort — never
+    raises into the resolver loop."""
+    _ensure_extras(positions_db)
+    conn = open_db(positions_db)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO human_resolution_queue "
+            "(position_id, enqueued_at, reason) VALUES (?, datetime('now'), ?)",
+            (position_id, reason))
+    except Exception:  # pragma: no cover - defensive
+        pass
+    finally:
+        conn.close()
+
+
+def list_human_queue(positions_db: Path) -> list[dict]:
+    """Open positions awaiting a human decision, with their claim + reason."""
+    _ensure_extras(positions_db)
+    conn = open_db(positions_db)
+    try:
+        rows = conn.execute(
+            "SELECT q.position_id, q.reason, q.enqueued_at, p.claim, p.confidence, "
+            "p.wep_band, p.resolve_by FROM human_resolution_queue q "
+            "JOIN positions p ON p.id = q.position_id "
+            "WHERE p.outcome IS NULL ORDER BY q.enqueued_at").fetchall()
+    finally:
+        conn.close()
+    return [{"position_id": r[0], "reason": r[1], "enqueued_at": r[2], "claim": r[3],
+             "confidence": r[4], "wep_band": r[5], "resolve_by": r[6]} for r in rows]
 
 
 def timeline(positions_db: Path, *, bucket: str = "week") -> list[dict]:

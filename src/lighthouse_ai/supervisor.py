@@ -461,12 +461,15 @@ def _start_resolver_loop(paths: Paths, *, interval_s: float = 3600.0) -> threadi
     confidence was warranted. Gated two ways: it is a no-op unless live resolution
     is opted into (``LIGHTHOUSE_REAL_BACKEND=1``), and even then it skips ticks
     while the SchedulerGate reports PAUSED (offline / user-disabled). Offline runs
-    never touch the network. Resolution itself is delegated to
-    :func:`resolve_positions`, which is deterministic under an injected research_fn.
+    never touch the network. Resolution is delegated to
+    :func:`run_resolver_pass` — the evidence-grounded path: a position is resolved
+    only from retrieved evidence, else deferred to the human-resolution queue. With
+    no evidence retriever wired yet, due positions defer (never self-graded from the
+    model's own memory).
     """
     from .dispatcher import build_runtime_gateway
     from .governor.scheduler_gate import Policy
-    from .verification.resolver import resolve_positions
+    from .verification.resolver import run_resolver_pass
 
     live = os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1"
     gate_cfg = SchedulerGateConfig.from_config_file(paths.config_file)
@@ -484,7 +487,7 @@ def _start_resolver_loop(paths: Paths, *, interval_s: float = 3600.0) -> threadi
                 policy, _ = gate.policy()
                 if is_paused(paths) or policy is Policy.PAUSED:
                     continue
-                results = resolve_positions(paths.positions_db, gateway=gateway)
+                results = run_resolver_pass(paths.positions_db, gateway=gateway)
                 resolved = sum(1 for r in results if r.auto_resolved)
                 if results:
                     log.info("resolver.pass", attempted=len(results), resolved=resolved)

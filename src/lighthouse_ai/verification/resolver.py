@@ -20,9 +20,17 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..subconscious.overlap import GenerationGuard
 
-# A research function re-researches a claim against its (optional) machine-checkable
-# criterion and returns ``(outcome, confidence, rationale)``. ``outcome=None`` means
-# the evidence was ambiguous and the position must be deferred to a human.
+# An evidence retriever re-researches a claim+criterion as of a cutoff date and
+# returns ``(evidence_text, source_id)`` — or None when no grounded evidence is
+# available (offline, or nothing found). The resolver resolves ONLY from this
+# evidence; with no evidence it defers to a human rather than guess from the
+# model's own memory (the self-grading circularity the improvement memo flags).
+EvidenceRetriever = Callable[[str, "str | None", str], "tuple[str, str] | None"]
+
+# Legacy injected-research seam used by ``resolve_positions`` + its tests: takes
+# ``(claim, criterion)`` and returns ``(outcome, confidence, rationale)``. Kept so
+# deterministic tests can inject a fake; the LIVE path is ``run_resolver_pass``
+# (evidence-grounded-or-defer), which the supervisor now uses.
 ResearchFn = Callable[[str, "str | None"], "tuple[bool | None, float, str]"]
 
 
@@ -31,10 +39,15 @@ class ResolutionResult:
     position_id: int
     claim: str
     outcome: bool | None           # None = deferred to human
-    confidence: float              # 0.0-1.0
+    confidence: float              # resolver's confidence in the verdict, 0.0-1.0
     rationale: str
     auto_resolved: bool
     brier: float | None = None
+    resolver_kind: str = "deferred"     # machine_retrieval | human | deferred
+    evidence_snapshot: str | None = None
+    resolution_source: str | None = None
+    resolved_via: str | None = None     # 'retrieval' | None
+    defer_reason: str | None = None
 
 
 def is_past_deadline(resolve_by: str | None, *, now: datetime | None = None) -> bool:
@@ -85,55 +98,69 @@ def attempt_auto_resolve(
     claim: str,
     probability: float,
     *,
+    criterion: str | None = None,
+    retriever: EvidenceRetriever | None = None,
     gateway=None,
     confidence_threshold: float = 0.7,
+    resolve_by: str | None = None,
 ) -> ResolutionResult:
-    """Attempt to auto-resolve a position using the gateway.
+    """Resolve a position **from retrieved evidence**, or defer it to a human.
 
-    Returns a ResolutionResult with auto_resolved=False when:
-    - gateway is None (offline mode)
-    - claim is classified as human-only
-    - LLM response cannot be parsed as a confident Yes/No
+    The improvement memo's #1 fix: the resolver must NEVER grade a claim from the
+    model's own parametric memory (self-preference bias inflates apparent
+    calibration). Instead it retrieves fresh evidence (under a causal cutoff =
+    ``resolve_by``) and decides only from that evidence; when there is no
+    machine-checkable criterion, the claim is subjective/long-horizon, no evidence
+    can be gathered (offline / nothing found), or the verdict is uncertain/low
+    confidence, it **defers** (``outcome=None``) so a person decides.
     """
-    kind = classify_resolution_kind(claim)
-    if kind == "human" or gateway is None:
+    def defer(reason: str, kind: str = "deferred") -> ResolutionResult:
         return ResolutionResult(
-            position_id=position_id, claim=claim, outcome=None,
-            confidence=0.0, rationale="human-only or no gateway",
-            auto_resolved=False,
-        )
+            position_id=position_id, claim=claim, outcome=None, confidence=0.0,
+            rationale=reason, auto_resolved=False, resolver_kind=kind,
+            defer_reason=reason)
+
+    if not criterion:
+        return defer("no machine-checkable criterion — needs a human", kind="human")
+    if classify_resolution_kind(claim) == "human":
+        return defer("subjective or long-horizon claim — needs a human", kind="human")
+    # Never resolve from parametric memory: with no way to fetch evidence, defer.
+    if gateway is None or retriever is None:
+        return defer("no evidence source available (offline)")
+    try:
+        evidence = retriever(claim, criterion, resolve_by or "")
+    except Exception as exc:  # pragma: no cover - defensive
+        return defer(f"evidence retrieval failed: {exc!r}")
+    if not evidence or not (evidence[0] or "").strip():
+        return defer("no grounded evidence found by the deadline")
+    evidence_text, source_id = evidence
     prompt = (
-        f"Claim to resolve: {claim}\n\n"
-        "Based on current knowledge, has this claim turned out to be TRUE or FALSE?\n"
+        "You are resolving a past prediction using ONLY the evidence provided "
+        "below. Do not use any prior knowledge of your own.\n\n"
+        f"Claim: {claim}\n"
+        f"Resolution criterion (what makes it TRUE or FALSE): {criterion}\n\n"
+        f"Evidence (as of {resolve_by or 'the deadline'}):\n{evidence_text[:4000]}\n\n"
+        "Per the criterion and ONLY this evidence, did the claim turn out TRUE or "
+        "FALSE? If the evidence does not clearly decide it, answer UNCERTAIN.\n"
         "Respond with ONLY one of:\n"
-        "TRUE: <confidence 0.0-1.0> — <one-sentence rationale>\n"
-        "FALSE: <confidence 0.0-1.0> — <one-sentence rationale>\n"
+        "TRUE: <confidence 0.0-1.0> — <one-sentence rationale citing the evidence>\n"
+        "FALSE: <confidence 0.0-1.0> — <one-sentence rationale citing the evidence>\n"
         "UNCERTAIN: — <one-sentence reason>\n"
     )
     try:
         resp = gateway.complete("aux_context", prompt)
-        text = resp.text.strip()
-        outcome, confidence, rationale = _parse_resolution(text)
-        if outcome is None or confidence < confidence_threshold:
-            return ResolutionResult(
-                position_id=position_id, claim=claim, outcome=None,
-                confidence=confidence or 0.0,
-                rationale=rationale or "confidence below threshold",
-                auto_resolved=False,
-            )
-        from .brier import brier_score
-        brier = brier_score(probability, outcome)
-        return ResolutionResult(
-            position_id=position_id, claim=claim, outcome=outcome,
-            confidence=confidence, rationale=rationale,
-            auto_resolved=True, brier=brier,
-        )
-    except Exception as exc:
-        return ResolutionResult(
-            position_id=position_id, claim=claim, outcome=None,
-            confidence=0.0, rationale=f"error: {exc!r}",
-            auto_resolved=False,
-        )
+        outcome, confidence, rationale = _parse_resolution(resp.text.strip())
+    except Exception as exc:  # pragma: no cover - defensive
+        return defer(f"resolver error: {exc!r}")
+    if outcome is None or confidence < confidence_threshold:
+        return defer(rationale or "evidence inconclusive / low resolver confidence")
+    from .brier import brier_score
+    brier = brier_score(probability, outcome)
+    return ResolutionResult(
+        position_id=position_id, claim=claim, outcome=outcome,
+        confidence=confidence, rationale=rationale, auto_resolved=True, brier=brier,
+        resolver_kind="machine_retrieval", evidence_snapshot=evidence_text[:2000],
+        resolution_source=source_id, resolved_via="retrieval")
 
 
 def _parse_resolution(text: str) -> tuple[bool | None, float, str]:
@@ -156,20 +183,23 @@ def run_resolver_pass(
     positions_db: Path,
     *,
     gateway=None,
+    retriever: EvidenceRetriever | None = None,
     confidence_threshold: float = 0.7,
     dry_run: bool = False,
     guard: GenerationGuard | None = None,
 ) -> list[ResolutionResult]:
-    """Run auto-resolution on all past-deadline positions.
+    """Run evidence-grounded resolution on all past-deadline positions.
 
-    When dry_run=True, returns results without writing to the database.
+    Each past-deadline position is resolved from retrieved evidence or **deferred
+    to the human-resolution queue** (no criterion / human / no evidence /
+    uncertain). When dry_run=True, returns results without writing.
 
     When a :class:`GenerationGuard` is supplied, this pass claims a generation
     and refuses to commit once a newer pass has started — so a slow resolver run
     colliding with the next scheduled one never double-writes outcomes (§4).
     """
     from ..persistence import open_db
-    from .positions import _ensure_extras
+    from .positions import _ensure_extras, enqueue_human_resolution
 
     my_gen = guard.begin() if guard is not None else None
 
@@ -177,36 +207,46 @@ def run_resolver_pass(
     conn = open_db(positions_db)
     try:
         rows = conn.execute(
-            "SELECT id, claim, confidence, resolve_by, outcome "
+            "SELECT id, claim, confidence, resolve_by, outcome, resolution_criterion "
             "FROM positions WHERE outcome IS NULL"
         ).fetchall()
     finally:
         conn.close()
 
     results: list[ResolutionResult] = []
-    for pos_id, claim, prob, resolve_by, outcome in rows:
+    for pos_id, claim, prob, resolve_by, outcome, criterion in rows:
         if outcome is not None:
             continue  # already resolved
         if not is_past_deadline(resolve_by):
             continue
         result = attempt_auto_resolve(
-            pos_id, claim, float(prob or 0.75),
-            gateway=gateway, confidence_threshold=confidence_threshold,
+            pos_id, claim, float(prob or 0.5),
+            criterion=criterion, retriever=retriever, gateway=gateway,
+            confidence_threshold=confidence_threshold, resolve_by=resolve_by,
         )
         results.append(result)
-        if result.auto_resolved and not dry_run:
-            # A newer pass started while we were researching → discard our writes.
-            if guard is not None and my_gen is not None and not guard.is_current(my_gen):
-                break
+        if dry_run:
+            continue
+        # A newer pass started while we were researching → discard our writes.
+        if guard is not None and my_gen is not None and not guard.is_current(my_gen):
+            break
+        if result.auto_resolved:
             conn = open_db(positions_db)
             try:
                 conn.execute(
-                    "UPDATE positions SET outcome=?, brier=?, "
-                    "resolved_at=datetime('now') WHERE id=?",
-                    (1 if result.outcome else 0, result.brier, pos_id),
+                    "UPDATE positions SET outcome=?, brier=?, resolver_kind=?, "
+                    "evidence_snapshot=?, resolution_source=?, resolver_confidence=?, "
+                    "resolved_via=?, resolved_at=datetime('now') WHERE id=?",
+                    (1 if result.outcome else 0, result.brier, result.resolver_kind,
+                     result.evidence_snapshot, result.resolution_source,
+                     result.confidence, result.resolved_via, pos_id),
                 )
             finally:
                 conn.close()
+        else:
+            # Deferred — route to the human queue rather than leave it silent.
+            enqueue_human_resolution(positions_db, pos_id,
+                                     result.defer_reason or "deferred")
     return results
 
 
