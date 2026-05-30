@@ -219,15 +219,35 @@ def test_real_ollama_lists_models():
     assert isinstance(models, list)
 
 
+def _is_embedding_model(name: str) -> bool:
+    """Embedding-only models can't serve /api/chat (they 400 with "does not
+    support chat"). Exclude them from the chat smoke. Covers bge-*, nomic-embed,
+    mxbai-embed, *-embed*, all-minilm, arctic-embed, etc."""
+    low = name.lower()
+    return (
+        low.startswith("bge")
+        or "embed" in low
+        or "all-minilm" in low
+        or "arctic-embed" in low
+    )
+
+
 @pytest.mark.integration
 @pytest.mark.skipif(not _REAL_BACKEND_OK, reason=_REAL_BACKEND_SKIP_REASON)
 def test_real_ollama_chat_returns_tokens():
     with OllamaBackend() as b:
         models = [m.name for m in b.list_models()]
-        if not models:
-            pytest.skip("no models pulled — run `ollama pull qwen3:8b` first")
-        # Pick the smallest model present for speed.
-        model = sorted(models, key=lambda n: n)[0]
+        # A chat smoke must use a chat-capable model — an embedding model like
+        # bge-m3 (often alphabetically first) 400s with "does not support chat".
+        chat_models = [m for m in models if not _is_embedding_model(m)]
+        if not chat_models:
+            pytest.skip(
+                "no chat-capable models pulled — run `ollama pull qwen3:8b` first"
+            )
+        # Prefer a small model for speed, else any chat model.
+        small = [m for m in chat_models
+                 if any(s in m.lower() for s in ("8b", "7b", "mini", "small", "3b"))]
+        model = sorted(small or chat_models)[0]
         resp = b.chat(model, "Reply with the single word: ok.",
                       sampling={"temperature": 0.0, "max_tokens": 8})
     assert resp.text

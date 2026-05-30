@@ -70,8 +70,16 @@ Running the gated real-backend suite (`LIGHTHOUSE_REAL_BACKEND=1`, macOS arm64, 
   bug): key-required skills fire the request with an empty key and let the server reject it rather than a
   pre-flight "key required" short-circuit — already graceful, just slightly wasteful.
 
+- **FINDING #4 — gated chat-smoke picked an embedding model.** `test_real_ollama_chat_returns_tokens`
+  selected the alphabetically-first installed model, which on this box is `bge-m3` (embedding-only) →
+  Ollama 400 `"does not support chat"`. *Fix:* filter embedding models (bge-*/`*embed*`/all-minilm/
+  arctic-embed) and prefer a small chat model. Bonus: the **Qdrant real-backend suite passed** (HNSW +
+  scalar quantization + payload indexes + upsert/search/delete round-trips) — persistent vector store
+  works on this machine, not just in-memory.
+
 All fixes are offline-deterministic with regression tests; full suite **2867 pass / 103 skip**, mypy 0,
-ruff clean. Live validation: Phase 1 (core quality) ✓, per-mode E2E 7/7 ✓, Phase 2 source APIs 37/37 ✓.
+ruff clean. Live validation: Phase 1 (core quality) ✓, per-mode E2E 7/7 ✓, Phase 2 source APIs 37/37 ✓,
+Ollama backend + RAG-real + Qdrant-real gated suites ✓.
 Remaining live phases (heavier setup): faithfulness gate (needs the `faithfulness` extra — torch/
 sentence-transformers), Playwright browser QA (Phase 3), 24 h soak + packaging (Phase 4).
 
