@@ -235,19 +235,71 @@ def is_pageable_moe(model: str) -> bool:
 #: Headroom to leave free after loading, so the OS + our own process breathe.
 RUNTIME_RAM_MARGIN_GB = 1.5
 
+# --- KV-cache / activation headroom (OOM-safety) ------------------------
+#
+# A model's *resident* RAM is not just its weights. At inference the runtime
+# also holds a KV cache + activation buffers that GROW with the served context
+# length, and that growth is roughly proportional to the model's hidden size —
+# i.e. bigger models pay a bigger per-token KV cost. The old estimate counted
+# only weights (it even subtracted a pad off the footprint), so admission could
+# clear a model whose weights "fit" while its KV cache at a long prompt pushed
+# the box into swap. We add an explicit, size-scaled headroom term so the guard
+# reserves what the model will actually occupy under load, not just at rest.
+#
+# The term is intentionally conservative (over-reserve is safe; under-reserve
+# risks OOM): a small fixed floor plus a fraction of the weight size, which
+# tracks the larger KV/activation buffers of larger models and longer contexts.
+#: Minimum KV/activation headroom even for tiny models (runtime buffers, ctx).
+KV_HEADROOM_FLOOR_GB = 1.0
+#: Extra KV/activation headroom as a fraction of weight size (grows with model
+#: hidden size and served context — bigger models pay more per token).
+KV_HEADROOM_FRACTION = 0.18
 
-def estimate_resident_gb(model: str) -> float:
-    """Resident RAM a model needs once loaded (weights, no KV headroom).
+
+def _kv_context_headroom_gb(weights_gb: float) -> float:
+    """Conservative KV-cache + activation headroom for a model of ``weights_gb``.
+
+    Returns a size-scaled term — a fixed floor plus a fraction of the weight
+    size — so the runtime guard reserves room for the KV cache and activation
+    buffers that grow with context length, not just the static weights. Erring
+    high here is OOM-safe; erring low is not.
+    """
+    if weights_gb <= 0:
+        return 0.0
+    return round(KV_HEADROOM_FLOOR_GB + KV_HEADROOM_FRACTION * weights_gb, 2)
+
+
+def estimate_weights_gb(model: str) -> float:
+    """Resident RAM the *weights alone* occupy once loaded (no KV headroom).
+
     Falls back to a param-count hint in the tag (…8b…, …14b…) for unknown tags.
+    The curated footprint table already bakes a little KV/overhead into its
+    numbers, so we back that out here to get a weights-only figure, then add the
+    explicit, context-scaled KV headroom in :func:`estimate_resident_gb`.
     """
     fp = model_footprint_gb(model)
     if fp > 0:
-        return max(fp - 2.0, fp * 0.7)  # weights ≈ footprint minus our overhead pad
+        return max(fp - 2.0, fp * 0.7)  # weights ≈ footprint minus baked-in pad
     import re
     m = re.search(r"(\d+)\s*b", model.lower())
     if m:
         return int(m.group(1)) * 0.6  # ~0.6 GB/B at Q4
     return 0.0
+
+
+def estimate_resident_gb(model: str) -> float:
+    """Live resident RAM a model needs under load: weights + KV/activation headroom.
+
+    This is the figure the admission guard reserves. It is deliberately a touch
+    higher than the static weights, because the KV cache and activation buffers
+    grow with the served context length and would otherwise push a "just fits"
+    model into swap. Returns 0.0 for an unknown tiny/aux model (caller treats as
+    negligible).
+    """
+    weights = estimate_weights_gb(model)
+    if weights <= 0:
+        return 0.0
+    return round(weights + _kv_context_headroom_gb(weights), 2)
 
 
 def enough_ram_for(model: str, *, available_gb: float | None = None,
@@ -532,15 +584,28 @@ def resolve_against_installed(profile: HardwareProfile, installed: list[str],
 
 
 def _tag_fits(tag: str, budget_gb: float) -> bool:
-    """Best-effort: estimate a tag's footprint from a param-count hint in its
-    name (…14b…, …24b…) and check against budget. Unknown ⇒ assume it fits."""
+    """Best-effort: does this installed tag fit the live RAM budget?
+
+    A fine-grained MoE tag (``…-a3b``, ``8x7b``) pages experts from SSD, so it
+    runs even when its full weights exceed the budget — it must be considered a
+    fit, otherwise the budget-aware resolver skips a perfectly usable larger MoE
+    and steps down to a small dense model, leaving capability on the table on
+    exactly the tight-RAM boxes paging exists for.
+
+    For dense tags we estimate live footprint from a param-count hint in the
+    name and include the same context-scaled KV/activation headroom the runtime
+    admission guard reserves, so "fits the resolver" and "fits admission" agree.
+    Unknown (no param hint) ⇒ assume it fits.
+    """
+    if is_pageable_moe(tag):
+        return True
     import re
     m = re.search(r"(\d+)\s*b", tag.lower())
     if not m:
         return True
     params_b = int(m.group(1))
-    # ~0.6 GB per B at Q4 + ~2.5 GB overhead
-    live = params_b * 0.6 + 2.5
+    weights = params_b * 0.6  # ~0.6 GB per B at Q4
+    live = weights + _kv_context_headroom_gb(weights)
     return live <= budget_gb
 
 

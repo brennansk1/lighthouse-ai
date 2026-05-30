@@ -221,6 +221,87 @@ def test_estimate_resident_param_hint():
     assert estimate_resident_gb("some-14b-model") > estimate_resident_gb("some-8b-model")
 
 
+# --- KV/context headroom: admission reserves more than static weights ---
+
+def test_resident_includes_kv_headroom_over_weights():
+    """OOM-safety: the resident estimate must exceed weights-only, because the
+    KV cache + activations grow with context and would otherwise swap a model
+    whose weights barely fit."""
+    from lighthouse_ai.gateway import estimate_resident_gb, estimate_weights_gb
+    for m in ("qwen3.5-9b", "qwen3.6-27b", "llama3.1:8b", "some-14b-model"):
+        assert estimate_resident_gb(m) > estimate_weights_gb(m) > 0
+
+
+def test_kv_headroom_scales_with_model_size():
+    """Bigger models pay more KV/activation headroom (per-token cost tracks
+    hidden size), so the headroom term must grow with weight size."""
+    from lighthouse_ai.gateway import _kv_context_headroom_gb
+    assert _kv_context_headroom_gb(20.0) > _kv_context_headroom_gb(5.0)
+    assert _kv_context_headroom_gb(0.0) == 0.0
+
+
+def test_27b_resident_exceeds_footprint_for_kv():
+    """A dense 27B's live resident need (with KV headroom) must be at least its
+    curated footprint — admission must not under-reserve relative to the table
+    that already counts some KV. Regression: the old weights-only estimate came
+    in *under* the footprint, under-reserving the KV cache."""
+    from lighthouse_ai.gateway import estimate_resident_gb, model_footprint_gb
+    assert estimate_resident_gb("qwen3.6-27b") >= model_footprint_gb("qwen3.6-27b")
+
+
+def test_enough_ram_tighter_with_kv_headroom():
+    """A model whose *weights* fit but whose weights+KV+margin do not is now
+    correctly blocked, where a weights-only check would have admitted it."""
+    from lighthouse_ai.gateway import (
+        enough_ram_for,
+        estimate_resident_gb,
+        estimate_weights_gb,
+    )
+    weights = estimate_weights_gb("qwen3.6-27b")
+    resident = estimate_resident_gb("qwen3.6-27b")
+    # Available sits between weights+margin and resident+margin: the KV headroom
+    # is exactly what flips this from "admit" to "block".
+    avail = weights + 1.5 + 0.5
+    assert avail < resident + 1.5
+    assert not enough_ram_for("qwen3.6-27b", available_gb=avail)
+
+
+# --- budget-aware resolver steps UP to a paging MoE, not down to dense ---
+
+def test_resolver_prefers_paging_moe_over_small_dense_when_tight():
+    """On a tight-RAM box the resolver must pick the larger MoE tag (which pages
+    from SSD and runs) over stepping all the way down to a small dense model —
+    using the hardware well instead of leaving capability on the table."""
+    from lighthouse_ai.gateway import resolve_against_installed
+    p = _profile(25.77, tier="T2")
+    installed = ["qwen3:32b", "qwen3:30b-a3b", "qwen3:8b"]
+    # Tight live budget (~10 GB free): the dense 32B does not fit, but the
+    # 30B-a3b MoE pages and is chosen — not the 8B floor.
+    out = resolve_against_installed(p, installed, budget_gb=10.0)
+    assert out["planner"] == "qwen3:30b-a3b"
+
+
+def test_resolver_picks_largest_dense_that_fits():
+    """When RAM is ample the resolver picks the largest dense tag that fits the
+    budget (best model that fits), not an over-conservative floor."""
+    from lighthouse_ai.gateway import resolve_against_installed
+    p = _profile(64.0, tier="T3")
+    installed = ["qwen3:32b", "qwen2.5:14b", "qwen3:8b"]
+    out = resolve_against_installed(p, installed, budget_gb=40.0)
+    assert out["planner"] == "qwen3:32b"
+
+
+def test_resolver_steps_down_when_dense_too_big():
+    """No MoE installed and the big dense tag won't fit → step down to the
+    largest dense tag that does, gracefully (not crash, not floor blindly)."""
+    from lighthouse_ai.gateway import resolve_against_installed
+    p = _profile(25.77, tier="T2")
+    installed = ["qwen3:32b", "qwen2.5:14b", "qwen3:8b"]
+    # ~13 GB budget: 32B (≈21 GB live) and 14B (≈10 GB) — 14B fits, 32B doesn't.
+    out = resolve_against_installed(p, installed, budget_gb=13.0)
+    assert out["planner"] == "qwen2.5:14b"
+
+
 def test_gateway_falls_back_to_mock_when_lowmem(migrated_paths):
     """Real Ollama binding degrades to mock (not crash) when RAM is tight."""
     from dataclasses import dataclass

@@ -1,0 +1,51 @@
+id          = "web_monitor"
+name        = "Web Monitor"
+description = """\
+User-defined website monitors (Watch v2): point Watch at any web page, verify \
+it is lawfully and reliably scrapable (robots + egress + extractor + change \
+signal), then watch it for change. run() does a one-shot scrapability pre-flight \
+for the URL(s) in the question; run_watchable() fetches each monitored URL, \
+builds a content snapshot, and emits a tagged change Document when the page \
+differs from the prior snapshot. The skill is stateless — each change Document \
+carries the current snapshot in metadata so the monitor session can persist it \
+and pass the prior one back on the next tick.\
+"""
+category    = "channel"
+version     = "0.1.0"
+tier        = "A"
+
+# User-added pages may live on any allowlisted host. Declaring [] means the
+# skill reaches whatever the platform egress allowlist already permits — the
+# user narrows reach by `lighthouse trust add <domain>` (recorded with a reason),
+# which is exactly the Watch-v2 "trust add" hint the pre-flight surfaces.
+allowed_domains = []
+
+rate_limit_per_sec  = 1.0
+robots_policy       = "obey"
+
+# Provenance
+default_grade  = "B"
+license        = "varies"
+signed         = true
+enabled_by_default = false
+
+# Recommender scoring surface
+supported_question_types = [
+    "current_events",
+    "trend_analysis",
+    "factual_lookup",
+    "list_enumeration",
+]
+topics = ["monitoring", "web", "watch", "change_detection", "alerts"]
+
+modes_natural_fit = ["watch", "investigate"]
+modes_weak_fit    = ["adjudicate"]
+output_shape      = "stream"
+temporal_tools    = true
+
+perspective_lens  = ""
+authority         = "user_added"
+
+# Watch (Pattern 2) — check_url builds a snapshot and diffs against the prior one
+watchable       = true
+watchable_tools = ["check_url"]

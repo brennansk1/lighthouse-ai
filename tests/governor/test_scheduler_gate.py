@@ -24,6 +24,7 @@ from lighthouse_ai.governor.scheduler_gate import (
     _env_bool,
     _env_float,
     current_policy,
+    ram_aware_concurrency,
     sample_signals,
 )
 
@@ -282,6 +283,83 @@ def test_two_slots_allow_two_holders() -> None:
     for t in threads:
         t.join(timeout=3)
     assert ok == [True, True]
+
+
+# --- RAM-aware concurrency clamp (can only lower the configured cap) --------
+
+
+def test_ram_aware_concurrency_clamps_down_when_tight() -> None:
+    # Configured for 4 slots, but only ~13 GB usable / 7 GB footprint ⇒ 1 fits.
+    n = ram_aware_concurrency(configured_max=4, free_ram_gb=14.5,
+                              model_footprint_gb=7.0, margin_gb=1.5)
+    assert n == 1
+
+
+def test_ram_aware_concurrency_allows_two_when_room() -> None:
+    # 16.5 usable / 7 GB footprint ⇒ 2 fit; configured cap of 4 allows it.
+    n = ram_aware_concurrency(configured_max=4, free_ram_gb=18.0,
+                              model_footprint_gb=7.0, margin_gb=1.5)
+    assert n == 2
+
+
+def test_ram_aware_concurrency_never_exceeds_configured() -> None:
+    # Plenty of RAM but configured cap is the ceiling — never raise it.
+    n = ram_aware_concurrency(configured_max=2, free_ram_gb=200.0,
+                              model_footprint_gb=7.0)
+    assert n == 2
+
+
+def test_ram_aware_concurrency_floor_is_one() -> None:
+    # Even when nothing really fits, return 1 (ollama_slot/mock handle the rest).
+    assert ram_aware_concurrency(configured_max=4, free_ram_gb=2.0,
+                                 model_footprint_gb=20.0) == 1
+
+
+def test_ram_aware_concurrency_unknown_footprint_keeps_cap() -> None:
+    # Hot/SSD-paging model (footprint 0) doesn't constrain the cap.
+    assert ram_aware_concurrency(configured_max=3, free_ram_gb=5.0,
+                                 model_footprint_gb=0.0) == 3
+
+
+def test_gate_applies_ram_aware_clamp_to_semaphore() -> None:
+    """Constructing the gate with free RAM + footprint lowers its slot count;
+    two threads cannot both hold permits when RAM only fits one."""
+    gate = SchedulerGate(
+        SchedulerGateConfig(max_concurrent_llm=4),
+        signals_provider=lambda: _sig(cpu=10),
+        sleep=lambda s: None,
+        free_ram_gb=14.5,
+        model_footprint_gb=7.0,
+    )
+    assert gate.effective_max_concurrent == 1
+    concurrent = 0
+    max_seen = 0
+    lock = threading.Lock()
+
+    def worker():
+        nonlocal concurrent, max_seen
+        with gate.permit():
+            with lock:
+                concurrent += 1
+                max_seen = max(max_seen, concurrent)
+            time.sleep(0.02)
+            with lock:
+                concurrent -= 1
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=2)
+    assert max_seen == 1
+
+
+def test_gate_default_unchanged_without_ram_args() -> None:
+    # No RAM args ⇒ behaviour identical to before (uses configured cap).
+    gate = SchedulerGate(SchedulerGateConfig(max_concurrent_llm=3),
+                         signals_provider=lambda: _sig(cpu=10),
+                         sleep=lambda s: None)
+    assert gate.effective_max_concurrent == 3
 
 
 # --- config loading --------------------------------------------------------

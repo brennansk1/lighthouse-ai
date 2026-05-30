@@ -200,6 +200,39 @@ def current_policy(
     return Policy.NORMAL, None
 
 
+def ram_aware_concurrency(
+    *,
+    configured_max: int,
+    free_ram_gb: float,
+    model_footprint_gb: float,
+    margin_gb: float = 1.5,
+) -> int:
+    """How many concurrent LLM calls free RAM safely allows, capped by config.
+
+    Effective concurrency is a function of free RAM and per-call footprint, but
+    this is a **safety clamp that can only lower** ``configured_max`` — it never
+    raises it. That keeps the gate's host-courtesy slot count from authorising
+    more parallelism than RAM can hold, while leaving the authoritative
+    cross-process RAM admission to :func:`ollama_slot`. Because we only ever
+    serialise *more* (never admit more than ``configured_max``), there is no
+    double-admission hazard against the ledger.
+
+    ``k`` slots need ``k * footprint + margin`` to coexist. Returns at least 1
+    (a single call still goes through ``ollama_slot``, which falls back to the
+    mock rather than OOM if even one model will not fit). When footprint is
+    unknown/zero (e.g. an already-hot or SSD-paging model) we don't constrain
+    on its account — leave the configured cap intact.
+    """
+    cap = max(1, configured_max)
+    if model_footprint_gb <= 0:
+        return cap
+    usable = free_ram_gb - margin_gb
+    if usable <= 0:
+        return 1
+    fits = int(usable // model_footprint_gb)
+    return max(1, min(cap, fits))
+
+
 class SchedulerGate:
     """Cooperative host-courtesy gate. Hold a ``permit()`` per LLM call.
 
@@ -214,9 +247,25 @@ class SchedulerGate:
         *,
         signals_provider: Callable[[], Signals] | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        free_ram_gb: float | None = None,
+        model_footprint_gb: float | None = None,
     ) -> None:
         self.cfg = cfg or SchedulerGateConfig()
-        self._sem = threading.Semaphore(max(1, self.cfg.max_concurrent_llm))
+        # Effective concurrency is a RAM-aware *clamp* of the configured cap:
+        # when free RAM and the per-call footprint are known, never authorise
+        # more parallel slots than RAM can hold (it can only lower the cap,
+        # never raise it — the cross-process ``ollama_slot`` ledger remains the
+        # authoritative RAM admission, so there is no double-admission). When
+        # unsupplied (the default) behaviour is identical to before.
+        effective = max(1, self.cfg.max_concurrent_llm)
+        if free_ram_gb is not None and model_footprint_gb is not None:
+            effective = ram_aware_concurrency(
+                configured_max=self.cfg.max_concurrent_llm,
+                free_ram_gb=free_ram_gb,
+                model_footprint_gb=model_footprint_gb,
+            )
+        self.effective_max_concurrent = effective
+        self._sem = threading.Semaphore(effective)
         # Separate single-permit semaphore used ONLY when THROTTLED so that
         # serialisation (concurrency=1) is enforced regardless of max_concurrent_llm.
         self._throttle_sem = threading.Semaphore(1)
