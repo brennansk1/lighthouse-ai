@@ -101,10 +101,22 @@ Running the gated real-backend suite (`LIGHTHOUSE_REAL_BACKEND=1`, macOS arm64, 
   (courlan version behavior) → strip the fragment explicitly so dedup/rate-keying never depends on
   courlan's version. 68/68 politeness+scrapability tests pass with the real libs.
 
+- **Night sprint — full optional-ML stack installed + validated.** Installed every non-browser extra
+  (politeness, sandbox-hardening, pdf-fast, extraction, faithfulness, injection-ml, reranker, youtube) and
+  ran the real-library tests. **Model-quality results (all on real hardware, RAM ≥ 9.9 GB free, no swap):**
+  faithfulness gate **mean = 1.000** (≥0.80 bar, 20-pair set); FlagReranker retrieval **recall@5 = MRR =
+  1.000**; injection-ml deBERTa 24/24 integration. Installing the real libs surfaced **6 more real bugs**
+  (fixed, see commits): pyrate-limiter 4.x break + ms-window rate divergence + courlan fragment strip;
+  youtube-transcript-api 1.x `get_transcript`→`fetch`; docling 2.x `DocumentStream` (both call sites);
+  pipeline `offline=True` not hermetic for the reranker; `discipline.check` marking entailment_checked on
+  empty evidence. docling/youtube fixes validated live (real PDF convert; real 2089-char transcript).
+
 All fixes are offline-deterministic with regression tests; full suite **2888 pass / 83 skip**, mypy 0,
 ruff clean. Live validation: Phase 1 (core quality) ✓, per-mode E2E 7/7 ✓, Phase 2 source APIs 37/37 ✓,
 Ollama + RAG-real + Qdrant-real gated ✓, sandbox redteam (real yara+pikepdf) 29/29 ✓, politeness layer
-(real protego/courlan/pyrate) 68/68 ✓.
+(real protego/courlan/pyrate) 68/68 ✓, optional-ML stack (faithfulness/reranker/injection/extraction/
+youtube) ✓. **Live findings total this session: 14 real bugs fixed.** Remaining: Playwright browser QA +
+24 h soak + packaging (Phase 4) — need a running server / browser binary, deferred.
 Remaining live phases (heavier setup): faithfulness gate (needs the `faithfulness` extra — torch/
 sentence-transformers), Playwright browser QA (Phase 3), 24 h soak + packaging (Phase 4).
 

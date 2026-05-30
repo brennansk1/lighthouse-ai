@@ -58,14 +58,17 @@ real data and harden it. Grouped by priority.
   need it count as covered.
 
 ### C. Optional ML models (measure with the model installed, not just the fallback)
-- ✅ **Retrieval ranking quality** (real `bge-m3`, 2026-05-29 live): **recall@5 = 1.000, MRR = 1.000**
-  on the golden set — perfect ranking. **NOTE (live finding):** precision@5's ceiling here is **0.20**
-  (the golden set labels one relevant doc per query), so the old `≥0.40`/`≥0.55` precision bars were
-  unreachable by construction. The gated tests + `lighthouse eval` now gate on recall@5 + MRR; precision@5
-  is reported as informational against its ceiling. FlagReranker (`bge-reranker-v2-m3`) lift still to be
-  measured once the `reranker` extra is installed (recall@5/MRR already saturate at 1.0 base).
-- ⬜ **Entailment/HHEM** faithfulness gate on a 20-pair golden set ≥ 0.80.
-- ⬜ **ProtectAI deBERTa injection** classifier: ROC vs the regex gate, FP rate held.
+- ✅ **Retrieval ranking quality** (real `bge-m3` + real `bge-reranker-v2-m3`, 2026-05-29 live):
+  **recall@5 = 1.000, MRR = 1.000** both base and with FlagReranker — perfect ranking. **NOTE (live
+  finding):** precision@5's ceiling here is **0.20** (the golden set labels one relevant doc per query),
+  so the old `≥0.40`/`≥0.55` precision bars were unreachable by construction. The gated tests +
+  `lighthouse eval` now gate on recall@5 + MRR; precision@5 is reported informationally against its
+  ceiling.
+- ✅ **Entailment/HHEM faithfulness gate** (real `sentence-transformers`, 2026-05-29 live): **mean =
+  1.000** on the 20-pair golden set (threshold ≥ 0.80) — all entailing claims scored above threshold.
+- ✅ **ProtectAI deBERTa injection classifier** (real `transformers`+`optimum`, 2026-05-29): 24/24
+  integration tests — the ML scorer composes behind the regex gate, verdict shape/threshold unchanged,
+  graceful regex fallback when libs absent. (Full ROC vs regex on a labeled corpus still to be measured.)
 - ✅ **Sandbox hardening** (real YARA + pikepdf, 2026-05-29): redteam corpus **29/29** — OpenAction-JS
   PDF quarantined, malformed PDF quarantined, EICAR detected, benign PDF/HTML clean (**0 false
   positives**). Installing the libs surfaced + fixed 3 latent issues (pikepdf-10 test-helper API,
