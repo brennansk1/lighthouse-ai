@@ -196,6 +196,13 @@ MODEL_FOOTPRINTS_GB: dict[str, float] = {
 # Fine-grained MoE models page experts from SSD (mmap), so they run in less
 # resident RAM than their full weights — at a tok/s cost. They're allowed
 # even when the strict budget says they don't "fit" (slower, not broken).
+#: Backend classes served by the implemented Ollama driver today. Ollama
+#: transparently offloads to the detected accelerator (Metal on Apple Silicon,
+#: CUDA on NVIDIA, ROCm on AMD), so these local-GPU classes route through it
+#: rather than mocking. Native ``mlx``/``vllm`` high-performance drivers are
+#: detected + catalog-declared (higher tiers) but not yet implemented.
+_OLLAMA_SERVED_BACKENDS = frozenset({"ollama", "mlx", "metal", "llamacpp"})
+
 PAGEABLE_MOE: set[str] = {
     "gemma4-26b-a4b", "qwen3.6-35b-a3b", "glm-5.1", "qwen3.5-122b-a10b",
     "deepseek-v4-flash", "qwen3.5-397b-a17b", "kimi-k2.6", "deepseek-v4-pro",
@@ -769,10 +776,15 @@ class Gateway:
         if overrides:
             for role, tag in overrides.items():
                 prev = self._bindings.get(role)
-                backend = prev.backend if prev else "ollama"
                 sampling = prev.sampling if prev else {}
-                if role in ("embedding", "reranker"):
-                    backend = "native"
+                # Overrides come from resolve_against_installed() — i.e. real
+                # *Ollama* tags — so they are served by the Ollama driver, which
+                # transparently uses the detected accelerator (Metal on Apple
+                # Silicon, CUDA on NVIDIA, ROCm on AMD). Force backend "ollama"
+                # rather than inheriting the catalog tier's aspirational mlx/vllm
+                # marker; otherwise T3/T4/T5 boxes (catalog inference=mlx/vllm)
+                # would hit complete()'s else-branch and silently fall to the mock.
+                backend = "native" if role in ("embedding", "reranker") else "ollama"
                 self._bindings[role] = ModelBinding(role=role, model=tag,
                                                     backend=backend, sampling=sampling)
         self._mock = MockProvider(governor, usd_per_1k_tokens=0.0)
@@ -908,12 +920,17 @@ class Gateway:
                         f"{b.model}: recorded {rec['registry_digest_sha256']} "
                         f"!= installed {fp.registry_digest_sha256}"
                     )
-        # Dispatch on the binding's backend declaration.
+        # Dispatch on the binding's backend declaration. The Ollama driver is the
+        # implemented local path and is GPU-accelerated on every platform (Metal
+        # on Apple Silicon, CUDA on NVIDIA, ROCm on AMD), so route the local-GPU
+        # backend classes through it. Native mlx/vllm drivers are detected +
+        # catalog-declared but not yet implemented — until they are, serving those
+        # models via Ollama (still accelerated) beats silently mocking.
         backend_used = b.backend
         text: str
         prompt_tokens: int
         completion_tokens: int
-        if b.backend == "ollama":
+        if b.backend in _OLLAMA_SERVED_BACKENDS:
             ollama = self._get_ollama()
             chat_ok = False
             if ollama is not None:

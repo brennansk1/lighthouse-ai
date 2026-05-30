@@ -370,3 +370,36 @@ def test_low_budget_box_steps_down_to_tiny_model_not_mock():
     assert tight["planner"] == "llama3.2:1b"
     roomy = resolve_against_installed(prof, installed, budget_gb=10.0)
     assert roomy["planner"] == "qwen3:8b"
+
+
+def test_high_tier_box_uses_ollama_not_mock(migrated_paths):
+    """Regression: a T3/T4 box (catalog binds inference=mlx) or T5 (vllm) must
+    run REAL Ollama inference — which is Metal/CUDA/ROCm-accelerated — not
+    silently fall back to the mock. Both the live override path and a raw catalog
+    binding route the local-GPU backend through the Ollama driver."""
+    from lighthouse_ai.backends.ollama import ChatResponse
+    from lighthouse_ai.gateway import Gateway
+    from lighthouse_ai.governor import BUDGET_DEFAULTS, Governor
+
+    class _Fake:
+        def available(self): return True
+        def chat(self, *a, **k): return ChatResponse("REAL", 1, 1, "m")
+
+    import lighthouse_ai.gateway as gmod
+    g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
+    orig = gmod.estimate_resident_gb
+    gmod.estimate_resident_gb = lambda model: 0.0  # isolate routing from RAM admission
+    try:
+        # (a) Live path: resolved Ollama override on a T3 Apple Studio profile.
+        gw = Gateway(g, migrated_paths.audit_db, profile=_profile(64.0, tier="T3"),
+                     ollama=_Fake(), overrides={"planner": "qwen3:14b"})
+        assert gw._bindings["planner"].backend == "ollama"
+        assert "[mock" not in gw.complete("planner", "hi").text
+
+        # (b) Raw catalog binding (backend == "mlx") still routes through Ollama.
+        gw2 = Gateway(g, migrated_paths.audit_db, profile=_profile(64.0, tier="T3"),
+                      ollama=_Fake())
+        assert gw2._bindings["planner"].backend == "mlx"   # from the catalog
+        assert "[mock" not in gw2.complete("planner", "hi").text
+    finally:
+        gmod.estimate_resident_gb = orig
