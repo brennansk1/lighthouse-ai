@@ -32,10 +32,10 @@ onboarding; **global Pause**; **hardware** OOM/utilization guardrails; **in-app 
 **Graph-RAG primitive** (`rag/graph.py`); top-level docs synced; **4-wave audit (~32 real bugs fixed)**.
 
 ### Precise remaining work (deliberate, next sessions)
-- **Graph-RAG surfacing** — wire the existing GRAPH route + an "explore relationships" view. Cleanest:
-  a `/api/graph?draft=<id>` that builds a `CorpusGraph` from a draft's stored evidence chunks and
-  returns `query()`/`subgraph()`; a small relationships panel in the Library artifact view. (Product
-  call: per-draft evidence vs whole-corpus — decide before building.) Do NOT touch audited `hybrid.py`.
+- ✅ **Graph-RAG surfacing** — DONE: `/api/graph/draft/{id}` + the Library "How the evidence connects"
+  panel. A further enhancement (out of scope for now) is wiring `CorpusGraph.query()` into the GRAPH
+  retrieval ROUTE so graph signal boosts retrieval — that DOES touch the audited retrieval path, so do
+  it deliberately with fresh tests, not casually.
 - **One-click desktop app (Tauri)** — bundles local Ollama/Qdrant; needs Node/Tauri build tooling →
   scaffold + doc here, real build on a dev box.
 - **P3 live validation** (await Mac mini): real-LLM quality (precision@5/faithfulness), live source-API
