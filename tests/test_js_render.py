@@ -67,25 +67,17 @@ def _js_render_module():
 
 def test_render_html_returns_none_when_playwright_absent():
     """render_html must return None (not raise) when playwright is not importable."""
-    # Simulate playwright absent by temporarily hiding it from sys.modules
-    # and blocking the import inside render_html.
-    playwright_modules = {k: v for k, v in sys.modules.items() if "playwright" in k}
-    for k in playwright_modules:
-        sys.modules[k] = None  # type: ignore[assignment]
-
-    try:
+    # Block playwright at import time. render_html imports ``playwright.sync_api``
+    # lazily at call time, so we must set BOTH the package and that submodule to
+    # None — setting a sys.modules entry to None makes the import raise
+    # ImportError. Only hiding already-imported modules is insufficient when
+    # playwright IS installed but sync_api hasn't been imported yet (the import
+    # would then succeed and render the page for real).
+    blocked = {"playwright": None, "playwright.sync_api": None}
+    with patch.dict(sys.modules, blocked):
         mod = _js_render_module()
-        importlib.reload(mod)
         result = mod.render_html("https://example.com")
         assert result is None, f"Expected None, got {result!r}"
-    finally:
-        # Restore original modules
-        for k in playwright_modules:
-            sys.modules[k] = playwright_modules[k]
-        # Clean up any None sentinels we injected that weren't there originally.
-        for k in list(sys.modules):
-            if "playwright" in k and sys.modules[k] is None and k not in playwright_modules:
-                del sys.modules[k]
 
 
 def test_render_html_returns_none_no_raise_on_import_error():

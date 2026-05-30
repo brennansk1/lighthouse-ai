@@ -42,6 +42,12 @@ real data and harden it. Grouped by priority.
   no swap) and produced their artifact passing the discipline gate (valid provenance, numeric
   citation_coverage, no fabrication). Watch exposed + fixed a real dead-wire: `_adapt_watch` wasn't
   threading `topic_interests` to the LLM salience scorer (gap #15) — now wired, with regression tests.
+- ✅ **Browser QA — dashboard renders in real chromium** (Playwright, 2026-05-29): all 7 nav pages
+  (Research/Library/Watch/Sandbox/Health/Info/Settings) load with **zero console errors, zero uncaught
+  exceptions, no white-screens** — confirming the in-browser babel-standalone JSX compile + React mount
+  work (which the in-process TestClient API tests can't verify). Bounded harness
+  `scripts/browser_smoke.py` (in-thread uvicorn, ephemeral port; screenshots to /tmp). Remaining:
+  interaction flows (submit a job, upload to sandbox) + a11y/visual-regression.
 
 ### B. Live source fetching — the 37 skills (validate each against its real API)
 - ✅ **37/37 skills live-fetched** (2026-05-29, `test_real_skills_fetch.py`, bounded `max_results=2`):
