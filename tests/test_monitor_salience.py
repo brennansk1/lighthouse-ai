@@ -322,3 +322,41 @@ def test_run_monitor_existing_signature_still_works():
     state = MonitorState()
     report = run_monitor("topic", items, state=state)
     assert report.total_seen == 1
+
+
+# --------------------------------------------------------------------------- #
+# Hotness-backed salience (make_hotness_salience)
+# --------------------------------------------------------------------------- #
+
+def test_hotness_salience_custom_extractor_untracked_entity_is_noise():
+    """A custom extractor returning only entities NOT in ``tracked`` must not
+    crash with ``max() arg is an empty sequence``.
+
+    Regression: the ``e in tracked`` filter inside ``max(...)`` could empty the
+    sequence while ``mentioned`` itself was non-empty, raising ValueError. Such
+    items carry no tracked hotness signal and must score 0.0 / "noise".
+    """
+    from lighthouse_ai.modes.monitor import make_hotness_salience
+
+    sal = make_hotness_salience({}, extract_entities=lambda it: ["ghost"], now_ms=0)
+    score, category = sal(_item("u", "title", "body"))
+    assert score == 0.0
+    assert category == "noise"
+
+
+def test_hotness_salience_mixed_tracked_and_untracked():
+    """When the extractor returns a mix, only tracked entities drive the score;
+    untracked ones are ignored, not crash-inducing."""
+    from lighthouse_ai.compounding.hotness import EntityStats
+    from lighthouse_ai.modes.monitor import make_hotness_salience
+
+    tracked = {
+        "alpha": EntityStats(mention_count_30d=50, distinct_sources=8,
+                             last_seen_ms=0, query_hits_30d=10),
+    }
+    sal = make_hotness_salience(
+        tracked, extract_entities=lambda it: ["alpha", "ghost"], now_ms=0
+    )
+    score, category = sal(_item("u", "title", "body"))
+    assert 0.0 < score <= 1.0
+    assert category in ("alert", "informational")

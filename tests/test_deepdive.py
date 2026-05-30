@@ -166,6 +166,25 @@ def test_iterresearch_working_context_injected_in_round_2():
     assert len(received_prompts) >= 2  # at least 1 per section per round
 
 
+def test_deepdive_forwards_gateway_to_framing():
+    """The planner-primary framing path must run when deepdive has a gateway.
+
+    Regression: deepdive called ``run_framing(question)`` without forwarding its
+    gateway, so the LLM planner framing (the highest-leverage upstream lever)
+    was dead for Investigate even with a gateway wired — unlike exhaustive.py
+    which passes it through.
+    """
+    mock_gw = MagicMock()
+    mock_gw.complete.return_value = MagicMock(text="[draft] answer")
+    with patch("lighthouse_ai.modes.deepdive.run_framing") as mock_framing:
+        from lighthouse_ai.framing import run_framing as real_framing
+        mock_framing.side_effect = lambda q, **kw: real_framing(q)
+        run_deepdive("Why did the bank collapse?", gateway=mock_gw, max_rounds=1)
+    # run_framing must have been called WITH the gateway, not bare.
+    assert mock_framing.call_args is not None
+    assert mock_framing.call_args.kwargs.get("gateway") is mock_gw
+
+
 def test_no_debate_without_gateway():
     """_extract_debate_subquestions returns [] when gateway is None."""
     from lighthouse_ai.modes.deepdive import Section, _extract_debate_subquestions

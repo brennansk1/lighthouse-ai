@@ -88,6 +88,32 @@ def test_dispatch_routes_ollama_when_available(migrated_paths, stub_profile):
     assert fake.calls[0]["model"]  # whatever T3 planner is
 
 
+def test_dispatch_runs_real_moe_tag_under_tight_ram(migrated_paths, stub_profile):
+    """A fine-grained MoE bound to a real tag (``qwen3:30b-a3b``) pages from SSD,
+    so even under near-zero free RAM it must run on real Ollama — never silently
+    degrade to the low-mem mock. Regression for the runtime-tag MoE recognition
+    bug (catalog ``PAGEABLE_MOE`` only held capability-class names)."""
+
+    @dataclass
+    class _NotResident(_FakeOllama):
+        def loaded_models(self):
+            return []  # model is NOT hot → admission must rely on is_pageable_moe
+
+    fake = _NotResident(fixed_text="real-moe")
+    gw = _gateway_with_fake(migrated_paths, stub_profile, fake)
+    gw = Gateway(Governor(migrated_paths.state_db, BUDGET_DEFAULTS),
+                 migrated_paths.audit_db, profile=stub_profile, ollama=fake,
+                 overrides={"planner": "qwen3:30b-a3b"})
+    from lighthouse_ai.governor.ollama_queue import AdmissionConfig
+    # Refuse-now config + essentially no free RAM: a dense model would be denied,
+    # but the paging MoE reserves nothing (need=0) and runs.
+    gw._admission = AdmissionConfig(wait_timeout_s=0.0)
+    resp = gw.complete("planner", "hello")
+    assert resp.text == "real-moe"
+    assert resp.model == "qwen3:30b-a3b"
+    assert gw.drain_backends().get("ollama") == 1
+
+
 def test_dispatch_falls_back_to_mock_when_ollama_unavailable(migrated_paths, stub_profile):
     fake = _FakeOllama(available_flag=False)
     gw = _gateway_with_fake(migrated_paths, stub_profile, fake)

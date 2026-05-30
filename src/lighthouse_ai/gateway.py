@@ -23,6 +23,7 @@ the mock provider serves the call.
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 import subprocess
 import time
@@ -137,6 +138,28 @@ PAGEABLE_MOE: set[str] = {
     "deepseek-v4-flash", "qwen3.5-397b-a17b", "kimi-k2.6", "deepseek-v4-pro",
 }
 
+# At run time roles are rebound from these capability-class names to *real
+# installed Ollama tags* (e.g. ``qwen3:30b-a3b``). Those tags carry the MoE
+# marker in their name — the active-param suffix ``-a<N>b`` (30B total / 3B
+# active) or the classic sparse ``<E>x<N>b`` notation (``mixtral:8x7b``). We
+# must recognise them too, otherwise a paging MoE bound to a real tag gets
+# estimated at its full dense footprint and wrongly denied admission (silently
+# degrading to the mock) on exactly the tight-RAM machines paging exists for.
+_MOE_TAG_RE = re.compile(r"(?:[-_:]a\d+\.?\d*b\b)|(?:\b\d+x\d+b\b)", re.IGNORECASE)
+
+
+def is_pageable_moe(model: str) -> bool:
+    """True if ``model`` is a fine-grained MoE that pages experts from SSD.
+
+    Recognises both the curated capability-class names in :data:`PAGEABLE_MOE`
+    and real Ollama tags whose name encodes the MoE structure (``…-a3b`` active
+    params, or ``8x7b`` sparse experts). Pageable models are admitted even when
+    their full weights would not fit resident RAM — they run slower, not broken.
+    """
+    if model in PAGEABLE_MOE:
+        return True
+    return bool(_MOE_TAG_RE.search(model))
+
 
 # --- runtime memory guard: don't load a model into RAM we don't have ---
 #
@@ -171,7 +194,7 @@ def enough_ram_for(model: str, *, available_gb: float | None = None,
     MoE models page from SSD so they're always allowed. If a model is already
     resident in Ollama it costs no new RAM (caller can short-circuit).
     """
-    if model in PAGEABLE_MOE:
+    if is_pageable_moe(model):
         return True
     need = estimate_resident_gb(model)
     if need <= 0:
@@ -196,12 +219,12 @@ def model_fits(model: str, budget_gb: float) -> bool:
     """True if the model fits resident, OR is a pageable MoE (runs, slower)."""
     if model_footprint_gb(model) <= budget_gb:
         return True
-    return model in PAGEABLE_MOE
+    return is_pageable_moe(model)
 
 
 def model_pages(model: str, budget_gb: float) -> bool:
     """True if the model exceeds budget but runs anyway by SSD-paging (MoE)."""
-    return model_footprint_gb(model) > budget_gb and model in PAGEABLE_MOE
+    return model_footprint_gb(model) > budget_gb and is_pageable_moe(model)
 
 
 # --- pull preflight: never fill the disk, never surprise-OOM -------------
@@ -744,7 +767,7 @@ class Gateway:
                 return 0.0
         except Exception:
             pass
-        if model in PAGEABLE_MOE:
+        if is_pageable_moe(model):
             return 0.0
         return estimate_resident_gb(model)
 

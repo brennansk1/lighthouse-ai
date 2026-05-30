@@ -1110,6 +1110,25 @@ def test_crates_get_dependents_returns_empty_on_404(mocked_http):
     assert docs == []
 
 
+def test_crates_get_dependents_tolerates_version_without_id(mocked_http):
+    """A versions entry missing the 'id' key must not raise KeyError."""
+    payload = {
+        "dependencies": [
+            {"crate_id": "foo", "version_id": 99, "req": "^1.0", "kind": "normal"}
+        ],
+        # Malformed: this version object has no "id" key.
+        "versions": [{"num": "1.2.3"}],
+    }
+    mocked_http.get(
+        "https://crates.io/api/v1/crates/tokio/reverse_dependencies"
+    ).respond(200, json=payload)
+    docs = crates_get_dependents("tokio")
+    assert len(docs) == 1
+    assert docs[0].metadata["dependent_crate"] == "foo"
+    # version_id 99 has no matching versions entry → blank dependent_version.
+    assert docs[0].metadata["dependent_version"] == ""
+
+
 def test_crates_list_recent_releases_delegates_to_get_versions(mocked_http):
     mocked_http.get("https://crates.io/api/v1/crates/tokio/versions").respond(
         200, json=_CRATES_VERSIONS_JSON

@@ -138,6 +138,13 @@ def verify_audit_chain(audit_db: Path, *, secret: bytes) -> list[int]:
     """Return the list of seq numbers whose HMAC doesn't reverify.
 
     Empty list ⇒ chain intact.
+
+    The chain is verified by recomputing each row's HMAC from the
+    *recomputed* previous HMAC (not the value stored in the ``prev_hmac``
+    column). This is what makes the chain tamper-evident: mutating any earlier
+    row changes its recomputed HMAC, so every subsequent row chains off a
+    ``prev`` that no longer matches what was recorded — i.e. tampering at row N
+    cascades to flag N and all rows after it.
     """
     bad: list[int] = []
     conn = open_db(audit_db)
@@ -148,14 +155,16 @@ def verify_audit_chain(audit_db: Path, *, secret: bytes) -> list[int]:
         ).fetchall()
         prev: str | None = None
         for seq, ts, actor, et, pj, recorded_prev, existing in rows:
-            if recorded_prev != prev:
-                bad.append(seq)
-                prev = existing
-                continue
+            # (a) The recorded link must match the verified chain so far.
+            link_ok = (recorded_prev or None) == prev
+            # (b) This row's HMAC must reverify against that verified prev.
             expected = _hmac(secret, *_row_to_bytes(seq, ts, actor, et, pj, prev))
-            if expected != existing:
+            if not link_ok or expected != existing:
                 bad.append(seq)
-            prev = existing
+            # Thread the *recomputed* HMAC forward so any earlier tamper
+            # propagates: subsequent rows are validated against this value,
+            # not the (possibly stale) stored column.
+            prev = expected
     finally:
         conn.close()
     return bad

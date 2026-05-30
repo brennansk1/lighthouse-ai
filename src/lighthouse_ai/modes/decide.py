@@ -439,6 +439,16 @@ def run_decide(
             f"Decide requires at least 2 options; got {len(opts)}. "
             "Add a second option to compare against."
         )
+    # Options are keyed by label downstream (``totals`` is a label→score dict),
+    # so duplicate labels silently collapse into one column — yielding a bogus
+    # single-option report (runner_up=None, margin>1.0). Reject them up front.
+    distinct_labels = {o.label for o in opts}
+    if len(distinct_labels) < 2:
+        raise ValueError(
+            f"Decide requires at least 2 distinct option labels; got "
+            f"{len(opts)} option(s) collapsing to {len(distinct_labels)} "
+            "unique label(s). Give each option a unique label."
+        )
     if not crits:
         raise ValueError(
             "Decide requires at least one criterion with a positive weight. "

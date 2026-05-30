@@ -14,10 +14,13 @@ to unit test.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from .channels import Channel
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -78,6 +81,14 @@ class Notifier:
             if not (event_allowed and self._channel_enabled(name)):
                 results.append(ChannelResult(name, attempted=False, delivered=False))
                 continue
-            delivered = bool(channel.send(title, body))
+            # Failure isolation: a channel that raises (a buggy adapter, an
+            # unexpected error the channel failed to handle) must not abort the
+            # fan-out to the remaining channels. Treat it as a non-delivery.
+            try:
+                delivered = bool(channel.send(title, body))
+            except Exception:
+                _log.warning("notify channel %r raised; treating as failed", name,
+                             exc_info=True)
+                delivered = False
             results.append(ChannelResult(name, attempted=True, delivered=delivered))
         return results

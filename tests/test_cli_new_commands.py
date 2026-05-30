@@ -220,3 +220,39 @@ def test_models_prune_succeeds_on_200(initted_env, mock_ollama):
     runner = CliRunner()
     r = runner.invoke(app, ["models", "prune", "x"])
     assert r.exit_code == 0
+
+
+# --- audit egress ---
+
+def test_audit_egress_empty_reports_clean(initted_env):
+    """With no fetch/egress events the report is the airplane-mode all-clear."""
+    runner = CliRunner()
+    r = runner.invoke(app, ["audit-egress"])
+    assert r.exit_code == 0, r.stdout
+    assert "No external network calls" in r.stdout
+
+
+def test_audit_egress_surfaces_recorded_fetches(initted_env):
+    """A recorded auto_fetch event MUST appear in the egress report.
+
+    Regression: the query referenced a non-existent ``created_at`` column on
+    ``audit_events`` (the real column is ``ts``); the resulting
+    OperationalError was swallowed, so the command always printed the
+    'no external network calls' all-clear even when egress had happened —
+    a false negative for a security-relevant audit.
+    """
+    from lighthouse_ai.verification.audit_chain import append_event
+
+    append_event(
+        initted_env / "audit.db",
+        actor="ingest",
+        event_type="auto_fetch",
+        payload={"url": "https://example.com/feed.xml"},
+        data_dir=initted_env,
+    )
+    runner = CliRunner()
+    r = runner.invoke(app, ["audit-egress"])
+    assert r.exit_code == 0, r.stdout
+    assert "No external network calls" not in r.stdout
+    assert "auto_fetch" in r.stdout
+    assert "example.com" in r.stdout

@@ -729,6 +729,49 @@ def test_oecd_fetch_dataset(mocked_http):
     assert docs[0].metadata["source"] == "oecd"
 
 
+def test_oecd_fetch_multidim_observation_keys(mocked_http):
+    """SDMX observation keys can be multi-dimensional ('0:0') — must not crash."""
+    dataset_id = "OECD.SDD.NAD,DSD_NAMAIN1@DF_TABLE1_EXPENDITURE,1.0"
+    multidim_json = {
+        "data": {
+            "dataSets": [
+                {
+                    "series": {
+                        "0:0": {
+                            "observations": {
+                                "0:0": [2.5, 0],
+                                "1:0": [3.1, 0],
+                            }
+                        }
+                    }
+                }
+            ],
+            "structure": {
+                "dimensions": {
+                    "series": [
+                        {"id": "REF_AREA", "values": [{"name": "United States"}]},
+                        {"id": "MEASURE", "values": [{"name": "GDP"}]},
+                    ],
+                    "observation": [
+                        {
+                            "id": "TIME_PERIOD",
+                            "values": [{"id": "2022"}, {"id": "2023"}],
+                        }
+                    ],
+                }
+            },
+        }
+    }
+    mocked_http.get(
+        f"https://sdmx.oecd.org/public/rest/data/{dataset_id}/all"
+    ).respond(200, json=multidim_json)
+    docs = oecd_fetch(dataset_id)
+    assert len(docs) >= 1
+    # The first numeric component indexes the time dimension labels.
+    assert "2022" in docs[0].text
+    assert "2023" in docs[0].text
+
+
 def test_oecd_fetch_raises_on_http_error(mocked_http):
     dataset_id = "OECD.SDD.NAD,DSD_NAMAIN1@DF_TABLE1_EXPENDITURE,1.0"
     mocked_http.get(

@@ -424,7 +424,10 @@ def run_deepdive(
     auto_adjudicate_disabled: bool = False,
     saturation_slope_floor: float | None = None,
 ) -> DraftReport:
-    framed = run_framing(question)
+    # Forward the gateway so the planner-primary framing path runs (matching
+    # exhaustive.py). Offline (gateway=None) this is bit-for-bit the
+    # deterministic baseline, so existing offline output never moves.
+    framed = run_framing(question, gateway=gateway, job_id=job_id)
     sections = _skeleton(framed)
     evidence_rounds: list[list[HybridResult]] = []
     # Cumulative count of distinct evidence chunk ids seen through round i.

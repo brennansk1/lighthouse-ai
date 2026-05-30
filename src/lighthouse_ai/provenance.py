@@ -151,9 +151,14 @@ class ProvenanceLog:
         """
         p = self.path
         p.parent.mkdir(parents=True, exist_ok=True)
+        # Write the record and its newline in ONE ``write`` call. Two separate
+        # writes can be interrupted by a crash between them, leaving a JSON
+        # object with no trailing newline; the next append would then run onto
+        # the same line and ``load_provenance`` would fail to parse the whole
+        # file (losing *every* record, not just the last). A single write keeps
+        # the "lose at most the final line" guarantee the module promises.
         with p.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, sort_keys=True))
-            fh.write("\n")
+            fh.write(json.dumps(record, sort_keys=True) + "\n")
 
     def append_activity(self, **kwargs: Any) -> dict[str, Any]:
         """Convenience: build a ``prov_activity`` and append it, returning it."""
@@ -176,13 +181,22 @@ def load_provenance(path: str | Path) -> list[dict[str, Any]]:
     p = Path(path)
     if not p.exists():
         return []
+    raw_lines = p.read_text(encoding="utf-8").splitlines()
     out: list[dict[str, Any]] = []
-    with p.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
+    for i, line in enumerate(raw_lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
             out.append(json.loads(line))
+        except json.JSONDecodeError:
+            # A crash mid-append can leave a torn *final* line. The module's
+            # durability contract is "lose at most the final line", so we
+            # tolerate an unparseable last line and stop. An unparseable line
+            # in the *middle* is genuine corruption/tampering — re-raise it.
+            if i == len(raw_lines) - 1:
+                break
+            raise
     return out
 
 

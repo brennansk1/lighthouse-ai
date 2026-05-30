@@ -282,9 +282,14 @@ def make_hotness_salience(
 
     def _score(item: MonitorItem) -> tuple[float, str]:
         mentioned = extract(item)
-        if not mentioned:
+        # Keep only entities we actually track — a custom ``extract_entities``
+        # may surface ids absent from ``tracked``. Filtering here (rather than
+        # inside the ``max`` generator) avoids ``max() arg is an empty sequence``
+        # when every mentioned entity is untracked.
+        tracked_hits = [e for e in mentioned if e in tracked]
+        if not tracked_hits:
             return 0.0, "noise"
-        best = max(hotness_at(tracked[e], now) for e in mentioned if e in tracked)
+        best = max(hotness_at(tracked[e], now) for e in tracked_hits)
         salience = min(best / TOPIC_CREATION_THRESHOLD, 1.0)
         if best >= TOPIC_CREATION_THRESHOLD:
             return salience, "alert"

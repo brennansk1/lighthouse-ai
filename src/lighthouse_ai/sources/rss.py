@@ -55,9 +55,14 @@ def _parse_atom(root: ET.Element) -> list[MonitorItem]:
 
 
 def _parse_rss(root: ET.Element) -> list[MonitorItem]:
+    # ``root`` may be the <rss> wrapper (with a child <channel>) or, for feeds
+    # that publish a bare <channel> document, the <channel> element itself.
     channel = root.find("channel")
     if channel is None:
-        return []
+        if root.tag.lower().endswith("channel"):
+            channel = root
+        else:
+            return []
     feed_title = channel.findtext("title", default="") or ""
     out: list[MonitorItem] = []
     for item in channel.findall("item"):
@@ -88,7 +93,7 @@ def parse_feed_bytes(payload: bytes) -> list[MonitorItem]:
         return _parse_atom(root)
     # Some feeds put the channel at the root.
     if tag.endswith("channel"):
-        return _parse_rss(ET.Element("rss", {})) + _parse_rss(root)
+        return _parse_rss(root)
     return []
 
 

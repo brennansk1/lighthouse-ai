@@ -9,8 +9,9 @@ Public API:
         Mark a claimed intent as applied.
     mark_failed(intent_id, error, *, dead=False)
         Bump attempts; either re-queue or move to dead_intents.
-    compensate_job(job_id)
-        Run registered compensators for every pending/in_flight intent.
+    requeue_stuck(db_path, *, older_than_seconds=300)
+        Reset orphaned ``in_flight`` intents (crashed mid-apply) back to
+        ``pending`` so they are retried rather than silently lost.
 
 Idempotency: every intent has a user-supplied ``idempotency_key`` enforced
 UNIQUE by the schema. Repeated writes with the same key collapse to one row.
@@ -168,26 +169,68 @@ def mark_failed(db_path: Path, intent_id: int, error: str, *, dead: bool = False
     conn = open_db(db_path)
     try:
         if dead:
-            row = conn.execute(
-                "SELECT target, payload_json FROM intents WHERE id = ?",
-                (intent_id,),
-            ).fetchone()
-            if row:
+            # The dead-letter move (insert into dead_intents + flip status to
+            # 'dead') must be ONE atomic transaction: a crash between the two
+            # writes would otherwise leave the intent stuck in_flight while a
+            # dead_intents row exists, and a later requeue+retry would create a
+            # *duplicate* dead_intents row. We also guard against re-dead-
+            # lettering an intent already marked 'dead'.
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute(
+                    "SELECT target, payload_json, status FROM intents WHERE id = ?",
+                    (intent_id,),
+                ).fetchone()
+                if row and row[2] != "dead":
+                    conn.execute(
+                        "INSERT INTO dead_intents "
+                        "(original_id, target, payload_json, last_error) "
+                        "VALUES (?, ?, ?, ?)", (intent_id, row[0], row[1], error),
+                    )
                 conn.execute(
-                    "INSERT INTO dead_intents (original_id, target, payload_json, last_error) "
-                    "VALUES (?, ?, ?, ?)", (intent_id, row[0], row[1], error),
+                    "UPDATE intents SET status = 'dead', last_error = ?, "
+                    "last_attempt_at = datetime('now'), updated_at = datetime('now') "
+                    "WHERE id = ?", (error, intent_id),
                 )
-            conn.execute(
-                "UPDATE intents SET status = 'dead', last_error = ?, "
-                "last_attempt_at = datetime('now'), updated_at = datetime('now') "
-                "WHERE id = ?", (error, intent_id),
-            )
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
         else:
             conn.execute(
                 "UPDATE intents SET status = 'pending', last_error = ?, "
                 "last_attempt_at = datetime('now'), updated_at = datetime('now') "
                 "WHERE id = ?", (error, intent_id),
             )
+    finally:
+        conn.close()
+
+
+def requeue_stuck(db_path: Path, *, older_than_seconds: int = 300) -> int:
+    """Reset orphaned ``in_flight`` intents back to ``pending``. Returns # reset.
+
+    A crash (or a killed effector) between :func:`claim_one` marking an intent
+    ``in_flight`` and the eventual :func:`mark_applied`/:func:`mark_failed`
+    leaves the row stuck in ``in_flight`` forever: :func:`claim_one` only ever
+    selects ``pending`` rows, so the side effect is neither applied nor
+    dead-lettered. This is the standard outbox recovery step — run it at
+    supervisor startup (before any effector starts) to reclaim such rows.
+
+    Only intents whose ``claimed_at`` is older than ``older_than_seconds`` are
+    reclaimed, so an intent a *live* effector is actively working is left
+    alone. ``attempts`` is intentionally not decremented: a requeued intent
+    has genuinely consumed an attempt, preserving the dead-letter bound.
+    """
+    conn = open_db(db_path)
+    try:
+        cur = conn.execute(
+            "UPDATE intents SET status = 'pending', updated_at = datetime('now') "
+            "WHERE status = 'in_flight' "
+            "AND (claimed_at IS NULL "
+            "     OR claimed_at <= datetime('now', ?))",
+            (f"-{int(older_than_seconds)} seconds",),
+        )
+        return int(cur.rowcount)
     finally:
         conn.close()
 

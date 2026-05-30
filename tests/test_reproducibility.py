@@ -365,6 +365,30 @@ def test_provenance_log_appends_not_truncates(tmp_path: Path) -> None:
     assert len(load_provenance(log.path)) == 2
 
 
+def test_append_then_torn_write_does_not_corrupt_prior_records(tmp_path: Path) -> None:
+    """A crash that leaves a torn final line must not destroy earlier records.
+
+    Simulates a power loss mid-append: a complete record followed by a
+    partial (newline-less, half-written) JSON fragment. ``load_provenance``
+    must still return the intact record and simply drop the torn tail.
+    """
+    log = ProvenanceLog(dir=tmp_path)
+    rec = log.append_activity(activity_id="a", agent="x")
+    # Simulate a torn append: a partial JSON fragment with no newline.
+    with log.path.open("a", encoding="utf-8") as fh:
+        fh.write('{"@id": "urn:lighthouse:action:b", "@ty')  # truncated
+    loaded = load_provenance(log.path)
+    assert loaded == [rec]  # first record survives; torn tail dropped
+
+
+def test_load_provenance_reraises_on_midfile_corruption(tmp_path: Path) -> None:
+    """Corruption in a non-final line is real tampering, not a torn tail."""
+    p = tmp_path / "provenance.jsonl"
+    p.write_text('{"ok": 1}\nNOT JSON\n{"ok": 2}\n', encoding="utf-8")
+    with pytest.raises(json.JSONDecodeError):
+        load_provenance(p)
+
+
 def test_provenance_jsonl_is_one_json_object_per_line(tmp_path: Path) -> None:
     log = ProvenanceLog(dir=tmp_path)
     log.append_activity(activity_id="a", agent="x")

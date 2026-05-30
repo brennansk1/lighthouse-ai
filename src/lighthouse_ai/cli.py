@@ -1368,14 +1368,13 @@ def audit_egress(
     from .persistence import open_db
     conn = open_db(paths.audit_db)
     try:
+        # Column is `ts` (schema.py AUDIT_MIGRATIONS), not `created_at`.
         rows = conn.execute(
-            "SELECT event_type, payload_json, created_at FROM audit_events "
+            "SELECT event_type, payload_json, ts FROM audit_events "
             "WHERE event_type LIKE '%fetch%' OR event_type LIKE '%egress%' "
             "OR event_type LIKE '%auto_fetch%' "
-            "ORDER BY created_at DESC LIMIT 200"
+            "ORDER BY ts DESC LIMIT 200"
         ).fetchall()
-    except Exception:
-        rows = []
     finally:
         conn.close()
     if not rows:
@@ -1387,20 +1386,20 @@ def audit_egress(
     table.add_column("Event")
     table.add_column("Details")
     import json
-    for event_type, payload_json, created_at in rows:
+    for event_type, payload_json, ts in rows:
         payload = {}
         try:
             payload = json.loads(payload_json or "{}")
         except Exception:
             pass
         details = payload.get("url") or payload.get("source") or str(payload)[:60]
-        table.add_row(str(created_at)[:16], event_type, details)
+        table.add_row(str(ts)[:16], event_type, details)
     console.print(table)
     if output:
         with open(output, "w") as f:
             f.write(f"Lighthouse Egress Audit Report\nGenerated: {__import__('datetime').datetime.now().isoformat()}\n\n")
-            for event_type, payload_json, created_at in rows:
-                f.write(f"{created_at} | {event_type} | {payload_json}\n")
+            for event_type, payload_json, ts in rows:
+                f.write(f"{ts} | {event_type} | {payload_json}\n")
         console.print(f"[green]Report written to {output}[/green]")
 
 

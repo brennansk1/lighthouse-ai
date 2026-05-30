@@ -128,6 +128,35 @@ def test_apply_migrations_records_applied_ids(tmp_path: Path):
         conn.close()
 
 
+def test_failed_migration_rolls_back_atomically(tmp_path: Path):
+    """A migration that fails partway must leave NO partial schema behind.
+
+    The runner advertises "one atomic unit per migration". If the first
+    statement succeeds but a later one fails, the whole migration must roll
+    back: the table created by the first statement must not survive, and the
+    migration id must not be recorded — otherwise a re-run wedges on
+    'table already exists' and the DB is left in an unmigratable state.
+    """
+    import sqlite3
+
+    db_path = tmp_path / "atomic.db"
+    conn = open_db(db_path)
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            apply_migrations(conn, [
+                Migration(
+                    "0001_partial",
+                    "CREATE TABLE good (x);\nCREATE TABLE good (x);",  # 2nd fails
+                ),
+            ])
+        names = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        assert "good" not in names  # rolled back
+        assert applied_migrations(conn) == set()  # not recorded
+    finally:
+        conn.close()
+
+
 def test_new_migration_appended_runs_only_unseen(tmp_path: Path):
     db_path = tmp_path / "b.db"
     conn = open_db(db_path)

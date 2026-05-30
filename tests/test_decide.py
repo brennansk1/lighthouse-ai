@@ -72,6 +72,14 @@ def test_requires_a_criterion_message():
         run_decide("q", options=["a", "b"], criteria=[])
 
 
+def test_rejects_duplicate_option_labels():
+    """Two options with the same label collapse to one totals key, producing a
+    nonsensical single-option report (runner_up=None, margin>1.0). Reject them:
+    the docstring promises 'at least two DISTINCT options'."""
+    with pytest.raises(ValueError, match="distinct"):
+        run_decide("q", options=["A", "A"], criteria=[Criterion("c", 1.0)])
+
+
 def test_rejects_zero_weight_names_offender():
     with pytest.raises(ValueError, match="non-positive weights"):
         run_decide(

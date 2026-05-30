@@ -67,6 +67,32 @@ def test_parse_malformed_returns_empty():
     assert parse_feed_bytes(MALFORMED_FIXTURE) == []
 
 
+# Some feeds publish a bare <channel> document with no <rss> wrapper.
+BARE_CHANNEL_FIXTURE = b"""<?xml version="1.0"?>
+<channel>
+  <title>Bare Channel Feed</title>
+  <item>
+    <title>Item one</title>
+    <link>https://example.com/bare1</link>
+    <description>Body one.</description>
+  </item>
+  <item>
+    <title>Item two</title>
+    <link>https://example.com/bare2</link>
+    <description>Body two.</description>
+  </item>
+</channel>"""
+
+
+def test_parse_bare_channel_at_root_returns_items():
+    """A <channel> at the document root (no <rss> wrapper) must still parse."""
+    items = parse_feed_bytes(BARE_CHANNEL_FIXTURE)
+    assert len(items) == 2
+    assert items[0].url == "https://example.com/bare1"
+    assert items[0].title == "Item one"
+    assert items[0].source == "Bare Channel Feed"
+
+
 def test_parse_html_in_body_is_stripped():
     feed = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>X</title>
 <item><title>t</title><link>https://x/1</link>

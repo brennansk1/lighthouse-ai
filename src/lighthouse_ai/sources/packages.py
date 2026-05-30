@@ -775,7 +775,11 @@ def crates_get_dependents(
         resp.raise_for_status()
         data = resp.json()
         deps = data.get("dependencies") or []
-        versions = {v["id"]: v for v in (data.get("versions") or [])}
+        versions = {
+            v["id"]: v
+            for v in (data.get("versions") or [])
+            if isinstance(v, dict) and "id" in v
+        }
         out: list[Document] = []
         for dep in deps:
             ver_id = dep.get("version_id")

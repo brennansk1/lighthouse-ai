@@ -316,14 +316,37 @@ def applied_migrations(conn: sqlite3.Connection) -> set[str]:
     return {r[0] for r in rows}
 
 
+def _split_statements(sql: str) -> list[str]:
+    """Split a migration body into individual statements on ``;`` boundaries.
+
+    SQLite's ``executescript`` cannot be used inside a caller-controlled
+    transaction (it force-commits any pending one), which is exactly what
+    breaks atomic rollback. We therefore execute statements one at a time
+    under our own BEGIN/COMMIT. The migration DDL here is plain (no triggers
+    with embedded ``;``), so a simple split on ``;`` is sufficient; comment
+    lines are dropped so they don't become empty statements.
+    """
+    out: list[str] = []
+    for raw in sql.split(";"):
+        # Strip ``--`` comment lines so a comment-only fragment isn't executed.
+        lines = [ln for ln in raw.splitlines() if not ln.strip().startswith("--")]
+        stmt = "\n".join(lines).strip()
+        if stmt:
+            out.append(stmt)
+    return out
+
+
 def apply_migrations(conn: sqlite3.Connection, migrations: list[Migration]) -> list[str]:
     """Apply any not-yet-applied migrations in order. Returns ids applied.
 
-    Each migration runs as a single ``executescript`` block followed by the
-    ``schema_migrations`` insert. SQLite's ``executescript`` auto-commits in
-    autocommit mode (``isolation_level=None``), so we can't wrap the two calls
-    in an explicit BEGIN/COMMIT — instead we inline the version insert into
-    the migration script as one atomic unit per migration.
+    Each migration is applied as **one atomic transaction**: every statement
+    in the migration body plus the ``schema_migrations`` insert run under a
+    single explicit ``BEGIN``/``COMMIT``. If any statement fails the whole
+    migration is rolled back, so a partially-applied migration can never leave
+    orphan tables/columns behind that would wedge a later re-run.
+
+    We deliberately do *not* use ``executescript`` here: it force-commits any
+    pending transaction, which would silently break the atomicity guarantee.
     """
     _ensure_migrations_table(conn)
     already = applied_migrations(conn)
@@ -331,16 +354,17 @@ def apply_migrations(conn: sqlite3.Connection, migrations: list[Migration]) -> l
     for m in migrations:
         if m.id in already:
             continue
-        # Inline the version-insert into the script so the whole migration
-        # commits as one transaction. We escape single quotes in the id.
-        safe_id = m.id.replace("'", "''")
-        script = (
-            "BEGIN;\n"
-            + m.sql.rstrip().rstrip(";") + ";\n"
-            + f"INSERT INTO schema_migrations (id) VALUES ('{safe_id}');\n"
-            + "COMMIT;\n"
-        )
-        conn.executescript(script)
+        conn.execute("BEGIN")
+        try:
+            for stmt in _split_statements(m.sql):
+                conn.execute(stmt)
+            conn.execute(
+                "INSERT INTO schema_migrations (id) VALUES (?)", (m.id,)
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
         applied.append(m.id)
     return applied
 

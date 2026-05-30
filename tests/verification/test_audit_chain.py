@@ -142,3 +142,33 @@ def test_tamper_cascades_to_later_rows(migrated_paths):
     bad = verify_audit_chain(migrated_paths.audit_db, secret=secret)
     # Row 1 is directly bad; row 2 and 3 may also be flagged due to the cascade.
     assert 1 in bad
+
+
+def test_tampering_middle_row_cascades_to_all_later_rows(migrated_paths):
+    """Mutating row N's payload must flag N *and every subsequent row*.
+
+    This is the core tamper-evidence guarantee of an HMAC chain (per the
+    module docstring: "any tampering of an old row invalidates every
+    subsequent row"). A verifier that threads the *stored* hmac forward
+    instead of the *recomputed* one would flag only row N and silently pass
+    rows N+1.., letting an attacker rewrite history at a single row.
+    """
+    secret = b"strict-cascade"
+    for i in range(5):  # seqs 1..5
+        _append(migrated_paths, {"i": i}, secret=secret)
+
+    # Tamper ONLY row 3's payload — leave its hmac/prev_hmac columns intact,
+    # exactly what a naive row edit would do.
+    conn = open_db(migrated_paths.audit_db)
+    try:
+        conn.execute(
+            "UPDATE audit_events SET payload_json = ? WHERE seq = 3",
+            (json.dumps({"evil": True}),),
+        )
+    finally:
+        conn.close()
+
+    bad = verify_audit_chain(migrated_paths.audit_db, secret=secret)
+    # Row 3 changed → its recomputed hmac changes → rows 4 and 5 no longer
+    # chain off a verified prev. All of 3,4,5 must be flagged.
+    assert bad == [3, 4, 5]

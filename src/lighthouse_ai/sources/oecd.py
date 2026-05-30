@@ -92,9 +92,27 @@ def _parse_sdmx_data(data: dict, dataset_id: str) -> list[Document]:
         label = " — ".join(label_parts) if label_parts else key_str
 
         observations = series_obj.get("observations") or {}
+
+        def _obs_index(obs_key: str) -> int:
+            # SDMX observation keys are usually a single integer ("0") but can be
+            # multi-dimensional ("0:1") when several observation dimensions are
+            # present. Use the first numeric component as the time index; fall
+            # back to a large sentinel so unparseable keys sort last instead of
+            # raising ValueError.
+            head = obs_key.split(":", 1)[0]
+            try:
+                return int(head)
+            except (ValueError, TypeError):
+                return 10 ** 9
+
         obs_list = []
-        for obs_key, obs_val in sorted(observations.items(), key=lambda x: int(x[0]))[-8:]:
-            time = time_labels[int(obs_key)] if time_labels and int(obs_key) < len(time_labels) else obs_key
+        for obs_key, obs_val in sorted(observations.items(), key=lambda x: _obs_index(x[0]))[-8:]:
+            idx = _obs_index(obs_key)
+            time = (
+                time_labels[idx]
+                if time_labels and 0 <= idx < len(time_labels)
+                else obs_key
+            )
             value = obs_val[0] if isinstance(obs_val, list) else obs_val
             obs_list.append(f"{time}: {value}")
 

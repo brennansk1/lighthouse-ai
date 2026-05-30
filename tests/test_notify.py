@@ -371,3 +371,25 @@ def test_notifier_events_property():
 def test_notifier_no_channels_returns_empty():
     notifier = Notifier(_config(), [])
     assert notifier.notify("draft_ready", "T", "B") == []
+
+
+class _RaisingChannel:
+    def send(self, title: str, body: str) -> bool:
+        raise RuntimeError("channel exploded")
+
+
+def test_notifier_raising_channel_does_not_block_others():
+    # A channel that raises must be isolated: it is reported as a non-delivery
+    # and the remaining channels still get their turn (fan-out failure
+    # isolation -- one channel down doesn't take the rest with it).
+    desktop = _RecordingChannel()
+    boom = _RaisingChannel()
+    notifier = Notifier(
+        _config(email_enabled=True),
+        [("email", boom), ("desktop", desktop)],
+    )
+    results = notifier.notify("draft_ready", "T", "B")
+    assert results[0] == ChannelResult("email", attempted=True, delivered=False)
+    assert results[1] == ChannelResult("desktop", attempted=True, delivered=True)
+    # The healthy channel after the failing one still fired.
+    assert desktop.calls == [("T", "B")]

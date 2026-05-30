@@ -192,6 +192,30 @@ def test_enough_ram_moe_always_allowed():
     assert enough_ram_for("qwen3.6-35b-a3b", available_gb=2.0)
 
 
+def test_runtime_moe_tag_recognized_as_pageable():
+    """Regression: a fine-grained MoE bound to a *real installed tag* (e.g.
+    ``qwen3:30b-a3b`` — 30B total, 3B active) pages experts from SSD and must
+    be treated as pageable, not estimated at its full 30B resident footprint.
+
+    The catalog ``PAGEABLE_MOE`` set only holds capability-class names; at run
+    time roles are rebound to actual Ollama tags. Without tag-pattern detection
+    the admission queue wrongly denies these and silently degrades to the mock,
+    defeating the SSD-paging feature on exactly the 24 GB box this targets."""
+    from lighthouse_ai.gateway import enough_ram_for, is_pageable_moe
+    assert is_pageable_moe("qwen3:30b-a3b")
+    assert is_pageable_moe("qwen3-coder:30b-a3b")
+    assert is_pageable_moe("qwen3.5-122b-a10b")
+    assert is_pageable_moe("mixtral:8x7b")  # classic sparse-MoE notation
+    # A dense model is NOT pageable.
+    assert not is_pageable_moe("qwen3:32b")
+    assert not is_pageable_moe("llama3.1:8b")
+    # The whole point: the paging MoE is allowed even when RAM is far too small
+    # for its full weights, just like the catalog-class MoE above.
+    assert enough_ram_for("qwen3:30b-a3b", available_gb=2.0)
+    # ...while a dense 30B is still blocked when it won't fit.
+    assert not enough_ram_for("qwen3:32b", available_gb=2.0)
+
+
 def test_estimate_resident_param_hint():
     from lighthouse_ai.gateway import estimate_resident_gb
     assert estimate_resident_gb("some-14b-model") > estimate_resident_gb("some-8b-model")
