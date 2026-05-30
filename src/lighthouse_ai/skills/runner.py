@@ -150,12 +150,26 @@ def run_watchable(
     return SkillRun(skill_id=skill.manifest.id, documents=documents, fetches=ctx._fetch_count)
 
 
+# Attribution keys the platform owns: a skill may never override these by
+# pre-stamping a bare Document. Crucially this includes ``community`` — letting a
+# skill suppress its own community flag would defeat the downstream WEP downgrade
+# (verification/discipline.py) — and ``skill_id``/``skill_version``/
+# ``fetch_backend``/``audit_tags`` so provenance can't be forged. ``grade`` is
+# omitted on purpose: it is a *default* a skill may legitimately refine per-doc.
+_AUTHORITATIVE_META_KEYS: frozenset[str] = frozenset(
+    {"skill_id", "skill_version", "fetch_backend", "community", "audit_tags"}
+)
+
+
 def _coerce_documents(result: Any, ctx: SkillContext) -> list[Document]:
     """Validate the skill output and ensure every Document is attributed.
 
     Documents produced through the context are already tagged; this re-stamps
     defensively so a skill that constructs a bare ``Document`` (bypassing
     ``ctx.make_document``) still carries its skill identity and community flag.
+    Platform-owned attribution (:data:`_AUTHORITATIVE_META_KEYS`) is force-set so
+    a skill cannot forge provenance or strip its community downgrade; other keys
+    (e.g. ``grade``) are filled only if the skill left them unset.
     """
     if result is None:
         return []
@@ -171,8 +185,10 @@ def _coerce_documents(result: Any, ctx: SkillContext) -> list[Document]:
         if not isinstance(item, Document):
             log.warning("skills.bad_document", skill=ctx.skill_id, type=type(item).__name__)
             continue
-        # Re-stamp without clobbering richer values the skill already set.
         for key, value in stamp.items():
-            item.metadata.setdefault(key, value)
+            if key in _AUTHORITATIVE_META_KEYS:
+                item.metadata[key] = value  # platform wins — non-forgeable
+            else:
+                item.metadata.setdefault(key, value)
         docs.append(item)
     return docs

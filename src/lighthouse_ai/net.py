@@ -31,6 +31,7 @@ from .governor.egress_proxy import (
     DEFAULT_ALLOWED_DOMAINS,
     EgressProxy,
     PrivacyTier,
+    extract_host,
 )
 
 if TYPE_CHECKING:
@@ -147,10 +148,45 @@ class EgressGuardedClient:
         response = self._client.get(url)
         duration_ms = (time.monotonic() - started) * 1000.0
 
-        request_bytes = len(response.request.content) if response.request is not None else 0
+        # Redirect-aware enforcement: an injected client may have
+        # ``follow_redirects=True``, in which case the policy decision above
+        # gated only the requested URL while the bytes now in ``response`` came
+        # from the final, possibly non-allowlisted, host. Re-check that host and
+        # refuse a redirect that escaped the allowlist (§15.11 — egress is a
+        # one-way door; a redirect must not be a bypass).
+        final_url = str(response.url)
+        final_host = extract_host(final_url)
+        if final_host != decision.host:
+            final_decision = self._proxy.check(final_url, privacy)
+            if not final_decision.allowed:
+                self._proxy.log_connection(
+                    final_decision.host or final_host,
+                    port=_default_port(final_url),
+                    bytes_sent=0,
+                    bytes_received=0,
+                    duration_ms=duration_ms,
+                    tier=privacy,
+                    allowed=False,
+                    reason=f"redirect to disallowed host: {final_decision.reason}",
+                )
+                raise EgressBlocked(
+                    f"redirect to disallowed host {final_host!r}: "
+                    f"{final_decision.reason}"
+                )
+
+        # ``response.request.content`` raises ``RequestNotRead`` for a streaming
+        # or redirected request whose body was never buffered. A GET body is
+        # empty anyway, so treat that as zero bytes sent rather than crashing
+        # after the fetch already completed.
+        try:
+            request_bytes = (
+                len(response.request.content) if response.request is not None else 0
+            )
+        except Exception:
+            request_bytes = 0
         self._proxy.log_connection(
-            decision.host,
-            port=_default_port(url),
+            final_host or decision.host,
+            port=_default_port(final_url),
             bytes_sent=request_bytes,
             bytes_received=len(response.content),
             duration_ms=duration_ms,

@@ -47,6 +47,10 @@ FORBIDDEN_IMPORT_ROOTS: frozenset[str] = frozenset(
         "subprocess",
         "multiprocessing",
         "ctypes",
+        # importlib is a dynamic-import vector (import_module / __import__) that
+        # would let a skill load any forbidden module at runtime, sidestepping the
+        # static AST check below. Skills never need it; deny it outright.
+        "importlib",
         "asyncio",
         "aiohttp",
         "ftplib",
@@ -108,6 +112,19 @@ def _forbidden_imports(source: str) -> list[str]:
                 root = node.module.split(".", 1)[0]
                 if root in FORBIDDEN_IMPORT_ROOTS:
                     bad.append(node.module)
+        elif isinstance(node, ast.Call):
+            # Dynamic imports bypass the static import nodes above:
+            # ``__import__("socket")`` / ``importlib.import_module("httpx")``.
+            # We can't resolve a non-literal argument, so any call to one of
+            # these import primitives is itself treated as forbidden.
+            func = node.func
+            name = None
+            if isinstance(func, ast.Name):
+                name = func.id
+            elif isinstance(func, ast.Attribute):
+                name = func.attr
+            if name in ("__import__", "import_module"):
+                bad.append(f"<dynamic-import: {name}>")
     return bad
 
 
@@ -115,7 +132,14 @@ def _audit_skill_imports(skill_dir: Path) -> None:
     """Raise :class:`SkillLoadError` if any ``.py`` file imports a forbidden module."""
     offenders: dict[str, list[str]] = {}
     for py in sorted(skill_dir.rglob("*.py")):
-        bad = _forbidden_imports(py.read_text(encoding="utf-8"))
+        try:
+            source = py.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            # Fail closed: a .py we cannot read/decode cannot be vetted, so the
+            # whole skill is refused rather than imported unscanned.
+            offenders[str(py.relative_to(skill_dir))] = [f"<unreadable: {exc}>"]
+            continue
+        bad = _forbidden_imports(source)
         if bad:
             offenders[str(py.relative_to(skill_dir))] = bad
     if offenders:

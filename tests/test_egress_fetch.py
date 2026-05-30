@@ -182,3 +182,51 @@ def test_redirect_and_content_type_flow(
     assert record["allowed"] is True
     # The content-type metadata flows into the document.
     assert "text/html" in (doc.metadata.get("content_type") or "")
+
+
+# ---------------------------------------------------------------------------
+# Test 4: redirect to a NON-allowlisted host is refused (SSRF / egress bypass)
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_redirect_to_disallowed_host_blocked(
+    broker: SandboxBroker,
+    egress_log: Path,
+) -> None:
+    """A redirect from an allowed host to a disallowed one must NOT leak content.
+
+    The initial host (arxiv.org) is allowlisted, but the 302 points at a host
+    that is not. ``follow_redirects=True`` would otherwise fetch and ingest the
+    attacker's bytes, fully bypassing the egress allowlist. The final host must
+    be re-checked: the call raises ``EgressBlocked`` and the attacker's content
+    never reaches the broker/extractor.
+    """
+    proxy = EgressProxy(frozenset({"arxiv.org"}), egress_log)
+
+    respx.get("https://arxiv.org/start").mock(
+        return_value=httpx.Response(
+            302, headers={"location": "https://evil.example/secret"}
+        )
+    )
+    respx.get("https://evil.example/secret").mock(
+        return_value=httpx.Response(200, text="LEAKED ATTACKER CONTENT")
+    )
+
+    with httpx.Client(follow_redirects=True) as client:
+        with pytest.raises(EgressBlocked) as exc:
+            fetch_and_ingest(
+                "https://arxiv.org/start",
+                broker,
+                client=client,
+                proxy=proxy,
+                allow_host=False,
+            )
+
+    assert "evil.example" in exc.value.reason
+
+    # The denied redirect is audited (allowed=false, final host, zero bytes out).
+    lines = _read_log(egress_log)
+    denied = [r for r in lines if r["allowed"] is False]
+    assert denied, f"expected a denied audit line, got {lines}"
+    assert denied[-1]["host"] == "evil.example"

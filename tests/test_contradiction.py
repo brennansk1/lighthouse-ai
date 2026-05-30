@@ -204,6 +204,37 @@ def test_should_auto_adjudicate_fails_each_condition():
     assert should_auto_adjudicate(base, depth_tier="deep", user_disabled=True) is False
 
 
+def test_non_load_bearing_cross_skill_does_not_auto_adjudicate():
+    # §6.4 condition 2: the claim must be load-bearing. A balanced cross-skill
+    # clash on a NON-load-bearing claim must NOT reach 'high' severity (which is
+    # the only thing should_auto_adjudicate keys off for load-bearing), and so
+    # must NOT auto-adjudicate even at the deepest tier.
+    out = detect(
+        ["Remote work increases team productivity"],
+        [_ev("c1", "skill-a", "arxiv", 0.9), _ev("c2", "skill-b", "pubmed", 0.1)],
+        job_id="j", detected_at=FIXED_TS, load_bearing=False,
+    )
+    assert len(out) == 1
+    assert out[0].detection_layer == "cross_skill"
+    assert out[0].severity != "high"
+    assert should_auto_adjudicate(out[0], depth_tier="deep") is False
+
+
+def test_flagged_chunk_contradiction_is_at_least_medium():
+    # The chunk-layer polarity heuristic has no per-chunk balance, but a flagged
+    # opposing pair is a real disagreement and must surface at >= 'medium'
+    # regardless of load-bearing (otherwise a flagged contradiction reads 'low').
+    claims = [
+        Claim(text="Remote work increases team productivity"),
+        Claim(text="Remote work decreases team productivity"),
+    ]
+    out = detect(claims, [], job_id="j", detected_at=FIXED_TS, load_bearing=False)
+    chunk_hits = [c for c in out if c.detection_layer == "chunk"]
+    assert chunk_hits
+    order = {"low": 0, "medium": 1, "high": 2}
+    assert all(order[c.severity] >= order["medium"] for c in chunk_hits)
+
+
 # --------------------------------------------------------------------------- #
 # Audit record
 # --------------------------------------------------------------------------- #

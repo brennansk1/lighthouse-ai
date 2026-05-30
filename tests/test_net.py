@@ -231,6 +231,62 @@ def test_guarded_get_private_tier_blocks(tmp_path: Path) -> None:
     assert not route.called
 
 
+# --- redirect-aware enforcement (egress is a one-way door) ---
+
+
+@respx.mock
+def test_redirect_to_disallowed_host_blocked(tmp_path: Path) -> None:
+    """A follow-redirects client must not let a redirect escape the allowlist.
+
+    arxiv.org is allowed; the 302 target is not. With an injected
+    follow_redirects client the bytes would otherwise be fetched and returned,
+    bypassing the egress policy. The final host is re-checked and the call
+    raises EgressBlocked instead of returning the attacker's response.
+    """
+    respx.get("https://arxiv.org/r").mock(
+        return_value=httpx.Response(302, headers={"location": "https://evil.example.com/x"})
+    )
+    respx.get("https://evil.example.com/x").mock(
+        return_value=httpx.Response(200, text="LEAKED")
+    )
+    redir_client = httpx.Client(follow_redirects=True)
+    client = EgressGuardedClient(_proxy(tmp_path), client=redir_client)
+    with pytest.raises(EgressBlocked) as exc:
+        client.get("https://arxiv.org/r")
+    assert "evil.example.com" in exc.value.reason
+    # A denied audit line for the final host with zero bytes is recorded.
+    recs = _records(tmp_path)
+    denied = [r for r in recs if r["allowed"] is False]
+    assert denied and denied[-1]["host"] == "evil.example.com"
+    redir_client.close()
+
+
+@respx.mock
+def test_redirect_to_allowed_host_succeeds_without_crash(tmp_path: Path) -> None:
+    """A redirect between two allowlisted hosts succeeds and does not raise.
+
+    Also guards the historical RequestNotRead crash: a redirected request's
+    body is never buffered, so naively reading ``response.request.content``
+    would raise after the fetch already completed.
+    """
+    proxy = EgressProxy(frozenset({"arxiv.org", "export.arxiv.org"}), log_path=tmp_path / "egress.jsonl")
+    respx.get("https://arxiv.org/a").mock(
+        return_value=httpx.Response(302, headers={"location": "https://export.arxiv.org/b"})
+    )
+    respx.get("https://export.arxiv.org/b").mock(
+        return_value=httpx.Response(200, text="final")
+    )
+    redir_client = httpx.Client(follow_redirects=True)
+    client = EgressGuardedClient(proxy, client=redir_client)
+    resp = client.get("https://arxiv.org/a")
+    assert resp.status_code == 200
+    assert resp.text == "final"
+    rec = _records(tmp_path)[0]
+    assert rec["allowed"] is True
+    assert rec["host"] == "export.arxiv.org"
+    redir_client.close()
+
+
 # --- context manager ---
 
 

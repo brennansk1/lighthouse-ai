@@ -169,19 +169,28 @@ def derive_severity(
     """Severity from evidence balance + load-bearing + detection layer (§6.3).
 
     - Balanced evidence on a load-bearing claim → ``high`` (the auto-Adjudicate
-      precondition). Cross-skill disagreement *elevates*: a cross-skill clash is
-      never below ``medium``, and balanced cross-skill is ``high`` regardless of
-      load-bearing.
-    - Lopsided / non-load-bearing → ``low``/``medium``.
+      precondition). ``high`` is reserved for this case: ``should_auto_adjudicate``
+      keys off ``severity == "high"`` to encode "load-bearing", so we must NOT
+      assign ``high`` to a non-load-bearing claim — not even a balanced
+      cross-skill one (that would auto-adjudicate a claim that isn't load-bearing,
+      violating §6.4 condition 2).
+    - Cross-skill disagreement *elevates*: independent sources disagreeing is a
+      stronger signal, so a cross-skill clash is never below ``medium`` even when
+      lopsided / non-load-bearing.
+    - Other lopsided / non-load-bearing clashes → ``low``/``medium``.
     """
     balanced = _is_balanced(n_support, n_oppose)
 
     if balanced and load_bearing:
         return "high"
     if layer == "cross_skill":
-        # Independent sources disagreeing is a stronger signal.
-        return "high" if balanced else "medium"
-    if balanced or load_bearing:
+        # Elevated floor; ``high`` already handled above (requires load-bearing).
+        return "medium"
+    if layer == "chunk" and balanced:
+        # The polarity heuristic only fires on a genuine opposing pair, so a
+        # flagged chunk contradiction is never below 'medium' (even non-LB).
+        return "medium"
+    if load_bearing:
         return "medium"
     return "low"
 
@@ -258,12 +267,15 @@ def detect(
 
     def _emit(claim_text: str, layer: DetectionLayer,
               support: list[ChunkRef], oppose: list[ChunkRef],
-              lb: bool) -> None:
+              lb: bool, *, balance: tuple[int, int] | None = None) -> None:
         cid = _contradiction_id(claim_text, layer, job_id)
         if cid in seen_ids:
             return
         seen_ids.add(cid)
-        sev = derive_severity(n_support=len(support), n_oppose=len(oppose),
+        # ``balance`` overrides the count used for severity when the layer has no
+        # per-chunk refs of its own (e.g. the chunk-level polarity heuristic).
+        n_sup, n_opp = balance if balance is not None else (len(support), len(oppose))
+        sev = derive_severity(n_support=n_sup, n_oppose=n_opp,
                               layer=layer, load_bearing=lb)
         out.append(Contradiction(
             contradiction_id=cid,
@@ -291,7 +303,7 @@ def detect(
             lb = _is_load_bearing(idx, claim_list[idx] if claim_list else raw_i)
             # No per-chunk balance available at this layer; treat the two sides
             # symmetrically (1 vs 1) so a flagged pair is at least 'medium'.
-            _emit(raw_i, "chunk", support=[], oppose=[], lb=lb)
+            _emit(raw_i, "chunk", support=[], oppose=[], lb=lb, balance=(1, 1))
 
     # --- Layers 2+3: entailment-based, per claim -------------------------- #
     if ("claim" in want or "cross_skill" in want) and refs:

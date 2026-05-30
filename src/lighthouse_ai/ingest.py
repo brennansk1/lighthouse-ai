@@ -460,6 +460,34 @@ def fetch_and_ingest(
         started = time.monotonic()
         resp = client.get(url)
         duration_ms = (time.monotonic() - started) * 1000.0
+
+        # Redirect-aware egress enforcement: the policy decision above gates the
+        # *requested* URL, but ``follow_redirects`` may have walked the client to
+        # an entirely different host whose bytes are now buffered in ``resp``.
+        # Re-check the FINAL host against the same proxy; a redirect to a
+        # non-allowlisted host is an egress-policy bypass (SSRF / DNS-rebinding
+        # vector, §15) and must be refused even though the bytes were fetched —
+        # we drop them on the floor and never hand them to the broker/extractor.
+        final_url = str(resp.url)
+        final_host = extract_host(final_url)
+        if final_host != decision.host:
+            final_decision = active_proxy.check(final_url, PrivacyTier.PUBLIC_OK)
+            if not final_decision.allowed:
+                active_proxy.log_connection(
+                    final_decision.host or final_host,
+                    port=_default_port(final_url),
+                    bytes_sent=0,
+                    bytes_received=0,
+                    duration_ms=duration_ms,
+                    tier=PrivacyTier.PUBLIC_OK,
+                    allowed=False,
+                    reason=f"redirect to disallowed host: {final_decision.reason}",
+                )
+                raise EgressBlocked(
+                    f"redirect to disallowed host {final_host!r}: "
+                    f"{final_decision.reason}"
+                )
+
         resp.raise_for_status()
 
         # Audit log — real byte/duration figures, post-fetch.
@@ -473,8 +501,8 @@ def fetch_and_ingest(
         except Exception:
             request_bytes = 0
         active_proxy.log_connection(
-            decision.host or host,
-            port=_default_port(url),
+            final_host or decision.host or host,
+            port=_default_port(final_url),
             bytes_sent=request_bytes,
             bytes_received=len(resp.content),
             duration_ms=duration_ms,

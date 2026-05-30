@@ -70,6 +70,29 @@ def test_svg_with_script_quarantined():
     assert r.verdict == "quarantine"
 
 
+def test_svg_with_event_handler_quarantined():
+    """SVG executes event handlers in-browser exactly like HTML — must catch them."""
+    s = HTMLScriptScanner()
+    r = s.scan(b'<svg><img src=x onerror="steal()"></svg>', filename="x.svg")
+    assert r.verdict == "quarantine"
+
+
+def test_svg_with_javascript_url_quarantined():
+    s = HTMLScriptScanner()
+    r = s.scan(b'<svg><a href="javascript:steal()">x</a></svg>', filename="x.svg")
+    assert r.verdict == "quarantine"
+
+
+def test_html_leading_svg_does_not_downgrade_scan():
+    """An .html file that merely begins with <svg> must still get the full
+    HTML danger check — not the weaker SVG-only one — so event handlers in
+    the surrounding HTML are not smuggled through."""
+    s = HTMLScriptScanner()
+    payload = b'<svg width="1"></svg><body><img src=x onerror=alert(1)></body>'
+    r = s.scan(payload, filename="page.html")
+    assert r.verdict == "quarantine"
+
+
 def test_archive_bomb_rejected():
     """Build a 50KB zip whose declared expansion is over 1GB → reject."""
     buf = io.BytesIO()

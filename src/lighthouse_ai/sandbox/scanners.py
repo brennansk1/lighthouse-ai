@@ -86,11 +86,16 @@ class PDFJavaScriptScanner:
 
 # --- HTML script scanner -------------------------------------------------
 
+# NB: the event-handler alternative is ``\bon\w+\s*=`` (no quote required).
+# HTML/SVG attribute values may be unquoted (``onerror=alert(1)``), so an
+# earlier ``on\w+\s*=\s*["']`` pattern silently admitted unquoted handlers.
+# A bare ``on…=`` attribute is always an event handler in HTML, so matching it
+# unconditionally is the fail-closed (quarantine) choice; the ``\b`` keeps
+# benign substrings like ``reason=`` / ``comparison=`` from matching.
 _HTML_DANGER_RE = re.compile(
-    rb"<script\b|on\w+\s*=\s*[\"']|javascript:",
+    rb"<script\b|\bon\w+\s*=|javascript:",
     re.IGNORECASE,
 )
-_SVG_SCRIPT_RE = re.compile(rb"<script\b", re.IGNORECASE)
 
 
 class HTMLScriptScanner:
@@ -105,9 +110,13 @@ class HTMLScriptScanner:
         return False
 
     def scan(self, payload: bytes, *, filename: str | None = None) -> ScanResult:
-        is_svg = (filename or "").lower().endswith(".svg") or b"<svg" in payload[:200]
-        pattern = _SVG_SCRIPT_RE if is_svg else _HTML_DANGER_RE
-        if pattern.search(payload):
+        # SVG executes <script>, event handlers (onload/onerror/…), and
+        # ``javascript:`` URLs in the browser exactly as HTML does, so both
+        # markup families get the same full danger check.  (A previous version
+        # used a weaker <script>-only pattern for anything that looked like SVG,
+        # which let an .html document beginning with <svg> smuggle event
+        # handlers through.)
+        if _HTML_DANGER_RE.search(payload):
             return ScanResult(self.name, "quarantine",
                               "active content (script / event handler / javascript:)")
         return ScanResult(self.name, "clean")
