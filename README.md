@@ -65,7 +65,22 @@ entire run tamper-evident.
   PyPI/npm/crates, Wikidata, Wayback, news wires (all return `Document` objects)
 - **`lighthouse doctor news`** — news-outlet reachability + trust matrix; **per-skill eval**
   (recall@k + per-skill Brier calibration)
-- **SQLite-WAL spine**: outbox + saga compensation + HMAC-chained audit log
+- **Sandbox data workspace** — a secured two-zone store (your uploads + the assistant's
+  analysis workspace) with a user-set size limit, broker-scanned on entry, plus a
+  capability-restricted analysis toolset and a dashboard **Sandbox** tab
+- **Watch a website** — point Watch at any URL: a plain-language "can we watch this?"
+  check, choose what counts as a change (any change / mentions / a number crosses /
+  a section changes), get alerts (incl. desktop/Telegram notify)
+- **Intent recipes** in the wizard (e.g. "Draft a literature review") that pre-fill
+  mode + depth + sources; **`lighthouse skill new`** scaffolds a custom source skill
+- **Settings**: connect data sources (free API keys, stored on-device) + **reproducibility**
+  (lock the model — fixed seed + temperature 0, recorded in the provenance sidecar)
+- **Global Pause** (dashboard button + `lighthouse pause`) stops all 24/7 work so you can
+  reclaim your machine; honored by every scheduled loop
+- **Hardware-aware**: KV/context OOM headroom + MoE-paging-aware model fit + RAM-aware
+  concurrency guardrails (won't swap a 24 GB box; picks the best model that fits)
+- **In-app guide** in the Info tab covering every feature in plain language
+- **SQLite-WAL spine**: outbox + saga compensation + HMAC-chained (tamper-evident) audit log
 - **Governor**: hierarchical token buckets, loop detector, injection gate, degradation
   tiers, cost report
 - **Sandbox**: EICAR / PDF-JS / HTML-script / zip-bomb scanners + quarantine
@@ -263,12 +278,12 @@ Sources (arXiv · OpenAlex · PubMed · Crossref · RSS)
 
 ## Status
 
-**2476 tests passing · 52 skipped (opt-in real-backend / litestream binary / absent optional models) · ruff clean · 262 modules · ~44k source lines · 36 research-skill sources · macOS M4 24 GB verified (real Ollama: Decide validated end-to-end, backend=ollama, RAM-gated). Live-data validation across the 36 skills + real-LLM quality is the remaining gate — see Path to deployment.**
+**2816 tests passing · 103 skipped (opt-in real-backend / litestream binary / absent optional models) · ruff clean · mypy 0 (blocking CI gate) · 269 modules · ~49k source lines · 37 research-skill sources · coverage ~82% · 4-wave codebase audit complete (~32 real bugs fixed incl. a redirect-SSRF and the audit-chain tamper-evidence). macOS M4 24 GB verified (real Ollama: Decide validated end-to-end, backend=ollama, RAM-gated). The offline-buildable product is feature-complete; live-data validation across the 37 skills + real-LLM quality is the remaining gate — see Path to deployment.**
 
 ## Development
 
 ```bash
-uv run pytest -q                          # 2476 pass, 52 skip
+uv run pytest -q                          # 2816 pass, 103 skip
 uv run ruff check src tests               # 0 errors
 LIGHTHOUSE_REAL_BACKEND=1 uv run pytest tests/test_backends_ollama.py  # real LLM
 ```

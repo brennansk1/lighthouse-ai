@@ -1,6 +1,6 @@
 # Lighthouse — Production Readiness Checklist
 
-Status snapshot: **262 Python modules · ~44,000 source lines · 102 test files · 2476 tests pass · 52 opt-in skips · 36 research-skill sources · ruff clean**.
+Status snapshot: **269 Python modules · ~49,000 source lines · 127 test files · 2816 tests pass · 103 opt-in skips · 37 research-skill sources · ruff clean · mypy 0 (blocking) · coverage ~82%**. A 4-wave full-codebase audit fixed ~32 real bugs (redirect-SSRF, audit-chain tamper-evidence, skill import-guard escapes, data-loss/durability, dead planner path, …) — each with a regression test. Shipped since the last snapshot: Sandbox workspace, Watch-a-website (v2), intent recipes, skill-scaffold generator, steerability/reproducibility, Settings API-key onboarding, global Pause, hardware OOM/utilization guardrails, Watch-alert notifications, and the in-app Info-tab guide.
 Legend: ✅ done & tested (offline) · 🟡 built but needs-real-backend/live-data · 🔌 built, needs runtime wiring · ⬜ not started.
 
 A "vertical slice" of the product works **end-to-end, locally, today**: ingest documents → frame the question → retrieve with real `bge-m3` embeddings → synthesize with a real local LLM (Ollama) → enforce citation discipline → record calibration positions → stage a draft → approve it in the dashboard → export to Logseq. Everything below tracks the gap from that slice to full production.
