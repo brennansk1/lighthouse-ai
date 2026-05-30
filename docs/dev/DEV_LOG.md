@@ -152,8 +152,21 @@ onboarding; **global Pause**; **hardware** OOM/utilization guardrails; **in-app 
   ram_aware_concurrency wiring to raise default LLM concurrency (OOM-sensitive — validate on real hw).
 
 ## Current state (update the date/commit when you touch this)
-- Suite: ~2762 passing, ~103 skipped (gated). mypy 0 (267 files). ruff clean. CI: ruff+mypy(blocking)+
-  pytest+build on {ubuntu,macOS}×py{3.11,3.12}. Coverage ~82%.
+- **2026-05-30 — live-validation sprint complete on the user's Mac mini.** Suite **2889 pass / 83 skip**
+  (fewer skips because every optional extra is installed in the dev env), mypy 0 (269 files), ruff clean.
+  **17 real bugs found + fixed** by installing each real optional dependency and running its gated tests
+  (recommender ×3, precision bar, watch dead-wire, chat-smoke, sandbox ×3, politeness ×3, youtube-1.x,
+  docling-2.x, offline-reranker, entailment-empty, js-render-test, zip-bomb-DoS). Validated end-to-end:
+  core retrieval (recall@5/MRR 1.0 base + FlagReranker), faithfulness gate (mean 1.0), 7/7 per-mode E2E,
+  37/37 source skills, sandbox redteam (real yara+pikepdf 29/29), politeness (real libs 68/68), Ollama +
+  Qdrant backends, **dashboard renders in real chromium (7/7 pages) + interaction flows (wizard
+  job-create, global Pause, sandbox upload blocks EICAR)**, and a **clean-room wheel install** (bundles
+  static dashboard + 37 skills + catalog; 3 console scripts run). Boundary security review: Areas 1/2/4
+  well-defended, fixed a scan-time zip-bomb DoS; 2 low-priority residuals in FUTURE_FEATURES §10. Browser
+  QA harnesses: `scripts/browser_smoke.py` + `scripts/browser_flow.py`. **Remaining to ship: 24 h soak,
+  Linux/systemd cross-platform, code-signing + PyPI publish (need other platforms / certs / time).**
+- (earlier baseline) Suite: ~2762 passing, ~103 skipped (gated). mypy 0 (267 files). ruff clean. CI:
+  ruff+mypy(blocking)+pytest+build on {ubuntu,macOS}×py{3.11,3.12}. Coverage ~82%.
 - Shipped: full skills framework + 36-source library + recommender + source picker; mode↔skill
   integration + contradiction artifact + per-mode handling + auto-Adjudicate; frontier-gap core
   (planner LLM, calibration loop, deep-tier VOI/synthesis/checkpoint); acquisition stack (politeness,
