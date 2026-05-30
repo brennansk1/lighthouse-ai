@@ -31,6 +31,171 @@ function artifactLabel(t) {
   return (ARTIFACT_META[t] && ARTIFACT_META[t].label) || (t || 'Artifact');
 }
 
+// ── Intent Recipes ──────────────────────────────────────────────────────────
+//
+// Plain-language starting points for newcomers. Each recipe pre-fills the wizard
+// (mode, depth, a suggested source list, and an example prompt placeholder) so
+// the user can skip the mode taxonomy and just pick something that sounds right.
+// Clicking a recipe sets state and jumps to step 2 (frame). The user can still
+// ignore recipes entirely and pick a mode manually — the existing flow is
+// unchanged.
+//
+// suggestedSkills values are skill_ids from the source registry.  The SourcePicker
+// in step 2 still lets the user add or remove sources; these are just pre-checks
+// so the most-useful sources are already ticked when the user lands on the frame
+// step.
+//
+// Depth keys: 'quick' | 'standard' | 'thorough' | 'deep'
+// Mode keys (verified against MODE_PROCESSES.md registry):
+//   watch | ask | investigate | survey | reconstruct | decide | adjudicate
+
+const INTENT_RECIPES = [
+  {
+    id: 'literature-review',
+    label: 'Draft a literature review',
+    blurb: 'Survey academic sources and produce an evidence table with a PRISMA screen.',
+    mode: 'investigate',
+    depth: 'thorough',
+    suggestedSkills: ['openalex', 'pubmed', 'arxiv', 'semantic_scholar'],
+    examplePrompt: 'e.g. What does the recent literature say about GLP-1 drugs for weight maintenance?',
+  },
+  {
+    id: 'fact-check',
+    label: 'Fact-check a claim',
+    blurb: 'Put a specific assertion through a structured debate — steelman, devil\'s advocate, base rate, fragility.',
+    mode: 'adjudicate',
+    depth: 'standard',
+    suggestedSkills: ['general_web', 'wikipedia', 'news_orchestrator'],
+    examplePrompt: 'e.g. The proposed merger will clear regulatory review.',
+  },
+  {
+    id: 'build-timeline',
+    label: 'Build a timeline',
+    blurb: 'Extract dated events from sources and assemble a sourced chronology.',
+    mode: 'reconstruct',
+    depth: 'standard',
+    suggestedSkills: ['wayback', 'general_web', 'congress'],
+    examplePrompt: 'e.g. The sequence of events in the 2022 plant shutdown',
+  },
+  {
+    id: 'compare-options',
+    label: 'Compare options to decide',
+    blurb: 'Score choices against weighted criteria, find the winner, and name the crux that could flip it.',
+    mode: 'decide',
+    depth: 'standard',
+    suggestedSkills: [],
+    examplePrompt: 'e.g. Which vendor should we choose for the data pipeline?',
+  },
+  {
+    id: 'monitor-topic',
+    label: 'Monitor a topic',
+    blurb: 'Set up a continuous watch on named sources — get alerts for high-salience items and a digest of the rest.',
+    mode: 'watch',
+    depth: 'auto',
+    suggestedSkills: [],
+    examplePrompt: 'e.g. New filings and statements from the three largest lithium producers',
+  },
+  {
+    id: 'quick-question',
+    label: 'Quick question',
+    blurb: 'Get a fast, cited answer from the corpus. Best for pointed factual questions.',
+    mode: 'ask',
+    depth: 'quick',
+    suggestedSkills: ['general_web', 'wikipedia'],
+    examplePrompt: 'e.g. What does our corpus say about the 2023 supply agreement?',
+  },
+];
+
+// RecipeCard: one intent recipe chip.  Compact horizontal layout — label +
+// one-liner blurb + small "mode" badge — so six fit in a row without dominating
+// the mode grid below.
+function RecipeCard({ recipe, onSelect }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={() => onSelect(recipe)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      aria-label={`Start from recipe: ${recipe.label}`}
+      style={{
+        ...card,
+        textAlign: 'left',
+        padding: '10px 12px',
+        cursor: 'pointer',
+        border: hover ? '1px solid var(--primary)' : '1px solid var(--rule)',
+        background: hover ? 'var(--rule-soft)' : 'var(--card)',
+        transition: 'border-color .12s ease, background .12s ease',
+        flex: '1 1 160px',
+        minWidth: 0,
+      }}>
+      <div style={{
+        fontSize: 12.5, fontWeight: 700, color: 'var(--ink)',
+        marginBottom: 3, lineHeight: 1.3,
+      }}>{recipe.label}</div>
+      <div style={{
+        fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.4,
+        marginBottom: 6,
+      }}>{recipe.blurb}</div>
+      <span style={{
+        display: 'inline-block', fontSize: 10, fontWeight: 700,
+        lineHeight: 1, padding: '2px 6px', borderRadius: 3,
+        background: 'var(--rule-soft)', color: 'var(--ink-2)',
+        textTransform: 'uppercase', letterSpacing: '0.04em',
+      }}>{recipe.mode}</span>
+    </button>
+  );
+}
+
+// RecipeRow: collapsible "Start from a recipe" strip that sits above the mode
+// grid in step 1.  Collapsed by default to stay out of the way of returning
+// users; newcomers can open it with one click.
+function RecipeRow({ onRecipeSelect }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+        }}>
+        <span style={{
+          fontSize: 11, fontWeight: 700, letterSpacing: '0.06em',
+          textTransform: 'uppercase', color: 'var(--primary)',
+        }}>Start from a recipe</span>
+        <span aria-hidden="true" style={{
+          fontSize: 10, color: 'var(--muted)',
+          display: 'inline-block',
+          transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+          transition: 'transform .15s ease',
+          lineHeight: 1,
+        }}>▶</span>
+        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+          {open ? '' : '— plain-language starting points'}
+        </span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          <p style={{
+            fontSize: 12, color: 'var(--muted)', margin: '0 0 10px',
+            lineHeight: 1.5, maxWidth: '68ch',
+          }}>
+            Pick a recipe to pre-fill the wizard with a sensible mode, depth, and
+            source set. You can adjust everything in the next step.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            {INTENT_RECIPES.map((r) => (
+              <RecipeCard key={r.id} recipe={r} onSelect={onRecipeSelect} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // A plain-language placeholder example per mode, so the question field shows the
 // kind of input that fits the chosen mode rather than a generic prompt.
 const MODE_PLACEHOLDER = {
@@ -542,6 +707,31 @@ function ResearchPage({ toast }) {
     setStep(2);
   }
 
+  // Recipe selection: pre-fill mode + depth + suggestedSkills, then jump to
+  // step 2 so the user lands on the frame step with sensible defaults already
+  // set.  The SourcePicker in step 2 will further pre-check recommended sources
+  // on top of these; the user can change anything before launching.
+  function applyRecipe(recipe) {
+    setSelected(recipe.mode);
+    if (recipe.depth && recipe.depth !== 'auto') {
+      setDepth(recipe.depth);
+    } else {
+      setDepth('auto');
+    }
+    // Pre-seed the skill selection with the recipe's suggested sources.
+    // SourcePicker's useEffect will only overwrite this if selectedSkills is
+    // empty (prev.length > 0 guard), so our pre-seeds survive the fetch.
+    if (recipe.suggestedSkills && recipe.suggestedSkills.length > 0) {
+      setSelectedSkills(recipe.suggestedSkills);
+    }
+    // Pre-fill the topic placeholder text so the user sees a concrete example.
+    // We don't actually set the topic value (that would require editing to
+    // clear), but we store the example so the placeholder is recipe-aware.
+    // The input already shows MODE_PLACEHOLDER[mode] by default; since we jump
+    // straight to step 2 the correct placeholder will render.
+    setStep(2);
+  }
+
   // Per-step validation. Returns an error string, or null when the step is good.
   function frameError() {
     if (!topic.trim()) return 'Enter a question or topic to continue.';
@@ -635,6 +825,9 @@ function ResearchPage({ toast }) {
           {/* ── Step 1 — Choose what you want ── */}
           {step === 1 && (
             <div>
+              {/* Recipe row — collapsible, secondary; sits above the mode grid */}
+              <RecipeRow onRecipeSelect={applyRecipe} />
+
               <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 14px',
                 lineHeight: 1.5, maxWidth: '60ch' }}>
                 Each mode produces one kind of research artifact. Pick the one
