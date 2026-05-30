@@ -54,10 +54,10 @@ const INTENT_RECIPES = [
   {
     id: 'literature-review',
     label: 'Review the research on a topic',
-    blurb: 'Go through academic sources and lay them out in a clear evidence table.',
+    blurb: 'Pull together what the sources say into a clear, cited write-up. Starts with research databases — add web or other sources too.',
     mode: 'investigate',
     depth: 'thorough',
-    suggestedSkills: ['openalex', 'pubmed', 'arxiv', 'semantic_scholar'],
+    suggestedSkills: ['openalex', 'pubmed', 'arxiv', 'semantic_scholar', 'general_web'],
     examplePrompt: 'e.g. What does the recent literature say about GLP-1 drugs for weight maintenance?',
   },
   {
@@ -1873,7 +1873,7 @@ function ConfidenceBar({ phrase, value, compact }) {
     ? phrase.toString().charAt(0).toUpperCase() + phrase.toString().slice(1)
     : 'Even chance';
   return (
-    <div style={{ maxWidth: compact ? 280 : 460 }}>
+    <div style={{ width: '100%', maxWidth: compact ? 360 : 680 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between',
         fontSize: 10, color: 'var(--muted)', marginBottom: 4, fontFamily: 'var(--sans)' }}>
         <span>Unlikely</span><span>Even chance</span><span>Likely</span>
@@ -1985,10 +1985,17 @@ function LibraryPage({ toast }) {
                       value={a.confidence} compact />
                   )}
                   {a.source_count != null && (
-                    <span style={{ fontSize: 11, color: 'var(--muted)',
-                      display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 11,
+                      color: a.source_count === 0 ? '#a8341b' : 'var(--muted)',
+                      fontWeight: a.source_count === 0 ? 600 : 400,
+                      display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      title={a.source_count === 0
+                        ? 'No sources — answered from the AI’s own knowledge, not checked against evidence'
+                        : undefined}>
                       <span aria-hidden="true">◆</span>
-                      {a.source_count} source{a.source_count === 1 ? '' : 's'}
+                      {a.source_count === 0
+                        ? 'No sources'
+                        : `${a.source_count} source${a.source_count === 1 ? '' : 's'}`}
                     </span>
                   )}
                 </div>
@@ -2060,6 +2067,15 @@ function LibraryPage({ toast }) {
                       <div style={{ marginTop: 14 }}>
                         <ConfidenceBar phrase={detail.wep_phrase || detail.wep_band}
                           value={detail.confidence} />
+                      </div>)}
+                    {detail.source_count === 0 && (
+                      <div style={{ marginTop: 14, padding: '11px 14px', borderRadius: 8,
+                        background: 'rgba(214,69,69,0.07)', border: '1px solid #e2b4a0',
+                        fontSize: 12.5, color: '#a8341b', lineHeight: 1.5, maxWidth: 680 }}>
+                        <strong>No sources used.</strong> This answer comes from the AI's own
+                        knowledge and was <strong>not checked against any external sources</strong> —
+                        treat it with caution. To ground it in evidence, re-run from Research with
+                        sources selected.
                       </div>)}
                   </div>
                   <div style={{ maxWidth:
