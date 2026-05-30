@@ -511,11 +511,65 @@ function authorityPlain(a) {
   return AUTHORITY_PLAIN[a] || a.replace(/_/g, ' ');
 }
 
+// The universal web-search source. Always shown at the top of the picker as a
+// prominent always-on option, separate from the categorized list below.
+const GENERAL_WEB_ID = 'general_web';
+
+// One selectable source row (checkbox + name + badges + reason). Shared by the
+// general-web card and the categorized list so they render identically.
+function SourceRow({ src, checked, rec, onToggle }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'flex-start',
+      gap: 8, padding: '6px 0', cursor: 'pointer',
+      borderBottom: '1px solid var(--rule-soft)' }}>
+      <input type="checkbox" checked={checked}
+        onChange={() => onToggle(src.id)}
+        style={{ marginTop: 2, flexShrink: 0, accentColor: 'var(--primary)' }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center',
+          flexWrap: 'wrap', gap: 4, marginBottom: 2 }}>
+          <span style={{ fontSize: 13, fontWeight: 600,
+            color: 'var(--ink)' }}>{src.name}</span>
+          {authorityPlain(src.authority) && (
+            <SkillBadge label={authorityPlain(src.authority)} color="#e8f5e9" />
+          )}
+          {src.tier && TIER_PLAIN[src.tier] && (
+            <SkillBadge label={TIER_PLAIN[src.tier]}
+              color={TIER_COLOR[src.tier] || 'var(--rule-soft)'} />
+          )}
+          {src.default_grade && src.default_grade !== 'A' && GRADE_PLAIN[src.default_grade] && (
+            <SkillBadge label={GRADE_PLAIN[src.default_grade]}
+              color={GRADE_COLOR[src.default_grade] || 'var(--rule-soft)'} />
+          )}
+          {src.community && (
+            <SkillBadge label="community-contributed" color="#f3e5f5" />
+          )}
+          {rec && rec.role && (
+            <SkillBadge label={rec.role.replace(/_/g, ' ')} color="#e3f2fd" />
+          )}
+        </div>
+        {src.description && (
+          <div style={{ fontSize: 11.5, color: 'var(--muted)',
+            lineHeight: 1.4 }}>{src.description}</div>
+        )}
+        {rec && rec.reason && (
+          <div style={{ fontSize: 11, color: 'var(--primary)',
+            marginTop: 2, lineHeight: 1.35 }}>
+            Recommended: {rec.reason}
+          </div>
+        )}
+      </div>
+    </label>
+  );
+}
+
 function SourcePicker({ topic, mode, depth, selectedSkills, setSelectedSkills }) {
   const [sources, setSources] = useState([]);
   const [recMap, setRecMap] = useState({});   // skill_id -> {score, reason, role}
+  const [recommendedIds, setRecommendedIds] = useState([]); // the recommender's picks
   const [loadingSources, setLoadingSources] = useState(false);
   const [sourcesError, setSourcesError] = useState(null);
+  const [openCats, setOpenCats] = useState(null); // null until first load; then Set of open category names
 
   // Fetch both endpoints whenever topic/mode/depth change.
   useEffect(() => {
@@ -540,14 +594,29 @@ function SourcePicker({ topic, mode, depth, selectedSkills, setSelectedSkills })
       setRecMap(rm);
       setSources(allSources);
 
-      // Pre-select: recommended skill_ids + enabled_by_default, deduplicated.
-      const preSelected = new Set();
-      recs.forEach((r) => { if (r.skill_id) preSelected.add(r.skill_id); });
-      allSources.forEach((s) => { if (s.enabled_by_default) preSelected.add(s.id); });
-      // Only update selection if this is the first load (selectedSkills is empty).
-      setSelectedSkills((prev) => {
-        if (prev.length > 0) return prev;
-        return Array.from(preSelected);
+      // The recommended set the "Auto" button restores to: recommended
+      // skill_ids + enabled_by_default sources, deduplicated.
+      const recSet = new Set();
+      recs.forEach((r) => { if (r.skill_id) recSet.add(r.skill_id); });
+      allSources.forEach((s) => { if (s.enabled_by_default) recSet.add(s.id); });
+      // General web is the universal method — always part of the recommended set.
+      if (allSources.some((s) => s.id === GENERAL_WEB_ID)) recSet.add(GENERAL_WEB_ID);
+      const recIds = Array.from(recSet);
+      setRecommendedIds(recIds);
+
+      // Only pre-select if this is the first load (selectedSkills is empty).
+      setSelectedSkills((prev) => (prev.length > 0 ? prev : recIds));
+
+      // Default expand state: open any category that has a recommended source,
+      // collapse the rest so the picker stays compact for a first-time user.
+      setOpenCats((prev) => {
+        if (prev !== null) return prev;
+        const open = new Set();
+        allSources.forEach((s) => {
+          if (s.id === GENERAL_WEB_ID) return;
+          if (recSet.has(s.id)) open.add(s.category || 'Other');
+        });
+        return open;
       });
     }).catch(() => {
       if (live) setSourcesError('Could not load sources. You can still launch.');
@@ -564,14 +633,52 @@ function SourcePicker({ topic, mode, depth, selectedSkills, setSelectedSkills })
     );
   }
 
-  // Group sources by category.
+  function toggleCat(cat) {
+    setOpenCats((prev) => {
+      const next = new Set(prev || []);
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
+      return next;
+    });
+  }
+
+  // "Auto" — let Lighthouse pick: clear manual choices, restore the recommended
+  // set, and open the categories those recommendations live in.
+  function autoSelect() {
+    setSelectedSkills(recommendedIds.slice());
+    const open = new Set();
+    sources.forEach((s) => {
+      if (s.id === GENERAL_WEB_ID) return;
+      if (recommendedIds.includes(s.id)) open.add(s.category || 'Other');
+    });
+    setOpenCats(open);
+  }
+
+  // "Clear" — deselect everything so the user can build a set from scratch.
+  function clearSelection() {
+    setSelectedSkills([]);
+  }
+
+  // Split out the universal general-web source; it gets a prominent top slot.
+  const generalWeb = sources.find((s) => s.id === GENERAL_WEB_ID) || null;
+
+  // A source is hidden from the pickable list when it requires an API key that
+  // is not yet configured. We surface a count of these instead of checkboxes.
+  function isLocked(s) {
+    return s.requires_key === true && s.key_present === false;
+  }
+
+  // Group selectable (non-general-web, non-locked) sources by category.
   const grouped = {};
+  let lockedCount = 0;
   sources.forEach((s) => {
+    if (s.id === GENERAL_WEB_ID) return;
+    if (isLocked(s)) { lockedCount += 1; return; }
     const cat = s.category || 'Other';
     if (!grouped[cat]) grouped[cat] = [];
     grouped[cat].push(s);
   });
   const categories = Object.keys(grouped).sort();
+  const isOpen = (cat) => !!(openCats && openCats.has(cat));
 
   if (loadingSources) {
     return (
@@ -598,74 +705,128 @@ function SourcePicker({ topic, mode, depth, selectedSkills, setSelectedSkills })
     );
   }
 
+  const generalChecked = generalWeb ? selectedSkills.includes(generalWeb.id) : false;
+
   return (
     <div>
-      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10,
-        lineHeight: 1.45 }}>
-        Pre-checked sources are recommended for this question and mode.
-        Add or remove sources — the run uses whatever is checked.
+      {/* Intro + Auto / Clear controls */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12,
+        flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.45,
+          flex: '1 1 280px', minWidth: 0 }}>
+          Checked sources are the ones this run will draw on. Not sure what to
+          pick? Use <strong>Auto</strong> to let Lighthouse choose the best
+          sources for your question.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
+          gap: 4, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Btn kind="ghost" size="sm" onClick={autoSelect}
+              disabled={!(topic && topic.trim())}
+              aria-label="Auto: let Lighthouse choose the best sources"
+              title={topic && topic.trim()
+                ? 'Auto: let Lighthouse choose the best sources for this question'
+                : 'Enter your question first, then Auto can choose sources'}>
+              Auto
+            </Btn>
+            <Btn kind="ghost" size="sm" onClick={clearSelection}
+              aria-label="Clear all selected sources"
+              title="Remove all selected sources">
+              Clear
+            </Btn>
+          </div>
+          {!(topic && topic.trim()) && (
+            <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+              Enter your question first to use Auto
+            </span>
+          )}
+        </div>
       </div>
 
-      {categories.map((cat) => (
-        <div key={cat} style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
-            letterSpacing: '0.06em', color: 'var(--muted)', marginBottom: 6,
-            paddingBottom: 3, borderBottom: '1px solid var(--rule-soft)' }}>
-            {cat}
+      {/* General web — the universal method, always shown on top */}
+      {generalWeb && (
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10,
+          padding: '12px 14px', marginBottom: 16, cursor: 'pointer',
+          borderRadius: 8, border: '1px solid var(--primary)',
+          background: 'var(--rule-soft)' }}>
+          <input type="checkbox" checked={generalChecked}
+            onChange={() => toggleSkill(generalWeb.id)}
+            style={{ marginTop: 3, flexShrink: 0, accentColor: 'var(--primary)' }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6,
+              flexWrap: 'wrap', marginBottom: 2 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 700,
+                color: 'var(--ink)' }}>{generalWeb.name}</span>
+              <SkillBadge label="universal" color="#e3f2fd" />
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--ink-2)', lineHeight: 1.45 }}>
+              {generalWeb.description
+                || 'Searches the open web. The all-purpose method that works for any question — leave it on unless you only want specific sources.'}
+            </div>
           </div>
-          {grouped[cat].map((src) => {
-            const checked = selectedSkills.includes(src.id);
-            const rec = recMap[src.id];
-            return (
-              <label key={src.id} style={{ display: 'flex', alignItems: 'flex-start',
-                gap: 8, padding: '6px 0', cursor: 'pointer',
-                borderBottom: '1px solid var(--rule-soft)' }}>
-                <input type="checkbox" checked={checked}
-                  onChange={() => toggleSkill(src.id)}
-                  style={{ marginTop: 2, flexShrink: 0, accentColor: 'var(--primary)' }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center',
-                    flexWrap: 'wrap', gap: 4, marginBottom: 2 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600,
-                      color: 'var(--ink)' }}>{src.name}</span>
-                    {authorityPlain(src.authority) && (
-                      <SkillBadge label={authorityPlain(src.authority)}
-                        color="#e8f5e9" />
-                    )}
-                    {src.tier && TIER_PLAIN[src.tier] && (
-                      <SkillBadge label={TIER_PLAIN[src.tier]}
-                        color={TIER_COLOR[src.tier] || 'var(--rule-soft)'} />
-                    )}
-                    {src.default_grade && src.default_grade !== 'A' && GRADE_PLAIN[src.default_grade] && (
-                      <SkillBadge label={GRADE_PLAIN[src.default_grade]}
-                        color={GRADE_COLOR[src.default_grade] || 'var(--rule-soft)'} />
-                    )}
-                    {src.community && (
-                      <SkillBadge label="community-contributed" color="#f3e5f5" />
-                    )}
-                    {rec && rec.role && (
-                      <SkillBadge label={rec.role.replace(/_/g, ' ')}
-                        color="#e3f2fd" />
-                    )}
-                  </div>
-                  {src.description && (
-                    <div style={{ fontSize: 11.5, color: 'var(--muted)',
-                      lineHeight: 1.4 }}>{src.description}</div>
-                  )}
-                  {rec && rec.reason && (
-                    <div style={{ fontSize: 11, color: 'var(--primary)',
-                      marginTop: 2, lineHeight: 1.35 }}>
-                      Recommended: {rec.reason}
-                    </div>
-                  )}
-                </div>
-              </label>
-            );
-          })}
-        </div>
-      ))}
+        </label>
+      )}
 
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+      {/* Categorized sources — collapsible groups */}
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+        letterSpacing: '0.05em', color: 'var(--muted)', marginBottom: 8 }}>
+        Specialized sources
+      </div>
+
+      {categories.map((cat) => {
+        const open = isOpen(cat);
+        const inCat = grouped[cat];
+        const selCount = inCat.filter((s) => selectedSkills.includes(s.id)).length;
+        return (
+          <div key={cat} style={{ marginBottom: 8 }}>
+            <button
+              onClick={() => toggleCat(cat)}
+              aria-expanded={open}
+              style={{ width: '100%', display: 'flex', alignItems: 'center',
+                gap: 8, background: 'none', border: 'none', cursor: 'pointer',
+                padding: '6px 0', textAlign: 'left',
+                borderBottom: '1px solid var(--rule-soft)' }}>
+              <span aria-hidden="true" style={{ fontSize: 9, color: 'var(--muted)',
+                display: 'inline-block', width: 10,
+                transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+                transition: 'transform .15s ease' }}>▶</span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
+                letterSpacing: '0.06em', color: 'var(--ink-2)' }}>{cat}</span>
+              <span style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 400 }}>
+                {inCat.length} source{inCat.length === 1 ? '' : 's'}
+              </span>
+              <span style={{ marginLeft: 'auto', fontSize: 10.5,
+                color: selCount ? 'var(--primary)' : 'var(--muted)',
+                fontWeight: selCount ? 700 : 400 }}>
+                {selCount > 0 ? `${selCount} selected` : ''}
+              </span>
+            </button>
+            {open && (
+              <div style={{ paddingLeft: 18, paddingTop: 4 }}>
+                {inCat.map((src) => (
+                  <SourceRow key={src.id} src={src}
+                    checked={selectedSkills.includes(src.id)}
+                    rec={recMap[src.id]} onToggle={toggleSkill} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Key-gated sources: a count, not pickable checkboxes */}
+      {lockedCount > 0 && (
+        <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 7,
+          background: 'var(--rule-soft)', fontSize: 11.5, color: 'var(--muted)',
+          lineHeight: 1.5 }}>
+          {lockedCount} more source{lockedCount === 1 ? '' : 's'} unlock when you
+          add their free API key in{' '}
+          <a href="#settings" style={{ color: 'var(--primary)', fontWeight: 600 }}>
+            Settings → Connect your data sources</a>.
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
         {selectedSkills.length} source{selectedSkills.length === 1 ? '' : 's'} selected
       </div>
     </div>
@@ -1421,9 +1582,162 @@ function EvidenceConnections({ artifactId }) {
   );
 }
 
+// ── Professional reading view ───────────────────────────────────────────────
+//
+// The artifact detail should read like a polished document: a comfortable
+// measure (~700px), serif headings, generous line-height, anchored sections, a
+// table of contents for long reports, and cleanly formatted citations. These
+// helpers turn the raw artifact body into that document.
+
+// Max readable column width for prose. Tables/matrices can run wider.
+const READ_WIDTH = 720;
+
+// Turn a section title into a stable URL-ish anchor id.
+function slugify(s, i) {
+  const base = (s || '').toString().toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return `sec-${i}-${base || 'section'}`;
+}
+
+// One-time injected stylesheet that gives the dangerouslySetInnerHTML prose and
+// the structured sections a clean, readable, document-like typography. Scoped
+// under .lh-reading so it never leaks into the rest of the dashboard.
+function ReadingStyles() {
+  return (
+    <style dangerouslySetInnerHTML={{ __html: `
+      .lh-reading { color: var(--ink); font-size: 15px; line-height: 1.72; }
+      .lh-reading p { margin: 0 0 1.05em; }
+      .lh-reading h1, .lh-reading h2, .lh-reading h3, .lh-reading h4 {
+        font-family: var(--serif); color: var(--ink); font-weight: 700;
+        line-height: 1.3; margin: 1.7em 0 0.5em; scroll-margin-top: 16px; }
+      .lh-reading h1 { font-size: 24px; }
+      .lh-reading h2 { font-size: 20px; padding-bottom: 4px;
+        border-bottom: 1px solid var(--rule-soft); }
+      .lh-reading h3 { font-size: 16.5px; }
+      .lh-reading h4 { font-size: 14.5px; color: var(--ink-2); }
+      .lh-reading ul, .lh-reading ol { margin: 0 0 1.05em; padding-left: 1.4em; }
+      .lh-reading li { margin: 0 0 0.4em; }
+      .lh-reading a { color: var(--primary); text-decoration: underline;
+        text-decoration-thickness: 1px; text-underline-offset: 2px; }
+      .lh-reading blockquote { margin: 1.1em 0; padding: 0.2em 0 0.2em 1em;
+        border-left: 3px solid var(--rule); color: var(--ink-2);
+        font-style: italic; }
+      .lh-reading code { font-family: var(--mono, monospace); font-size: 0.88em;
+        background: var(--rule-soft); padding: 1px 5px; border-radius: 4px; }
+      .lh-reading pre { background: var(--rule-soft); padding: 12px 14px;
+        border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+      .lh-reading pre code { background: none; padding: 0; }
+      .lh-reading table { border-collapse: collapse; width: 100%; font-size: 13px;
+        margin: 1em 0; }
+      .lh-reading th, .lh-reading td { padding: 6px 10px; text-align: left;
+        border-bottom: 1px solid var(--rule-soft); }
+      .lh-reading hr { border: none; border-top: 1px solid var(--rule);
+        margin: 1.6em 0; }
+    ` }} />
+  );
+}
+
+// In-artifact table of contents. Rendered only for long reports (>= 3 sections).
+function ArtifactTOC({ items }) {
+  if (!items || items.length < 3) return null;
+  return (
+    <nav aria-label="Table of contents" style={{ ...card, padding: '14px 16px',
+      marginBottom: 22, background: 'var(--rule-soft)', border: '1px solid var(--rule)' }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
+        letterSpacing: '0.06em', color: 'var(--muted)', marginBottom: 8 }}>
+        On this page
+      </div>
+      <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.7,
+        color: 'var(--ink-2)' }}>
+        {items.map((it) => (
+          <li key={it.id}>
+            <a href={`#${it.id}`}
+              onClick={(e) => {
+                e.preventDefault();
+                const el = document.getElementById(it.id);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              style={{ color: 'var(--primary)', textDecoration: 'none' }}>
+              {it.title}
+            </a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+// Formatted citation list for a report section. Renders each citation as a
+// clean numbered reference; URLs become links, everything else plain text.
+function CitationList({ citations }) {
+  if (!citations || citations.length === 0) return null;
+  const isUrl = (c) => /^https?:\/\//i.test((c || '').toString().trim());
+  return (
+    <div style={{ marginTop: 12, paddingTop: 10,
+      borderTop: '1px dashed var(--rule)' }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
+        letterSpacing: '0.05em', color: 'var(--muted)', marginBottom: 6 }}>
+        Sources
+      </div>
+      <ol style={{ margin: 0, paddingLeft: 20, fontSize: 12, lineHeight: 1.6,
+        color: 'var(--ink-2)' }}>
+        {citations.map((c, i) => (
+          <li key={i} style={{ marginBottom: 3, wordBreak: 'break-word' }}>
+            {isUrl(c)
+              ? <a href={c} target="_blank" rel="noopener noreferrer"
+                  style={{ color: 'var(--primary)' }}>{c}</a>
+              : <span>{c}</span>}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+// Structured report renderer: serif section headings with anchors, comfortable
+// prose body, and per-section formatted citations. Used when the report body
+// exposes a sections[] array; otherwise ArtifactBody falls back to body_html.
+function ReportView({ sections }) {
+  return (
+    <div className="lh-reading">
+      {sections.map((s, i) => {
+        const id = slugify(s.title || s.sub_question, i);
+        return (
+          <section key={id} id={id} style={{ marginBottom: 26 }}>
+            <h2 style={{ margin: i === 0 ? '0 0 0.5em' : undefined }}>
+              {s.title || s.sub_question || `Section ${i + 1}`}
+            </h2>
+            {s.sub_question && s.title && s.sub_question !== s.title && (
+              <div style={{ fontSize: 12.5, color: 'var(--muted)',
+                fontStyle: 'italic', margin: '-0.2em 0 0.8em' }}>
+                {s.sub_question}
+              </div>
+            )}
+            {(s.body || '').split(/\n{2,}/).filter((para) => para.trim()).map((para, j) => (
+              <p key={j}>{para.trim()}</p>
+            ))}
+            <CitationList citations={s.citations} />
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function ArtifactBody({ artifact }) {
   const t = artifact.artifact_type;
   const body = artifact.body;
+
+  // Structured report sections, when present, drive the professional reading
+  // view (anchors + TOC + per-section citations). Falls back to body_html.
+  const sections = (body && Array.isArray(body.sections)
+    && body.sections.length > 0) ? body.sections : null;
+  const tocItems = sections
+    ? sections.map((s, i) => ({
+        id: slugify(s.title || s.sub_question, i),
+        title: s.title || s.sub_question || `Section ${i + 1}`,
+      }))
+    : null;
 
   // Contradictions can live on the body or top-level; surface either.
   const contradictions = (
@@ -1469,10 +1783,20 @@ function ArtifactBody({ artifact }) {
       {artifact.id && <EvidenceConnections artifactId={artifact.id} />}
     </React.Fragment>
   );
-  // report / verdict / transcript / digest → prose HTML + contradictions + known unknowns.
+  // report / verdict / transcript / digest → professional reading view.
+  // When the body exposes structured sections we render them with anchors, a
+  // table of contents, and formatted citations; otherwise we render the
+  // body_html prose under the same readable typography.
   return (
     <React.Fragment>
-      <div dangerouslySetInnerHTML={{ __html: artifact.body_html || '<em>No content.</em>' }} />
+      <ReadingStyles />
+      {tocItems && <ArtifactTOC items={tocItems} />}
+      {sections
+        ? <ReportView sections={sections} />
+        : (
+          <div className="lh-reading"
+            dangerouslySetInnerHTML={{ __html: artifact.body_html || '<em>No content.</em>' }} />
+        )}
       <Contradictions items={contradictions} />
       <KnownUnknowns openQuestions={openQuestions} />
       {artifact.id && <EvidenceConnections artifactId={artifact.id} />}
@@ -1507,6 +1831,20 @@ function LibraryPage({ toast }) {
     return () => { live = false; };
   }, [selId]);
 
+  // Reading mode opens full-screen; Escape returns to the list. Lock body
+  // scroll behind the overlay so only the document scrolls.
+  useEffect(() => {
+    if (selId == null) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setSelId(null); };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [selId]);
+
   const artifacts = (data && Array.isArray(data.artifacts)) ? data.artifacts : [];
 
   function exportArtifact(fmt) {
@@ -1517,7 +1855,7 @@ function LibraryPage({ toast }) {
   return (
     <div style={{ padding: PAD, maxWidth: 1200 }}>
       <PageHeader title="Library"
-        subtitle="Completed research outputs you can read, review, and export. Select one to open it." />
+        subtitle="Your finished research — completed reports, tables, timelines, and more that you can read, search, and export. Select one to open it." />
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap',
         alignItems: 'center' }}>
@@ -1537,9 +1875,9 @@ function LibraryPage({ toast }) {
       {loading && !data && <Loading />}
       {error && <ErrorBox message={error} onRetry={reload} />}
       {!loading && !error && artifacts.length === 0 && (
-        <EmptyState title="No completed research yet"
-          hint="Finished runs land here as reviewable artifacts — reports, decision matrices, evidence tables, timelines, and more. Start a run from the Research tab to fill this shelf."
-          cta={<Btn onClick={() => { window.location.hash = 'research'; }}>Go to Research</Btn>} />
+        <EmptyState title="No finished research yet"
+          hint="When a research run finishes, it lands here so you can read, search, and export it — reports, decision matrices, evidence tables, timelines, and more. Start one from the Research tab."
+          cta={<Btn onClick={() => { window.location.hash = 'research'; }}>Start research</Btn>} />
       )}
 
       {artifacts.length > 0 && (
@@ -1577,37 +1915,63 @@ function LibraryPage({ toast }) {
           </div>
 
           {selId && detail && (
-            <div style={{ ...card, padding: '20px 22px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between',
-                alignItems: 'flex-start', marginBottom: 14, gap: 12 }}>
-                <div>
-                  <div style={{ fontFamily: 'var(--serif)', fontSize: 18, fontWeight: 700,
-                    color: 'var(--ink)' }}>{detail.title}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8,
-                    marginTop: 5, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                      {artifactLabel(detail.artifact_type)}
-                    </span>
-                    {(detail.wep_phrase || detail.wep_band) && (
-                      <window.ConfidencePill phrase={detail.wep_phrase || detail.wep_band}
-                        band={detail.confidence} />
-                    )}
-                    {detail.source_count != null && (
-                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                        · {detail.source_count} source{detail.source_count === 1 ? '' : 's'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0,
-                  alignItems: 'center' }}>
+            // Full-screen reading mode — covers the sidebar + top chrome so the
+            // researcher reads the document without distraction. Back returns.
+            <div role="dialog" aria-modal="true" aria-label={detail.title || 'Artifact'}
+              style={{ position: 'fixed', inset: 0, zIndex: 1000,
+                background: 'var(--paper)', display: 'flex', flexDirection: 'column',
+                animation: 'lh-fade-in .15s ease' }}>
+              {/* Sticky toolbar: Back + export */}
+              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center',
+                justifyContent: 'space-between', gap: 12, padding: '11px 22px',
+                borderBottom: '1px solid var(--rule)', background: 'var(--card)' }}>
+                <button onClick={() => setSelId(null)} aria-label="Back to Library"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7,
+                    padding: '7px 14px', fontSize: 13, fontWeight: 600,
+                    fontFamily: 'var(--sans)', color: 'var(--ink)', cursor: 'pointer',
+                    background: 'var(--card)', border: '1px solid var(--rule)',
+                    borderRadius: 7 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+                    strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+                  Back to Library
+                </button>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>Export</span>
                   <Btn kind="ghost" size="sm" onClick={() => exportArtifact('md')}>Markdown</Btn>
                   <Btn kind="ghost" size="sm" onClick={() => exportArtifact('csv')}>CSV</Btn>
                   <Btn kind="ghost" size="sm" onClick={() => exportArtifact('json')}>JSON</Btn>
                 </div>
               </div>
-              <ArtifactBody artifact={detail} />
+              {/* Scrollable document, centered with a comfortable measure */}
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                <div style={{ maxWidth: 900, margin: '0 auto', padding: '36px 32px 96px' }}>
+                  <div style={{ paddingBottom: 16, marginBottom: 26,
+                    borderBottom: '1px solid var(--rule)' }}>
+                    <div style={{ fontFamily: 'var(--serif)', fontSize: 30, fontWeight: 700,
+                      color: 'var(--ink)', lineHeight: 1.22, marginBottom: 10 }}>{detail.title}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10,
+                      flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 600, textTransform: 'uppercase',
+                        letterSpacing: '0.05em', color: 'var(--muted)' }}>
+                        {artifactLabel(detail.artifact_type)}</span>
+                      {(detail.wep_phrase || detail.wep_band) && (
+                        <window.ConfidencePill phrase={detail.wep_phrase || detail.wep_band}
+                          band={detail.confidence} />)}
+                      {detail.source_count != null && (
+                        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                          {detail.source_count} source{detail.source_count === 1 ? '' : 's'}</span>)}
+                      {detail.created_at && (
+                        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{detail.created_at}</span>)}
+                    </div>
+                  </div>
+                  <div style={{ maxWidth:
+                    ['matrix', 'table', 'timeline'].includes(detail.artifact_type)
+                      ? '100%' : READ_WIDTH }}>
+                    <ArtifactBody artifact={detail} />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -1663,7 +2027,7 @@ function ActivityPage({ toast }) {
   return (
     <div style={{ padding: PAD, maxWidth: 1100 }}>
       <PageHeader title="Activity"
-        subtitle="Watch your research runs as they progress, and follow the audit trail of what happened." />
+        subtitle="Research that is running or recently finished. Watch a run live as it progresses, and follow the trail of what happened." />
       {loading && !data && <Loading />}
       {error && <ErrorBox message={error} onRetry={reload} />}
 
@@ -2311,15 +2675,22 @@ function CalibrationTimeline({ toast }) {
         color: 'var(--ink)', marginBottom: 4 }}>Calibration over time (weekly)</div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10,
         lineHeight: 1.5, maxWidth: '70ch' }}>
-        How well your stated probabilities matched outcomes, by week. Lower mean
-        Brier is better; an outcome rate near your mean probability means you are
-        well calibrated.
+        How closely your stated confidence matched what actually happened, week by
+        week. A lower accuracy score is better. When "how often right" lands near
+        your average confidence, your predictions are well calibrated.
       </div>
       <table style={{ borderCollapse: 'collapse', fontSize: 12, width: '100%' }}>
         <thead><tr>
-          {['Week', 'Predictions', 'Mean Brier', 'Mean probability', 'Outcome rate'].map((h) => (
-            <th key={h} style={{ textAlign: 'left', padding: '4px 8px',
-              color: 'var(--muted)' }}>{h}</th>
+          {[
+            { h: 'Week', t: '' },
+            { h: 'Predictions', t: 'How many predictions resolved that week.' },
+            { h: 'Accuracy score', t: 'The Brier score: 0 is perfect, lower is better-calibrated.' },
+            { h: 'Avg. confidence', t: 'The average probability you stated.' },
+            { h: 'How often right', t: 'The share of those predictions that actually came true.' },
+          ].map(({ h, t }) => (
+            <th key={h} title={t || undefined}
+              style={{ textAlign: 'left', padding: '4px 8px',
+                color: 'var(--muted)', cursor: t ? 'help' : 'default' }}>{h}</th>
           ))}
         </tr></thead>
         <tbody>
@@ -2338,6 +2709,53 @@ function CalibrationTimeline({ toast }) {
   );
 }
 
+// Plain-language confidence bands, so a reader knows what "Likely" or "Unlikely"
+// next to a prediction actually means as a probability. Mirrors the wording the
+// prediction list uses, with an example percentage for each band.
+const CONFIDENCE_BANDS = [
+  { label: 'Likely', range: '65–100%', example: 'e.g. Likely (78%)',
+    color: 'var(--green-dark)' },
+  { label: 'Uncertain', range: '35–65%', example: 'e.g. Uncertain (50%)',
+    color: 'var(--muted)' },
+  { label: 'Unlikely', range: '0–35%', example: 'e.g. Unlikely (15%)',
+    color: 'var(--coral, #bf5820)' },
+];
+
+// A small legend that decodes the confidence words shown next to each prediction.
+// The number is the system's own confidence that the claim will turn out true.
+function ConfidenceLegend() {
+  return (
+    <div style={{ ...card, padding: '14px 16px', marginBottom: GAP }}>
+      <div style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 700,
+        color: 'var(--ink)', marginBottom: 4 }}>How to read a prediction</div>
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.55,
+        maxWidth: '72ch', marginBottom: 12 }}>
+        Each prediction carries a confidence — the system's own estimate of how
+        likely the claim is to turn out true, shown both as a word and a
+        percentage. Later, when the real outcome is known, Lighthouse checks how
+        right it was.
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {CONFIDENCE_BANDS.map((b) => (
+          <div key={b.label}
+            title="The system's confidence that this prediction comes true."
+            style={{ flex: '1 1 160px', minWidth: 0, padding: '10px 12px',
+              borderRadius: 7, border: '1px solid var(--rule)',
+              background: 'var(--rule-soft)' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: b.color }}>
+                {b.label}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{b.range}</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--ink-2)', marginTop: 3 }}>
+              {b.example}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Track is the accountability surface. PositionsPage and IntelligencePage each
 // render their own PageHeader, so we lead with a single SectionIntro that frames
 // the whole tab and let those surfaces carry their own section titles, rather
@@ -2348,13 +2766,16 @@ function TrackPage(props) {
   return (
     <div style={{ padding: PAD, maxWidth: 1200 }}>
       <PageHeader title="Track"
-        subtitle="Hold predictions accountable: see how well-calibrated you are, manage open positions, and review escalations." />
-      <SectionIntro title="What this tab does">
-        A position is a prediction you have committed to with a probability. As
-        positions resolve, Lighthouse scores how calibrated you were. Below you
-        will find your calibration trend, the register of open and resolved
-        positions, and any escalations that need attention.
+        subtitle="Predictions Lighthouse is tracking, and how accurate they turn out to be." />
+      <SectionIntro title="What this tab is for">
+        Lighthouse records falsifiable predictions — clear claims with a stated
+        confidence. Each one stays open until the real outcome is known, then it
+        is marked confirmed or refuted. Over time you can see how well its
+        confidence matches reality: a lower accuracy score means better-calibrated
+        predictions. Below you will find that accuracy trend, the list of open and
+        resolved predictions, and any items that need attention.
       </SectionIntro>
+      <ConfidenceLegend />
       <CalibrationTimeline {...props} />
       {Positions ? React.createElement(Positions, props) : null}
       {Insights ? React.createElement(Insights, props) : null}

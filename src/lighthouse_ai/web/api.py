@@ -49,6 +49,8 @@ class SettingsPatch(BaseModel):
     backup_enabled: bool | None = None
     notify_enabled: bool | None = None
     theme: str | None = None
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
 
 
 class NewTopic(BaseModel):
@@ -854,6 +856,11 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
             "backup_enabled": bool(ui.get("backup_enabled", False)),
             "notify_enabled": bool(ui.get("notify_enabled", False)),
             "theme": ui.get("theme", "system"),
+            # Telegram: never return the bot token itself (secret) — only the
+            # chat id and whether a token has been saved, so the UI can show
+            # "connected" without exposing the credential.
+            "telegram_chat_id": str(ui.get("telegram_chat_id", "") or ""),
+            "telegram_bot_token_set": bool(ui.get("telegram_bot_token")),
         }
 
     @app.get("/api/settings", tags=["settings"])
@@ -868,7 +875,8 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         ui = cfg.get("ui")
         if not isinstance(ui, dict):
             ui = {}
-        for key in ("offline_mode", "backup_enabled", "notify_enabled", "theme"):
+        for key in ("offline_mode", "backup_enabled", "notify_enabled", "theme",
+                    "telegram_bot_token", "telegram_chat_id"):
             val = getattr(body, key)
             if val is not None:
                 ui[key] = val
@@ -1247,12 +1255,29 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
     def list_sources() -> dict[str, Any]:
         """The skill catalog for the source picker (Zone K).
 
-        Each entry is ``SkillManifest.as_dict()`` so the UI can render a
-        categorized checkbox list (category, name, description, tier, grade,
-        community flag, enabled_by_default). Tolerates an empty library."""
+        Each entry is ``SkillManifest.as_dict()`` plus two fields the picker uses
+        to gate key-required sources: ``requires_key`` (this source needs a free
+        API key) and ``key_present`` (a key is already configured). The UI hides
+        a key-required source from the checkbox list until its key is saved.
+        Tolerates an empty library."""
+        from ..secrets import SecretStore
         from ..skills.registry import all_skills
+
+        key_required: dict[str, str] = {
+            entry["source_id"]: entry["key_name"] for entry in _SOURCE_KEY_CATALOGUE
+        }
         try:
-            sources = [m.as_dict() for m in all_skills()]
+            configured = frozenset(SecretStore(paths.data_dir).list())
+        except Exception:
+            configured = frozenset()
+        try:
+            sources = []
+            for m in all_skills():
+                d = m.as_dict()
+                key_name = key_required.get(m.id)
+                d["requires_key"] = bool(key_name)
+                d["key_present"] = bool(key_name and key_name in configured)
+                sources.append(d)
         except Exception:
             sources = []
         return {"sources": sources}
@@ -1853,12 +1878,35 @@ def _build_health(paths: Paths) -> dict[str, Any]:
     except Exception:
         qdrant_ok = False
 
-    # chosen models for this hardware (per-role bindings the tier resolved to)
+    # Chosen models for this hardware — the REAL models the gateway will use,
+    # resolved against what is actually installed in Ollama and the live RAM
+    # budget, NOT the abstract catalog capability-classes. Falls back to the
+    # catalog class for any role with nothing installed so the panel is filled.
     try:
-        from ..gateway import recommend_models
-        chosen_models = {
-            role: b.model for role, b in recommend_models(profile).items()
-        }
+        import importlib.util as _ilu
+
+        from ..gateway import (
+            RUNTIME_RAM_MARGIN_GB,
+            recommend_models,
+            resolve_against_installed,
+        )
+        from ..pipeline import _ollama_installed_tags
+        catalog = {role: b.model for role, b in recommend_models(profile).items()}
+        try:
+            installed = _ollama_installed_tags()
+        except Exception:
+            installed = []
+        budget = max(0.0, profile.free_ram_gb - RUNTIME_RAM_MARGIN_GB)
+        resolved = (resolve_against_installed(profile, installed, budget_gb=budget)
+                    if installed else {})
+        # Reflect the reranker actually wired: a real cross-encoder when the
+        # optional FlagEmbedding extra is present, else the score-passthrough.
+        resolved.setdefault(
+            "reranker",
+            "bge-reranker-v2-m3"
+            if _ilu.find_spec("FlagEmbedding") is not None
+            else "score-passthrough (stub)")
+        chosen_models = {**catalog, **resolved}
     except Exception:
         chosen_models = {}
 

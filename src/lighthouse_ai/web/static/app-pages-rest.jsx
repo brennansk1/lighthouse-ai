@@ -90,6 +90,44 @@ function RRow({ k, v, accent }) {
   );
 }
 
+// Plain-language labels for the model roles returned in chosen_models.
+const R_MODEL_ROLE_LABELS = {
+  planner: 'Planning',
+  aux_context: 'Reading & context',
+  embedding: 'Embeddings',
+  reranker: 'Reranking',
+  summarizer: 'Summarizing',
+  drafter: 'Drafting',
+  critic: 'Critique',
+  vision: 'Vision',
+};
+function rModelRoleLabel(role) {
+  return R_MODEL_ROLE_LABELS[role] || String(role).replace(/_/g, ' ');
+}
+
+// One role → model row for the "Models for this hardware" panel. The role gets
+// a plain-language label with the raw role key beneath it, and the resolved
+// Ollama tag is shown in monospace so the exact model is unambiguous.
+function RModelRow({ role, name }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14,
+      alignItems: 'baseline', padding: '8px 0',
+      borderBottom: '1px solid var(--rule-soft)' }}>
+      <span style={{ flexShrink: 0 }}>
+        <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>
+          {rModelRoleLabel(role)}
+        </span>
+        <span style={{ display: 'block', fontSize: 10.5, color: 'var(--muted)',
+          fontFamily: 'var(--mono)' }}>{role}</span>
+      </span>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink-2)',
+        textAlign: 'right', wordBreak: 'break-all', fontWeight: 600 }}>
+        {name == null || name === '' ? '—' : String(name)}
+      </span>
+    </div>
+  );
+}
+
 function RSkeleton({ h = 16, w = '100%', mb = 8, r = 6 }) {
   return (
     <div aria-hidden="true" style={{
@@ -1403,7 +1441,10 @@ function HealthPage({ toast }) {
               Models for this hardware
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45, marginBottom: 12 }}>
-              The local model chosen for each task, sized to fit the measured hardware.
+              These local models were chosen automatically to fit your hardware
+              {hw.tier ? ` — tier ${hw.tier}` : ''}
+              {hw.total_ram_gb != null ? `, ${hw.total_ram_gb} GB RAM` : ''}.
+              Bigger machines use larger models.
             </div>
 
             {Object.keys(models).length === 0 ? (
@@ -1411,9 +1452,11 @@ function HealthPage({ toast }) {
                 No model selection reported yet.
               </div>
             ) : (
-              Object.entries(models).map(([role, name]) => (
-                <RRow key={role} k={role.replace(/_/g, ' ')} v={name} />
-              ))
+              <div role="table" aria-label="Local model chosen for each task">
+                {Object.entries(models).map(([role, name]) => (
+                  <RModelRow key={role} role={role} name={name} />
+                ))}
+              </div>
             )}
           </div>
 
@@ -2140,6 +2183,146 @@ function RReproducibility({ toast }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+//  SETTINGS — Notifications (Telegram)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Self-contained section so notifications live in exactly one place. Reads
+// notify_enabled / telegram_chat_id / telegram_bot_token_set from GET
+// /api/settings and saves via PATCH /api/settings. The bot token is write-only:
+// the backend never returns it, so we only PATCH a new token when the user types
+// one — an empty field leaves the saved token untouched.
+function RNotifications({ toast }) {
+  const { data, loading, error, reload } = window.useApi('/api/settings');
+  const [enabled, setEnabled] = rUseState(false);
+  const [chatId, setChatId] = rUseState('');
+  const [tokenInput, setTokenInput] = rUseState('');
+  const [tokenSet, setTokenSet] = rUseState(false);
+  const [hydrated, setHydrated] = rUseState(false);
+  const [dirty, setDirty] = rUseState(false);
+  const [saving, setSaving] = rUseState(false);
+  const [saved, setSaved] = rUseState(false);
+  const Btn = window.Btn;
+
+  // Hydrate once from the first settings payload.
+  rUseEffect(() => {
+    if (data && !hydrated) {
+      setEnabled(!!data.notify_enabled);
+      setChatId(data.telegram_chat_id || '');
+      setTokenSet(!!data.telegram_bot_token_set);
+      setHydrated(true);
+    }
+  }, [data]); // eslint-disable-line
+
+  function mark() { setDirty(true); setSaved(false); }
+
+  async function save() {
+    setSaving(true);
+    const payload = {
+      notify_enabled: enabled,
+      telegram_chat_id: chatId.trim(),
+    };
+    // Only send a new token when the user actually typed one — never overwrite
+    // the stored token with an empty string.
+    if (tokenInput.trim()) payload.telegram_bot_token = tokenInput.trim();
+    try {
+      const resp = await window.apiPatch('/api/settings', payload);
+      setDirty(false);
+      setSaved(true);
+      setTokenInput('');
+      if (resp) {
+        setTokenSet(!!resp.telegram_bot_token_set);
+        setChatId(resp.telegram_chat_id || '');
+        setEnabled(!!resp.notify_enabled);
+      }
+      reload();
+      toast.show('Notification settings saved', 'success');
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      toast.show(e.message || 'Save failed', 'error');
+    }
+    setSaving(false);
+  }
+
+  return (
+    <RSettingsSection title="Notifications">
+      <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginBottom: 16 }}>
+        Get a message on your phone when a website monitor finds something. Lighthouse
+        uses Telegram — set up a bot once below, and alerts are delivered privately
+        to you.
+      </div>
+
+      {loading && !hydrated && <RSkeleton h={14} w="60%" mb={8} />}
+      {error && !hydrated && (
+        <window.ErrorBox message={`Could not load notification settings — ${error}`} />
+      )}
+
+      {(hydrated || !loading) && (
+        <React.Fragment>
+          <RToggleRow
+            label="Send me a notification when a website monitor finds something"
+            hint="Delivered to your Telegram chat using the bot below."
+            value={enabled}
+            onChange={(v) => { setEnabled(v); mark(); }}
+            id="s-notify-enabled"
+          />
+
+          {/* Telegram bot token — write-only */}
+          <RField
+            label="Telegram bot token"
+            hint='Message @BotFather on Telegram, send /newbot, and paste the token it gives you (looks like 123456:ABC-DEF…).'>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="password"
+                autoComplete="off"
+                placeholder={tokenSet ? '•••••••• — saved (type to replace)' : 'Paste your bot token'}
+                value={tokenInput}
+                onChange={(e) => { setTokenInput(e.target.value); mark(); }}
+                style={{ ...rInput, flex: 1 }}
+                aria-label="Telegram bot token"
+              />
+              {tokenSet && !tokenInput.trim() && (
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px',
+                  borderRadius: 12, background: 'rgba(6,214,160,0.12)',
+                  color: 'var(--green-dark)', border: '1px solid var(--green-dark)',
+                  whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  Connected
+                </span>
+              )}
+            </div>
+          </RField>
+
+          {/* Telegram chat id — plain text */}
+          <RField
+            label="Telegram chat ID"
+            hint='Your numeric chat ID — message @userinfobot on Telegram to get it, then paste the number here.'>
+            <input
+              type="text"
+              autoComplete="off"
+              placeholder="e.g. 123456789"
+              value={chatId}
+              onChange={(e) => { setChatId(e.target.value); mark(); }}
+              style={rInput}
+              aria-label="Telegram chat ID"
+            />
+          </RField>
+
+          <div style={{ marginTop: 6, display: 'flex', gap: 10, alignItems: 'center' }}>
+            <Btn onClick={save} disabled={saving || !dirty}>
+              {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save notification settings'}
+            </Btn>
+            {dirty && (
+              <span style={{ fontSize: 12, color: '#a07a00', fontWeight: 600 }}>
+                Unsaved changes
+              </span>
+            )}
+          </div>
+        </React.Fragment>
+      )}
+    </RSettingsSection>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 //  SETTINGS PAGE
 // ════════════════════════════════════════════════════════════════════════════
 function SettingsPage({ toast }) {
@@ -2160,7 +2343,6 @@ function SettingsPage({ toast }) {
         data_dir:       data.data_dir       || '',
         offline_mode:   !!data.offline_mode,
         backup_enabled: !!data.backup_enabled,
-        notify_enabled: !!data.notify_enabled,
         theme:          data.theme          || 'system',
       });
     }
@@ -2294,16 +2476,8 @@ function SettingsPage({ toast }) {
           />
         </RSettingsSection>
 
-        {/* ── Notifications ────────────────────────────────────────────── */}
-        <RSettingsSection title="Notifications">
-          <RToggleRow
-            label="Enable notifications"
-            hint="Send an alert through your configured channel when a monitor finds something or a session ends."
-            value={form.notify_enabled}
-            onChange={(v) => patch('notify_enabled', v)}
-            id="s-notify"
-          />
-        </RSettingsSection>
+        {/* ── Notifications (Telegram) — self-contained section ────────── */}
+        <RNotifications toast={toast} />
 
         {/* ── Appearance ───────────────────────────────────────────────── */}
         <RSettingsSection title="Appearance">
