@@ -51,7 +51,6 @@ except ModuleNotFoundError:
 
 try:
     from pyrate_limiter import (  # type: ignore[import-untyped]
-        Duration,
         Limiter,
         Rate,
     )
@@ -69,9 +68,9 @@ except ModuleNotFoundError:
 def canonicalize(url: str) -> str:
     """Return a canonicalized form of *url*.
 
-    When ``courlan`` is installed it delegates to :func:`courlan.clean_url`
-    which handles percent-encoding, trailing slashes, default ports, and
-    fragment stripping. Without courlan we perform a minimal stdlib
+    When ``courlan`` is installed it handles percent-encoding, trailing slashes,
+    and default ports; we additionally strip the fragment ourselves (some courlan
+    versions keep the ``#anchor``). Without courlan we perform a minimal stdlib
     normalisation: scheme+host lowercasing, default-port removal, and fragment
     stripping.
 
@@ -82,7 +81,10 @@ def canonicalize(url: str) -> str:
         try:
             cleaned = _courlan_clean(url)
             if cleaned:
-                return cleaned
+                # Strip the fragment explicitly: a ``#anchor`` is client-side
+                # only (irrelevant for fetch/dedup) and not all courlan versions
+                # drop it — so we never depend on courlan's version behavior.
+                return cleaned.split("#", 1)[0]
         except Exception:  # pragma: no cover
             pass  # fall through to stdlib path
 
@@ -329,27 +331,31 @@ class RateBudget:
                 self._buckets[host] = self._make_bucket()
             return self._buckets[host]
 
-    def _window_seconds(self) -> int:
-        """Window (in seconds) for the pyrate-limiter Rate of ``burst`` requests.
+    def _window_ms(self) -> int:
+        """Interval (milliseconds) for the pyrate-limiter Rate of ``burst``
+        requests, sized so the sustained rate equals ``default_rate`` req/s.
 
-        Guards two degenerate cases that would otherwise break the limiter:
+        Millisecond granularity (not whole seconds) is what makes the pyrate
+        path honor high rates and stay consistent with the pure-Python fallback:
+        a 50 req/s, burst-1 budget needs a 20 ms window — flooring to an
+        integer-second window throttled it to 1 req/s (50x slower than
+        configured, and inconsistent with the fallback bucket).
 
-        * ``rate <= 0`` — integer division ``burst / rate`` raises
-          ``ZeroDivisionError``. Treat a non-positive rate as effectively
-          unlimited by collapsing the window to its 1-second floor (burst
-          requests are permitted immediately).
-        * ``burst < rate`` — ``int(burst / rate)`` floors to ``0``, and
-          ``Duration.SECOND * 0`` is an invalid (zero-length) window. Clamp the
-          multiplier to ``>= 1`` so the Rate is always well-formed.
+        Degenerate guards:
+
+        * ``rate <= 0`` — ``burst / rate`` would raise ``ZeroDivisionError``.
+          Treat a non-positive rate as effectively unlimited (1 ms window).
+        * the result is clamped to ``>= 1`` ms so the Rate is always well-formed
+          (``burst < rate`` would otherwise round to a zero-length window).
         """
         if self._rate <= 0:
             return 1
-        return max(1, int(self._burst / self._rate))
+        return max(1, round(self._burst / self._rate * 1000))
 
     def _make_bucket(self) -> Any:
         if _HAS_PYRATE:
-            # pyrate-limiter ≥ 3.x API: Rate + Limiter
-            rate = Rate(self._burst, Duration.SECOND * self._window_seconds())
+            # pyrate-limiter ≥ 3.x API: Rate(limit, interval_ms) + Limiter.
+            rate = Rate(self._burst, self._window_ms())
             return Limiter(rate)
         return _PureTokenBucket(self._rate, float(self._burst))
 

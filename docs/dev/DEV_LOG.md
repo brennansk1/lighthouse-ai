@@ -90,9 +90,21 @@ Running the gated real-backend suite (`LIGHTHOUSE_REAL_BACKEND=1`, macOS arm64, 
   **Note:** the hardening libs remain installed, so the secured store now runs the real yara/pikepdf
   scanners by default (more secure). With them installed the full suite runs 6 more tests (2873 pass).
 
-All fixes are offline-deterministic with regression tests; full suite **2873 pass / 97 skip**, mypy 0,
+- **FINDING — politeness layer broke against current optional-dep versions.** Installing `--extra
+  politeness` (protego/courlan/pyrate-limiter) surfaced three real issues (fixed): (a) the `pyrate-limiter
+  >=3.6` pin silently allowed the **4.x rewrite** which removed `BucketFullException` and changed the
+  Rate/Limiter API `net_politeness.py` targets → pinned `>=3.6,<4` (4.x migration is a deliberate,
+  separately-tested task; rate-limiting is politeness-sensitive); (b) the pyrate-backed rate budget used
+  whole-second windows, so a 50 req/s, burst-1 config was throttled to **1 req/s — 50× slower than
+  configured and inconsistent with the pure-Python fallback** → switched to **millisecond** windows so
+  both backends agree and high rates work; (c) `canonicalize()` stopped stripping URL `#fragments`
+  (courlan version behavior) → strip the fragment explicitly so dedup/rate-keying never depends on
+  courlan's version. 68/68 politeness+scrapability tests pass with the real libs.
+
+All fixes are offline-deterministic with regression tests; full suite **2888 pass / 83 skip**, mypy 0,
 ruff clean. Live validation: Phase 1 (core quality) ✓, per-mode E2E 7/7 ✓, Phase 2 source APIs 37/37 ✓,
-Ollama backend + RAG-real + Qdrant-real gated suites ✓, sandbox redteam (real yara+pikepdf) 29/29 ✓.
+Ollama + RAG-real + Qdrant-real gated ✓, sandbox redteam (real yara+pikepdf) 29/29 ✓, politeness layer
+(real protego/courlan/pyrate) 68/68 ✓.
 Remaining live phases (heavier setup): faithfulness gate (needs the `faithfulness` extra — torch/
 sentence-transformers), Playwright browser QA (Phase 3), 24 h soak + packaging (Phase 4).
 

@@ -264,29 +264,35 @@ class TestRateBudget:
 class TestRateBudgetWindowMath:
     """Window math for the pyrate-limiter ``Rate`` (exercised library-free).
 
-    The bug: ``int(burst / rate)`` raised ZeroDivisionError when ``rate == 0``
-    and produced an invalid ``* 0`` window when ``burst < rate``. We test the
-    pure math helper directly so the test needs no pyrate-limiter install.
+    The window is in **milliseconds** so high rates work and stay consistent with
+    the pure-Python fallback. Guards: ``rate <= 0`` would divide by zero, and
+    ``burst < rate`` would round to a zero-length window. We test the pure math
+    helper directly so the test needs no pyrate-limiter install.
     """
 
     def test_zero_rate_does_not_divide_by_zero(self) -> None:
-        # rate == 0 previously raised ZeroDivisionError on bucket creation.
+        # rate == 0 would raise ZeroDivisionError on bucket creation.
         budget = RateBudget(default_rate=0.0, default_burst=5)
-        assert budget._window_seconds() == 1
+        assert budget._window_ms() == 1
 
     def test_negative_rate_is_unlimited_floor(self) -> None:
         budget = RateBudget(default_rate=-3.0, default_burst=5)
-        assert budget._window_seconds() == 1
+        assert budget._window_ms() == 1
 
     def test_burst_smaller_than_rate_keeps_window_at_least_one(self) -> None:
-        # burst < rate → int(1/10) == 0 → invalid zero-length window.
+        # burst < rate → 1/10*1000 = 100 ms (no longer floored to a zero window).
         budget = RateBudget(default_rate=10.0, default_burst=1)
-        assert budget._window_seconds() >= 1
+        assert budget._window_ms() == 100
 
-    def test_normal_rate_window_unchanged(self) -> None:
-        # 5 burst / 1 rate → 5-second window, as before.
+    def test_normal_rate_window_is_burst_over_rate_seconds(self) -> None:
+        # 5 burst / 1 rate → 5 s sustained → 5000 ms window.
         budget = RateBudget(default_rate=1.0, default_burst=5)
-        assert budget._window_seconds() == 5
+        assert budget._window_ms() == 5000
+
+    def test_high_rate_low_burst_uses_subsecond_window(self) -> None:
+        # 50 req/s, burst 1 → 20 ms window (whole-second flooring gave 1 s = 1/s).
+        budget = RateBudget(default_rate=50.0, default_burst=1)
+        assert budget._window_ms() == 20
 
     def test_zero_rate_bucket_creation_does_not_raise(self) -> None:
         # End-to-end: a bucket can be made and used even with rate 0.

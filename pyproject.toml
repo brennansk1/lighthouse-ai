@@ -58,7 +58,10 @@ extraction = ["trafilatura>=1.8", "pdfplumber>=0.11", "docling>=2.0"]
 pdf-fast = ["pymupdf>=1.24"]
 # Politeness layer for net.py: robots.txt (protego), URL canonicalization +
 # crawl-delay (courlan), per-domain token-bucket budgets (pyrate-limiter).
-politeness = ["protego>=0.3", "courlan>=1.3", "pyrate-limiter>=3.6"]
+# pyrate-limiter is pinned <4: the 4.x rewrite removed BucketFullException and
+# changed the Rate/Limiter API that net_politeness.py targets. Migrating to 4.x
+# is a deliberate, separately-tested task (rate-limiting is politeness-sensitive).
+politeness = ["protego>=0.3", "courlan>=1.3", "pyrate-limiter>=3.6,<4"]
 # Learned prompt-injection classifier (ProtectAI deberta-v3) behind the regex
 # gate. ONNX-runnable via Optimum; absent → regex-only gate.
 injection-ml = ["transformers>=4.40", "optimum[onnxruntime]>=1.20"]
