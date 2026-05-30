@@ -60,7 +60,7 @@ try:
 
     _TRANSCRIPT_API_AVAILABLE = True
 except ImportError:  # pragma: no cover — tested by monkeypatch in test suite
-    YouTubeTranscriptApi = None  # type: ignore[assignment]
+    YouTubeTranscriptApi = None  # type: ignore[assignment,misc]
     NoTranscriptFound = Exception  # type: ignore[assignment,misc]
     TranscriptsDisabled = Exception  # type: ignore[assignment,misc]
     _TRANSCRIPT_API_AVAILABLE = False
@@ -176,9 +176,23 @@ def fetch_transcript(video_id: str, *, languages: list[str] | None = None) -> st
     if not _TRANSCRIPT_API_AVAILABLE:
         return ""
     langs = languages or ["en"]
+    # youtube-transcript-api changed its API in 1.x: the ``get_transcript``
+    # classmethod was replaced by an instance ``fetch`` returning a
+    # FetchedTranscript (snippets with a ``.text`` attribute). Support both so
+    # the skill works regardless of the installed major version.
+    api: Any = YouTubeTranscriptApi
     try:
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=langs)
-        return " ".join(entry.get("text", "") for entry in transcript_list).strip()
+        get_transcript = getattr(api, "get_transcript", None)
+        if callable(get_transcript):
+            rows: Any = get_transcript(video_id, languages=langs)  # 0.x
+        else:
+            fetched = api().fetch(video_id, languages=langs)       # 1.x
+            rows = fetched.to_raw_data() if hasattr(fetched, "to_raw_data") \
+                else list(fetched)
+        return " ".join(
+            (r.get("text", "") if isinstance(r, dict) else getattr(r, "text", ""))
+            for r in rows
+        ).strip()
     except (NoTranscriptFound, TranscriptsDisabled):
         return ""
     except Exception:

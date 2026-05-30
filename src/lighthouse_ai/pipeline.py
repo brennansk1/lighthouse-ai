@@ -188,10 +188,14 @@ class ResearchPipeline:
         self.store, store_name, store_warns = make_vector_store(self.embedder.dim,
                                                                 offline=self.config.offline)
         # Real cross-encoder (BAAI/bge-reranker-v2-m3) when FlagEmbedding is
-        # installed; otherwise a score-passthrough that preserves fusion order.
-        # `available()` probes via find_spec, so this never imports torch or
-        # downloads a model on its own (§Sprint 28 step 1).
-        self.reranker = cast(Reranker, make_reranker(prefer_real=True))
+        # installed AND not offline; otherwise a score-passthrough that preserves
+        # fusion order. offline=True must stay hermetic (no real model load), so
+        # we mirror the embedder/store/gateway and pass prefer_real=not offline —
+        # otherwise an installed FlagEmbedding would load a heavy model even in
+        # offline mode.
+        self.reranker = cast(
+            Reranker, make_reranker(prefer_real=not self.config.offline)
+        )
         self.hybrid = HybridSearch(self.store, self.embedder, BM25Index(),
                                    reranker=self.reranker)
         self.gateway = gateway or make_gateway(

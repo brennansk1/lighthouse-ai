@@ -241,7 +241,10 @@ def check(text: str, *, min_coverage: float = 0.6,
     # --- entailment gate (MiniCheck / HHEM when available) ---
     entailment_coverage = 0.0
     entailment_checked = False
-    if evidence_chunks is not None and _entailment.available():
+    # Require *non-empty* evidence: with no chunks there is nothing to entail
+    # against, so reporting entailment_checked=True would be misleading (it would
+    # imply claims were verified when no grounding existed).
+    if evidence_chunks and _entailment.available():
         sourced_claims = [c for c in claims if c.is_sourced]
         if sourced_claims:
             # Build a lookup: citation_id → chunk text (best-effort)

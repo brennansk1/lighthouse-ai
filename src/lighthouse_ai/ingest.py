@@ -167,7 +167,7 @@ def _html_to_text(payload: bytes, content_type: str | None = None,
     try:
         import trafilatura  # type: ignore
     except ImportError:
-        trafilatura = None
+        trafilatura = None  # type: ignore[assignment]
 
     if trafilatura is not None:
         extracted = trafilatura.extract(raw)  # type: ignore[union-attr]
@@ -179,10 +179,16 @@ def _html_to_text(payload: bytes, content_type: str | None = None,
         try:
             import io
 
+            from docling.datamodel.base_models import DocumentStream  # type: ignore
             from docling.document_converter import DocumentConverter  # type: ignore
 
             converter = DocumentConverter()
-            result = converter.convert(io.BytesIO(payload))
+            # docling 2.x convert() needs a DocumentStream (name carries the
+            # format hint), not a raw BytesIO.
+            source = DocumentStream(
+                name=filename or "document.docx", stream=io.BytesIO(payload)
+            )
+            result = converter.convert(source)
             if result and result.document:
                 md = result.document.export_to_markdown()
                 if md:
@@ -261,10 +267,13 @@ def _pdf_to_text(payload: bytes) -> tuple[str, bool]:
 
     # 4. docling — handles complex/structured PDFs (tables, multi-column)
     try:
+        from docling.datamodel.base_models import DocumentStream  # type: ignore
         from docling.document_converter import DocumentConverter  # type: ignore
 
         converter = DocumentConverter()
-        result = converter.convert(io.BytesIO(payload))
+        # docling 2.x convert() needs a DocumentStream, not a raw BytesIO.
+        source = DocumentStream(name="document.pdf", stream=io.BytesIO(payload))
+        result = converter.convert(source)
         if result and result.document:
             md = result.document.export_to_markdown()
             if md:
