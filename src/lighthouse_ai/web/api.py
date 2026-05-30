@@ -120,6 +120,13 @@ class WatchWebBody(BaseModel):
     cadence_minutes: int | None = None
 
 
+class SteerabilityPut(BaseModel):
+    locked: bool = False
+    seed: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+
+
 # ---- Watch v2 live fetch (injectable so tests never hit the network) -------
 
 
@@ -840,6 +847,139 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         from ..secrets import SecretStore
         backend = SecretStore(paths.data_dir).put(body.key, body.value)
         return {"key": body.key, "backend": backend}
+
+    @app.delete("/api/secrets/{key_name}", tags=["settings"])
+    def delete_secret(key_name: str) -> dict[str, Any]:
+        from ..secrets import SecretStore
+        found = SecretStore(paths.data_dir).delete(key_name)
+        if not found:
+            raise HTTPException(404, f"secret {key_name!r} not found")
+        return {"key": key_name, "deleted": True}
+
+    # ====================== SOURCE KEY CATALOGUE ===================
+    # Hard-coded list of auth-requiring sources with their env-var key name and
+    # a help URL where the user can obtain a free key.  The "configured" flag is
+    # derived from SecretStore.list() — the value is NEVER returned.
+
+    _SOURCE_KEY_CATALOGUE: list[dict[str, str]] = [
+        {
+            "source_id": "fred",
+            "label": "FRED (Federal Reserve Economic Data)",
+            "key_name": "FRED_API_KEY",
+            "help_url": "https://fred.stlouisfed.org/docs/api/api_key.html",
+        },
+        {
+            "source_id": "bea",
+            "label": "BEA (Bureau of Economic Analysis)",
+            "key_name": "BEA_API_KEY",
+            "help_url": "https://apps.bea.gov/API/signup/",
+        },
+        {
+            "source_id": "bls",
+            "label": "BLS (Bureau of Labor Statistics)",
+            "key_name": "BLS_API_KEY",
+            "help_url": "https://data.bls.gov/registrationEngine/",
+        },
+        {
+            "source_id": "census",
+            "label": "Census Bureau",
+            "key_name": "CENSUS_API_KEY",
+            "help_url": "https://api.census.gov/data/key_signup.html",
+        },
+        {
+            "source_id": "congress_gov",
+            "label": "Congress.gov",
+            "key_name": "CONGRESS_GOV_API_KEY",
+            "help_url": "https://api.congress.gov/sign-up/",
+        },
+        {
+            "source_id": "govinfo",
+            "label": "GovInfo (GPO)",
+            "key_name": "GOVINFO_API_KEY",
+            "help_url": "https://api.govinfo.gov/docs/",
+        },
+        {
+            "source_id": "courtlistener",
+            "label": "CourtListener (Free Law Project)",
+            "key_name": "COURTLISTENER_API_KEY",
+            "help_url": "https://www.courtlistener.com/sign-in/",
+        },
+        {
+            "source_id": "semantic_scholar",
+            "label": "Semantic Scholar",
+            "key_name": "SEMANTIC_SCHOLAR_API_KEY",
+            "help_url": "https://www.semanticscholar.org/product/api",
+        },
+        {
+            "source_id": "regulations_gov",
+            "label": "Regulations.gov",
+            "key_name": "REGULATIONS_GOV_API_KEY",
+            "help_url": "https://open.gsa.gov/api/regulationsgov/",
+        },
+        {
+            "source_id": "guardian",
+            "label": "The Guardian",
+            "key_name": "GUARDIAN_API_KEY",
+            "help_url": "https://open-platform.theguardian.com/access/",
+        },
+    ]
+
+    @app.get("/api/sources/keys", tags=["settings"])
+    def list_source_keys() -> dict[str, Any]:
+        """List auth-requiring sources with configured status (value never returned).
+
+        ``configured`` is True when the key is present in either the OS keychain
+        or the TOML fallback file.  The value is never returned.
+        """
+        from ..secrets import SecretStore
+        store = SecretStore(paths.data_dir)
+        sources = []
+        for entry in _SOURCE_KEY_CATALOGUE:
+            configured = store.get(entry["key_name"]) is not None
+            sources.append({
+                "source_id": entry["source_id"],
+                "label": entry["label"],
+                "key_name": entry["key_name"],
+                "configured": configured,
+                "help_url": entry["help_url"],
+            })
+        return {"sources": sources}
+
+    # ======================= STEERABILITY ==========================
+    # Persisted in a small JSON file beside sandbox_config.json so the gateway
+    # can be reconstructed with the same locked/seed/temperature/top_p settings
+    # on restart.  No gateway module is imported or mutated here.
+
+    _steerability_path = paths.data_dir / "steerability.json"
+
+    def _load_steerability() -> dict[str, Any]:
+        try:
+            return json.loads(_steerability_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"locked": False, "seed": None, "temperature": None, "top_p": None}
+
+    def _save_steerability(data: dict[str, Any]) -> None:
+        _steerability_path.parent.mkdir(parents=True, exist_ok=True)
+        _steerability_path.write_text(json.dumps(data), encoding="utf-8")
+
+    @app.get("/api/steerability", tags=["settings"])
+    def get_steerability() -> dict[str, Any]:
+        return _load_steerability()
+
+    @app.put("/api/steerability", tags=["settings"])
+    def put_steerability(body: SteerabilityPut) -> dict[str, Any]:
+        if body.temperature is not None and not (0.0 <= body.temperature <= 2.0):
+            raise HTTPException(422, "temperature must be between 0.0 and 2.0")
+        if body.top_p is not None and not (0.0 <= body.top_p <= 1.0):
+            raise HTTPException(422, "top_p must be between 0.0 and 1.0")
+        data: dict[str, Any] = {
+            "locked": body.locked,
+            "seed": body.seed,
+            "temperature": body.temperature,
+            "top_p": body.top_p,
+        }
+        _save_steerability(data)
+        return data
 
     # ========================= INTELLIGENCE (§3) ===================
 

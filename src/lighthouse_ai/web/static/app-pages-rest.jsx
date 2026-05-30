@@ -1760,6 +1760,284 @@ function RSourcesTrust({ toast }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+//  SETTINGS — Connect your data sources
+// ════════════════════════════════════════════════════════════════════════════
+function RDataSourceKeys({ toast }) {
+  const { data, loading, error, reload } = window.useApi('/api/sources/keys');
+  // { sourceId -> inputValue } for the "Add key" text fields
+  const [inputs, setInputs] = rUseState({});
+  // { sourceId -> true } while that row's save is in flight
+  const [saving, setSaving] = rUseState({});
+  // { sourceId -> true } while that row's remove is in flight
+  const [removing, setRemoving] = rUseState({});
+  const Btn = window.Btn;
+
+  const sources = (data && data.sources) || [];
+
+  function setInput(sourceId, val) {
+    setInputs((prev) => ({ ...prev, [sourceId]: val }));
+  }
+
+  async function saveKey(source) {
+    const val = (inputs[source.source_id] || '').trim();
+    if (!val) { toast.show('Paste your key before saving', 'error'); return; }
+    setSaving((prev) => ({ ...prev, [source.source_id]: true }));
+    try {
+      await window.apiPost('/api/secrets', { key: source.key_name, value: val });
+      setInputs((prev) => { const n = { ...prev }; delete n[source.source_id]; return n; });
+      toast.show(`${source.label} key saved`, 'success');
+      reload();
+    } catch (e) {
+      toast.show(e.message || 'Save failed', 'error');
+    }
+    setSaving((prev) => ({ ...prev, [source.source_id]: false }));
+  }
+
+  async function removeKey(source) {
+    setRemoving((prev) => ({ ...prev, [source.source_id]: true }));
+    try {
+      await window.apiDelete(`/api/secrets/${encodeURIComponent(source.key_name)}`);
+      toast.show(`${source.label} key removed`, 'success');
+      reload();
+    } catch (e) {
+      toast.show(e.message || 'Remove failed', 'error');
+    }
+    setRemoving((prev) => ({ ...prev, [source.source_id]: false }));
+  }
+
+  return (
+    <RSettingsSection title="Connect your data sources">
+      <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginBottom: 16 }}>
+        Some sources need a free API key to work. Paste yours below — they are stored
+        securely on your machine and never shown again. All sources work without a
+        key; adding one just raises your rate limit or unlocks extra data.
+      </div>
+
+      {loading && <RSkeleton h={14} w="60%" />}
+      {error && <window.ErrorBox message={`Could not load sources — ${error}`} />}
+
+      {sources.map((src) => (
+        <div key={src.source_id} style={{
+          padding: '12px 0', borderTop: '1px solid var(--rule-soft)',
+          display: 'flex', flexDirection: 'column', gap: 8,
+        }}>
+          {/* Row header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', flex: 1, minWidth: 140 }}>
+              {src.label}
+            </span>
+            {src.configured ? (
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 12,
+                background: 'rgba(6,214,160,0.12)', color: 'var(--green-dark)',
+                border: '1px solid var(--green-dark)', letterSpacing: '0.03em',
+              }}>
+                Configured ✓
+              </span>
+            ) : (
+              <span style={{
+                fontSize: 11, fontWeight: 600, color: 'var(--muted)',
+                padding: '2px 9px', borderRadius: 12,
+                border: '1px solid var(--rule)', background: 'var(--rule-soft)',
+              }}>
+                Not set
+              </span>
+            )}
+            <a
+              href={src.help_url} target="_blank" rel="noopener noreferrer"
+              style={{ fontSize: 12, color: 'var(--primary)', textDecoration: 'none',
+                whiteSpace: 'nowrap' }}>
+              Get a free key ↗
+            </a>
+          </div>
+
+          {/* Input + Save / Remove */}
+          {src.configured ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                readOnly
+                value="••••••••••••••••"
+                style={{ ...rInput, color: 'var(--muted)', background: 'var(--rule-soft)',
+                  cursor: 'default', flex: 1 }}
+                aria-label={`${src.label} key (hidden)`}
+              />
+              <Btn
+                kind="ghost"
+                onClick={() => removeKey(src)}
+                disabled={!!removing[src.source_id]}
+                style={{ flexShrink: 0 }}>
+                {removing[src.source_id] ? 'Removing…' : 'Remove'}
+              </Btn>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="password"
+                autoComplete="off"
+                placeholder={`Paste your ${src.label} key`}
+                value={inputs[src.source_id] || ''}
+                onChange={(e) => setInput(src.source_id, e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveKey(src); }}
+                style={{ ...rInput, flex: 1 }}
+                aria-label={`${src.label} API key input`}
+              />
+              <Btn
+                onClick={() => saveKey(src)}
+                disabled={!!saving[src.source_id] || !(inputs[src.source_id] || '').trim()}
+                style={{ flexShrink: 0 }}>
+                {saving[src.source_id] ? 'Saving…' : 'Save'}
+              </Btn>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {!loading && sources.length === 0 && !error && (
+        <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>
+          No configurable source keys found.
+        </div>
+      )}
+    </RSettingsSection>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SETTINGS — Reproducibility
+// ════════════════════════════════════════════════════════════════════════════
+function RReproducibility({ toast }) {
+  const { data, loading, error } = window.useApi('/api/steerability');
+  const [form, setForm] = rUseState(null);
+  const [dirty, setDirty] = rUseState(false);
+  const [saving, setSaving] = rUseState(false);
+  const [saved, setSaved] = rUseState(false);
+  const Btn = window.Btn;
+
+  rUseEffect(() => {
+    if (data && !form) {
+      setForm({
+        locked: !!data.locked,
+        seed: data.seed != null ? String(data.seed) : '',
+        temperature: data.temperature != null ? String(data.temperature) : '',
+        top_p: data.top_p != null ? String(data.top_p) : '',
+      });
+    }
+  }, [data]); // eslint-disable-line
+
+  function patch(key, val) {
+    setForm((f) => ({ ...f, [key]: val }));
+    setDirty(true);
+    setSaved(false);
+  }
+
+  async function save() {
+    setSaving(true);
+    const payload = { locked: form.locked };
+    if (form.seed !== '') { const n = parseInt(form.seed, 10); if (!isNaN(n)) payload.seed = n; }
+    if (form.temperature !== '') { const n = parseFloat(form.temperature); if (!isNaN(n)) payload.temperature = n; }
+    if (form.top_p !== '') { const n = parseFloat(form.top_p); if (!isNaN(n)) payload.top_p = n; }
+    try {
+      const resp = await fetch('/api/steerability', { method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload) });
+      if (!resp.ok) { const txt = await resp.text(); throw new Error(txt || `HTTP ${resp.status}`); }
+      setDirty(false);
+      setSaved(true);
+      toast.show('Reproducibility settings saved', 'success');
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      toast.show(e.message || 'Save failed', 'error');
+    }
+    setSaving(false);
+  }
+
+  if (loading && !form) return <RSkeleton h={80} />;
+  if (error && !form) return <window.ErrorBox message={`Could not load reproducibility settings — ${error}`} />;
+  if (!form) return <RSkeleton h={80} />;
+
+  return (
+    <RSettingsSection title="Reproducibility">
+      <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginBottom: 16 }}>
+        Control how much randomness the model uses. Locking it makes every run
+        produce the same output given the same input — ideal when you need to
+        reproduce an analysis exactly.
+      </div>
+
+      {/* Lock toggle */}
+      <RToggleRow
+        label="Lock the model for identical results"
+        hint="Great for experiments you need to reproduce exactly. Sets temperature to 0 and pins the random seed so the model always gives the same answer."
+        value={form.locked}
+        onChange={(v) => patch('locked', v)}
+        id="s-locked"
+      />
+
+      {/* Advanced knobs — only visible when NOT locked (locked overrides them anyway) */}
+      {!form.locked && (
+        <div style={{ marginTop: 10, paddingTop: 12,
+          borderTop: '1px dashed var(--rule-soft)' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)',
+            textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
+            Advanced (optional)
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <RField label="Seed" hint="Integer. Leave blank for a random seed.">
+              <input
+                type="number"
+                step="1"
+                placeholder="e.g. 42"
+                value={form.seed}
+                onChange={(e) => patch('seed', e.target.value)}
+                style={rInput}
+                aria-label="Random seed"
+              />
+            </RField>
+            <RField label="Temperature" hint="0 = deterministic, 1 = default, 2 = max creative.">
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="2"
+                placeholder="e.g. 0.7"
+                value={form.temperature}
+                onChange={(e) => patch('temperature', e.target.value)}
+                style={rInput}
+                aria-label="Temperature"
+              />
+            </RField>
+            <RField label="Top-p" hint="Nucleus sampling cutoff (0–1). Leave blank for default.">
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                max="1"
+                placeholder="e.g. 0.9"
+                value={form.top_p}
+                onChange={(e) => patch('top_p', e.target.value)}
+                style={rInput}
+                aria-label="Top-p"
+              />
+            </RField>
+          </div>
+        </div>
+      )}
+
+      {/* Save button */}
+      <div style={{ marginTop: 14, display: 'flex', gap: 10, alignItems: 'center' }}>
+        <Btn onClick={save} disabled={saving || !dirty}>
+          {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}
+        </Btn>
+        {dirty && (
+          <span style={{ fontSize: 12, color: '#a07a00', fontWeight: 600 }}>
+            Unsaved changes
+          </span>
+        )}
+      </div>
+    </RSettingsSection>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 //  SETTINGS PAGE
 // ════════════════════════════════════════════════════════════════════════════
 function SettingsPage({ toast }) {
@@ -1896,6 +2174,12 @@ function SettingsPage({ toast }) {
 
         {/* ── Sources & trust (§4 News matrix, community, Tier-C) ───────── */}
         <RSourcesTrust toast={toast} />
+
+        {/* ── Connect your data sources ────────────────────────────────── */}
+        <RDataSourceKeys toast={toast} />
+
+        {/* ── Reproducibility ──────────────────────────────────────────── */}
+        <RReproducibility toast={toast} />
 
         {/* ── Backup ───────────────────────────────────────────────────── */}
         <RSettingsSection title="Backup">
