@@ -23,6 +23,27 @@ for the user's clarity and control over engineering elegance.
   parked until the user provides their Mac mini. The gated integration harness (`tests/test_real_*`)
   is already written so that validation is turnkey then.
 
+## Milestone (this session) — offline product feature-complete
+Suite **2850 pass / 103 skip**, mypy 0 (269 modules), ruff clean, coverage ~82%. Shipped + pushed:
+the whole skills/recommender/source-picker stack; mode↔skill integration + contradiction handling;
+frontier-gap core; acquisition stack; **Sandbox** workspace; **Watch-a-website** (v2, with alerts);
+intent **recipes**; **skill-scaffold generator**; **steerability/reproducibility**; **Settings** API-key
+onboarding; **global Pause**; **hardware** OOM/utilization guardrails; **in-app Info-tab guide**; the
+**Graph-RAG primitive** (`rag/graph.py`); top-level docs synced; **4-wave audit (~32 real bugs fixed)**.
+
+### Precise remaining work (deliberate, next sessions)
+- **Graph-RAG surfacing** — wire the existing GRAPH route + an "explore relationships" view. Cleanest:
+  a `/api/graph?draft=<id>` that builds a `CorpusGraph` from a draft's stored evidence chunks and
+  returns `query()`/`subgraph()`; a small relationships panel in the Library artifact view. (Product
+  call: per-draft evidence vs whole-corpus — decide before building.) Do NOT touch audited `hybrid.py`.
+- **One-click desktop app (Tauri)** — bundles local Ollama/Qdrant; needs Node/Tauri build tooling →
+  scaffold + doc here, real build on a dev box.
+- **P3 live validation** (await Mac mini): real-LLM quality (precision@5/faithfulness), live source-API
+  validation across the 37 skills, optional-ML-model measurement, Playwright browser QA, 24h soak,
+  cross-platform, packaging/signing, security review. Gated harness `tests/test_real_*` makes it turnkey.
+- **Deferred small items:** budget-trip notifications (governor buckets lacks config access);
+  ram_aware_concurrency wiring to raise default LLM concurrency (OOM-sensitive — validate on real hw).
+
 ## Current state (update the date/commit when you touch this)
 - Suite: ~2762 passing, ~103 skipped (gated). mypy 0 (267 files). ruff clean. CI: ruff+mypy(blocking)+
   pytest+build on {ubuntu,macOS}×py{3.11,3.12}. Coverage ~82%.
