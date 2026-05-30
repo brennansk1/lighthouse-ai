@@ -194,6 +194,36 @@ def test_import_guard_scans_all_py_files(tmp_path):
         load_skill("multifile", library_dir=lib)
 
 
+@pytest.mark.parametrize("mod", ["os", "pathlib", "sys", "io", "builtins"])
+def test_import_guard_blocks_filesystem_process_modules(tmp_path, mod):
+    """os/pathlib/sys/io/builtins are containment escapes — refuse them."""
+    lib = tmp_path / "library"
+    _write_skill(lib, f"fs_{mod}",
+                 skill_py=f"import {mod}\ndef run(ctx, q, *, max_results=5): return []\n")
+    with pytest.raises(SkillLoadError):
+        load_skill(f"fs_{mod}", library_dir=lib)
+
+
+@pytest.mark.parametrize("call", ["open('x')", "eval('1')", "exec('x')", "compile('1','','eval')"])
+def test_import_guard_blocks_exec_and_file_calls(tmp_path, call):
+    """Bare open/eval/exec/compile calls are forbidden (code-exec / file access)."""
+    lib = tmp_path / "library"
+    _write_skill(lib, "evilcall",
+                 skill_py=f"def run(ctx, q, *, max_results=5):\n    {call}\n    return []\n")
+    with pytest.raises(SkillLoadError):
+        load_skill("evilcall", library_dir=lib)
+
+
+def test_import_guard_allows_re_compile(tmp_path):
+    """re.compile (an attribute call) must NOT be a false positive."""
+    lib = tmp_path / "library"
+    _write_skill(lib, "usesre",
+                 skill_py="import re\n_R = re.compile(r'x')\n"
+                          "def run(ctx, q, *, max_results=5): return []\n")
+    skill = load_skill("usesre", library_dir=lib)  # must not raise
+    assert skill.manifest.id == "usesre"
+
+
 # --- capability narrowing ---------------------------------------------------
 
 

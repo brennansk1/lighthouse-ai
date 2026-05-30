@@ -59,8 +59,36 @@ FORBIDDEN_IMPORT_ROOTS: frozenset[str] = frozenset(
         "pickle",
         "shutil",
         "tempfile",
+        # Filesystem / process / low-level escapes. All legitimate I/O a skill
+        # needs is provided by SkillContext; importing these is a containment
+        # escape (e.g. ``import os; os.system(...)`` is RCE). No seed skill
+        # imports any of them.
+        "os",
+        "pathlib",
+        "sys",
+        "io",
+        "builtins",
+        "code",
+        "marshal",
+        "glob",
+        "fcntl",
+        "mmap",
+        "resource",
+        "signal",
+        "gc",
     }
 )
+
+# Bare builtins a skill may not CALL (ast.Name funcs). These bypass the import
+# nodes above: ``open(...)`` reads arbitrary files, ``eval``/``exec``/``compile``
+# execute attacker-chosen code, ``__import__`` is a dynamic-import vector.
+_FORBIDDEN_BARE_CALLS: frozenset[str] = frozenset(
+    {"__import__", "eval", "exec", "compile", "open", "globals", "vars"}
+)
+# Attribute calls a skill may not make (ast.Attribute funcs, matched on the
+# trailing name). Only ``import_module`` here — NOT ``compile``, because
+# ``re.compile`` is a legitimate, ubiquitous attribute call.
+_FORBIDDEN_ATTR_CALLS: frozenset[str] = frozenset({"import_module"})
 
 
 class SkillNotFound(KeyError):
@@ -113,18 +141,18 @@ def _forbidden_imports(source: str) -> list[str]:
                 if root in FORBIDDEN_IMPORT_ROOTS:
                     bad.append(node.module)
         elif isinstance(node, ast.Call):
-            # Dynamic imports bypass the static import nodes above:
-            # ``__import__("socket")`` / ``importlib.import_module("httpx")``.
-            # We can't resolve a non-literal argument, so any call to one of
-            # these import primitives is itself treated as forbidden.
+            # Dynamic imports / code-exec / raw file access bypass the static
+            # import nodes above (``__import__("socket")``,
+            # ``importlib.import_module("httpx")``, ``open("/etc/passwd")``,
+            # ``exec(payload)``). We can't resolve non-literal arguments, so any
+            # call to one of these primitives is itself treated as forbidden.
+            # Bare-name vs attribute is split so legitimate attribute calls like
+            # ``re.compile(...)`` are NOT flagged.
             func = node.func
-            name = None
-            if isinstance(func, ast.Name):
-                name = func.id
-            elif isinstance(func, ast.Attribute):
-                name = func.attr
-            if name in ("__import__", "import_module"):
-                bad.append(f"<dynamic-import: {name}>")
+            if isinstance(func, ast.Name) and func.id in _FORBIDDEN_BARE_CALLS:
+                bad.append(f"<forbidden-call: {func.id}>")
+            elif isinstance(func, ast.Attribute) and func.attr in _FORBIDDEN_ATTR_CALLS:
+                bad.append(f"<forbidden-call: {func.attr}>")
     return bad
 
 
