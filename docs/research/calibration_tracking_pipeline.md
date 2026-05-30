@@ -212,6 +212,38 @@ citations) that would make Lighthouse's self-calibration genuinely trustworthy.
 
 ---
 
+## 11. Scoping decisions (answers to the evaluator's questions)
+
+1. **Primary deliverable = a prioritized improvement memo**, *not* a full redesign
+   spec. Lead with an assessment ("is this sound?") and a ranked list of concrete
+   changes with citations. **However**, give **implementer-ready depth on the top
+   ~3 recommendations**: proposed schema deltas + algorithm/pseudocode for those,
+   enough to hand straight to an engineer. Don't spec a full redesign of
+   everything up front — go deep only where the ranking says it matters most.
+
+2. **Weighting: academic-led (~60%), practitioner/rationalist (~40%), both
+   required.** Use peer-reviewed CS/stats as the authoritative backbone for the
+   methodological core — proper scoring rules, LLM calibration & overconfidence,
+   conformal prediction, reliability diagrams / ECE, isotonic & Platt
+   recalibration. Use the forecasting-practitioner / rationalist corpus
+   (Metaculus, PredictionBook, GJP/Tetlock applied threads, scoring-rule debates)
+   for the **operational, UX, cold-start, and motivation** layer — how
+   prediction-tracking is actually made usable and honest in practice. When the
+   two conflict: **academic wins on methodology, practitioner wins on usability.**
+   Tetlock/Good-Judgment work is in scope on both sides and should be used.
+
+3. **The binary-outcome constraint (§8.6) is OPEN to revision.** Evaluate moving to
+   **numeric / distributional / multi-outcome** forecasts (continuous-quantity
+   questions with a predicted distribution, multi-class resolution), since most
+   research claims are matters of degree, not true/false. Binary was an
+   implementation simplification, not a principle. **Constraints on any richer
+   scheme:** keep **binary true/false as a first-class, cheap simple case**;
+   propose a **staged path** to richer outcomes; and it must stay cheap for a small
+   local model and degrade gracefully offline (§10). Do not force every claim into
+   a full distribution.
+
+---
+
 *Source-of-truth files (for an implementer, not the evaluator):*
 `verification/positions.py` (data model + record), `verification/wep.py` (bands),
 `verification/brier.py` (score), `verification/resolver.py` (auto-resolution),
