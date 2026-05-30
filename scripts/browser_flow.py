@@ -105,6 +105,36 @@ def main() -> int:
                 page.get_by_text("Resume work", exact=False).first.click()
                 page.wait_for_timeout(600)
 
+            # ---- Flow 3: sandbox upload — benign accepted, hostile rejected ----
+            import os
+            page.goto(f"{base}/#sandbox", wait_until="domcontentloaded")
+            page.wait_for_timeout(1200)
+            benign = os.path.join(tmp, "benign.txt")
+            with open(benign, "w") as fh:
+                fh.write("hello lighthouse — benign analysis data for the sandbox.\n")
+            page.locator("input[type='file']").set_input_files(benign)
+            page.wait_for_timeout(1800)
+            eicar = os.path.join(tmp, "evil.com")
+            with open(eicar, "w") as fh:
+                fh.write(r"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-"
+                         r"ANTIVIRUS-TEST-FILE!$H+H*")
+            page.locator("input[type='file']").set_input_files(eicar)
+            page.wait_for_timeout(1800)
+
+            sb = httpx.get(f"{base}/api/sandbox", timeout=10).json()
+            items = sb.get("items", sb) if isinstance(sb, dict) else sb
+            benign_stored = any("benign" in str(i.get("filename", "")) for i in items)
+            eicar_clean = any("evil" in str(i.get("filename", "")) and
+                              i.get("scan_verdict") == "clean" for i in items)
+            if benign_stored and not eicar_clean:
+                print(f"  sandbox     OK    benign stored; EICAR not stored-as-clean "
+                      f"({len(items)} item(s))")
+            else:
+                findings.append(f"sandbox security: benign_stored={benign_stored}, "
+                                f"eicar_clean={eicar_clean}, items={items}")
+                print(f"  sandbox     FAIL  benign_stored={benign_stored} "
+                      f"eicar_clean={eicar_clean}")
+
             if errors:
                 findings.append(f"page errors: {errors[:3]}")
             browser.close()
@@ -114,7 +144,8 @@ def main() -> int:
 
     print("\n=== SUMMARY ===")
     if not findings:
-        print("INTERACTION FLOWS OK — job created via wizard; global Pause toggles state.")
+        print("INTERACTION FLOWS OK — wizard creates a job; global Pause toggles "
+              "state; sandbox stores benign + blocks EICAR.")
         return 0
     for f in findings:
         print("  -", f)

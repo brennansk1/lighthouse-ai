@@ -50,8 +50,9 @@ real data and harden it. Grouped by priority.
 - ✅ **Browser QA — core interaction flows** (`scripts/browser_flow.py`, 2026-05-29): driving the live UI
   end-to-end — the 3-step Research wizard (pick mode → frame question → review → **Launch**) POSTs
   `/api/jobs` → 200 and the job appears (mode=investigate, queued); the global **Pause all** button flips
-  the backend to `{status: paused_soft, paused: true}` and back. Remaining: sandbox upload flow +
-  a11y/visual-regression.
+  the backend to `{status: paused_soft, paused: true}` and back; the **Sandbox upload** flow stores a
+  benign file and **blocks an EICAR payload** through the live scanners (security boundary validated end-
+  to-end through the UI, not just unit tests). Remaining: a11y/visual-regression.
 
 ### B. Live source fetching — the 37 skills (validate each against its real API)
 - ✅ **37/37 skills live-fetched** (2026-05-29, `test_real_skills_fetch.py`, bounded `max_results=2`):
