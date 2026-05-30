@@ -66,7 +66,11 @@ real data and harden it. Grouped by priority.
   measured once the `reranker` extra is installed (recall@5/MRR already saturate at 1.0 base).
 - ⬜ **Entailment/HHEM** faithfulness gate on a 20-pair golden set ≥ 0.80.
 - ⬜ **ProtectAI deBERTa injection** classifier: ROC vs the regex gate, FP rate held.
-- ⬜ **Sandbox hardening** (YARA + pikepdf) against a real hostile corpus; 100% block, 0 FP on benign.
+- ✅ **Sandbox hardening** (real YARA + pikepdf, 2026-05-29): redteam corpus **29/29** — OpenAction-JS
+  PDF quarantined, malformed PDF quarantined, EICAR detected, benign PDF/HTML clean (**0 false
+  positives**). Installing the libs surfaced + fixed 3 latent issues (pikepdf-10 test-helper API,
+  `YaraScanner._get_rules` availability consistency, a pikepdf-typed mypy error). Real scanners now active
+  by default. Remaining for full ⬜→✅: a larger real-world hostile corpus + ClamAV.
 
 ### D. Surfaces & ops
 - ⬜ **Browser QA (Playwright)** of every dashboard tab — 0 console errors, axe a11y pass,

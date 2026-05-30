@@ -77,9 +77,22 @@ Running the gated real-backend suite (`LIGHTHOUSE_REAL_BACKEND=1`, macOS arm64, 
   scalar quantization + payload indexes + upsert/search/delete round-trips) — persistent vector store
   works on this machine, not just in-memory.
 
-All fixes are offline-deterministic with regression tests; full suite **2867 pass / 103 skip**, mypy 0,
+- **Phase 3 (partial) — sandbox security redteam with real scanners.** Installed `--extra
+  sandbox-hardening` (yara-python + pikepdf, modest/reversible — no torch) and ran the redteam corpus.
+  All 29 tests pass: an OpenAction-JavaScript PDF is **quarantined**, a benign PDF is **clean (no false
+  positive)**, malformed PDFs quarantined, EICAR still detected, no FPs on benign HTML/PDF. Installing the
+  real libs surfaced **three latent issues** (fixed): (a) the pikepdf test helpers used the pikepdf-9
+  `pages.append(Dictionary)` form which pikepdf-10 rejects — switched to the stable `add_blank_page`, so
+  the scanner is now actually exercised; (b) `YaraScanner._get_rules()` ignored `_yara_available()` (it
+  relied on import failure), inconsistent with `supports()` — now honors it so disabling yara is respected
+  even when importable; (c) a latent mypy error in `PikePdfScanner` (`pikepdf.Object` dynamic attr seen as
+  non-callable) that only appears once pikepdf's real types are installed — fixed with an `Any` annotation.
+  **Note:** the hardening libs remain installed, so the secured store now runs the real yara/pikepdf
+  scanners by default (more secure). With them installed the full suite runs 6 more tests (2873 pass).
+
+All fixes are offline-deterministic with regression tests; full suite **2873 pass / 97 skip**, mypy 0,
 ruff clean. Live validation: Phase 1 (core quality) ✓, per-mode E2E 7/7 ✓, Phase 2 source APIs 37/37 ✓,
-Ollama backend + RAG-real + Qdrant-real gated suites ✓.
+Ollama backend + RAG-real + Qdrant-real gated suites ✓, sandbox redteam (real yara+pikepdf) 29/29 ✓.
 Remaining live phases (heavier setup): faithfulness gate (needs the `faithfulness` extra — torch/
 sentence-transformers), Playwright browser QA (Phase 3), 24 h soak + packaging (Phase 4).
 

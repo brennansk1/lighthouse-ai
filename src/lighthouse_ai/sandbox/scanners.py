@@ -358,6 +358,11 @@ class YaraScanner:
             return self._rules_object
         if self._compiled is not None:
             return self._compiled
+        # Honor the same availability check as supports() so the two code paths
+        # stay consistent (and so a caller that disables yara is respected even
+        # when the library is importable).
+        if not _yara_available():
+            return None
         try:
             import yara
             self._compiled = yara.compile(source=self._rules_source)
@@ -512,9 +517,13 @@ class PikePdfScanner:
                 if "/Annots" in page:
                     for annot in page["/Annots"]:
                         try:
-                            annot_obj = annot
-                            if hasattr(annot, "get_object"):
-                                annot_obj = annot.get_object()
+                            # pikepdf objects are dynamic (Object.__getattr__);
+                            # treat as Any so the guarded get_object() call type-
+                            # checks (mypy otherwise sees Object as non-callable).
+                            _annot: Any = annot
+                            annot_obj = _annot
+                            if hasattr(_annot, "get_object"):
+                                annot_obj = _annot.get_object()
                             if "/A" in annot_obj:
                                 self._check_action(annot_obj["/A"], findings)
                         except Exception:

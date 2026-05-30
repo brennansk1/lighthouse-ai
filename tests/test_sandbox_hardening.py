@@ -195,31 +195,26 @@ class TestYaraScannerInjectedRules:
 class TestPikePdfScannerWithLibrary:
     @staticmethod
     def _make_benign_pdf() -> bytes:
-        """Build a minimal valid PDF with no active content."""
+        """Build a minimal valid PDF with no active content.
+
+        Uses the high-level ``add_blank_page`` API, which is stable across
+        pikepdf versions (pikepdf 10.x rejects appending a raw Dictionary to
+        ``pages`` — it requires a ``pikepdf.Page``).
+        """
         pikepdf = pytest.importorskip("pikepdf")
         buf = io.BytesIO()
         with pikepdf.Pdf.new() as pdf:
-            page = pikepdf.Dictionary(
-                Type=pikepdf.Name("/Page"),
-                MediaBox=pikepdf.Array([0, 0, 612, 792]),
-            )
-            pdf.make_indirect(page)
-            pdf.pages.append(page)
+            pdf.add_blank_page(page_size=(612, 792))
             pdf.save(buf)
         return buf.getvalue()
 
     @staticmethod
     def _make_openaction_pdf() -> bytes:
-        """Build a PDF whose catalog contains /OpenAction."""
+        """Build a PDF whose catalog contains a dangerous /OpenAction."""
         pikepdf = pytest.importorskip("pikepdf")
         buf = io.BytesIO()
         with pikepdf.Pdf.new() as pdf:
-            page = pikepdf.Dictionary(
-                Type=pikepdf.Name("/Page"),
-                MediaBox=pikepdf.Array([0, 0, 612, 792]),
-            )
-            pdf.make_indirect(page)
-            pdf.pages.append(page)
+            pdf.add_blank_page(page_size=(612, 792))
             # Inject a /OpenAction that launches a JavaScript alert
             pdf.Root["/OpenAction"] = pikepdf.Dictionary(
                 S=pikepdf.Name("/JavaScript"),
