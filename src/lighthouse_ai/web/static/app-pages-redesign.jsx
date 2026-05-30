@@ -1851,6 +1851,49 @@ const LIBRARY_FILTERS = [
   { key: 'transcript', label: 'Transcripts' },
 ];
 
+// Visual confidence meter: a red→amber→green bar with a marker showing how
+// strongly the evidence supports a result. Far easier to grasp than the
+// "likely / even chance / unlikely" wording alone.
+function confidencePosition(phrase, value) {
+  if (typeof value === 'number' && value >= 0 && value <= 1) return value;
+  const p = (phrase || '').toString().toLowerCase();
+  if (/almost certain/.test(p)) return 0.95;
+  if (/highly likely|very likely/.test(p)) return 0.85;
+  if (/even chance|roughly even/.test(p)) return 0.5;
+  if (/almost no chance|remote/.test(p)) return 0.06;
+  if (/very unlikely/.test(p)) return 0.18;
+  if (/unlikely/.test(p)) return 0.3;
+  if (/likely/.test(p)) return 0.7;
+  return 0.5;
+}
+function ConfidenceBar({ phrase, value, compact }) {
+  const pos = confidencePosition(phrase, value);
+  const pct = Math.round(pos * 100);
+  const label = phrase
+    ? phrase.toString().charAt(0).toUpperCase() + phrase.toString().slice(1)
+    : 'Even chance';
+  return (
+    <div style={{ maxWidth: compact ? 280 : 460 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between',
+        fontSize: 10, color: 'var(--muted)', marginBottom: 4, fontFamily: 'var(--sans)' }}>
+        <span>Unlikely</span><span>Even chance</span><span>Likely</span>
+      </div>
+      <div style={{ position: 'relative', height: 9, borderRadius: 5,
+        background: 'linear-gradient(90deg, #d64545 0%, #e6b53a 50%, #1a9d6a 100%)' }}>
+        <div title={`${label} (${pct}%)`} style={{ position: 'absolute', left: `${pct}%`,
+          top: -3.5, transform: 'translateX(-50%)', width: 4, height: 16, borderRadius: 2,
+          background: 'var(--ink)', boxShadow: '0 0 0 2px var(--card)' }} />
+      </div>
+      {!compact && (
+        <div style={{ fontSize: 12, color: 'var(--ink-2)', marginTop: 7, lineHeight: 1.4 }}>
+          <strong style={{ color: 'var(--ink)' }}>Confidence: {label}.</strong>{' '}
+          How strongly the gathered evidence supports this answer — not a guarantee.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LibraryPage({ toast }) {
   const [typeFilter, setTypeFilter] = useState('');
   const q = typeFilter ? `/api/library?type=${typeFilter}` : '/api/library';
@@ -1938,8 +1981,8 @@ function LibraryPage({ toast }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8,
                   marginTop: 8, flexWrap: 'wrap' }}>
                   {(a.wep_phrase || a.wep_band) && (
-                    <window.ConfidencePill phrase={a.wep_phrase || a.wep_band}
-                      band={a.confidence} />
+                    <ConfidenceBar phrase={a.wep_phrase || a.wep_band}
+                      value={a.confidence} compact />
                   )}
                   {a.source_count != null && (
                     <span style={{ fontSize: 11, color: 'var(--muted)',
@@ -1960,10 +2003,20 @@ function LibraryPage({ toast }) {
               style={{ position: 'fixed', inset: 0, zIndex: 1000,
                 background: 'var(--paper)', display: 'flex', flexDirection: 'column',
                 animation: 'lh-fade-in .15s ease' }}>
+              {/* Print-to-PDF: hide everything but the document when printing so
+                  "Save as PDF" in the browser dialog produces a clean export. */}
+              <style>{`@media print {
+                body * { visibility: hidden !important; }
+                .lh-artifact-doc, .lh-artifact-doc * { visibility: visible !important; }
+                .lh-artifact-doc { position: absolute !important; left: 0; top: 0;
+                  width: 100% !important; max-width: 100% !important; padding: 0 24px !important; }
+                .lh-no-print { display: none !important; }
+              }`}</style>
               {/* Sticky toolbar: Back + export */}
-              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center',
-                justifyContent: 'space-between', gap: 12, padding: '11px 22px',
-                borderBottom: '1px solid var(--rule)', background: 'var(--card)' }}>
+              <div className="lh-no-print" style={{ flexShrink: 0, display: 'flex',
+                alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                padding: '11px 22px', borderBottom: '1px solid var(--rule)',
+                background: 'var(--card)' }}>
                 <button onClick={() => setSelId(null)} aria-label="Back to Library"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 7,
                     padding: '7px 14px', fontSize: 13, fontWeight: 600,
@@ -1977,6 +2030,8 @@ function LibraryPage({ toast }) {
                 </button>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>Export</span>
+                  <Btn kind="primary" size="sm" onClick={() => window.print()}
+                    title="Save as PDF (opens your browser's print dialog → choose 'Save as PDF')">PDF</Btn>
                   <Btn kind="ghost" size="sm" onClick={() => exportArtifact('md')}>Markdown</Btn>
                   <Btn kind="ghost" size="sm" onClick={() => exportArtifact('csv')}>CSV</Btn>
                   <Btn kind="ghost" size="sm" onClick={() => exportArtifact('json')}>JSON</Btn>
@@ -1984,7 +2039,8 @@ function LibraryPage({ toast }) {
               </div>
               {/* Scrollable document, centered with a comfortable measure */}
               <div style={{ flex: 1, overflowY: 'auto' }}>
-                <div style={{ maxWidth: 900, margin: '0 auto', padding: '36px 32px 96px' }}>
+                <div className="lh-artifact-doc"
+                  style={{ maxWidth: 900, margin: '0 auto', padding: '36px 32px 96px' }}>
                   <div style={{ paddingBottom: 16, marginBottom: 26,
                     borderBottom: '1px solid var(--rule)' }}>
                     <div style={{ fontFamily: 'var(--serif)', fontSize: 30, fontWeight: 700,
@@ -1994,15 +2050,17 @@ function LibraryPage({ toast }) {
                       <span style={{ fontSize: 11.5, fontWeight: 600, textTransform: 'uppercase',
                         letterSpacing: '0.05em', color: 'var(--muted)' }}>
                         {artifactLabel(detail.artifact_type)}</span>
-                      {(detail.wep_phrase || detail.wep_band) && (
-                        <window.ConfidencePill phrase={detail.wep_phrase || detail.wep_band}
-                          band={detail.confidence} />)}
                       {detail.source_count != null && (
                         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                           {detail.source_count} source{detail.source_count === 1 ? '' : 's'}</span>)}
                       {detail.created_at && (
                         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{detail.created_at}</span>)}
                     </div>
+                    {(detail.wep_phrase || detail.wep_band) && (
+                      <div style={{ marginTop: 14 }}>
+                        <ConfidenceBar phrase={detail.wep_phrase || detail.wep_band}
+                          value={detail.confidence} />
+                      </div>)}
                   </div>
                   <div style={{ maxWidth:
                     ['matrix', 'table', 'timeline'].includes(detail.artifact_type)
