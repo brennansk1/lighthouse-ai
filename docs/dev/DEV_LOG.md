@@ -115,8 +115,16 @@ All fixes are offline-deterministic with regression tests; full suite **2888 pas
 ruff clean. Live validation: Phase 1 (core quality) ✓, per-mode E2E 7/7 ✓, Phase 2 source APIs 37/37 ✓,
 Ollama + RAG-real + Qdrant-real gated ✓, sandbox redteam (real yara+pikepdf) 29/29 ✓, politeness layer
 (real protego/courlan/pyrate) 68/68 ✓, optional-ML stack (faithfulness/reranker/injection/extraction/
-youtube) ✓. **Live findings total this session: 14 real bugs fixed.** Remaining: Playwright browser QA +
-24 h soak + packaging (Phase 4) — need a running server / browser binary, deferred.
+youtube) ✓.
+- **Browser QA ✓** — `scripts/browser_smoke.py` (bounded, in-thread uvicorn + headless chromium): all 7
+  dashboard pages render with zero console/page errors. Fixed a fragile js-render absence test.
+- **Packaging ✓ (clean-room)** — `uv build` wheel bundles all package data (static dashboard, catalog,
+  37 skills); installed into a fresh py3.11 venv with base deps only → 3 console scripts run, offline eval
+  works, bundled data accessible. A user can `pip install` and run it.
+
+**Live findings total this session: 16 real bugs fixed** (recommender ×3, precision bar, watch dead-wire,
+chat-smoke, sandbox ×3, politeness ×3, youtube-1.x, docling-2.x, offline-reranker, entailment-empty,
+js-render-test). Remaining toward ship: 24 h soak, cross-platform/systemd, code-signing, security review.
 Remaining live phases (heavier setup): faithfulness gate (needs the `faithfulness` extra — torch/
 sentence-transformers), Playwright browser QA (Phase 3), 24 h soak + packaging (Phase 4).
 

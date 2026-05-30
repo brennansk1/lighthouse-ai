@@ -90,8 +90,14 @@ real data and harden it. Grouped by priority.
 - 🔌 **Deep-tier resume** — serializable tree state exists; wire dispatcher-level checkpoint to
   `state.db` and prove a resumed multi-hour run.
 - 🟡 **Persistent vectors / replication** — Qdrant up; Litestream binary installed; restore drill.
-- ⬜ **24h supervisor soak** (no OOM/leak), **cross-platform** (Linux/systemd), **packaging**
-  (`pip install` + signed app + launchd/systemd), **security review** of egress/injection/sandbox.
+- 🟡 **Packaging — clean-room install verified** (2026-05-29): `uv build` produces a wheel that bundles
+  all package data (23 web/static files incl. index.html, model catalog yaml, 37 skill manifests + 37
+  SKILL.md). Installed into a **fresh py3.11 venv with base deps only**: all 3 console scripts
+  (`lighthouse`/`lighthouse-supervisor`/`lighthouse-tui`) work, `lighthouse eval --offline` runs
+  (recall@5/MRR 1.000), and the bundled dashboard + skills + catalog are accessible. Remaining: signed
+  macOS app + launchd/systemd unit + PyPI publish flow.
+- ⬜ **24h supervisor soak** (no OOM/leak), **cross-platform** (Linux/systemd), **signed app +
+  launchd/systemd**, **security review** of egress/injection/sandbox.
 
 ### Deployment standard — the bar EVERY feature must clear (go/no-go)
 1. **Tested** — offline-deterministic unit tests **and** a real-backend/live integration test
@@ -344,7 +350,7 @@ Test-type legend: **U** unit · **I** integration (real deps, skip-if-absent) ·
 | CI | GitHub Actions | suite + lint + types green on every push (macOS + Linux) | ✅ `ci.yml`: ruff + **mypy (blocking)** + pytest + build on {ubuntu, macOS} × py{3.11, 3.12} |
 | Cross-platform | run suite on Linux | green; systemd unit + /var paths work | ⬜ |
 | Security review | manual + Sec tests | egress/injection/sandbox boundary reviewed; no high findings | ⬜ |
-| Packaging | build + install | `pip install` works; entry points run; launchd/systemd install verified | 🟡 builds; install not verified |
+| Packaging | build + install | `pip install` works; entry points run; launchd/systemd install verified | ✅ clean-room install verified (wheel bundles static dashboard + 37 skills + catalog; 3 console scripts run; offline eval works); ⬜ launchd/systemd + signing |
 
 ## Top of the queue (highest-leverage gaps)
 
