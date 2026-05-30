@@ -105,6 +105,10 @@ class SandboxConfig(BaseModel):
     max_bytes: int | None = None
 
 
+class PauseBody(BaseModel):
+    hard: bool = False
+
+
 # ---- helpers --------------------------------------------------------------
 
 def _rows(conn, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
@@ -895,6 +899,31 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         store = _sandbox_store()
         store.enforce_quota()  # apply the new cap immediately
         return {"max_bytes": body.max_bytes, "usage": store.usage()}
+
+    # =========================== CONTROL ===========================
+    # Global pause/resume so the user can reclaim their machine. Writes the same
+    # supervisor_state.status the CLI `pause`/`resume` use; every 24/7 loop reads
+    # is_paused() each tick and skips its work while paused.
+
+    @app.get("/api/control", tags=["control"])
+    def control_status() -> dict[str, Any]:
+        from ..supervisor import is_paused, runtime_status
+        return {"status": runtime_status(paths), "paused": is_paused(paths)}
+
+    @app.post("/api/pause", tags=["control"])
+    def control_pause(body: PauseBody | None = None) -> dict[str, Any]:
+        from ..supervisor import set_runtime_status
+        hard = bool(body.hard) if body is not None else False
+        status = set_runtime_status(paths, "paused_hard" if hard else "paused_soft")
+        bus.publish("control.status", {"status": status, "paused": True})
+        return {"status": status, "paused": True}
+
+    @app.post("/api/resume", tags=["control"])
+    def control_resume() -> dict[str, Any]:
+        from ..supervisor import set_runtime_status
+        status = set_runtime_status(paths, "running")
+        bus.publish("control.status", {"status": status, "paused": False})
+        return {"status": status, "paused": False}
 
     # =========================== LIBRARY ===========================
 

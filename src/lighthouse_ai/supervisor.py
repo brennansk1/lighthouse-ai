@@ -80,6 +80,51 @@ def _set_state(paths: Paths, status: str, pid: int | None) -> None:
         conn.close()
 
 
+# --- global runtime pause (single source of truth) ------------------------
+# `lighthouse pause` / the dashboard Pause button set supervisor_state.status to
+# a paused_* value; EVERY 24/7 loop consults is_paused() each tick and skips its
+# work while paused, so the user can reclaim the machine. Resume clears it.
+PAUSED_STATUSES: frozenset[str] = frozenset({"paused_soft", "paused_hard"})
+
+
+def runtime_status(paths: Paths) -> str:
+    """Current supervisor status from state.db (``running`` if unknown/missing)."""
+    if not paths.state_db.exists():
+        return "running"
+    try:
+        conn = open_db(paths.state_db)
+    except Exception:
+        return "running"
+    try:
+        row = conn.execute(
+            "SELECT status FROM supervisor_state WHERE id = 1"
+        ).fetchone()
+    except Exception:
+        return "running"
+    finally:
+        conn.close()
+    return str(row[0]) if row and row[0] else "running"
+
+
+def is_paused(paths: Paths) -> bool:
+    """True when the user has globally paused all background activity."""
+    return runtime_status(paths) in PAUSED_STATUSES
+
+
+def set_runtime_status(paths: Paths, status: str) -> str:
+    """Set the supervisor status (used by CLI pause/resume + the API). Returns it."""
+    conn = open_db(paths.state_db)
+    try:
+        conn.execute(
+            "UPDATE supervisor_state SET status = ?, updated_at = datetime('now') "
+            "WHERE id = 1",
+            (status,),
+        )
+    finally:
+        conn.close()
+    return status
+
+
 def _write_pidfile(path: Path, pid: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(str(pid))
@@ -124,6 +169,8 @@ def _start_subconscious_loop(paths: Paths, *, interval_s: float = 60.0) -> threa
     def _loop() -> None:
         while True:
             time.sleep(interval_s)
+            if is_paused(paths):
+                continue
             try:
                 outcome = engine.tick()
                 log.info(
@@ -158,7 +205,7 @@ def _start_monitor_loop(paths: Paths, *, interval_s: float = 60.0) -> threading.
             time.sleep(interval_s)
             try:
                 policy, _ = gate.policy()
-                if policy is Policy.PAUSED:
+                if is_paused(paths) or policy is Policy.PAUSED:
                     continue
                 for s in due_sessions(paths.state_db):
                     try:
@@ -210,7 +257,7 @@ def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0) -> threading.
             time.sleep(interval_s)
             try:
                 policy, _ = gate.policy()
-                if policy is Policy.PAUSED:
+                if is_paused(paths) or policy is Policy.PAUSED:
                     continue
                 # Real-gateway runs need RAM headroom for a reasoning model;
                 # if free RAM is below the floor, defer this tick (leave the job
@@ -315,8 +362,8 @@ def _start_backup_loop(
             time.sleep(interval_s)
             try:
                 policy, _ = gate.policy()
-                if policy is Policy.PAUSED:
-                    log.info("backup.tick.skipped", reason="gate_paused")
+                if is_paused(paths) or policy is Policy.PAUSED:
+                    log.info("backup.tick.skipped", reason="paused")
                     continue
                 # Resolve repo + passphrase fresh each tick — the operator may
                 # have configured them after the supervisor started.
@@ -365,7 +412,7 @@ def _start_resolver_loop(paths: Paths, *, interval_s: float = 3600.0) -> threadi
                 continue  # offline / opt-out: no-op
             try:
                 policy, _ = gate.policy()
-                if policy is Policy.PAUSED:
+                if is_paused(paths) or policy is Policy.PAUSED:
                     continue
                 results = resolve_positions(paths.positions_db, gateway=gateway)
                 resolved = sum(1 for r in results if r.auto_resolved)

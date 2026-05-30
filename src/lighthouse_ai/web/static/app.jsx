@@ -212,6 +212,46 @@ class PageBoundary extends React.Component {
 }
 
 // ── Sidebar ─────────────────────────────────────────────────────────────
+// Global pause: stops all 24/7 background work (scheduled monitors, calibration,
+// backups, job dispatch) so the user can use their machine for something else.
+// Reflects + toggles supervisor_state via /api/control,/api/pause,/api/resume.
+function GlobalPauseButton() {
+  const [paused, setPaused] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const refresh = useCallback(() => {
+    if (!window.apiGet) return;
+    window.apiGet('/api/control')
+      .then((d) => setPaused(!!(d && d.paused)))
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 10000);
+    return () => clearInterval(id);
+  }, [refresh]);
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      if (paused) { await window.apiPost('/api/resume'); setPaused(false); }
+      else { await window.apiPost('/api/pause', { hard: false }); setPaused(true); }
+    } catch (e) { /* surface nothing fatal; refresh reflects truth */ }
+    finally { setBusy(false); refresh(); }
+  };
+  return (
+    <button onClick={toggle} disabled={busy} className="btn-ghost"
+      style={{ width: '100%', padding: '6px 8px', fontSize: 11.5, marginBottom: 8,
+        fontWeight: 600,
+        color: paused ? '#1a7f4b' : 'var(--ink)',
+        borderColor: paused ? '#1a7f4b' : undefined }}
+      title={paused
+        ? 'Background work is paused — click to resume'
+        : 'Pause all background work to free up your machine'}
+      aria-pressed={paused}>
+      {paused ? '▶ Resume work' : '⏸ Pause all'}
+    </button>
+  );
+}
+
 function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
   const tier = counters.tier || '—';
 
@@ -266,6 +306,9 @@ function AppSidebar({ active, counters, theme, onToggleTheme, onHelp }) {
             style={{ padding: '5px 10px', fontSize: 11.5 }}
             aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
         </div>
+
+        {/* Global pause — free up the machine */}
+        <GlobalPauseButton />
 
         {/* Version / identity line */}
         <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center',
