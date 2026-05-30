@@ -97,11 +97,13 @@ entire run tamper-evident.
 
 ## Path to deployment
 
-The capability surface is built and **green offline** (2476 tests). The honest gap to a
+The capability surface is built and **green offline** (2816 tests). The honest gap to a
 distributable release is almost entirely **live-data validation** — most subsystems were
 built test-first against mocked backends and still need to be exercised against real LLMs,
-real source APIs, and a real browser. `docs/PRODUCTION_CHECKLIST.md` is the authoritative
-go/no-go doc; the short version:
+real source APIs, and a real browser. **Running the live pass?** Start with the cold-start
+runbook **[`docs/dev/LIVE_TESTING_HANDOFF.md`](./docs/dev/LIVE_TESTING_HANDOFF.md)** (env setup,
+phased commands, thresholds). `docs/PRODUCTION_CHECKLIST.md` is the authoritative go/no-go doc;
+the short version:
 
 **Needs polish + full live-data testing (built, not yet validated end-to-end with real data):**
 - **Real-LLM research quality** — framing planner, synthesizer denoiser, debate judge, and

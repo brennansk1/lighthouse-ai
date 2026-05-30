@@ -41,6 +41,8 @@ onboarding; **global Pause**; **hardware** OOM/utilization guardrails; **in-app 
 - **P3 live validation** (await Mac mini): real-LLM quality (precision@5/faithfulness), live source-API
   validation across the 37 skills, optional-ML-model measurement, Playwright browser QA, 24h soak,
   cross-platform, packaging/signing, security review. Gated harness `tests/test_real_*` makes it turnkey.
+  **→ Hand a fresh session `docs/dev/LIVE_TESTING_HANDOFF.md`** — a self-contained cold-start runbook
+  (env setup, phased commands, thresholds, where to record results).
 - **Deferred small items:** budget-trip notifications (governor buckets lacks config access);
   ram_aware_concurrency wiring to raise default LLM concurrency (OOM-sensitive — validate on real hw).
 

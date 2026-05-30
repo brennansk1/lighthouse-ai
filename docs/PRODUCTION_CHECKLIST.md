@@ -14,6 +14,10 @@ A "vertical slice" of the product works **end-to-end, locally, today**: ingest d
 
 ---
 
+> **Running the live pass on the Mac mini?** Hand a fresh session
+> **[`docs/dev/LIVE_TESTING_HANDOFF.md`](./dev/LIVE_TESTING_HANDOFF.md)** — a self-contained cold-start
+> runbook (environment setup, the phased commands below, thresholds, and where to record results).
+
 ## Deployment readiness — what to polish + fully test with live data
 
 Everything in this section is **built and unit-green offline**; the work is to validate it with
