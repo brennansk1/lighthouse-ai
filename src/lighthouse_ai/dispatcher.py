@@ -1084,17 +1084,30 @@ def build_runtime_gateway(paths: Paths) -> Gateway | None:
         return None
 
 
-def runtime_ram_ok(*, min_resident_gb: float = MIN_REASONING_RESIDENT_GB) -> bool:
+def runtime_ram_ok(*, min_resident_gb: float | None = None) -> bool:
     """True if there is enough live-free RAM to run a real reasoning model.
 
     The dispatch loop checks this before claiming a job for a *real* gateway: if
     free RAM cannot fit even the smallest reasoning model plus margin, it skips
     the tick (transient defer) so the job waits for headroom instead of running
-    straight into the low-memory mock. Returns True when RAM cannot be measured
-    (never block on a measurement failure)."""
+    straight into the low-memory mock.
+
+    The floor **adapts to the box**: it is the resident size of the smallest
+    reasoning model actually installed (a 1B box clears on far less RAM than an
+    8B-only box), so small machines are not deferred forever while big-model-only
+    machines still wait for genuine headroom. ``min_resident_gb`` overrides the
+    probe. Returns True when RAM/models cannot be measured (never block on a
+    measurement failure)."""
     try:
-        from .gateway import RUNTIME_RAM_MARGIN_GB
+        from .gateway import RUNTIME_RAM_MARGIN_GB, smallest_reasoning_resident_gb
         from .hardware import probe
+        if min_resident_gb is None:
+            try:
+                from .pipeline import _ollama_installed_tags
+                min_resident_gb = smallest_reasoning_resident_gb(
+                    _ollama_installed_tags(), default_gb=MIN_REASONING_RESIDENT_GB)
+            except Exception:
+                min_resident_gb = MIN_REASONING_RESIDENT_GB
         return probe().free_ram_gb >= (min_resident_gb + RUNTIME_RAM_MARGIN_GB)
     except Exception:
         return True

@@ -302,6 +302,31 @@ def estimate_resident_gb(model: str) -> float:
     return round(weights + _kv_context_headroom_gb(weights), 2)
 
 
+def smallest_reasoning_resident_gb(installed: list[str], *,
+                                   default_gb: float = 4.0) -> float:
+    """Resident RAM (GB) of the *smallest installed* reasoning model.
+
+    This is the real RAM floor for a given box: a machine whose smallest model
+    is a 1B can run on far less RAM than one whose smallest is an 8B. Used by
+    the dispatch loop's pre-flight gate so small machines aren't deferred forever
+    (and big-model-only boxes still wait for genuine headroom). Embedding/reranker
+    tags are ignored; a pageable MoE counts as a small resident floor (it pages
+    experts from SSD). Falls back to ``default_gb`` when nothing recognizable is
+    installed (never block on an empty/odd model list)."""
+    sizes: list[float] = []
+    for tag in installed:
+        low = tag.lower()
+        if any(x in low for x in ("embed", "bge-", "rerank", "minilm", "arctic")):
+            continue
+        if is_pageable_moe(tag):
+            sizes.append(2.0)
+            continue
+        resident = estimate_resident_gb(tag)
+        if resident > 0:
+            sizes.append(resident)
+    return min(sizes) if sizes else default_gb
+
+
 def enough_ram_for(model: str, *, available_gb: float | None = None,
                    margin_gb: float = RUNTIME_RAM_MARGIN_GB) -> bool:
     """True if ``model`` can load without exhausting available RAM.
@@ -511,6 +536,11 @@ _REASONING_PREFERENCE = [
     "qwen3:32b", "qwen3:30b-a3b", "mistral-small:24b", "gemma2:27b",
     "qwen3:14b-q4_K_M", "qwen3:14b", "qwen2.5:14b", "qwen2.5-coder:14b",
     "qwen3:8b", "llama3.1:8b",
+    # Small-RAM rung: lets a 4-8 GB box step down to a tiny model instead of
+    # degrading straight to the mock. Footprints come from the param-count hint
+    # in the tag, so admission stays honest for these too.
+    "qwen3:4b", "qwen2.5:3b", "llama3.2:3b", "gemma2:2b",
+    "qwen3:1.7b", "llama3.2:1b", "qwen2.5:0.5b",
 ]
 #: Smaller/faster tags for the aux role.
 _AUX_PREFERENCE = ["qwen3:8b", "llama3.1:8b", "qwen2.5:14b", "qwen3:14b-q4_K_M"]

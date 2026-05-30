@@ -341,3 +341,32 @@ def test_write_chosen_models_records_paging(tmp_path):
     assert doc["roles"]["planner"]["model"] == "qwen3.6-35b-a3b"
     assert doc["llm_budget_gb"] == pytest.approx(15.47, abs=0.01)
     assert "qwen3.6-35b-a3b" in doc["paging_from_ssd"]
+
+
+# --- adaptability for small machines (all-machines support) ---
+
+def test_adaptive_ram_floor_reflects_smallest_installed_model():
+    """The dispatch RAM gate must adapt to the box: a machine whose smallest
+    reasoning model is a 1B clears on far less free RAM than an 8B-only box."""
+    from lighthouse_ai.gateway import smallest_reasoning_resident_gb
+    tiny = smallest_reasoning_resident_gb(["llama3.2:1b", "bge-m3"])
+    big = smallest_reasoning_resident_gb(["qwen3:8b", "bge-m3"])
+    assert tiny < 2.5, f"1B floor too high: {tiny}"
+    assert big > 5.0, f"8B floor too low: {big}"
+    assert tiny < big
+    # Embedding/reranker tags are ignored; empty → safe default.
+    assert smallest_reasoning_resident_gb(["bge-m3", "qwen3-reranker-0.6b"]) == 4.0
+    assert smallest_reasoning_resident_gb([]) == 4.0
+
+
+def test_low_budget_box_steps_down_to_tiny_model_not_mock():
+    """On a tight live-RAM budget the resolver picks the smallest installed
+    reasoning model (so a 4–8 GB box runs a real tiny model) rather than leaving
+    nothing and degrading to the mock."""
+    from lighthouse_ai.gateway import resolve_against_installed
+    prof = _profile(8.0, tier="T1")
+    installed = ["qwen3:8b", "llama3.2:1b", "bge-m3"]
+    tight = resolve_against_installed(prof, installed, budget_gb=2.0)
+    assert tight["planner"] == "llama3.2:1b"
+    roomy = resolve_against_installed(prof, installed, budget_gb=10.0)
+    assert roomy["planner"] == "qwen3:8b"
