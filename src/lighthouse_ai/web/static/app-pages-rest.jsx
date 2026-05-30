@@ -2361,8 +2361,146 @@ function SettingsPage({ toast }) {
           )}
         </RSettingsSection>
 
+        {/* ── Optional features (on-demand installs) ───────────────────── */}
+        <ROptionalFeatures toast={toast} />
+
+        {/* ── Reset (danger zone) ──────────────────────────────────────── */}
+        <RDangerZone toast={toast} />
+
       </div>
     </div>
+  );
+}
+
+// ── Optional features: install the heavy ML/render bundles on demand ──────
+function ROptionalFeatures({ toast }) {
+  const [installing, setInstalling] = React.useState(false);
+  const { data, loading, error, reload } = window.useApi(
+    '/api/setup/extras', { pollMs: installing ? 3000 : 0 });
+  const extras = (data && data.extras) || [];
+
+  async function install(names) {
+    setInstalling(true);
+    try {
+      await window.apiPost('/api/setup/extras', { extras: names || [] });
+      toast && toast.show('Installing… this can take several minutes.', 'success');
+    } catch (e) {
+      toast && toast.show((e && e.message) || 'Install failed to start', 'error');
+      setInstalling(false);
+    }
+  }
+
+  // Stop polling once nothing is mid-install.
+  React.useEffect(() => {
+    if (installing && extras.length && !extras.some((e) => e.installing)) {
+      setInstalling(false);
+      reload();
+    }
+  }, [installing, extras]);
+
+  const anyMissing = extras.some((e) => !e.installed);
+
+  return (
+    <RSettingsSection title="Optional features" defaultOpen={false}>
+      <div style={{ marginBottom: 14, fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+        Lighthouse runs lightweight by default. Turn on heavier capabilities only
+        when you want them — each downloads its own packages the first time.
+      </div>
+      {error && <window.ErrorBox message={`Could not load features — ${error}`} />}
+      {loading && !data ? <RTableSkeleton rows={4} /> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {extras.map((e) => (
+            <div key={e.name} style={{ display: 'flex', alignItems: 'flex-start',
+              gap: 12, padding: '10px 12px', border: '1px solid var(--rule)',
+              borderRadius: 8, background: 'var(--card)' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink)' }}>{e.label}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2,
+                  lineHeight: 1.4 }}>{e.description}</div>
+              </div>
+              {e.installed ? (
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green-dark)',
+                  flexShrink: 0, whiteSpace: 'nowrap' }}>✓ Installed</span>
+              ) : e.installing ? (
+                <span style={{ fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>Installing…</span>
+              ) : (
+                <Btn kind="ghost" onClick={() => install([e.name])} disabled={installing}>Install</Btn>
+              )}
+            </div>
+          ))}
+          {anyMissing && (
+            <div style={{ marginTop: 4 }}>
+              <Btn onClick={() => install([])} disabled={installing}>
+                {installing ? 'Installing…' : 'Install all'}
+              </Btn>
+            </div>
+          )}
+        </div>
+      )}
+    </RSettingsSection>
+  );
+}
+
+// ── Danger zone: factory reset with an explicit confirmation ──────────────
+function RDangerZone({ toast }) {
+  const [confirming, setConfirming] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+
+  async function doReset() {
+    setBusy(true);
+    try {
+      const r = await window.apiPost('/api/reset', { confirm: 'RESET' });
+      const cleared = (r && r.reset && r.reset.tables_cleared) || 0;
+      toast && toast.show(`Reset complete — cleared ${cleared} stores. Models kept.`, 'success');
+      setConfirming(false);
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (e) {
+      toast && toast.show((e && e.message) || 'Reset failed', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <RSettingsSection title="Reset" defaultOpen={false}>
+      <div style={{ border: '1px solid #e2b4a0', background: 'rgba(220,80,40,0.05)',
+        borderRadius: 8, padding: 14 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, color: '#b0431f' }}>
+          Reset Lighthouse to a fresh start
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5,
+          margin: '6px 0 12px' }}>
+          Permanently deletes <strong>all your jobs, drafts, library, sandbox data,
+          watches, positions, and settings</strong>. Your downloaded models are kept.
+          This cannot be undone.
+        </div>
+        {!confirming ? (
+          <button onClick={() => setConfirming(true)}
+            style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700,
+              background: 'transparent', color: '#b0431f', cursor: 'pointer',
+              border: '1px solid #d08060', borderRadius: 6, fontFamily: 'var(--sans)' }}>
+            Reset everything…
+          </button>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#b0431f' }}>Are you sure?</span>
+            <button onClick={doReset} disabled={busy}
+              style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700,
+                background: '#c0392b', color: '#fff', cursor: 'pointer',
+                border: 'none', borderRadius: 6, fontFamily: 'var(--sans)',
+                opacity: busy ? 0.6 : 1 }}>
+              {busy ? 'Resetting…' : 'Yes, delete everything'}
+            </button>
+            <button onClick={() => setConfirming(false)} disabled={busy}
+              style={{ padding: '8px 14px', fontSize: 13, background: 'var(--card)',
+                color: 'var(--muted)', cursor: 'pointer', border: '1px solid var(--rule)',
+                borderRadius: 6, fontFamily: 'var(--sans)' }}>
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+    </RSettingsSection>
   );
 }
 

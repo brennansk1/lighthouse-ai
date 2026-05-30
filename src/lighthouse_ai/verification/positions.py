@@ -7,6 +7,7 @@ by Brier and the running calibration curve updated.
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -53,7 +54,14 @@ def _ensure_extras(positions_db: Path) -> None:
         if "resolution_criterion" not in cols:
             statements.append("ALTER TABLE positions ADD COLUMN resolution_criterion TEXT")
         for s in statements:
-            conn.execute(s)
+            try:
+                conn.execute(s)
+            except sqlite3.OperationalError as exc:
+                # First-run race: another thread (e.g. the resolver loop vs an
+                # API request) added the same column between our PRAGMA read and
+                # this ALTER. The column now exists — that's the desired state.
+                if "duplicate column" not in str(exc).lower():
+                    raise
     finally:
         conn.close()
 

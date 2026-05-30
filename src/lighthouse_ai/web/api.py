@@ -91,6 +91,18 @@ class ActBody(BaseModel):
     pass  # no payload required; act_on_reflection uses the stored reflection
 
 
+class ResetBody(BaseModel):
+    # Must equal the literal "RESET" — an explicit, typed confirmation so the
+    # destructive endpoint can never fire on an empty/accidental POST.
+    confirm: str = ""
+    include_models: bool = False
+
+
+class ExtrasInstallBody(BaseModel):
+    # Optional subset of extra names; empty/"all" installs the full bundle.
+    extras: list[str] = []
+
+
 class SandboxUpload(BaseModel):
     filename: str
     content_base64: str
@@ -821,6 +833,55 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         with paths.config_file.open("wb") as fh:
             tomli_w.dump(cfg, fh)
         return _settings_payload()
+
+    @app.post("/api/reset", tags=["settings"])
+    def factory_reset_endpoint(body: ResetBody) -> dict[str, Any]:
+        """Factory reset — wipe all app data back to a fresh install.
+
+        Destructive + irreversible. Requires ``confirm == "RESET"`` so it can
+        never fire on an accidental/empty POST. Keeps downloaded Ollama models.
+        Pauses background work first so the loops don't race the wipe.
+        """
+        if body.confirm != "RESET":
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail="Reset not confirmed — send {\"confirm\": \"RESET\"}.")
+        from ..reset import factory_reset
+        from ..supervisor import set_runtime_status
+        try:
+            set_runtime_status(paths, "paused_soft")
+        except Exception:
+            pass
+        summary = factory_reset(paths, include_models=body.include_models)
+        try:
+            set_runtime_status(paths, "running")
+        except Exception:
+            pass
+        return {"ok": True, "reset": summary.to_dict()}
+
+    @app.get("/api/setup/extras", tags=["settings"])
+    def list_extras() -> dict[str, Any]:
+        """Optional feature bundles + whether each is currently installed."""
+        from ..setup_extras import extras_status
+        return {"extras": extras_status()}
+
+    @app.post("/api/setup/extras", tags=["settings"])
+    def install_extras_endpoint(body: ExtrasInstallBody) -> dict[str, Any]:
+        """Kick off an on-demand install of optional feature bundles.
+
+        Runs in a background thread (pip can take minutes for the ML stack);
+        poll ``GET /api/setup/extras/status`` for progress.
+        """
+        from ..setup_extras import start_install
+        started = start_install(body.extras or None)
+        return {"ok": True, **started}
+
+    @app.get("/api/setup/extras/status", tags=["settings"])
+    def extras_install_status() -> dict[str, Any]:
+        """Progress of an in-flight (or last) optional-extras install."""
+        from ..setup_extras import install_status
+        return install_status()
 
     @app.get("/api/skills", tags=["settings"])
     def list_skills() -> dict[str, Any]:

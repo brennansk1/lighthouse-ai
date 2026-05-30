@@ -1627,5 +1627,65 @@ def skill_validate(
     console.print(f"[green]✓ {skill_id} passes all checks[/green]")
 
 
+@app.command("install-extras")
+def install_extras(
+    extra: list[str] = typer.Argument(
+        None, help="Extra(s) to install (e.g. faithfulness reranker). "
+        "Omit to install every optional feature."),
+    list_only: bool = typer.Option(False, "--list", "-l",
+                                    help="List the optional features + status and exit."),
+) -> None:
+    """Install optional feature bundles (ML reranker, faithfulness, JS render, …).
+
+    Keeps the base install lightweight; pulls the heavy stacks only when asked.
+    """
+    from .setup_extras import EXTRAS, extras_status, install_extras_blocking
+    if list_only or (not extra and not typer.confirm(
+            "Install ALL optional features? This downloads several GB "
+            "(torch, Chromium, …)", default=False)):
+        for s in extras_status():
+            mark = "[green]✓ installed[/green]" if s["installed"] else "[dim]not installed[/dim]"
+            console.print(f"  {s['name']:<18} {mark}  — {s['description']}")
+        if list_only:
+            return
+        if not extra:
+            raise typer.Exit(0)
+    names = list(extra) if extra else None
+    console.print("[cyan]Installing optional features… (this can take several minutes)[/cyan]")
+    state = install_extras_blocking(names)
+    if state.state == "done":
+        console.print("[bold green]✓ done.[/bold green] Installed: "
+                      f"{', '.join(state.extras) or 'nothing new'}")
+    else:
+        err_console.print(f"[red]install failed:[/red] {state.error}")
+        for line in state.log_tail[-8:]:
+            err_console.print(f"  {line}")
+        raise typer.Exit(1)
+    _ = EXTRAS  # referenced for import-time validation
+
+
+@app.command()
+def reset(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+) -> None:
+    """Factory reset — wipe ALL Lighthouse data (jobs, drafts, sandbox, config).
+
+    Irreversible. Keeps your downloaded Ollama models. Does NOT prompt for a
+    running supervisor — stop it first if one is up.
+    """
+    paths = _paths_from_env()
+    console.print(f"[bold red]This permanently deletes all data under "
+                  f"{paths.data_dir}[/bold red] (jobs, drafts, library, sandbox, "
+                  "watches, positions, config). Ollama models are kept.")
+    if not yes and not typer.confirm("Are you sure?", default=False):
+        console.print("Aborted.")
+        raise typer.Exit(0)
+    from .reset import factory_reset
+    summary = factory_reset(paths)
+    console.print(f"[green]✓ reset complete.[/green] Cleared "
+                  f"{summary.tables_cleared} table(s), "
+                  f"{len(summary.dirs_removed)} store(s); kept models.")
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()
