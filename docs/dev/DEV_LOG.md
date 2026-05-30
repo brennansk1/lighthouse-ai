@@ -23,6 +23,34 @@ for the user's clarity and control over engineering elegance.
   parked until the user provides their Mac mini. The gated integration harness (`tests/test_real_*`)
   is already written so that validation is turnkey then.
 
+## Live validation results (2026-05-29, on the user's Mac mini)
+Running the gated real-backend suite (`LIGHTHOUSE_REAL_BACKEND=1`, macOS arm64, 25.8 GB RAM, Ollama with
+`bge-m3` + `llama3.1:8b`) surfaced and fixed three real issues — the value of live testing over mocks:
+
+- **Real LLM path ✓.** `llama3.1:8b` returned the exact requested string in 3.7 s through the
+  gateway→Ollama path; RAM 11.5→7.2 GB (8B resident), no swap. Real (non-mock) completion confirmed.
+- **Real retrieval ✓.** `bge-m3` embeddings on the golden set: **recall@5 = 1.000, MRR = 1.000** —
+  perfect ranking (the one relevant doc per query retrieved at rank 1 every time).
+- **FINDING #1 — precision@5 threshold was mis-calibrated.** The golden set labels **exactly one
+  relevant doc per query** (6 cases / 8 docs, disjoint topics), so precision@5's ceiling is `1/5 = 0.20`
+  by construction — the old `≥0.40`/`≥0.55` bars were mathematically impossible, not retrieval failures.
+  *Fix:* gate on recall@5 + MRR (the metrics meaningful at this density), keep precision@5 informational
+  against its ceiling, fix the `lighthouse eval` CLI to headline MRR/recall. Did **not** inflate
+  relevance labels to fake a pass — the corpus has one right answer per query.
+- **FINDING #2 — recommender quality bugs (recall@5 0.40 → 1.00).** The gated skill-recommender eval
+  exposed real source-picker defects: (a) `retraction_watch`, a *composing utility*, was recommended as
+  a top **primary** source in nearly every ranking; (b) the high-base academic cluster
+  (openalex/crossref/pubmed) buried explicitly-named sources — "Find **Reuters** articles" ranked reuters
+  #25, "Recent **arXiv** preprints" ranked arxiv #22. *Fix (`skills/recommender.py`):* exclude
+  `composing`-tagged utilities from recommendations; add a decisive **explicit-mention** boost (de-spaced
+  id-in-question + distinctive name tokens, len≥4 guard so "who" can't false-fire) applied post-blend;
+  recognize "search the web" intent to surface `general_web`. Every named source now ranks #1; recall@5
+  on the 15-case eval went **0.40 → 1.000**. Five offline regression tests added.
+
+All fixes are offline-deterministic with regression tests; full suite **2865 pass / 103 skip**, mypy 0,
+ruff clean. Next live phases (when RAM/time allow): per-mode E2E discipline-gate check, live source-API
+validation (Phase 2), faithfulness gate (needs the `faithfulness` extra), browser QA (Phase 3).
+
 ## Milestone (this session) — offline product feature-complete
 Suite **2850 pass / 103 skip**, mypy 0 (269 modules), ruff clean, coverage ~82%. Shipped + pushed:
 the whole skills/recommender/source-picker stack; mode↔skill integration + contradiction handling;

@@ -726,7 +726,9 @@ def eval_retrieval(
     Uses real backends when available (bge-m3 via Ollama, FlagReranker) so the
     numbers reflect production retrieval; falls back to the test-tier stubs
     (HashEmbedder + ScoreReranker) when models are absent or --offline is set.
-    Design bar: precision@5 ≥ 0.40 with the real embedder + reranker.
+    Quality bar: recall@k = MRR = 1.0 with the real embedder + reranker. (The
+    built-in golden set labels one relevant doc per query, so precision@5's
+    ceiling is 0.20 by construction — MRR/recall are the meaningful metrics.)
     """
     from .eval import build_golden_set, build_index, evaluate
 
@@ -761,11 +763,21 @@ def eval_retrieval(
         err_console.print(f"[yellow]⚠ backend warning:[/yellow] {w}")
     console.print(f"  backends: {', '.join(f'{k}={v}' for k, v in backends.items())}")
     console.print(f"  golden set: {len(golden.documents)} docs · {len(golden.cases)} queries\n")
-    p_at_k = report.get(f"precision@{k}", 0.0)
-    bar = "[green]✓[/green]" if p_at_k >= 0.40 else "[yellow]below 0.40 bar[/yellow]"
+    mrr = report.get("mrr", 0.0)
+    recall = report.get(f"recall@{k}", 0.0)
+    bar = (
+        "[green]✓[/green]" if (mrr >= 0.75 and recall >= 0.83)
+        else "[yellow]below ranking bar (recall@k≥0.83, MRR≥0.75)[/yellow]"
+    )
     for name, val in report.items():
         console.print(f"  {name:<14} {val:.3f}")
-    console.print(f"\n  precision@{k} {p_at_k:.3f} — {bar}")
+    console.print(
+        f"\n  ranking quality: recall@{k} {recall:.3f} · MRR {mrr:.3f} — {bar}"
+    )
+    console.print(
+        f"  [dim](precision@{k} ceiling is 0.20 here — one relevant doc per "
+        "query; MRR/recall are the meaningful metrics.)[/dim]"
+    )
 
 
 @app.command()

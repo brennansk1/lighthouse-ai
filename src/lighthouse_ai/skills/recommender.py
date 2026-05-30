@@ -137,9 +137,41 @@ _DEFAULT_WEIGHTS = {"rule_weight": 0.6, "sim_weight": 0.4}
 # --------------------------------------------------------------------------- #
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+# When the user types a source's name, that's the strongest possible intent
+# signal — far stronger than any topic/grade heuristic. We add this bonus to the
+# blended score (mode-independent) so a named source reliably lands in the top
+# picks instead of being buried under the high-base academic cluster.
+_EXPLICIT_MENTION_BONUS = 0.8
+
+# Generic tokens that appear in many source names; they must not, on their own,
+# count as "the user named this source".
+_GENERIC_NAME_TOKENS = frozenset(
+    {"news", "data", "the", "web", "gov", "search", "org", "com",
+     "st", "louis", "fed", "inc", "of", "and", "for", "world"}
+)
+
 
 def _tokens(text: str) -> list[str]:
     return _TOKEN_RE.findall(text.lower())
+
+
+def _explicit_mention(manifest: SkillManifest, question: str) -> bool:
+    """True when the user explicitly named this source in the question.
+
+    Two signals: the skill id with separators stripped appears as a substring of
+    the de-spaced question (``clinical trials`` → ``clinicaltrials``; ``SEC
+    EDGAR`` → ``secedgar``), or all of the source's distinctive name tokens are
+    present. The id path requires length ≥ 4 so short/common ids (``who``) can't
+    false-fire on the interrogative.
+    """
+    q_nospace = re.sub(r"[^a-z0-9]", "", question.lower())
+    ident = manifest.id.replace("_", "")
+    if len(ident) >= 4 and ident in q_nospace:
+        return True
+    name_tokens = set(_tokens(manifest.name)) - _GENERIC_NAME_TOKENS
+    if name_tokens and name_tokens <= set(_tokens(question)):
+        return True
+    return False
 
 
 def _question_text(framed) -> str:
@@ -359,6 +391,12 @@ def _passes_hard_filters(
     """Hard requirements that drop a skill from the ranking entirely."""
     if manifest.id == GENERAL_WEB_ID:
         return False  # general_web is handled separately as the fallback
+    # Composing utilities (e.g. retraction_watch) are integrity helpers invoked
+    # BY other skills, not user-facing primary sources — never recommend them
+    # directly. They pollute every ranking otherwise (a grade-A academic helper
+    # that matches no topic still out-scores the source the user actually named).
+    if "composing" in manifest.audit_tags:
+        return False
     if not allow_community and manifest.is_community:
         return False
     req_shape = weights.get("require_output_shape")
@@ -492,6 +530,9 @@ def _score_candidates(
             manifest, framed, mode, weights, load_bearing=load_bearing
         )
         score = rule_w * rule + sim_w * sim
+        if _explicit_mention(manifest, question):
+            score += _EXPLICIT_MENTION_BONUS
+            reasons.append("explicitly named in the question")
         if sim > 0:
             reasons.append(f"similarity {sim:.2f}")
         reason = "; ".join(reasons) if reasons else "candidate source"
@@ -631,8 +672,21 @@ def _general_web_available(candidates, library_dir, skills) -> bool:
         return False
 
 
+_WEB_INTENT_RE = re.compile(
+    r"\b(search the web|the open web|web search|across the web|on the web|"
+    r"search online|google it)\b",
+    re.I,
+)
+
+
+def _explicit_web_intent(question: str) -> bool:
+    """True when the user explicitly asked to search the open web — then
+    general_web is what they want, not a low-ranked fallback."""
+    return bool(_WEB_INTENT_RE.search(question))
+
+
 def _append_general_web(
-    recs: list[Recommendation], mode: str, *, available: bool
+    recs: list[Recommendation], mode: str, *, available: bool, question: str = ""
 ) -> list[Recommendation]:
     """Always offer general_web as a fallback Recommendation with the right role
     (§5.2). Skipped only if it's already present or genuinely unavailable."""
@@ -641,6 +695,16 @@ def _append_general_web(
     if not available:
         return recs
     top = recs[0].score if recs else 0.0
+    if _explicit_web_intent(question):
+        # The user said "search the web" — surface it at the top regardless of
+        # how the specialty skills scored.
+        reason = "explicitly requested open-web search"
+        out = list(recs)
+        out.append(
+            Recommendation(GENERAL_WEB_ID, round(top + 0.01, 4), reason, "primary")
+        )
+        out.sort(key=lambda r: r.score, reverse=True)
+        return out
     role = _general_web_role(mode, top)
     if role == "primary":
         reason = "universal fallback — no specialty skill scored above threshold"
@@ -749,7 +813,9 @@ def recommend(
 
     # Always offer general_web as fallback with the right role (§5.2).
     gw_available = _general_web_available(raw_candidates, library_dir, skills)
-    recs = _append_general_web(recs, mode, available=gw_available)
+    recs = _append_general_web(
+        recs, mode, available=gw_available, question=_question_text(framed)
+    )
     return recs
 
 
