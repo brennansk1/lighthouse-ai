@@ -161,6 +161,34 @@ def test_nested_zip_benign_passes():
     assert r.verdict == "clean", f"expected clean, got {r.verdict}: {r.reason}"
 
 
+def test_nested_zip_above_read_cap_not_decompressed():
+    """Regression (security review, 2026-05-29): a nested archive whose declared
+    uncompressed size exceeds the read cap must NOT be decompressed to recurse
+    into it — reading a multi-GB nested member into RAM would itself be the
+    scan-time memory-exhaustion bomb. Its declared size still counts toward the
+    bomb total, so detection is unaffected."""
+    inner_buf = io.BytesIO()
+    with zipfile.ZipFile(inner_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for i in range(6):
+            zf.writestr(f"f{i}.txt", b"x" * 1000)
+    inner_bytes = inner_buf.getvalue()
+
+    outer_buf = io.BytesIO()
+    with zipfile.ZipFile(outer_buf, "w", zipfile.ZIP_STORED) as zf:
+        zf.writestr("nested.zip", inner_bytes)
+
+    class _TinyCap(ArchiveBombScanner):
+        _NESTED_READ_CAP_BYTES = 10  # below the nested member's size
+
+    counter = [0]
+    total = _TinyCap()._sum_uncompressed(outer_buf.getvalue(), 0, counter)
+    # Only the single outer 'nested.zip' entry is examined; the inner members are
+    # NOT (recursion skipped because the member exceeds the tiny read cap) — yet
+    # the member's declared uncompressed size still contributed to `total`.
+    assert counter[0] == 1, f"recursion should be skipped; counted {counter[0]}"
+    assert total >= len(inner_bytes), "declared nested size must still be counted"
+
+
 def test_eicar_detected():
     s = EICARScanner()
     payload = b"prefix " + EICAR_SIGNATURE + b" suffix"

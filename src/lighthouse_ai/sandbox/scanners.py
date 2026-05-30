@@ -142,6 +142,11 @@ class ArchiveBombScanner:
 
     _NESTED_DEPTH_CAP: int = 3   # max recursion depth for nested zips
     _NESTED_ENTRY_CAP: int = 500  # max total entries examined across all levels
+    # Never decompress a nested archive larger than this to recurse into it:
+    # its *declared* size already counts toward the bomb total, and actually
+    # reading a multi-GB nested member into RAM would itself be the
+    # memory-exhaustion bomb we are trying to detect (scan-time DoS).
+    _NESTED_READ_CAP_BYTES: int = 32 * 1024 * 1024  # 32 MiB
 
     # Zip-like filename suffixes that warrant recursive inspection.
     _ZIP_EXTENSIONS: tuple[str, ...] = (".zip", ".docx", ".xlsx", ".epub")
@@ -189,13 +194,23 @@ class ArchiveBombScanner:
                     if entry_counter[0] > self._NESTED_ENTRY_CAP:
                         break
                     total += zi.file_size
-                    # Recurse into nested zips if within depth cap.
+                    # Recurse into nested zips if within depth cap — but only if
+                    # the nested archive is small enough to read safely. A nested
+                    # member that *declares* a large size has already added that
+                    # size to `total` (which trips the bomb check); decompressing
+                    # it here would be the scan-time memory bomb itself.
                     if (
                         depth < self._NESTED_DEPTH_CAP
                         and zi.filename.lower().endswith(self._ZIP_EXTENSIONS)
+                        and zi.file_size <= self._NESTED_READ_CAP_BYTES
                     ):
                         try:
-                            nested_data = zf.read(zi.filename)
+                            # Bound the actual read too, in case the declared
+                            # file_size lies (e.g. is 0 but the stream is huge).
+                            with zf.open(zi.filename) as fh:
+                                nested_data = fh.read(self._NESTED_READ_CAP_BYTES + 1)
+                            if len(nested_data) > self._NESTED_READ_CAP_BYTES:
+                                continue  # real content exceeded cap; don't recurse
                         except Exception:
                             continue
                         nested = self._sum_uncompressed(

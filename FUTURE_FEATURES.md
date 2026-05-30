@@ -189,3 +189,22 @@ absence.*
   safe, just slightly wasteful — a pre-flight "this source needs a free key (set it in Settings)"
   short-circuit would skip the wasted round-trip and give the user a clearer up-front message. Low
   priority; touches each key-gated adapter's key-resolution + their tests.
+
+## 10. Security-review residuals (boundary review, 2026-05-29)
+A focused review of the egress/skill-runner/sandbox/injection boundary found Areas 1 (egress/SSRF),
+2 (skill import-guard/capabilities), and 4 (injection gate) well-defended. One real finding was **fixed**
+(scan-time zip-decompression bomb — `ArchiveBombScanner` now caps nested-member reads). Two residuals,
+both low-priority, are noted here rather than fixed under time pressure:
+- **DNS-rebinding / private-IP egress** (`net.py`/`egress_proxy.py`): the allowlist is hostname-only and
+  never resolves/pins IPs, so an allowlisted domain whose DNS points at a loopback/link-local address
+  (169.254.169.254, 127.0.0.1) would be fetched. Requires the attacker to control DNS for an allowlisted
+  domain (compromised CDN) — outside the realistic local-first threat model. *Fix when convenient:*
+  resolve the host in `net.get` and reject private/loopback/link-local IPs before opening the socket.
+- **Scanner content-type confusion** (`scanners.py` HTML/PDF `supports()`): a script-bearing HTML/SVG (or
+  JS-PDF) uploaded under a spoofed `text/plain` content type with no extension skips the active-content
+  scanner, though `ingest` still parses it by magic-byte sniff. **Low impact in this system**: the tool
+  extracts *text* and never renders/executes fetched markup, so the active content never runs; EICAR and
+  other malware scanners still fire. A clean fix needs broker-level content-sniffing (so `supports()` can
+  see bytes) — a regex sniff-gate in `scan()` was tried and reverted because `<script>` appears in both
+  the danger and sniff patterns, causing false positives on benign prose (violates the sandbox's no-FP
+  bar). Defer until the broker passes a content sniff to `supports()`.
