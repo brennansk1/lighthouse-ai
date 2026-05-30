@@ -125,6 +125,39 @@ def set_runtime_status(paths: Paths, status: str) -> str:
     return status
 
 
+def _notify_web_alert(paths: Paths, alert: dict) -> None:
+    """Best-effort: notify the user when a watched website fires a trigger.
+
+    Reads the ``[ui]`` config (``notify_enabled`` + telegram token/chat id) and
+    sends a plain one-liner so the user is told "your monitor changed" without
+    opening the dashboard. No-op when disabled/unconfigured; never raises (the
+    monitor sweep must stay alive regardless of notification outcome).
+    """
+    try:
+        if not paths.config_file.exists():
+            return
+        try:
+            import tomllib
+        except ImportError:  # pragma: no cover
+            import tomli as tomllib  # type: ignore
+        with paths.config_file.open("rb") as fh:
+            ui = tomllib.load(fh).get("ui", {})
+        if not ui.get("notify_enabled", False):
+            return
+        from .notify import notify_monitor_alert
+
+        name = alert.get("name") or alert.get("url") or "a website"
+        reason = alert.get("reason") or alert.get("detail") or "changed"
+        notify_monitor_alert(
+            f"Website changed: {name}", str(reason),
+            bot_token=str(ui.get("telegram_bot_token", "")),
+            chat_id=str(ui.get("telegram_chat_id", "")),
+            enabled=True,
+        )
+    except Exception:
+        pass
+
+
 def _write_pidfile(path: Path, pid: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(str(pid))
@@ -240,6 +273,7 @@ def _start_monitor_loop(paths: Paths, *, interval_s: float = 60.0) -> threading.
                         paths.state_db,
                         fetch=_web_monitor_fetch,
                         now=datetime.now(UTC).isoformat(timespec="seconds"),
+                        alert_sink=lambda a: _notify_web_alert(paths, a),
                     )
                 except Exception as exc:
                     log.warning("web_monitor.tick.error", exc=str(exc))

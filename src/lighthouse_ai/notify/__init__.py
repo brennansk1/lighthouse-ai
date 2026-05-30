@@ -18,6 +18,7 @@ from .telegram import TelegramChannel, request_confirmation
 from .templates import (
     escape_md,
     notify_artifact_staged,
+    notify_monitor_alert,
     render_artifact,
 )
 
@@ -31,6 +32,7 @@ __all__ = [
     "TelegramChannel",
     "escape_md",
     "notify_artifact_staged",
+    "notify_monitor_alert",
     "render_artifact",
     "request_confirmation",
 ]

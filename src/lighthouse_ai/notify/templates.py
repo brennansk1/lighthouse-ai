@@ -301,3 +301,26 @@ def notify_artifact_staged(
     text = render_artifact(artifact_type, title, body_json)
     channel = TelegramChannel(bot_token=bot_token, chat_id=chat_id, client=client)
     return channel.send_text(text, parse_mode="MarkdownV2")
+
+
+def notify_monitor_alert(
+    title: str,
+    body: str,
+    *,
+    bot_token: str,
+    chat_id: str,
+    enabled: bool = False,
+    client: Any | None = None,
+) -> bool:
+    """Best-effort: alert the user that a watched website/monitor changed.
+
+    Mirrors :func:`notify_artifact_staged` but for a Watch event — a plain-text
+    line so the user is told "your monitor fired" without opening the dashboard.
+    No-ops (returns ``False``) when disabled or unaddressable. Plain text (no
+    MarkdownV2) so arbitrary page titles/URLs need no escaping.
+    """
+    if not enabled or not bot_token or not chat_id:
+        return False
+    text = f"🔔 {title}\n{body}".strip()
+    channel = TelegramChannel(bot_token=bot_token, chat_id=chat_id, client=client)
+    return channel.send_text(text)

@@ -37,34 +37,28 @@ for the user's clarity and control over engineering elegance.
   path, etc.). Every fix has a regression test.
 
 ## Active backlog (priority order)
-**P0 — in flight (explicit asks):**
-1. **Global pause** (webapp button + CLI) so the user can reclaim hardware. The CLI `pause` currently
-   only writes `supervisor_state.status` which NOTHING reads → loops don't actually pause. Fix:
-   single source of truth `is_paused(paths)` read by all 5 supervisor loops + a `/api/pause`,
-   `/api/resume`, `/api/control` endpoint + a webapp toggle. *(building now)*
-2. **24/7 scheduling**: the 5 daemon loops (dispatch 5s, monitor 60s, subconscious 60s, resolver 1h,
-   backup 1h) are implemented in `supervisor.serve()`; ensure each honors the global pause and a
-   digest cadence exists. Verify ticks fire (tests).
-3. **Wire `ram_aware_concurrency`** at the gateway gate site (`pipeline.py`) — hardware follow-up
-   (safety-additive: only clamps down).
+**DONE this session (P0/P1 all shipped + pushed):** global pause (loops+API+webapp); 24/7 loops honor
+pause; hardware optimization (KV OOM headroom, MoE-aware fit, ram_aware_concurrency helper — wiring it
+to raise default concurrency is deferred pending real-hw validation, OOM-sensitive); Watch v2 (core +
+surfacing + plain-language UI); intent recipes; Settings (API-key onboarding + reproducibility/lock);
+Health "Sources" card + tui budget fix; skill scaffold generator; steerability; 4-wave audit (~32 bugs).
 
-**P1 — features that complete the product:**
-- Watch v2 (web_monitor skill: scrapability pre-flight + trigger criteria + content diff + UI) — spec
-  in `FUTURE_FEATURES.md` §1. Task #38.
-- Intent recipes (preset mode+depth+sources "recipes" in the wizard) — public UX win.
-- API-key onboarding wizard (Settings; over the existing keyring/secrets) — public UX.
-- Surface steerability (seed/temp/top-p + locked mode) in the Settings UI.
+**P2 — remaining offline-buildable (next up):**
+1. **Notifications on events** — fire desktop/Discord/Telegram on a Watch alert (the
+   `run_web_monitor_tick(alert_sink=...)` seam is ready) and on a Governor budget trip. *(building now)*
+2. **MkDocs docs site + tutorials** — content-heavy; adoption/credibility.
+3. **Local Graph-RAG (scoped)** — entity/relation extraction over the corpus + a GRAPH retrieval route;
+   larger, multi-file. Keep causal-inference a labeled stretch (don't overclaim). `FUTURE_FEATURES` §5.
+4. **One-click desktop app (Tauri)** — bundles local Ollama/Qdrant; needs build tooling → scaffold +
+   doc only in this environment, real build on a dev box.
 
-**P2 — deployment-completing (offline parts):**
-- `/api/sources/health` + live Health "Sources" card; fix tui budget display wiring.
-- Notifications on `budget_trip` / `monitor_alert`.
-- MkDocs docs site + tutorials.
-- Local Graph-RAG (scoped: entity/relation extraction over the corpus) — larger.
-- One-click desktop app (Tauri bundling local Ollama/Qdrant) — needs build tooling; scaffold only.
+**P3 — live-gated (await Mac mini):** real-LLM quality eval (precision@5/faithfulness), live source API
+validation across the 36 skills, optional-ML-model measurement, Playwright browser QA, 24h soak,
+cross-platform, packaging/signing, security review. The gated harness `tests/test_real_*` is written so
+this is turnkey. Tracked in `docs/PRODUCTION_CHECKLIST.md` → Deployment readiness.
 
-**P3 — live-gated (await Mac mini):** real-LLM quality eval (precision@5/faithfulness), live source
-API validation across the 36 skills, optional-ML-model measurement, Playwright browser QA, 24h soak,
-cross-platform, packaging/signing, security review. Tracked in `docs/PRODUCTION_CHECKLIST.md`.
+**Status:** the offline-buildable product is feature-complete and audited; what remains is P2 polish +
+the named larger features (Graph-RAG, desktop app, docs site) + P3 live validation. Suite ~2812 green.
 
 ## How to resume after a token-limit reset
 1. `git log --oneline -15` to see the latest increments.
