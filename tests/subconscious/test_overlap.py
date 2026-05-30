@@ -86,6 +86,12 @@ class _SupersedingGateway(_ResolvingGateway):
         return super().complete(role, prompt, **kw)
 
 
+# Evidence retriever for the new resolver contract: supplies grounded evidence so
+# the guard's commit/discard logic is exercised (the resolver no longer self-grades).
+def _RETRIEVER(claim, criterion, as_of):
+    return ("Registry shows drug X received approval in 2019.", "registry-1")
+
+
 def _seed_position(paths) -> Path:
     db = kinds_for(paths)["positions"]
     record_position(
@@ -93,6 +99,7 @@ def _seed_position(paths) -> Path:
         claim="Was drug X approved by 2020?",  # machine-resolvable
         probability=0.75,
         resolve_by=PAST,
+        resolution_criterion="An official approval record exists",
     )
     return db
 
@@ -110,7 +117,8 @@ def _outcome(db) -> object:
 def test_resolver_commits_when_not_superseded(migrated_paths) -> None:
     db = _seed_position(migrated_paths)
     guard = GenerationGuard()
-    results = run_resolver_pass(db, gateway=_ResolvingGateway(), guard=guard)
+    results = run_resolver_pass(db, gateway=_ResolvingGateway(),
+                                retriever=_RETRIEVER, guard=guard)
     assert results and results[0].auto_resolved
     assert _outcome(db) == 1  # committed
 
@@ -119,7 +127,7 @@ def test_resolver_discards_when_superseded(migrated_paths) -> None:
     db = _seed_position(migrated_paths)
     guard = GenerationGuard()
     gw = _SupersedingGateway(guard)
-    results = run_resolver_pass(db, gateway=gw, guard=guard)
+    results = run_resolver_pass(db, gateway=gw, retriever=_RETRIEVER, guard=guard)
     # The pass still researched the position, but a newer generation started, so
     # the write is discarded — the outcome stays NULL.
     assert results and results[0].auto_resolved
@@ -128,6 +136,6 @@ def test_resolver_discards_when_superseded(migrated_paths) -> None:
 
 def test_resolver_without_guard_still_commits(migrated_paths) -> None:
     db = _seed_position(migrated_paths)
-    results = run_resolver_pass(db, gateway=_ResolvingGateway())
+    results = run_resolver_pass(db, gateway=_ResolvingGateway(), retriever=_RETRIEVER)
     assert results and results[0].auto_resolved
     assert _outcome(db) == 1
