@@ -47,9 +47,22 @@ Running the gated real-backend suite (`LIGHTHOUSE_REAL_BACKEND=1`, macOS arm64, 
   recognize "search the web" intent to surface `general_web`. Every named source now ranks #1; recall@5
   on the 15-case eval went **0.40 → 1.000**. Five offline regression tests added.
 
-All fixes are offline-deterministic with regression tests; full suite **2865 pass / 103 skip**, mypy 0,
-ruff clean. Next live phases (when RAM/time allow): per-mode E2E discipline-gate check, live source-API
-validation (Phase 2), faithfulness gate (needs the `faithfulness` extra), browser QA (Phase 3).
+- **FINDING #3 — per-mode E2E (all 7 modes) against the real LLM.** Investigate/Survey/Reconstruct/
+  Decide/Adjudicate/Ask/Watch each ran end-to-end through `dispatch_once` with the real gateway
+  (auto-fit to `llama3.1:8b`, RAM held ~7.2 GB free, no swap) and produced their artifact
+  (report/table/timeline/matrix/verdict/transcript/digest) passing the discipline gate (valid provenance,
+  numeric citation_coverage, no fabrication). Watch initially failed with `backend='none'` which exposed
+  a **real dead-wire**: `_adapt_watch` never passed `topic_interests` to `run_monitor`, so the
+  interest-relative LLM salience (gap #15) was unreachable via the dispatch path. *Fix
+  (`dispatcher.py`):* thread `topic_interests`/`interests` from the job meta into `run_monitor` (it then
+  auto-selects the `aux_context` gateway scorer). With interests the watch E2E now exercises a real LLM
+  salience round-trip (15 s); without them it stays honestly deterministic. Two offline regression tests
+  pin both directions; the E2E `_assert_artifact` now accepts `backend='none'` as a valid deterministic
+  state for watch.
+
+All fixes are offline-deterministic with regression tests; full suite **2867 pass / 103 skip**, mypy 0,
+ruff clean. Per-mode E2E (7/7) green on real hardware. Next live phases (when RAM/time allow): live
+source-API validation (Phase 2), faithfulness gate (needs the `faithfulness` extra), browser QA (Phase 3).
 
 ## Milestone (this session) — offline product feature-complete
 Suite **2850 pass / 103 skip**, mypy 0 (269 modules), ruff clean, coverage ~82%. Shipped + pushed:

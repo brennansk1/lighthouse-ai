@@ -91,8 +91,14 @@ def _get_gateway(paths):
     return gw
 
 
-def _assert_artifact(state_db, draft_id: str, expected_type: str) -> dict:
-    """Return the body dict after validating type + provenance."""
+def _assert_artifact(state_db, draft_id: str, expected_type: str,
+                     *, allow_deterministic: bool = False) -> dict:
+    """Return the body dict after validating type + provenance.
+
+    ``allow_deterministic`` accepts ``backend="none"`` — a legitimate state for
+    modes (e.g. watch) that can assemble an artifact without any LLM round-trip
+    (deterministic digest when no interest-relative salience is triggered).
+    """
     atype, body = _read_draft(state_db, draft_id)
     assert atype == expected_type, (
         f"Expected artifact type {expected_type!r}, got {atype!r}"
@@ -102,7 +108,10 @@ def _assert_artifact(state_db, draft_id: str, expected_type: str) -> dict:
     # "ollama". Accept "mock" / "mock-lowmem" as graceful fallback so the
     # test is not brittle to RAM-starved environments — the important thing is
     # a draft was produced and provenance was recorded.
-    assert prov.get("backend") in {"ollama", "mock", "mock-lowmem"}, (
+    allowed = {"ollama", "mock", "mock-lowmem"}
+    if allow_deterministic:
+        allowed.add("none")
+    assert prov.get("backend") in allowed, (
         f"Unexpected backend {prov.get('backend')!r} in provenance: {prov}"
     )
     # No fabricated citations: if citation_coverage is present it must be a
@@ -273,6 +282,11 @@ def test_watch_mode_e2e(migrated_paths):
         "watch",
         {
             "topic": "AI policy developments",
+            # Interests trigger gap #15 (interest-relative LLM salience via the
+            # aux_context role) through the dispatch path. When the gateway is
+            # reachable this exercises a real LLM scoring round-trip; otherwise
+            # the digest is assembled deterministically (backend="none").
+            "topic_interests": "EU AI Act, model safety regulation, AI governance",
             "documents": [
                 {
                     "doc_id": "item1",
@@ -292,4 +306,7 @@ def test_watch_mode_e2e(migrated_paths):
 
     draft_id = dispatch_once(migrated_paths, gateway=gw)
     assert draft_id is not None, "dispatch_once returned None (job failed)"
-    _assert_artifact(migrated_paths.state_db, draft_id, "digest")
+    # Watch can legitimately produce a deterministic digest (backend="none") when
+    # the LLM salience scorer falls back; accept that alongside a real round-trip.
+    _assert_artifact(migrated_paths.state_db, draft_id, "digest",
+                     allow_deterministic=True)

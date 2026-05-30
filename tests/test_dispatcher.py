@@ -245,6 +245,72 @@ def test_watch_digest_body_json_shape(migrated_paths):
     assert len(body["alerts"]) + len(body["digest"]) == 1
 
 
+def test_watch_threads_topic_interests_to_llm_salience(migrated_paths):
+    """Regression (live finding 2026-05-29): a watch job carrying
+    ``topic_interests`` must reach the interest-relative LLM salience scorer
+    (gap #15) through the dispatch path. Previously ``_adapt_watch`` dropped it,
+    so the gateway ``aux_context`` role was never invoked and the feature was
+    dead-wired via the normal route."""
+    class _Resp:
+        text = '{"score": 0.91, "category": "alert"}'
+
+    class _FakeGateway:
+        def __init__(self):
+            self.calls = []
+
+        def complete(self, role, prompt, *, job_id=None, **kw):
+            self.calls.append((role, prompt))
+            return _Resp()
+
+        def drain_backends(self):
+            return {"ollama": len(self.calls)}
+
+    gw = _FakeGateway()
+    meta = {
+        "topic": "AI policy",
+        "topic_interests": "EU AI Act, model safety",
+        "documents": [
+            {"id": "i1", "url": "https://x/1", "title": "EU AI Act adopted",
+             "text": "The EU adopted the AI Act, a risk-based framework."},
+        ],
+    }
+    _insert_job(migrated_paths.state_db, "j1", "watch", meta)
+    draft_id = dispatch_once(migrated_paths, gateway=gw)
+    assert draft_id is not None
+    # The aux_context salience role was actually invoked with the interests.
+    assert any(role == "aux_context" and "EU AI Act" in prompt
+               for role, prompt in gw.calls), (
+        f"topic_interests not threaded to LLM salience; calls={gw.calls!r}"
+    )
+
+
+def test_watch_without_interests_stays_deterministic(migrated_paths):
+    """Without topic_interests the watch path must NOT call the LLM (honest
+    deterministic digest) — the gateway salience scorer is opt-in."""
+    class _FakeGateway:
+        def __init__(self):
+            self.calls = []
+
+        def complete(self, role, prompt, *, job_id=None, **kw):
+            self.calls.append(role)
+            return type("R", (), {"text": "{}"})()
+
+        def drain_backends(self):
+            return {}
+
+    gw = _FakeGateway()
+    meta = {
+        "topic": "AI policy",
+        "documents": [
+            {"id": "i1", "url": "https://x/1", "title": "Some item",
+             "text": "Routine update with no special interest anchors."},
+        ],
+    }
+    _insert_job(migrated_paths.state_db, "j1", "watch", meta)
+    dispatch_once(migrated_paths, gateway=gw)
+    assert gw.calls == [], f"LLM called without interests: {gw.calls!r}"
+
+
 def test_ask_transcript_has_turns(migrated_paths):
     meta = {"topic": "Explain what hybrid retrieval does for search quality."}
     _insert_job(migrated_paths.state_db, "j1", "ask", meta)

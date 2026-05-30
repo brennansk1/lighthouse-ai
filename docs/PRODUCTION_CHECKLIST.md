@@ -37,8 +37,11 @@ real data and harden it. Grouped by priority.
   recommended as primary sources, and explicitly-named sources ("Reuters", "arXiv") were buried under the
   academic cluster. LLM-rerank lift over the rule path still optional to measure (rule path already
   saturates the gold eval).
-- 🟡 **End-to-end per mode** (Investigate/Survey/Reconstruct/Decide/Adjudicate/Ask/Watch) — one
-  real-backend E2E each, artifact passes the discipline gate.
+- ✅ **End-to-end per mode** (Investigate/Survey/Reconstruct/Decide/Adjudicate/Ask/Watch, 2026-05-29
+  live) — **7/7** ran through `dispatch_once` against the real gateway (`llama3.1:8b`, RAM ~7.2 GB free,
+  no swap) and produced their artifact passing the discipline gate (valid provenance, numeric
+  citation_coverage, no fabrication). Watch exposed + fixed a real dead-wire: `_adapt_watch` wasn't
+  threading `topic_interests` to the LLM salience scorer (gap #15) — now wired, with regression tests.
 
 ### B. Live source fetching — the 36 skills (validate each against its real API)
 - 🟡 Each skill fetches through `ctx.fetch → politeness → broker`; validate per source: real

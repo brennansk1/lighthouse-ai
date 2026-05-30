@@ -494,7 +494,9 @@ def _adapt_watch(meta, *, gateway, gate, job_id, positions_db) -> dict:
     Items come from ``meta["documents"]`` (url/title/text), falling back to
     ``meta["source_urls"]`` (title-only). With no inputs the cycle is empty and
     a deterministic empty digest is produced. Offline-deterministic via the
-    length+keyword ``default_salience`` heuristic (no gateway needed)."""
+    length+keyword ``default_salience`` heuristic; when the job carries
+    ``topic_interests`` (or ``interests``) AND a gateway is present, run_monitor
+    upgrades to interest-relative LLM salience (gap #15, Zone S)."""
     from .modes.monitor import MonitorItem, run_monitor
 
     topic = meta.get("topic", "") or "Watch"
@@ -510,7 +512,11 @@ def _adapt_watch(meta, *, gateway, gate, job_id, positions_db) -> dict:
             items.append(MonitorItem(source=str(url), url=str(url),
                                      title=str(url), body=""))
 
-    report = run_monitor(topic, items, gateway=gateway, gate=gate)
+    interests = meta.get("topic_interests") or meta.get("interests") or None
+    report = run_monitor(
+        topic, items, gateway=gateway, gate=gate,
+        topic_interests=str(interests) if interests else None,
+    )
     rows = "".join(
         f"<li>{_html.escape(c.item.title or c.item.url)} "
         f"<span class='meta'>(salience {c.salience:.2f}, {c.category})</span></li>"
