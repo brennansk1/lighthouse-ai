@@ -101,8 +101,14 @@ real data and harden it. Grouped by priority.
   (`lighthouse`/`lighthouse-supervisor`/`lighthouse-tui`) work, `lighthouse eval --offline` runs
   (recall@5/MRR 1.000), and the bundled dashboard + skills + catalog are accessible. Remaining: signed
   macOS app + launchd/systemd unit + PyPI publish flow.
-- ⬜ **24h supervisor soak** (no OOM/leak), **cross-platform** (Linux/systemd), **signed app +
-  launchd/systemd**, **security review** of egress/injection/sandbox.
+- 🟡 **Supervisor integration smoke** (`scripts/supervisor_smoke.py`, 2026-05-30): all **5 daemon loops**
+  (subconscious/monitor/dispatch/resolver/backup) boot and tick for 30 s without dying, `/api/health`
+  responds 200, global Pause flips `{paused_soft}`, web shuts down cleanly, RAM stable. The **full 24 h
+  soak** (slow-leak detection) still ⬜.
+- ✅ **Security review** of egress/injection/sandbox boundary (2026-05-29): Areas 1/2/4 well-defended;
+  fixed a scan-time zip-bomb DoS; 2 low-priority residuals in `FUTURE_FEATURES.md` §10.
+- ⬜ **24h supervisor soak** (no OOM/slow-leak), **cross-platform** (Linux/systemd), **signed app +
+  launchd/systemd unit**, **PyPI publish**.
 
 ### Deployment standard — the bar EVERY feature must clear (go/no-go)
 1. **Tested** — offline-deterministic unit tests **and** a real-backend/live integration test
