@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- launchd LaunchAgent for the Lighthouse supervisor on macOS (R6).
+     Install: see deploy/README.md. Runs as a per-user LaunchAgent (no root);
+     research data stays under the user's home. Replace USERNAME and the
+     binary path to match your install (`which lighthouse-supervisor`). -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.lighthouse.supervisor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/USERNAME/.local/bin/lighthouse-supervisor</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>LIGHTHOUSE_DATA_DIR</key>
+        <string>/Users/USERNAME/.lighthouse</string>
+        <!-- Opt into real-LLM dispatch + the live calibration resolver:
+        <key>LIGHTHOUSE_REAL_BACKEND</key><string>1</string> -->
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/USERNAME/.lighthouse/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/USERNAME/.lighthouse/logs/launchd.err.log</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

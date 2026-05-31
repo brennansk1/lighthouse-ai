@@ -312,6 +312,8 @@ require unit tests; integration tests for real-backend paths must be gated on
 - [`docs/lighthouse_design.md`](./docs/lighthouse_design.md) — full design specification
 - [`docs/DEFINITION_OF_DONE.md`](./docs/DEFINITION_OF_DONE.md) — the production-grade bar (what "done" means)
 - [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md) — release-readiness status
+- [`docs/RELEASE.md`](./docs/RELEASE.md) — the live-only release gates (soak, cross-platform, signing, PyPI) made turnkey
+- [`deploy/`](./deploy/) — systemd / launchd service units for running the supervisor
 - [`docs/webapp_tui_design.md`](./docs/webapp_tui_design.md) — dashboard / TUI design
 - `docs/dev/` — working notes (sprint plans, build logs)
 

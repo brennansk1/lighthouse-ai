@@ -116,7 +116,10 @@ real data and harden it. Grouped by priority.
 - ✅ **Security review** of egress/injection/sandbox boundary (2026-05-29): Areas 1/2/4 well-defended;
   fixed a scan-time zip-bomb DoS; 2 low-priority residuals in `FUTURE_FEATURES.md` §10.
 - ⬜ **24h supervisor soak** (no OOM/slow-leak), **cross-platform** (Linux/systemd), **signed app +
-  launchd/systemd unit**, **PyPI publish**.
+  launchd/systemd unit**, **PyPI publish** — now **turnkey**: `scripts/soak.py --hours 24 --load`
+  (RSS/fd/thread leak detector, 60s smoke verified green), `deploy/` ships the systemd unit +
+  launchd plist, and `docs/RELEASE.md` is the step-by-step R5–R8 runbook. Execution still needs the
+  real box / other platforms / signing certs.
 
 ### Deployment standard — the bar EVERY feature must clear (go/no-go)
 1. **Tested** — offline-deterministic unit tests **and** a real-backend/live integration test

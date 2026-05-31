@@ -1,0 +1,25 @@
+[Unit]
+# systemd user service for the Lighthouse supervisor (R6 cross-platform).
+# Install: see deploy/README.md. Runs as a *user* service so the research data
+# stays under the user's home and no root is required.
+Description=Lighthouse research supervisor (local-first)
+Documentation=https://github.com/brennansk1/lighthouse-ai
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# %h = the user's home. Adjust the venv path if you installed elsewhere.
+ExecStart=%h/.local/bin/lighthouse-supervisor
+Restart=on-failure
+RestartSec=5
+# Resource-safety: cap memory so a runaway never swaps the box (matches the
+# in-app RAM guard). Tune to your hardware; 24 GB box → ~18G is a safe ceiling.
+MemoryMax=18G
+# The supervisor binds 127.0.0.1:8765 only; no external exposure.
+Environment=LIGHTHOUSE_DATA_DIR=%h/.lighthouse
+# Opt into real-LLM dispatch + the live calibration resolver (needs Ollama):
+# Environment=LIGHTHOUSE_REAL_BACKEND=1
+
+[Install]
+WantedBy=default.target
