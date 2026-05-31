@@ -110,6 +110,27 @@ def test_run_job_emits_prov_sidecar(migrated_paths):
     assert h and len(h) == 64
 
 
+def test_run_job_guard_trip_fires_notification(migrated_paths, monkeypatch):
+    """A run stopped by a budget/loop guard notifies the user (not a silent fail)."""
+    from lighthouse_ai import dispatcher as D
+    from lighthouse_ai.gateway import LoopTripped
+
+    def _boom(*a, **k):
+        raise LoopTripped("per-job call cap reached")
+
+    monkeypatch.setitem(D._ADAPTERS, "decide", _boom)
+    captured = {}
+    monkeypatch.setattr(D, "_notify_budget_trip",
+                        lambda paths, reason: captured.update(reason=reason))
+
+    _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
+    job = claim_one_job(migrated_paths.state_db)
+    result = run_job(migrated_paths, job)
+    assert result is None
+    assert _job_status(migrated_paths.state_db, "j1") == "failed"
+    assert "cap reached" in captured.get("reason", "")
+
+
 def test_dispatch_once_end_to_end(migrated_paths):
     _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
     draft_id = dispatch_once(migrated_paths)

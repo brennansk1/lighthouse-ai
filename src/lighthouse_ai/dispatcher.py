@@ -894,6 +894,50 @@ def _emit_prov_sidecar(paths: Paths, *, draft_id: str, job_id: str,
         _log.warning("prov_sidecar.failed", draft_id=draft_id, error=repr(exc))
 
 
+def _is_guard_trip(exc: Exception) -> bool:
+    """True when a job failed because a budget/loop guard stopped it.
+
+    Covers the loop detector (``LoopTripped``) and a Governor budget-bucket
+    underflow (whose error text names the underflow/budget). Used to fire a
+    user-facing notification + a ``governor.tripped`` event, vs an ordinary
+    crash.
+    """
+    from .gateway import LoopTripped
+    if isinstance(exc, LoopTripped):
+        return True
+    msg = str(exc).lower()
+    return "underflow" in msg or "budget" in msg or "tripped" in msg
+
+
+def _notify_budget_trip(paths: Paths, reason: str) -> None:
+    """Best-effort Telegram ping that a run was stopped by a guard.
+
+    Reads the ``[ui]`` config (``notify_enabled`` + telegram token/chat id) at the
+    application edge where secrets live (the Governor itself has no config access).
+    No-op when disabled/unconfigured; never raises into the dispatch loop.
+    """
+    try:
+        if not paths.config_file.exists():
+            return
+        try:
+            import tomllib
+        except ImportError:  # pragma: no cover
+            import tomli as tomllib  # type: ignore
+        with paths.config_file.open("rb") as fh:
+            ui = tomllib.load(fh).get("ui", {})
+        if not ui.get("notify_enabled", False):
+            return
+        from .notify import notify_budget_trip
+        notify_budget_trip(
+            reason,
+            bot_token=str(ui.get("telegram_bot_token", "")),
+            chat_id=str(ui.get("telegram_chat_id", "")),
+            enabled=True,
+        )
+    except Exception:
+        pass
+
+
 def _audit(paths: Paths, event_type: str, payload: dict) -> None:
     if not paths.audit_db.exists():
         return
@@ -1115,6 +1159,13 @@ def run_job(paths: Paths, job: ClaimedJob, *,
     except Exception as exc:
         _set_status(paths.state_db, job.id, "failed")
         _audit(paths, "job.failed", {"job_id": job.id, "error": str(exc)})
+        # A budget/loop guard stopping a run is a user-facing event: notify + emit.
+        if _is_guard_trip(exc):
+            _notify_budget_trip(paths, str(exc))
+            _audit(paths, "governor.tripped", {"job_id": job.id, "reason": str(exc)})
+            if bus is not None:
+                bus.publish("governor.tripped",
+                            {"job_id": job.id, "reason": str(exc)})
         if bus is not None:
             bus.publish("job.status", {"id": job.id, "status": "failed"})
         return None

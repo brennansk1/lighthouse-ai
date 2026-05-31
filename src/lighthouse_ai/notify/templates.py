@@ -324,3 +324,25 @@ def notify_monitor_alert(
     text = f"🔔 {title}\n{body}".strip()
     channel = TelegramChannel(bot_token=bot_token, chat_id=chat_id, client=client)
     return channel.send_text(text)
+
+
+def notify_budget_trip(
+    reason: str,
+    *,
+    bot_token: str,
+    chat_id: str,
+    enabled: bool = False,
+    client: Any | None = None,
+) -> bool:
+    """Best-effort: alert the user that a run hit a budget / loop guard.
+
+    Fired when the Governor's budget bucket or the loop detector stops a run, so
+    the user learns a job was halted (and why) without watching the dashboard.
+    No-ops (returns ``False``) when disabled or unaddressable. Plain text — the
+    reason string is arbitrary, so no MarkdownV2 escaping is needed.
+    """
+    if not enabled or not bot_token or not chat_id:
+        return False
+    text = f"⚠️ Lighthouse stopped a run: {reason}".strip()
+    channel = TelegramChannel(bot_token=bot_token, chat_id=chat_id, client=client)
+    return channel.send_text(text)
