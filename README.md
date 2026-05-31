@@ -42,9 +42,14 @@ entire run tamper-evident.
   gracefully to no-penalty when the PyPI package is absent
 - **Auto web retrieval**: fetches arXiv + OpenAlex when corpus is empty at research
   start (CRAG-style pre-loop)
-- **Auto-resolver** (`verification/resolver.py`): Halawi et al. style — machine-
-  resolvable positions auto-resolved at deadline
-- **WEP confidence bands** (ICD-203) + Brier calibration scoring + 90-day positions
+- **Evidence-grounded auto-resolver** (`verification/resolver.py`): at the deadline a
+  position is resolved **only from freshly retrieved evidence** (never the model's own
+  memory — Panickssery et al. NeurIPS 2024); anything it can't settle defers to a
+  **human-resolution queue** in the Track tab
+- **WEP confidence bands** (ICD-203) + Brier scoring + **evidence-derived probabilities**
+  (source count / independence / entailment / contradiction — not a fixed heuristic) +
+  honest calibration display: log score, Murphy decomposition, per-band reliability with
+  Beta-Binomial shrinkage + credible intervals (`verification/calibration.py`)
 - **Research-skills library** — **36 sources**, one skill per source (academic, clinical,
   legal, U.S.-federal, financial, economic-data, engineering, reference, media, 6 news
   outlets + a news orchestrator), each a self-contained folder discovered by directory scan;
@@ -97,7 +102,7 @@ entire run tamper-evident.
 
 ## Path to deployment
 
-The capability surface is built and **green offline** (2816 tests). The honest gap to a
+The capability surface is built and **green offline** (2950 tests). The honest gap to a
 distributable release is almost entirely **live-data validation** — most subsystems were
 built test-first against mocked backends and still need to be exercised against real LLMs,
 real source APIs, and a real browser. **Running the live pass?** Start with the cold-start
@@ -280,12 +285,12 @@ Sources (arXiv · OpenAlex · PubMed · Crossref · RSS)
 
 ## Status
 
-**2816 tests passing · 103 skipped (opt-in real-backend / litestream binary / absent optional models) · ruff clean · mypy 0 (blocking CI gate) · 269 modules · ~49k source lines · 37 research-skill sources · coverage ~82% · 4-wave codebase audit complete (~32 real bugs fixed incl. a redirect-SSRF and the audit-chain tamper-evidence). macOS M4 24 GB verified (real Ollama: Decide validated end-to-end, backend=ollama, RAM-gated). The offline-buildable product is feature-complete; live-data validation across the 37 skills + real-LLM quality is the remaining gate — see Path to deployment.**
+**2950 tests passing · 83 skipped (opt-in real-backend / litestream binary / absent optional models) · ruff clean · mypy 0 (blocking CI gate) · 275 modules · ~49k source lines · 37 research-skill sources · coverage ~82% · 4-wave codebase audit complete (~32 real bugs fixed incl. a redirect-SSRF and the audit-chain tamper-evidence). macOS M4 24 GB live-validated (17 bugs fixed against real deps). The offline-buildable product is feature-complete; the calibration pipeline is now evidence-grounded (no self-grading), every run emits a PROV-O sidecar, and budget/monitor notifications are wired. Remaining gate: soak/signing/cross-platform + observing the live calibration loop on the box — see Path to deployment.**
 
 ## Development
 
 ```bash
-uv run pytest -q                          # 2816 pass, 103 skip
+uv run pytest -q                          # 2950 pass, 83 skip
 uv run ruff check src tests               # 0 errors
 LIGHTHOUSE_REAL_BACKEND=1 uv run pytest tests/test_backends_ollama.py  # real LLM
 ```

@@ -5,7 +5,7 @@
 > (where each feature sits *against that bar*). A ✅ here must have cleared all 7
 > per-feature gates there. "Built but not validated with real data" is **🟡**, never ✅.
 
-Status snapshot: **269 Python modules · ~49,000 source lines · 127 test files · 2816 tests pass · 103 opt-in skips · 37 research-skill sources · ruff clean · mypy 0 (blocking) · coverage ~82%**. A 4-wave full-codebase audit fixed ~32 real bugs (redirect-SSRF, audit-chain tamper-evidence, skill import-guard escapes, data-loss/durability, dead planner path, …) — each with a regression test. Shipped since the last snapshot: Sandbox workspace, Watch-a-website (v2), intent recipes, skill-scaffold generator, steerability/reproducibility, Settings API-key onboarding, global Pause, hardware OOM/utilization guardrails, Watch-alert notifications, and the in-app Info-tab guide.
+Status snapshot: **275 Python modules · ~49,000 source lines · 2950 tests pass · 83 opt-in skips · 37 research-skill sources · ruff clean · mypy 0 (blocking) · coverage ~82%**. A 4-wave full-codebase audit fixed ~32 real bugs (redirect-SSRF, audit-chain tamper-evidence, skill import-guard escapes, data-loss/durability, dead planner path, …) — each with a regression test. Shipped since the last snapshot: the **evidence-grounded calibration pipeline** (no self-grading — resolves from fresh retrieved evidence or defers to a human queue; evidence-derived probabilities; honest Track display with shrinkage + credible intervals), **PROV-O sidecar per run on every path** (pipeline + dispatcher), **budget-trip + monitor-alert notifications**, a **key-required pre-flight** for hard-keyed sources, plus the earlier Sandbox workspace, Watch-a-website (v2), intent recipes, skill-scaffold generator, steerability/reproducibility, Settings API-key onboarding, global Pause, hardware OOM/utilization guardrails, and the in-app Info-tab guide.
 Legend: ✅ done & tested (offline) · 🟡 built but needs-real-backend/live-data · 🔌 built, needs runtime wiring · ⬜ not started.
 
 A "vertical slice" of the product works **end-to-end, locally, today**: ingest documents → frame the question → retrieve with real `bge-m3` embeddings → synthesize with a real local LLM (Ollama) → enforce citation discipline → record calibration positions → stage a draft → approve it in the dashboard → export to Logseq. Everything below tracks the gap from that slice to full production.
@@ -95,8 +95,11 @@ real data and harden it. Grouped by priority.
 - ⬜ **Browser QA (Playwright)** of every dashboard tab — 0 console errors, axe a11y pass,
   keyboard-reachable; verify the new source picker, contradictions, known-unknowns, trust matrix,
   `doctor news` surfacing. (Only static/Babel checks done.)
-- 🔌 **Calibration loop live** — wire the resolver cron (`supervisor.py` hook exists, gated) and
-  observe a real Position resolve + Brier update; surface per-skill/per-mode calibration in Track.
+- 🟡 **Calibration loop live** — ✅ wired: the resolver loop resolves from fresh evidence (or
+  defers to the human queue), probabilities are evidence-derived, and Track surfaces honest
+  calibration (log score, Murphy decomposition, per-band reliability with shrinkage + credible
+  intervals) + the human-resolution queue. ⬜ remaining: *observe* a real multi-day Position
+  resolve + Brier update on the live box (needs `LIGHTHOUSE_REAL_BACKEND=1` + time).
 - 🔌 **Deep-tier resume** — serializable tree state exists; wire dispatcher-level checkpoint to
   `state.db` and prove a resumed multi-hour run.
 - 🟡 **Persistent vectors / replication** — Qdrant up; Litestream binary installed; restore drill.
@@ -197,10 +200,10 @@ real data and harden it. Grouped by priority.
 - ✅ HMAC-chained audit log (append, seal, verify)
 - ✅ **Quality discipline gate** (§12): claim extraction, citation coverage, two-source rule, WEP downgrade
 - ✅ **Calibration loop closed** — research emits Positions; `lighthouse positions-due`; 90-day positions with auto-resolve
-- ✅ **Auto-resolver** (`verification/resolver.py`): Halawi et al. style — machine-resolvable positions auto-resolved at deadline; `lighthouse resolver run` CLI
+- ✅ **Evidence-grounded auto-resolver** (`verification/resolver.py`): at the deadline a position resolves **only from freshly retrieved evidence** (`verification/evidence.py` re-fetches via `general_web`), never the model's own memory (Panickssery et al. NeurIPS 2024); unsettleable claims defer to a **human-resolution queue** surfaced in Track. Machine-classifiable claims carry a default criterion so they're eligible; the supervisor loop wires the retriever (live) / defers (offline). `lighthouse resolver run` CLI. 🟡 observing a real resolve still needs the live box.
 - ✅ **Citation source diversity**: distinct source domains counted per report
 - ✅ **Backend fallback warnings**: silent fallbacks logged and surfaced to user
-- ✅ Reproducibility: `lighthouse replay <job_id>` wired (reconstructs the model-call trace + drift verify against installed digests, §27.8); `provenance.py` PROV-O emitter built. 🔌 PROV-O sidecar not yet emitted per research run.
+- ✅ Reproducibility: `lighthouse replay <job_id>` wired (reconstructs the model-call trace + drift verify against installed digests, §27.8). **✅ PROV-O sidecar now emitted per research run on every path** — the `ResearchPipeline` and the dispatcher (all 7 dashboard modes) each write a self-contained `<draft_id>.prov.json` (content hash + sampling params) to `staging_dir`.
 - ⬜ Re-verification scheduler; track-record-based prior adjustment; A-MEM auto-linking / dossiers
 
 ## Stage 5 — Web dashboard (production)
@@ -223,7 +226,7 @@ real data and harden it. Grouped by priority.
 - ✅ Governor guards wired: **loop detector** in the Gateway (raises `LoopTripped` on runaway), **injection gate** screens every ingested chunk (injected content never enters the corpus). 🔌 `egress_proxy` built+tested but not yet on the fetch path.
 - ✅ **Scheduler Gate** (`governor/scheduler_gate.py`, OpenHuman §1): host-courtesy throttle (power/CPU/server → Aggressive/Normal/Throttled/Paused); cooperative `permit()` wraps Deep-Dive LLM calls; `lighthouse doctor` reports policy. See `OPENHUMAN_INTEGRATION.md`.
 - ✅ **Hotness Score** (`compounding/hotness.py`, OpenHuman §2): deterministic LLM-free entity-importance with named-term breakdown; available as a Monitor salience scorer. 🟡 persistence table + dossier materialisation deferred.
-- ✅ Notifications (`notify/`): desktop / Discord / email + dispatcher; fired on `draft_ready` from the research command. 🔌 not yet fired on `budget_trip` / `monitor_alert` from the Governor/modes.
+- ✅ Notifications (`notify/`): desktop / Discord / email / Telegram + dispatcher; fired on `draft_ready`, **on `monitor_alert`** (supervisor `_notify_web_alert` → `notify_monitor_alert`, wired into the Watch sweep), and **on `budget_trip`/loop-guard** (`dispatcher._notify_budget_trip` at the config-aware edge + a `governor.tripped` event). One `notify_enabled` toggle gates all.
 - ✅ Source adapters: RSS, **arXiv**, **OpenAlex**, **PubMed**, **Crossref** (all return `Document` objects)
 - ✅ Logseq export (filesystem markdown) — `lighthouse export <draft> --logseq <dir>`
 - ✅ **`lighthouse audit-egress` CLI command**
@@ -320,7 +323,7 @@ Test-type legend: **U** unit · **I** integration (real deps, skip-if-absent) ·
 |---|---|---|---|
 | Claim extraction + citation gate | U: coverage, two-source rule, WEP downgrade | coverage floor enforced; unsourced → lower band | ✅ |
 | Calibration loop | U+E: research emits Positions; resolve → Brier | every run records positions; Brier computed on resolve | ✅ |
-| Brier / reliability | I: scored over a resolved golden set | reliability diagram tracks diagonal; calibration error reported | 🟡 plumbing ✅; real track-record ⬜ |
+| Brier / reliability | I: scored over a resolved golden set | reliability diagram tracks diagonal; calibration error reported | ✅ scoring ✅ (log score + Murphy decomposition + Beta-Binomial-shrunk per-band reliability w/ credible intervals, `calibration.py`, unit-tested); 🟡 real multi-day track-record needs the live box |
 | HMAC audit chain | U+Sec: append/verify; tamper any row → chain breaks | tamper detected at exact seq; wrong key fails all | ✅ |
 | Provenance / replay | U+E: PROV-O round-trip; `replay` reconstructs trace + drift | trace order exact; drift flagged; refuse byte-replay on drift | ✅ U/E; 🟡 PROV-O sidecar per run ⬜ |
 

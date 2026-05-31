@@ -3,6 +3,35 @@
 All notable changes to Lighthouse are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased] — Production-grade push (2026-05-31)
+
+Established `docs/DEFINITION_OF_DONE.md` as the authoritative bar (7 per-feature
+gates + a 10-point release gate + a first-class UX-simplicity standard), then took
+the calibration "trust" pipeline and several checklist gaps to that bar.
+
+### Added
+- **Definition of Done** (`docs/DEFINITION_OF_DONE.md`) — the production-grade rubric
+  every feature is measured against; wired from the README, checklist, and DEV_LOG.
+- **Evidence-derived position probabilities** (`calibration.probability_from_evidence`):
+  source count / independence / entailment / contradiction → the probability a claim is
+  true, replacing the near-vacuous fixed heuristics (Investigate 0.75/0.5, Survey 0.7).
+- **Evidence retriever for resolution** (`verification/evidence.py`): re-fetches a claim
+  from public sources at the deadline so the resolver decides from fresh evidence, never
+  the model's own memory; offline/none → defer. Machine-classifiable claims get a default
+  criterion (`resolver.default_criterion`); the supervisor loop wires the retriever.
+- **Honest calibration display** (`positions.calibration_report` + Track tab): log score,
+  Murphy Brier decomposition, per-WEP-band reliability with Beta-Binomial shrinkage +
+  90% credible intervals, plus a **human-resolution queue** ("Needs your call") with
+  one-click Came-true/Didn't; `GET /api/positions/human-queue`.
+- **PROV-O sidecar on every run path**: the dispatcher (7 dashboard modes) now also writes
+  a self-contained `<draft_id>.prov.json`, matching the pipeline.
+- **Budget-trip / loop-guard notifications**: a run stopped by a guard pings the user and
+  emits `governor.tripped` (`notify.notify_budget_trip` + dispatcher edge).
+- **Key-required pre-flight** (`SkillManifest.requires_key_env`): hard-keyed sources
+  (fred, bea) short-circuit with actionable guidance instead of a doomed 4xx request.
+- **Browser QA harnesses**: `scripts/browser_track.py` (Track tab) and
+  `scripts/browser_ux_sweep.py` (all 9 tabs — zero console errors, no white-screens).
+
 ## [Unreleased] — Sprints 30–32 (2026-05-28)
 
 ### Fixed

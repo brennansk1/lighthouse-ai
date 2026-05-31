@@ -155,10 +155,24 @@ onboarding; **global Pause**; **hardware** OOM/utilization guardrails; **in-app 
   cross-platform, packaging/signing, security review. Gated harness `tests/test_real_*` makes it turnkey.
   **→ Hand a fresh session `docs/dev/LIVE_TESTING_HANDOFF.md`** — a self-contained cold-start runbook
   (env setup, phased commands, thresholds, where to record results).
-- **Deferred small items:** budget-trip notifications (governor buckets lacks config access);
-  ram_aware_concurrency wiring to raise default LLM concurrency (OOM-sensitive — validate on real hw).
+- **Deferred small items:** ~~budget-trip notifications~~ ✅ done 2026-05-31 (fired at the
+  dispatcher edge where config lives, not in the Governor); ram_aware_concurrency wiring to raise
+  default LLM concurrency (OOM-sensitive — validate on real hw).
 
 ## Current state (update the date/commit when you touch this)
+- **2026-05-31 — production-grade push (branch `feat/production-grade`).** Suite **2950 pass / 83 skip**,
+  mypy 0 (275 files), ruff clean. Wrote `docs/DEFINITION_OF_DONE.md` (the authoritative bar) first, then
+  took the calibration "trust" pipeline + several checklist gaps to it: (1) **evidence-derived position
+  probabilities** (memo change 2) replacing the fixed 0.75/0.5/0.7; (2) **evidence-grounded resolution** —
+  `verification/evidence.py` re-fetches at the deadline, `resolver.default_criterion` makes machine claims
+  eligible, supervisor loop wires the retriever, else defer to the **human queue**; (3) **honest Track UI**
+  — `calibration_report` (log score, Murphy decomposition, shrunk per-band reliability + credible
+  intervals) + "Needs your call" queue, verified in headless chromium; (4) **PROV-O sidecar on the
+  dispatcher path** (all 7 modes); (5) **budget-trip + monitor-alert notifications** (monitor was already
+  wired); (6) **key-required pre-flight** for fred/bea; (7) **all-tabs UX sweep** (9/9 zero console errors,
+  designed empty states). New QA harnesses: `scripts/browser_track.py`, `scripts/browser_ux_sweep.py`.
+  Remaining toward ship is unchanged + live-only: soak / signing / cross-platform + *observing* the live
+  calibration loop resolve on the box. See `DEFINITION_OF_DONE.md` for the bar.
 - **2026-05-30 — live-validation sprint complete on the user's Mac mini.** Suite **2889 pass / 83 skip**
   (fewer skips because every optional extra is installed in the dev env), mypy 0 (269 files), ruff clean.
   **17 real bugs found + fixed** by installing each real optional dependency and running its gated tests
@@ -192,8 +206,9 @@ surfacing + plain-language UI); intent recipes; Settings (API-key onboarding + r
 Health "Sources" card + tui budget fix; skill scaffold generator; steerability; 4-wave audit (~32 bugs).
 
 **P2 — remaining offline-buildable (next up):**
-1. **Notifications on events** — fire desktop/Discord/Telegram on a Watch alert (the
-   `run_web_monitor_tick(alert_sink=...)` seam is ready) and on a Governor budget trip. *(building now)*
+1. ✅ **Notifications on events** — DONE: Watch alerts (`_notify_web_alert` → `notify_monitor_alert`)
+   and budget/loop-guard trips (`dispatcher._notify_budget_trip` + `governor.tripped`) both fire,
+   gated by the single `notify_enabled` toggle.
 2. **MkDocs docs site + tutorials** — content-heavy; adoption/credibility.
 3. **Local Graph-RAG (scoped)** — entity/relation extraction over the corpus + a GRAPH retrieval route;
    larger, multi-file. Keep causal-inference a labeled stretch (don't overclaim). `FUTURE_FEATURES` §5.
