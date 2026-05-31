@@ -793,6 +793,7 @@ def run_survey(
         try:
             from ..verification.calibration import probability_from_evidence
             from ..verification.positions import record_position
+            from ..verification.resolver import default_criterion
             # Evidence = the included documents; discordant findings lower agreement.
             agreement = (1.0 - discordant_count / n_included) if n_included else None
             prob = probability_from_evidence(
@@ -800,7 +801,8 @@ def run_survey(
                 contradicted=discordant_count > 0 and n_included > 0
                 and discordant_count >= n_included / 2,
             )
-            record_position(positions_db, claim=claims[0], probability=prob)
+            record_position(positions_db, claim=claims[0], probability=prob,
+                            resolution_criterion=default_criterion(claims[0]))
         except Exception:
             pass
 

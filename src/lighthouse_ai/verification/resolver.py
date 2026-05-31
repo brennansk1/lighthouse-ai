@@ -93,6 +93,27 @@ def classify_resolution_kind(claim: str) -> str:
     return "human"  # default conservative
 
 
+#: Generic, machine-usable resolution criterion for a machine-classifiable claim.
+#: The resolver judges TRUE/FALSE against it using ONLY retrieved evidence, so a
+#: claim needs *some* criterion to be eligible (no criterion → defer to a human).
+_DEFAULT_MACHINE_CRITERION = (
+    "Resolves TRUE if, by the resolution date, independent retrieved evidence "
+    "confirms the claim as stated; FALSE if independent evidence contradicts it; "
+    "UNCERTAIN if the evidence does not clearly decide it."
+)
+
+
+def default_criterion(claim: str) -> str | None:
+    """A default resolution criterion for a *machine-resolvable* claim, else ``None``.
+
+    Emitters call this so machine-classifiable claims carry a criterion and can be
+    resolved from fresh evidence at the deadline, while subjective/long-horizon
+    claims get ``None`` and defer to a human — the design the improvement memo
+    calls for. Pure + deterministic.
+    """
+    return _DEFAULT_MACHINE_CRITERION if classify_resolution_kind(claim) == "machine" else None
+
+
 def attempt_auto_resolve(
     position_id: int,
     claim: str,

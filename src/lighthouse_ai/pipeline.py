@@ -416,6 +416,7 @@ class ResearchPipeline:
         """
         from .verification.calibration import probability_from_evidence
         from .verification.positions import record_position
+        from .verification.resolver import default_criterion
         # report-level faithfulness signal applied to sourced claims (when measured)
         entailment = report.entailment_coverage if report.entailment_checked else None
         contradicted_texts = {t for pair in report.contradictions for t in pair}
@@ -428,8 +429,11 @@ class ResearchPipeline:
                     entailment=entailment if claim.is_sourced else None,
                     contradicted=claim.text in contradicted_texts,
                 )
+                # Machine-resolvable claims carry a criterion so the resolver can
+                # decide them from fresh evidence; subjective ones defer to a human.
                 record_position(self.paths.positions_db, claim=claim.text,
-                                probability=prob)
+                                probability=prob,
+                                resolution_criterion=default_criterion(claim.text))
                 n += 1
             except Exception:
                 pass

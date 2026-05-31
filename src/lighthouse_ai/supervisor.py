@@ -475,8 +475,15 @@ def _start_resolver_loop(paths: Paths, *, interval_s: float = 3600.0) -> threadi
     gate_cfg = SchedulerGateConfig.from_config_file(paths.config_file)
     gate = SchedulerGate(gate_cfg)
     gateway = build_runtime_gateway(paths) if live else None
+    # Re-fetch evidence at the deadline so resolution is grounded in fresh sources,
+    # never the model's own memory. None when offline → due positions defer.
+    retriever = None
+    if gateway is not None:
+        from .verification.evidence import build_evidence_retriever
+        retriever = build_evidence_retriever(paths, gateway=gateway)
     log.info("resolver.gateway", live=live,
-             backend="ollama" if gateway is not None else "offline")
+             backend="ollama" if gateway is not None else "offline",
+             retriever=retriever is not None)
 
     def _loop() -> None:
         while True:
@@ -487,7 +494,8 @@ def _start_resolver_loop(paths: Paths, *, interval_s: float = 3600.0) -> threadi
                 policy, _ = gate.policy()
                 if is_paused(paths) or policy is Policy.PAUSED:
                     continue
-                results = run_resolver_pass(paths.positions_db, gateway=gateway)
+                results = run_resolver_pass(paths.positions_db, gateway=gateway,
+                                            retriever=retriever)
                 resolved = sum(1 for r in results if r.auto_resolved)
                 if results:
                     log.info("resolver.pass", attempted=len(results), resolved=resolved)
