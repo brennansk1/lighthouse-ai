@@ -791,8 +791,16 @@ def run_survey(
     ]
     if positions_db is not None:
         try:
+            from ..verification.calibration import probability_from_evidence
             from ..verification.positions import record_position
-            record_position(positions_db, claim=claims[0], probability=0.7)
+            # Evidence = the included documents; discordant findings lower agreement.
+            agreement = (1.0 - discordant_count / n_included) if n_included else None
+            prob = probability_from_evidence(
+                n_sources=n_included, entailment=agreement,
+                contradicted=discordant_count > 0 and n_included > 0
+                and discordant_count >= n_included / 2,
+            )
+            record_position(positions_db, claim=claims[0], probability=prob)
         except Exception:
             pass
 

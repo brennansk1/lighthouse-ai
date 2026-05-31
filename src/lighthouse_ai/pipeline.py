@@ -407,14 +407,29 @@ class ResearchPipeline:
                               warnings=self._backend_warnings)
 
     def _record_positions(self, report, band) -> int:
-        """Record each extracted claim as a Position (claim + WEP + resolve-by)."""
+        """Record each extracted claim as a Position (claim + WEP + resolve-by).
+
+        The probability is *derived from the claim's evidence* (source count,
+        independence, entailment, contradiction) via
+        ``calibration.probability_from_evidence`` — not a fixed heuristic — so the
+        confidence being calibrated actually varies with the strength of grounding.
+        """
+        from .verification.calibration import probability_from_evidence
         from .verification.positions import record_position
+        # report-level faithfulness signal applied to sourced claims (when measured)
+        entailment = report.entailment_coverage if report.entailment_checked else None
+        contradicted_texts = {t for pair in report.contradictions for t in pair}
         n = 0
         for claim in report.claims:
-            # only register substantive, sourced-or-not claims as positions
             try:
+                prob = probability_from_evidence(
+                    n_sources=len(claim.citation_ids),
+                    independent_sources=len(set(claim.citation_ids)),
+                    entailment=entailment if claim.is_sourced else None,
+                    contradicted=claim.text in contradicted_texts,
+                )
                 record_position(self.paths.positions_db, claim=claim.text,
-                                probability=0.75 if claim.is_sourced else 0.5)
+                                probability=prob)
                 n += 1
             except Exception:
                 pass

@@ -327,3 +327,44 @@ def evidence_strength(*, n_sources: int = 0,
         if v is not None:
             parts.append(min(1.0, max(0.0, float(v))))
     return round(sum(parts) / len(parts), 4)
+
+
+#: probability floors/ceilings for an evidence-derived claim confidence.
+_UNSOURCED_P = 0.45      # an asserted-but-uncited claim sits just below "even"
+_SOURCED_FLOOR = 0.55    # a single cited source starts in "even/likely"
+_SOURCED_SPAN = 0.37     # strongest evidence reaches ~0.92 ("almost certain" floor)
+_CONTRADICTED_CAP = 0.5  # a flagged contradiction can't read above "even chance"
+
+
+def probability_from_evidence(*, n_sources: int,
+                              independent_sources: int | None = None,
+                              entailment: float | None = None,
+                              contradicted: bool = False) -> float:
+    """Derive *the probability a claim is true* from its evidence (not a constant).
+
+    This replaces the old fixed heuristics (Investigate's 0.75/0.5, Survey's 0.7)
+    that made calibration close to vacuous — there was no probability variation to
+    calibrate. The mapping is:
+
+    * **unsourced** assertion → ``0.45`` (just below "even chance" — we said it but
+      can't ground it);
+    * **sourced** → ``0.55 + 0.37 · evidence_strength`` where strength rises with
+      source count (diminishing returns), independence (distinct sources, target 2),
+      and entailment/faithfulness when measured — reaching ~0.92 for strong,
+      triangulated, entailed evidence;
+    * a **flagged contradiction** caps the result at ``0.5`` regardless.
+
+    Monotone non-decreasing in evidence, deterministic, in ``[0, 1]``. Keeps the
+    binary true/false claim as the cheap base case (the probability is *of* truth).
+    """
+    if n_sources <= 0:
+        p = _UNSOURCED_P
+    else:
+        indep = n_sources if independent_sources is None else max(0, independent_sources)
+        independence = min(1.0, indep / 2.0)  # 1 distinct → 0.5, ≥2 → 1.0
+        s = evidence_strength(n_sources=n_sources, independence=independence,
+                              agreement=entailment)
+        p = _SOURCED_FLOOR + _SOURCED_SPAN * s
+    if contradicted:
+        p = min(p, _CONTRADICTED_CAP)
+    return round(p, 3)

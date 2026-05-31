@@ -112,3 +112,44 @@ def test_evidence_strength_monotone_and_bounded():
     # Optional signals fold in and stay in range.
     s = cal.evidence_strength(n_sources=5, independence=0.9, recency=0.4, agreement=1.0)
     assert 0.0 <= s <= 1.0
+
+
+# --- evidence-derived probability (replaces fixed 0.75/0.5/0.7 heuristics) ----
+def test_probability_from_evidence_unsourced_below_even():
+    # An asserted-but-uncited claim sits just below "even chance".
+    assert cal.probability_from_evidence(n_sources=0) == 0.45
+
+
+def test_probability_from_evidence_monotone_in_sources():
+    p1 = cal.probability_from_evidence(n_sources=1, independent_sources=1)
+    p2 = cal.probability_from_evidence(n_sources=2, independent_sources=2)
+    p3 = cal.probability_from_evidence(n_sources=5, independent_sources=5)
+    # More (independent) sources → strictly higher confidence, with a sourced floor.
+    assert 0.55 <= p1 < p2 < p3 <= 0.92
+    # Sourced always beats unsourced.
+    assert p1 > cal.probability_from_evidence(n_sources=0)
+
+
+def test_probability_from_evidence_independence_and_entailment_help():
+    # Two independent sources beat one source cited twice.
+    one = cal.probability_from_evidence(n_sources=2, independent_sources=1)
+    two = cal.probability_from_evidence(n_sources=2, independent_sources=2)
+    assert two > one
+    # Measured entailment raises confidence; absent entailment is neutral.
+    with_ent = cal.probability_from_evidence(n_sources=2, independent_sources=2, entailment=1.0)
+    no_ent = cal.probability_from_evidence(n_sources=2, independent_sources=2, entailment=None)
+    assert with_ent >= no_ent
+
+
+def test_probability_from_evidence_contradiction_caps_at_even():
+    # However strong the evidence, a flagged contradiction can't read above "even".
+    p = cal.probability_from_evidence(n_sources=5, independent_sources=5,
+                                      entailment=1.0, contradicted=True)
+    assert p <= 0.5
+
+
+def test_probability_from_evidence_always_in_unit_interval():
+    for n in range(0, 20):
+        for indep in (None, 0, 1, 3):
+            p = cal.probability_from_evidence(n_sources=n, independent_sources=indep)
+            assert 0.0 <= p <= 1.0
