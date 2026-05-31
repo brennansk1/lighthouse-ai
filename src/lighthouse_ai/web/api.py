@@ -23,7 +23,6 @@ from pydantic import BaseModel
 from ..governor import BUDGET_DEFAULTS, Governor
 from ..paths import Paths
 from ..persistence import integrity_check, open_db
-from ..verification.positions import score_all
 from .events import EventBus
 
 # ---- request bodies -------------------------------------------------------
@@ -750,7 +749,14 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
 
     @app.get("/api/calibration", tags=["positions"])
     def calibration() -> dict[str, Any]:
-        return score_all(paths.positions_db)
+        from ..verification.positions import calibration_report
+        return calibration_report(paths.positions_db)
+
+    @app.get("/api/positions/human-queue", tags=["positions"])
+    def human_queue() -> dict[str, Any]:
+        """Positions the resolver deferred for a human decision (Track tab)."""
+        from ..verification.positions import list_human_queue
+        return {"queue": list_human_queue(paths.positions_db)}
 
     # ========================= HYPOTHESES ==========================
 

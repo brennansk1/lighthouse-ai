@@ -229,3 +229,57 @@ def score_all(positions_db: Path) -> dict[str, float]:
         "mean_outcome_rate": mean_outcome,
         "calibration_error": abs(mean_prob - mean_outcome),
     }
+
+
+def calibration_report(positions_db: Path) -> dict:
+    """Honest, display-ready calibration summary for the Track tab.
+
+    Extends :func:`score_all` (whose keys are preserved) with the proper-scoring
+    statistics the improvement memo calls for, all computed in pure Python:
+
+    * ``log_score`` — logarithmic proper score (punishes overconfidence harder);
+    * ``ece`` — expected calibration error;
+    * ``decomposition`` — Murphy's reliability / resolution / uncertainty, so the
+      UI can separate "honest about uncertainty" from "actually discriminating";
+    * ``reliability`` — per-WEP-band predicted-vs-observed rate with **Beta-Binomial
+      shrinkage and a 90% credible interval**, so sparse bands are not over-read
+      (a band with one resolved item sits near the diagonal with a wide interval,
+      not at a misleading 0% or 100%);
+    * ``open`` / ``awaiting_human`` — counts so the user sees how much is still
+      pending and how many need their decision.
+
+    With no resolved positions, returns the headline zeros plus empty curves —
+    never a fabricated point estimate.
+    """
+    from typing import Any
+
+    from . import calibration as cal
+    from .wep import WEP_BANDS
+
+    base: dict[str, Any] = dict(score_all(positions_db))
+    conn = open_db(positions_db)
+    try:
+        rows = conn.execute(
+            "SELECT confidence, outcome FROM positions WHERE outcome IS NOT NULL"
+        ).fetchall()
+        open_n = conn.execute(
+            "SELECT COUNT(*) FROM positions WHERE outcome IS NULL").fetchone()[0]
+    finally:
+        conn.close()
+    preds: list[tuple[float, bool]] = [
+        (float(p or 0.0), bool(o)) for p, o in rows]
+    bins = [(b.low, min(b.high, 1.0)) for b in WEP_BANDS]
+    curve = cal.reliability_curve(preds, bins) if preds else []
+    # attach the plain-language band label to each populated bin
+    for row in curve:
+        for b in WEP_BANDS:
+            if abs(b.low - row["bin_lo"]) < 1e-6:
+                row["band"] = b.label
+                break
+    base["log_score"] = round(cal.mean_log_score(preds), 5) if preds else 0.0
+    base["ece"] = cal.expected_calibration_error(preds) if preds else 0.0
+    base["decomposition"] = cal.brier_decomposition(preds)
+    base["reliability"] = curve
+    base["open"] = int(open_n)
+    base["awaiting_human"] = len(list_human_queue(positions_db))
+    return base

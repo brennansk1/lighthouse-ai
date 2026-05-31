@@ -251,11 +251,11 @@ const TABS = [
   {
     id: 'tab-track', icon: 'track', name: 'Track',
     summary: 'Hold predictions accountable over time.',
-    body: 'Track records clear predictions — specific claims with a stated chance. As predictions are decided, Lighthouse scores how accurate they were (an accuracy score, technically the Brier score) and plots the trend. The tab also holds the list of Open and Decided predictions and anything that needs your attention.',
+    body: 'Track records clear predictions — specific claims with a stated chance. When a prediction comes due, Lighthouse settles it from fresh evidence rather than its own memory; what it cannot settle on its own lands in "Needs your call" for you to decide. As predictions resolve, it scores how accurate they were (an accuracy score, technically the Brier score), plots the trend, and shows — for each confidence level — how often those claims actually came true, with a range that reflects how few have resolved so far.',
     points: [
-      'See whether the stated chances matched real outcomes.',
+      'See, by confidence level, how often the predictions actually came true.',
+      'Decide the predictions Lighthouse could not settle from evidence on its own.',
       'Work through the list of Open and Decided predictions.',
-      'Review items that were flagged for a closer look.',
     ],
   },
   {

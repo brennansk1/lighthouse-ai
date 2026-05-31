@@ -94,6 +94,44 @@ def test_score_all_reports_calibration_error(migrated_paths):
     assert abs(metrics["calibration_error"] - 0.3) < 1e-9
 
 
+def test_calibration_report_empty_has_no_fabricated_estimates(migrated_paths):
+    from lighthouse_ai.verification.positions import calibration_report
+    rep = calibration_report(migrated_paths.positions_db)
+    assert rep["n"] == 0
+    assert rep["reliability"] == []          # no curve invented from no data
+    assert rep["log_score"] == 0.0
+    assert rep["decomposition"]["n"] == 0
+    assert rep["open"] == 0 and rep["awaiting_human"] == 0
+
+
+def test_calibration_report_rich_metrics_and_counts(migrated_paths):
+    from lighthouse_ai.verification.positions import (
+        calibration_report,
+        enqueue_human_resolution,
+    )
+    db = migrated_paths.positions_db
+    # two resolved in the "likely" band (0.8): one hit, one miss; one still open.
+    p1 = record_position(db, claim="A", probability=0.8)
+    p2 = record_position(db, claim="B", probability=0.8)
+    open_p = record_position(db, claim="C", probability=0.6)
+    resolve_position(db, p1.id, outcome=True)
+    resolve_position(db, p2.id, outcome=False)
+    enqueue_human_resolution(db, open_p.id, "no machine-checkable criterion")
+
+    rep = calibration_report(db)
+    assert rep["n"] == 2
+    assert rep["open"] == 1 and rep["awaiting_human"] == 1
+    # reliability curve: the populated "likely" band carries a credible interval
+    # and is labeled in plain language.
+    likely = [r for r in rep["reliability"] if r.get("band") == "likely"]
+    assert likely, rep["reliability"]
+    row = likely[0]
+    assert row["n"] == 2 and row["observed_lo"] <= row["observed"] <= row["observed_hi"]
+    # decomposition + proper score present and finite
+    assert rep["decomposition"]["n"] == 2
+    assert rep["log_score"] >= 0.0
+
+
 def test_resolve_position_missing_raises(migrated_paths):
     with pytest.raises(KeyError):
         resolve_position(migrated_paths.positions_db, 9999, outcome=True)

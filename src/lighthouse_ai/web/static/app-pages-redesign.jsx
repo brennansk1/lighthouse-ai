@@ -2869,6 +2869,128 @@ function ConfidenceLegend() {
   );
 }
 
+// "Needs your call" — predictions the auto-resolver couldn't decide from evidence
+// (subjective, long-horizon, or nothing found), so a person decides. One claim per
+// row with two plain buttons. This is the human-in-the-loop the resolver defers to
+// instead of guessing from the model's own memory.
+function HumanQueue({ toast }) {
+  const { data, loading, reload } = useApi('/api/positions/human-queue', { pollMs: 0 });
+  const [busy, setBusy] = React.useState(null);
+  const queue = (data && Array.isArray(data.queue)) ? data.queue : [];
+  if (loading || queue.length === 0) return null;  // quiet when there's nothing to do
+  async function decide(id, cameTrue) {
+    setBusy(id);
+    try {
+      await apiPost(`/api/positions/${id}/resolve`,
+        { outcome: cameTrue ? 'confirmed' : 'refuted' });
+      toast && toast.show('Recorded — thanks, that sharpens the accuracy score.', 'success');
+      reload();
+    } catch (e) {
+      toast && toast.show('Could not save that — please try again.', 'error');
+    } finally { setBusy(null); }
+  }
+  return (
+    <div style={{ ...card, padding: '14px 16px', marginBottom: GAP }}>
+      <div style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 700,
+        color: 'var(--ink)', marginBottom: 4 }}>
+        Needs your call <span style={{ fontWeight: 500, color: 'var(--muted)' }}>
+          ({queue.length})</span></div>
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.55,
+        maxWidth: '72ch', marginBottom: 12 }}>
+        These predictions are past due, but Lighthouse couldn't settle them from the
+        evidence on its own — so it's asking you rather than guessing. Mark each one
+        as it actually turned out; your answer feeds the accuracy score.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {queue.map((q) => (
+          <div key={q.position_id} style={{ display: 'flex', alignItems: 'center',
+            gap: 12, padding: '10px 12px', borderRadius: 7,
+            border: '1px solid var(--rule)', background: 'var(--rule-soft)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, color: 'var(--ink)' }}>{q.claim}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                {q.reason}</div>
+            </div>
+            <button disabled={busy === q.position_id}
+              onClick={() => decide(q.position_id, true)}
+              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12.5,
+                fontWeight: 600, cursor: 'pointer', color: '#fff',
+                background: 'var(--green-dark)', border: 'none' }}>
+              Came true</button>
+            <button disabled={busy === q.position_id}
+              onClick={() => decide(q.position_id, false)}
+              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12.5,
+                fontWeight: 600, cursor: 'pointer', color: 'var(--ink)',
+                background: 'transparent', border: '1px solid var(--rule)' }}>
+              Didn't</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Per-band reliability: "when Lighthouse says 'likely,' how often is it right?"
+// Shows the observed rate with a credible interval (so a band with little data
+// reads as uncertain, not as a misleading 0% or 100%) plus an honest one-line
+// read on over/under-confidence. Renders nothing until there are resolved
+// predictions — no fabricated curve.
+function ReliabilityBands() {
+  const { data } = useApi('/api/calibration', { pollMs: 0 });
+  const rows = (data && Array.isArray(data.reliability)) ? data.reliability : [];
+  if (!data || !data.n || rows.length === 0) return null;
+  const pred = data.mean_probability || 0, obs = data.mean_outcome_rate || 0;
+  const gap = pred - obs;
+  const read = Math.abs(gap) < 0.05
+    ? 'On balance, its stated confidence has matched reality well.'
+    : (gap > 0
+      ? 'On balance, it has been a little overconfident — claims came true less often than stated.'
+      : 'On balance, it has been a little underconfident — claims came true more often than stated.');
+  const pct = (x) => `${Math.round(x * 100)}%`;
+  return (
+    <div style={{ ...card, padding: '14px 16px', marginBottom: GAP }}>
+      <div style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 700,
+        color: 'var(--ink)', marginBottom: 4 }}>
+        When it says a confidence, how often is it right?</div>
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.55,
+        maxWidth: '72ch', marginBottom: 10 }}>
+        For each confidence level, this compares what Lighthouse predicted against
+        how often those claims actually came true. The range shows how sure we can
+        be given how few have resolved so far — it narrows as more are decided.
+        {' '}{read}
+      </div>
+      <table style={{ borderCollapse: 'collapse', fontSize: 12, width: '100%' }}>
+        <thead><tr>
+          {[
+            { h: 'Confidence', t: 'The band Lighthouse stated.' },
+            { h: 'It predicted', t: 'Average stated probability in this band.' },
+            { h: 'Actually came true', t: 'Observed rate, adjusted for small samples, with a 90% range.' },
+            { h: 'Decided', t: 'How many predictions in this band have resolved.' },
+          ].map(({ h, t }) => (
+            <th key={h} title={t}
+              style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--muted)',
+                cursor: 'help' }}>{h}</th>
+          ))}
+        </tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.bin_lo} style={{ borderTop: '1px solid var(--rule-soft)' }}>
+              <td style={{ padding: '4px 8px', textTransform: 'capitalize' }}>
+                {r.band || `${pct(r.bin_lo)}–${pct(r.bin_hi)}`}</td>
+              <td style={{ padding: '4px 8px' }}>{pct(r.predicted)}</td>
+              <td style={{ padding: '4px 8px' }}>
+                {pct(r.observed)}{' '}
+                <span style={{ color: 'var(--muted)' }}>
+                  ({pct(r.observed_lo)}–{pct(r.observed_hi)})</span></td>
+              <td style={{ padding: '4px 8px' }}>{r.n}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // Track is the accountability surface. PositionsPage and IntelligencePage each
 // render their own PageHeader, so we lead with a single SectionIntro that frames
 // the whole tab and let those surfaces carry their own section titles, rather
@@ -2885,11 +3007,13 @@ function TrackPage(props) {
         each one a specific claim with a stated chance. A prediction stays open
         until the real outcome is known, then it is marked right or wrong. Over
         time you can see how well those chances matched reality: a lower accuracy
-        score is better. Below you'll find that trend, the list of open and decided
-        predictions, and anything that needs attention.
+        score is better. Below you'll find anything that needs your input, that
+        trend, and the list of open and decided predictions.
       </SectionIntro>
+      <HumanQueue {...props} />
       <ConfidenceLegend />
       <CalibrationTimeline {...props} />
+      <ReliabilityBands {...props} />
       {Positions ? React.createElement(Positions, props) : null}
       {Insights ? React.createElement(Insights, props) : null}
     </div>
