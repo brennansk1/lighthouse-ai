@@ -82,6 +82,13 @@ class SkillManifest:
     # --- Watch (Pattern 2) ---
     watchable: bool = False                   # has ≥1 watchable tool (since= incremental)
     watchable_tools: tuple[str, ...] = ()
+    # --- Auth (mandatory keys) ---
+    # Environment variable(s) that MUST be set for this source to fetch at all.
+    # Set only for sources that hard-fail without a key (e.g. FRED 400, BEA 403);
+    # leave empty for keyless-capable sources so they are never needlessly blocked.
+    # The runner pre-flights these and short-circuits with an actionable message
+    # instead of firing a doomed request.
+    requires_key_env: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -140,6 +147,7 @@ class SkillManifest:
             "perspective_lens": self.perspective_lens,
             "authority": self.authority,
             "watchable": self.watchable,
+            "requires_key": bool(self.requires_key_env),
         }
 
 
@@ -205,6 +213,7 @@ def manifest_from_dict(data: dict, *, expected_id: str | None = None) -> SkillMa
         authority=str(data.get("authority", "")),
         watchable=bool(data.get("watchable", False)),
         watchable_tools=_as_tuple(data.get("watchable_tools"), "watchable_tools", skill_id),
+        requires_key_env=_as_tuple(data.get("requires_key_env"), "requires_key_env", skill_id),
     )
 
 

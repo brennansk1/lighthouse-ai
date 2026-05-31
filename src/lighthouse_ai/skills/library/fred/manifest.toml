@@ -16,6 +16,7 @@ default_grade = "A"   # FRED redistributes official government series; grade A f
 license       = "public-domain"
 signed        = true
 enabled_by_default = false   # requires api_key + trust add
+requires_key_env = ["FRED_API_KEY"]   # FRED 400s without a key — pre-flight short-circuit
 
 # --- recommender scoring surface ---
 supported_question_types = [

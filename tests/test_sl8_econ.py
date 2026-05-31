@@ -179,12 +179,16 @@ def broker(tmp_path: Path):
 
 
 @pytest.fixture()
-def fred_skill():
+def fred_skill(monkeypatch):
+    # FRED hard-requires a key; the runner now pre-flights it, so a configured
+    # key is the precondition for these "skill runs + tags docs" tests.
+    monkeypatch.setenv("FRED_API_KEY", "test-key")
     return load_skill("fred")
 
 
 @pytest.fixture()
-def bea_skill():
+def bea_skill(monkeypatch):
+    monkeypatch.setenv("BEA_API_KEY", "test-key")
     return load_skill("bea")
 
 
@@ -245,6 +249,32 @@ def test_fred_run_returns_tagged_documents(monkeypatch, fred_skill, broker):
         assert doc.metadata["skill_id"] == "fred"
         assert doc.metadata["grade"] == "A"
         assert doc.metadata["fetch_backend"] == "tier-a"
+
+
+def test_fred_declares_required_key(fred_skill):
+    assert fred_skill.manifest.requires_key_env == ("FRED_API_KEY",)
+
+
+def test_keyless_source_declares_no_required_key():
+    # BLS works keyless (lower rate limit) — it must NOT be blocked by a pre-flight.
+    assert load_skill("bls").manifest.requires_key_env == ()
+
+
+def test_fred_preflight_short_circuits_without_key(monkeypatch, broker):
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    skill = load_skill("fred")
+    calls = {"n": 0}
+
+    def _spy(*a, **k):
+        calls["n"] += 1
+        return []
+
+    monkeypatch.setattr("lighthouse_ai.sources.fred.search_series", _spy)
+    result = run_skill(skill, "unemployment", broker=broker)
+    assert not result.ok
+    assert "FRED_API_KEY" in result.error           # actionable, names the env var
+    assert result.documents == []
+    assert result.fetches == 0 and calls["n"] == 0   # never hit the network
 
 
 def test_fred_run_no_community_tag(monkeypatch, fred_skill, broker):

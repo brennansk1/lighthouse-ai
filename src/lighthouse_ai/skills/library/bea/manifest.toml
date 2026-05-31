@@ -16,6 +16,7 @@ default_grade = "A"   # BEA is the primary source for U.S. national accounts
 license       = "public-domain"
 signed        = true
 enabled_by_default = false   # requires api_key + trust add
+requires_key_env = ["BEA_API_KEY"]   # BEA 403s without a UserID key — pre-flight short-circuit
 
 # --- recommender scoring surface ---
 supported_question_types = [

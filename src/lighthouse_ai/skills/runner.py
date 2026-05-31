@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import inspect
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -69,6 +70,22 @@ def _call_entrypoint(skill: LoadedSkill, ctx: SkillContext, question: str, max_r
             return skill.entrypoint(ctx, question)
 
 
+def _missing_key_message(manifest: Any) -> str | None:
+    """Pre-flight: an actionable message when a mandatory API key is unset, else None.
+
+    A source declaring ``requires_key_env`` hard-fails without a key, so firing the
+    request just to collect a 400/401/403 is wasted effort and a confusing failure.
+    Instead we short-circuit with plain-language guidance. Sources that work keyless
+    declare no env and are never affected.
+    """
+    envs = tuple(getattr(manifest, "requires_key_env", ()) or ())
+    if not envs or any(os.environ.get(e) for e in envs):
+        return None
+    primary = envs[0]
+    return (f"{manifest.name} needs a free API key to fetch. Set the {primary} "
+            f"environment variable (see this source's guide), then try again.")
+
+
 def run_skill(
     skill: LoadedSkill,
     question: str,
@@ -86,6 +103,10 @@ def run_skill(
     is a hint the skill may honor. Exceptions are caught and reported on the
     result rather than propagated.
     """
+    key_msg = _missing_key_message(skill.manifest)
+    if key_msg is not None:
+        log.info("skills.key_required", skill=skill.manifest.id)
+        return SkillRun(skill_id=skill.manifest.id, error=key_msg)
     ctx = build_context(
         skill.manifest,
         broker=broker,
@@ -132,6 +153,10 @@ def run_watchable(
             skill_id=skill.manifest.id,
             error="skill is not watchable (no run_watchable entrypoint)",
         )
+    key_msg = _missing_key_message(skill.manifest)
+    if key_msg is not None:
+        log.info("skills.key_required", skill=skill.manifest.id)
+        return SkillRun(skill_id=skill.manifest.id, error=key_msg)
     ctx = build_context(
         skill.manifest,
         broker=broker,
