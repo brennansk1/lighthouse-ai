@@ -1,5 +1,10 @@
 # Lighthouse — Production Readiness Checklist
 
+> **The bar is defined in [`DEFINITION_OF_DONE.md`](./DEFINITION_OF_DONE.md).** That
+> file is the rubric ("what does done mean?"); this file is the **status tracker**
+> (where each feature sits *against that bar*). A ✅ here must have cleared all 7
+> per-feature gates there. "Built but not validated with real data" is **🟡**, never ✅.
+
 Status snapshot: **269 Python modules · ~49,000 source lines · 127 test files · 2816 tests pass · 103 opt-in skips · 37 research-skill sources · ruff clean · mypy 0 (blocking) · coverage ~82%**. A 4-wave full-codebase audit fixed ~32 real bugs (redirect-SSRF, audit-chain tamper-evidence, skill import-guard escapes, data-loss/durability, dead planner path, …) — each with a regression test. Shipped since the last snapshot: Sandbox workspace, Watch-a-website (v2), intent recipes, skill-scaffold generator, steerability/reproducibility, Settings API-key onboarding, global Pause, hardware OOM/utilization guardrails, Watch-alert notifications, and the in-app Info-tab guide.
 Legend: ✅ done & tested (offline) · 🟡 built but needs-real-backend/live-data · 🔌 built, needs runtime wiring · ⬜ not started.
 

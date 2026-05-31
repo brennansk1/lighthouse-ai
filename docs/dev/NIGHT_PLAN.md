@@ -1,5 +1,11 @@
 # Lighthouse — Overnight Finish-to-Quality Plan
 
+> **⚠️ HISTORICAL (superseded).** The "competitive thesis" and per-mode quality bar
+> below are still the design intent, but the task numbers (#26–#56) and queue are
+> from the `night/finish-to-quality` era and are long since shipped. The current
+> standard lives in `../DEFINITION_OF_DONE.md`; current status in
+> `PRODUCTION_CHECKLIST.md`. Kept for the thesis + provenance.
+
 Goal: take Lighthouse from "all 7 modes wired" to "production-grade, ready for
 real use" overnight, autonomously. This file is the source of truth for the
 quality bar and the work queue. Each task lists its **Definition of Done (DoD)**.

@@ -4,6 +4,13 @@
 > resuming (e.g. after a token-limit reset) to know exactly where things stand and what's next.
 > Update it as work lands. The git history is the source of truth; this is the map.
 
+## The bar — what "done" means
+**[`docs/DEFINITION_OF_DONE.md`](../DEFINITION_OF_DONE.md) is the authoritative standard.**
+Nothing is "done" until it clears all 7 per-feature gates (functional · tested ·
+measured · UX · degrades safely · honest/auditable · documented). "Built but not
+validated with real data" is 🟡, never ✅. UX-simplicity is a hard gate, not polish.
+`PRODUCTION_CHECKLIST.md` tracks status against that bar.
+
 ## Guiding principle — design for the user
 Every feature is designed and built from the **end-user's** mental model and need first, not the
 implementation's. Concretely: plain-language labels (no internal jargon — "we can read this page", not

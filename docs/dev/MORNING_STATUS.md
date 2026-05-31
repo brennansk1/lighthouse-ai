@@ -1,5 +1,10 @@
 # Overnight build — morning status
 
+> **⚠️ HISTORICAL (superseded).** This captures the `night/finish-to-quality` era
+> (~1295 tests). The current state is far ahead (2889 tests, live-validated). For
+> where things actually stand, read `DEV_LOG.md` → "Current state" and the bar in
+> `../DEFINITION_OF_DONE.md`. Kept for provenance only.
+
 Branch: `night/finish-to-quality` (all work committed; nothing pushed). Suite:
 **1295 passing, 5 skipped** (real-backend + litestream gated), ruff clean.
 
