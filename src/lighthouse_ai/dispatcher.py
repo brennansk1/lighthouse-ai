@@ -863,6 +863,37 @@ def _persist_artifact(state_db, *, job_id: str, mode_key: str,
     return draft_id
 
 
+def _emit_prov_sidecar(paths: Paths, *, draft_id: str, job_id: str,
+                       question: str, mode_key: str, summary: dict,
+                       backends: dict, gateway: Gateway | None) -> None:
+    """Write a PROV-O JSON sidecar next to the staged artifact (best-effort).
+
+    The dispatcher already embeds a provenance manifest in the artifact body;
+    this also writes a self-contained ``<draft_id>.prov.json`` that travels with
+    the artifact (W3C PROV-O), so every research run — not just the legacy
+    ``ResearchPipeline`` path — leaves a sidecar. Never raises into the dispatch
+    loop. Time-free for determinism (the draft row carries created_at).
+    """
+    try:
+        from .provenance import build_run_sidecar, write_run_sidecar
+        body_html = summary.get("body_html", "") or ""
+        content_hash = hashlib.sha256(body_html.encode()).hexdigest()
+        sampling = None
+        if gateway is not None and hasattr(gateway, "sampling_provenance"):
+            try:
+                sampling = gateway.sampling_provenance()
+            except Exception:
+                sampling = None
+        sidecar = build_run_sidecar(
+            draft_id=draft_id, job_id=job_id, question=question, mode=mode_key,
+            backends=backends or {}, source_count=summary.get("source_count", 0),
+            content_hash=content_hash, sampling=sampling)
+        write_run_sidecar(paths.staging_dir / f"{draft_id}.prov.json", sidecar)
+        _log.info("prov_sidecar.written", draft_id=draft_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.warning("prov_sidecar.failed", draft_id=draft_id, error=repr(exc))
+
+
 def _audit(paths: Paths, event_type: str, payload: dict) -> None:
     if not paths.audit_db.exists():
         return
@@ -1076,6 +1107,11 @@ def run_job(paths: Paths, job: ClaimedJob, *,
         draft_id = _persist_artifact(
             paths.state_db, job_id=job.id, mode_key=mode_key,
             artifact_type=spec.artifact_type.value, summary=summary)
+        # PROV-O sidecar travels with the artifact (every run, not just pipeline).
+        _emit_prov_sidecar(
+            paths, draft_id=draft_id, job_id=job.id,
+            question=str(job.meta.get("topic", "")), mode_key=mode_key,
+            summary=summary, backends=backends, gateway=gateway)
     except Exception as exc:
         _set_status(paths.state_db, job.id, "failed")
         _audit(paths, "job.failed", {"job_id": job.id, "error": str(exc)})

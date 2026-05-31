@@ -94,6 +94,22 @@ def test_run_job_offline_produces_review_and_draft(migrated_paths):
     assert "winner" in body and body["winner"] in {"Postgres", "SQLite"}
 
 
+def test_run_job_emits_prov_sidecar(migrated_paths):
+    """Every dispatcher run (not just the pipeline) writes a PROV-O sidecar."""
+    from lighthouse_ai.provenance import load_run_sidecar
+    _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
+    job = claim_one_job(migrated_paths.state_db)
+    draft_id = run_job(migrated_paths, job)
+    sidecar = migrated_paths.staging_dir / f"{draft_id}.prov.json"
+    assert sidecar.exists(), f"no PROV-O sidecar at {sidecar}"
+    doc = load_run_sidecar(sidecar)
+    assert doc["lighthouse:draftId"] == draft_id
+    assert doc["activity"]["lighthouse:mode"] == "decide"
+    # content hash is a real SHA-256 of the artifact body
+    h = doc.get("lighthouse:contentHash")
+    assert h and len(h) == 64
+
+
 def test_dispatch_once_end_to_end(migrated_paths):
     _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
     draft_id = dispatch_once(migrated_paths)
