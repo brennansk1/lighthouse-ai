@@ -50,7 +50,7 @@ entire run tamper-evident.
   (source count / independence / entailment / contradiction — not a fixed heuristic) +
   honest calibration display: log score, Murphy decomposition, per-band reliability with
   Beta-Binomial shrinkage + credible intervals (`verification/calibration.py`)
-- **Research-skills library** — **36 sources**, one skill per source (academic, clinical,
+- **Research-skills library** — **37 sources**, one skill per source (academic, clinical,
   legal, U.S.-federal, financial, economic-data, engineering, reference, media, 6 news
   outlets + a news orchestrator), each a self-contained folder discovered by directory scan;
   capability-restricted runner (a skill can't bypass the fetch/broker path); unsigned skills
@@ -84,15 +84,25 @@ entire run tamper-evident.
   reclaim your machine; honored by every scheduled loop
 - **Hardware-aware**: KV/context OOM headroom + MoE-paging-aware model fit + RAM-aware
   concurrency guardrails (won't swap a 24 GB box; picks the best model that fits)
-- **In-app guide** in the Info tab covering every feature in plain language
+- **In-app guide** in the Guide tab covering every feature in plain language
+- **Compounding intelligence** (`subconscious/`, `compounding/`): a scheduler-gated,
+  overlap-guarded tick engine emits passive **reflections** (provenance-tracked, never
+  auto-posted, capped per tick — acting on one spawns a fresh job) and actionable
+  **escalations**, surfaced in Track's **Intelligence** view; a deterministic, LLM-free
+  **Hotness Score** ranks entity salience for Watch + dossier materialization; the
+  **Archivist** content-addresses conversations/reports (idempotent, optional Logseq)
 - **SQLite-WAL spine**: outbox + saga compensation + HMAC-chained (tamper-evident) audit log
 - **Governor**: hierarchical token buckets, loop detector, injection gate, degradation
-  tiers, cost report
+  tiers, cost report, **tool-policy risk tiers** (capability tiers + runtime refusal logged
+  to the audit chain), and a **Scheduler Gate** — a host-courtesy throttle that resolves
+  power/CPU/server signals to a policy (Aggressive/Normal/Throttled/Paused) every LLM call
+  passes through: the third axis alongside the budget + RAM guard
 - **Sandbox**: EICAR / PDF-JS / HTML-script / zip-bomb scanners + quarantine
-- **Web dashboard**: 8 tabs (Research, Library, Watch, Track, Activity, Health,
-  Info, Settings) — Research is the landing page; SSE live updates, light/dark
+- **Web dashboard**: 9 tabs (Research, Library, Watch, Track, Activity, Sandbox,
+  Health, Guide, Settings) — Research is the landing page; SSE live updates, light/dark
   theme, per-artifact-type viewers (report/digest/table/timeline/matrix/verdict/
-  transcript) with Markdown/CSV/JSON export; depth selector in the Research wizard
+  transcript) with Markdown/CSV/JSON export; depth selector in the Research wizard; the
+  **Intelligence** surface (reflections + escalations) lives inside Track
 - **TUI**: 7 Textual screens, themed coastal light/dark, offline-graceful
 - **CLI**: `lighthouse`, `lighthouse-supervisor`, `lighthouse-tui` console scripts;
   `lighthouse audit-egress`, `lighthouse resolver run`, and more
@@ -114,7 +124,7 @@ the short version:
 - **Real-LLM research quality** — framing planner, synthesizer denoiser, debate judge, and
   recommender LLM rerank all work offline; run them under `LIGHTHOUSE_REAL_BACKEND=1` (Ollama
   `bge-m3` + `qwen3` + FlagReranker) and score against the golden set / DeepResearch Bench.
-- **Live source fetching through the egress guard** — the 36 skills fetch through
+- **Live source fetching through the egress guard** — the 37 skills fetch through
   `ctx.fetch → politeness → broker`; validate each against its real API (rate limits, auth
   keys, parser drift, graceful degradation when a domain isn't trust-added).
 - **Optional ML models** — reranker (precision@5), entailment/HHEM (faithfulness), deBERTa
@@ -285,7 +295,7 @@ Sources (arXiv · OpenAlex · PubMed · Crossref · RSS)
 
 ## Status
 
-**2950 tests passing · 83 skipped (opt-in real-backend / litestream binary / absent optional models) · ruff clean · mypy 0 (blocking CI gate) · 275 modules · ~49k source lines · 37 research-skill sources · coverage ~82% · 4-wave codebase audit complete (~32 real bugs fixed incl. a redirect-SSRF and the audit-chain tamper-evidence). macOS M4 24 GB live-validated (17 bugs fixed against real deps). The offline-buildable product is feature-complete; the calibration pipeline is now evidence-grounded (no self-grading), every run emits a PROV-O sidecar, and budget/monitor notifications are wired. Remaining gate: soak/signing/cross-platform + observing the live calibration loop on the box — see Path to deployment.**
+**2950 tests passing · 83 skipped (opt-in real-backend / litestream binary / absent optional models) · ruff clean · mypy 0 (blocking CI gate) · 275 modules · ~49k source lines · 37 research-skill sources · coverage ~82% · 4-wave codebase audit complete (~32 real bugs fixed incl. a redirect-SSRF and the audit-chain tamper-evidence). macOS M4 24 GB live-validated (17 bugs fixed against real deps). The offline-buildable product is feature-complete; the calibration pipeline is now evidence-grounded (no self-grading), every run emits a PROV-O sidecar, and budget/monitor notifications are wired. Every feature is measured against [`docs/DEFINITION_OF_DONE.md`](./docs/DEFINITION_OF_DONE.md), and the R5–R8 release gates are now turnkey — a soak harness (`scripts/soak.py`), systemd/launchd service units, and a release runbook ([`docs/RELEASE.md`](./docs/RELEASE.md)). Remaining gate: *running* the 24h soak + signing + cross-platform pass and observing the live calibration loop on the box — see Path to deployment.**
 
 ## Development
 
