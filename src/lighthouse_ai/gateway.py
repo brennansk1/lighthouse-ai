@@ -587,9 +587,26 @@ def resolve_against_installed(profile: HardwareProfile, installed: list[str],
     *currently available* RAM (not total capacity), avoiding a too-big pick that
     would only ever degrade to the low-memory mock.
     """
+    import os
+
     from .hardware import llm_budget_gb
     budget = llm_budget_gb(profile) if budget_gb is None else budget_gb
     out: dict[str, str] = {}
+
+    # Explicit override: LIGHTHOUSE_FORCE_MODEL pins every reasoning role to one
+    # installed tag, bypassing the budget-fit walk. This makes real-backend runs
+    # reproducible and RAM-bounded (e.g. force a 9B on a box whose budget would
+    # otherwise pull a 14-24B). Embedding still resolves normally (bge-m3).
+    forced = os.environ.get("LIGHTHOUSE_FORCE_MODEL", "").strip()
+    if forced:
+        ftag = forced if forced in installed else _first_installed([forced], installed)
+        if ftag:
+            for role in ("planner", "researcher", "synthesizer", "aux_context"):
+                out[role] = ftag
+            embed_forced = _first_installed(_EMBED_PREFERENCE, installed)
+            if embed_forced:
+                out["embedding"] = embed_forced
+            return out
 
     # Reasoning: walk preference, prefer ones that fit the budget.
     reasoning = None

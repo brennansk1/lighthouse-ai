@@ -46,15 +46,19 @@ _SKIP_REASON = (
     "set LIGHTHOUSE_REAL_BACKEND=1 and have ollama running on 127.0.0.1:11434"
 )
 
+# entailment.available() now requires a *real* entailment scorer (MiniCheck).
+# The old cosine-similarity HHEM fallback (sentence_transformers) was removed
+# because cosine can pass a claim and its own negation, so sentence_transformers
+# alone no longer makes the faithfulness gate available.
 _MINICHECK_AVAILABLE = importlib.util.find_spec("minicheck") is not None
-_HHEM_AVAILABLE = importlib.util.find_spec("sentence_transformers") is not None
-_ENTAILMENT_MODEL_AVAILABLE = _MINICHECK_AVAILABLE or _HHEM_AVAILABLE
+_ENTAILMENT_MODEL_AVAILABLE = _MINICHECK_AVAILABLE
 
 pytestmark = pytest.mark.skipif(
     not (_REAL_BACKEND_OK and _ENTAILMENT_MODEL_AVAILABLE),
     reason=(
-        "requires LIGHTHOUSE_REAL_BACKEND=1 + (minicheck OR sentence_transformers) "
-        "installed — see docs/PRODUCTION_CHECKLIST.md §C"
+        "requires LIGHTHOUSE_REAL_BACKEND=1 + minicheck installed "
+        "(sentence_transformers/HHEM cosine is no longer a real entailment "
+        "scorer) — see docs/PRODUCTION_CHECKLIST.md §C"
     ),
 )
 
@@ -251,5 +255,6 @@ def test_faithfulness_scorer_available() -> None:
 
     assert available(), (
         "entailment.available() returned False even though the test was not "
-        "skipped — MiniCheck and sentence_transformers both seem unavailable."
+        "skipped — MiniCheck is the only real entailment scorer now (the cosine "
+        "HHEM fallback was removed); install the [faithfulness] extra (minicheck)."
     )

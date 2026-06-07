@@ -54,7 +54,13 @@ def search_arxiv(query: str, *, max_results: int = 5,
     Pass ``client`` to reuse a connection (and to make the request mockable in
     tests); otherwise a temporary client is used.
     """
-    params: dict[str, str | int] = {"search_query": f"all:{query}", "start": 0,
+    # Only a bare keyword query gets wrapped in ``all:``. A query that already
+    # targets an arXiv field (cat:, au:, ti:, abs:, id:, …) is passed verbatim —
+    # wrapping it ("all:cat:cs.LG …") makes arXiv reject the request with 400.
+    _q = query.strip()
+    _field_prefixes = ("all:", "cat:", "au:", "ti:", "abs:", "id:", "co:", "jr:", "rn:")
+    _search_query = _q if _q.lower().startswith(_field_prefixes) else f"all:{query}"
+    params: dict[str, str | int] = {"search_query": _search_query, "start": 0,
                                     "max_results": max_results,
                                     "sortBy": "relevance", "sortOrder": "descending"}
     owns_client = client is None

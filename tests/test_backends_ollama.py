@@ -310,11 +310,31 @@ def test_real_ollama_chat_returns_tokens():
             pytest.skip(
                 "no chat-capable models pulled — run `ollama pull qwen3:8b` first"
             )
-        # Prefer a small model for speed, else any chat model.
-        small = [m for m in chat_models
-                 if any(s in m.lower() for s in ("8b", "7b", "mini", "small", "3b"))]
-        model = sorted(small or chat_models)[0]
+        # Honor an explicit pin first (LIGHTHOUSE_FORCE_MODEL), so this smoke
+        # uses the same model the rest of the real-backend suite is pinned to.
+        forced = _os.environ.get("LIGHTHOUSE_FORCE_MODEL", "").strip()
+        if forced and forced in models:
+            model = forced
+        else:
+            # Prefer a genuinely small model for speed. Match on parameter-count
+            # suffixes only — brand names like "mistral-small:24b" / "devstral-
+            # small" contain "small" but are 15-24 GB, so never match on "small".
+            small = [m for m in chat_models if any(
+                s in m.lower()
+                for s in ("0.5b", "1b", "1.5b", "2b", "3b", "4b", "7b", "8b", "9b", "mini")
+            )]
+            model = sorted(small or chat_models)[0]
+        # Reasoning models (e.g. qwen3.5) emit <think>…</think> tokens that the
+        # backend strips, so a small max_tokens budget can be spent entirely on
+        # thinking and leave empty visible text. Give generous headroom so a
+        # one-word answer can land after any thinking.
         resp = b.chat(model, "Reply with the single word: ok.",
-                      sampling={"temperature": 0.0, "max_tokens": 8})
-    assert resp.text
+                      sampling={"temperature": 0.0, "max_tokens": 256})
+    # The real signal: the chat round-trip generated tokens.
     assert resp.completion_tokens > 0
+    # Visible text is expected — unless a reasoning model spent the whole budget
+    # on stripped <think> tokens and was cut off mid-thought (done_reason=length).
+    assert resp.text.strip() or resp.done_reason == "length", (
+        f"empty text and not truncated from {model} (done_reason="
+        f"{resp.done_reason}, completion_tokens={resp.completion_tokens})"
+    )

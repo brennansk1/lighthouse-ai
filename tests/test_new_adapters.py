@@ -501,7 +501,16 @@ REAL = pytest.mark.skipif(
 
 @REAL
 def test_live_semantic_scholar():
-    docs = search_semantic_scholar("transformer neural network", max_results=3)
+    import httpx
+    try:
+        docs = search_semantic_scholar("transformer neural network", max_results=3)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            pytest.skip(
+                "Semantic Scholar rate-limited the keyless request (429) — "
+                "environmental, not a code failure"
+            )
+        raise
     assert len(docs) >= 1
     assert all(d.metadata["source"] == "semantic_scholar" for d in docs)
     assert all(d.metadata["grade"] == "A" for d in docs)

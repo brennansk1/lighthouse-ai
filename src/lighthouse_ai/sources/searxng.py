@@ -94,7 +94,7 @@ def available(
                 client=client,
             )
         finally:
-            if owns_client:
+            if owns_client and client is not None:
                 client.close()
         return r.status_code == 200
     except Exception:
@@ -158,7 +158,7 @@ def search(
             f"SearXNG at {base} returned error: {exc}"
         ) from exc
     finally:
-        if owns_client:
+        if owns_client and client is not None:
             client.close()
 
     data = resp.json()
