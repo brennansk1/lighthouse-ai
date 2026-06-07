@@ -3,6 +3,7 @@ name        = "OECD Data"
 description = "OECD SDMX API: comparative cross-country economic and social indicators for OECD member countries and key partners. GDP, labor, prices, education, health, environment, taxation, and well-being."
 category    = "economics"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- fetch policy ---
 tier        = "A"

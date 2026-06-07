@@ -18,11 +18,16 @@ import xml.etree.ElementTree as ET
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _ESEARCH = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 _EFETCH = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 _HEADERS = {"User-Agent": "Lighthouse/0.1"}
+# Public NCBI E-utilities host this adapter contacts; authorized because the
+# user invoked the PubMed source. Mirrors allowed_domains in the pubmed skill
+# manifest so the skill rail and the adapter agree.
+_ALLOWED_HOSTS = frozenset({"eutils.ncbi.nlm.nih.gov"})
 
 
 def _parse_pmids(payload: bytes) -> list[str]:
@@ -99,14 +104,16 @@ def search_pubmed(query: str, *, max_results: int = 5,
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        search = client.get(_ESEARCH, headers=_HEADERS, params={
+        search = guarded_get(_ESEARCH, allowed_domains=_ALLOWED_HOSTS,
+                             headers=_HEADERS, client=client, params={
             "db": "pubmed", "term": query, "retmax": max_results,
             "retmode": "xml", "sort": "relevance"})
         search.raise_for_status()
         pmids = _parse_pmids(search.content)
         if not pmids:
             return []
-        fetch = client.get(_EFETCH, headers=_HEADERS, params={
+        fetch = guarded_get(_EFETCH, allowed_domains=_ALLOWED_HOSTS,
+                            headers=_HEADERS, client=client, params={
             "db": "pubmed", "id": ",".join(pmids), "retmode": "xml",
             "rettype": "abstract"})
         fetch.raise_for_status()

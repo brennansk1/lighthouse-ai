@@ -3,6 +3,7 @@ name        = "GitHub"
 description = "GitHub REST API v3: search repos, fetch READMEs, list releases/issues, get dependency graphs, licenses, security advisories (GHSA), and commit history. Watchable for new releases, issues, and commits."
 category    = "engineering"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- fetch policy ---
 # api.github.com and github.com are on the DEFAULT Lighthouse platform allowlist.

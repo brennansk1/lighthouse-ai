@@ -26,11 +26,20 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _PYPI_BASE = "https://pypi.org/pypi"
 _NPM_BASE = "https://registry.npmjs.org"
 _CRATES_BASE = "https://crates.io/api/v1/crates"
+
+# Public API hosts this adapter contacts; the user invoked the package source
+# for exactly these registries, so they are authorized for egress.
+_ALLOWED_HOSTS = frozenset({
+    "pypi.org",
+    "registry.npmjs.org",
+    "crates.io",
+})
 
 _PYPI_HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
 _NPM_HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
@@ -70,7 +79,12 @@ def pypi_search_package(
     if client is None:
         client = httpx.Client(headers=_PYPI_HEADERS, timeout=timeout)
     try:
-        resp = client.get(f"{_PYPI_BASE}/{query}/json")
+        resp = guarded_get(
+            f"{_PYPI_BASE}/{query}/json",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_PYPI_HEADERS,
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -137,7 +151,12 @@ def pypi_get_versions(
     if client is None:
         client = httpx.Client(headers=_PYPI_HEADERS, timeout=timeout)
     try:
-        resp = client.get(f"{_PYPI_BASE}/{name}/json")
+        resp = guarded_get(
+            f"{_PYPI_BASE}/{name}/json",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_PYPI_HEADERS,
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -189,7 +208,12 @@ def pypi_get_dependencies(
         client = httpx.Client(headers=_PYPI_HEADERS, timeout=timeout)
     try:
         url = f"{_PYPI_BASE}/{name}/{version}/json" if version else f"{_PYPI_BASE}/{name}/json"
-        resp = client.get(url)
+        resp = guarded_get(
+            url,
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_PYPI_HEADERS,
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -239,7 +263,12 @@ def pypi_get_dependents(
     if client is None:
         client = httpx.Client(headers=_PYPI_HEADERS, timeout=timeout)
     try:
-        resp = client.get(f"{_PYPI_BASE}/{name}/json")
+        resp = guarded_get(
+            f"{_PYPI_BASE}/{name}/json",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_PYPI_HEADERS,
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -304,9 +333,12 @@ def npm_search_package(
     if client is None:
         client = httpx.Client(headers=_NPM_HEADERS, timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_NPM_BASE}/-/v1/search",
+            allowed_domains=_ALLOWED_HOSTS,
             params={"text": query, "size": max_results},
+            headers=_NPM_HEADERS,
+            client=client,
         )
         resp.raise_for_status()
         objects = resp.json().get("objects") or []
@@ -356,7 +388,12 @@ def npm_fetch_package_metadata(
     if client is None:
         client = httpx.Client(headers=_NPM_HEADERS, timeout=timeout)
     try:
-        resp = client.get(f"{_NPM_BASE}/{name}")
+        resp = guarded_get(
+            f"{_NPM_BASE}/{name}",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_NPM_HEADERS,
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -404,7 +441,12 @@ def npm_get_versions(
     if client is None:
         client = httpx.Client(headers=_NPM_HEADERS, timeout=timeout)
     try:
-        resp = client.get(f"{_NPM_BASE}/{name}")
+        resp = guarded_get(
+            f"{_NPM_BASE}/{name}",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_NPM_HEADERS,
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -453,7 +495,12 @@ def npm_get_dependencies(
     if client is None:
         client = httpx.Client(headers=_NPM_HEADERS, timeout=timeout)
     try:
-        resp = client.get(f"{_NPM_BASE}/{name}")
+        resp = guarded_get(
+            f"{_NPM_BASE}/{name}",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_NPM_HEADERS,
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -506,7 +553,12 @@ def npm_get_dependents(
     if client is None:
         client = httpx.Client(headers=_NPM_HEADERS, timeout=timeout)
     try:
-        resp = client.get(f"{_NPM_BASE}/{name}")
+        resp = guarded_get(
+            f"{_NPM_BASE}/{name}",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_NPM_HEADERS,
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -568,9 +620,12 @@ def crates_search_package(
     if client is None:
         client = httpx.Client(headers=_CRATES_HEADERS, timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             _CRATES_BASE,
+            allowed_domains=_ALLOWED_HOSTS,
             params={"q": query, "per_page": max_results, "sort": "downloads"},
+            headers=_CRATES_HEADERS,
+            client=client,
         )
         resp.raise_for_status()
         crates = resp.json().get("crates") or []
@@ -618,7 +673,12 @@ def crates_fetch_package_metadata(
     if client is None:
         client = httpx.Client(headers=_CRATES_HEADERS, timeout=timeout)
     try:
-        resp = client.get(f"{_CRATES_BASE}/{name}")
+        resp = guarded_get(
+            f"{_CRATES_BASE}/{name}",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_CRATES_HEADERS,
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -669,7 +729,12 @@ def crates_get_versions(
     if client is None:
         client = httpx.Client(headers=_CRATES_HEADERS, timeout=timeout)
     try:
-        resp = client.get(f"{_CRATES_BASE}/{name}/versions")
+        resp = guarded_get(
+            f"{_CRATES_BASE}/{name}/versions",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_CRATES_HEADERS,
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -717,7 +782,12 @@ def crates_get_dependencies(
     if client is None:
         client = httpx.Client(headers=_CRATES_HEADERS, timeout=timeout)
     try:
-        resp = client.get(f"{_CRATES_BASE}/{name}/{version}/dependencies")
+        resp = guarded_get(
+            f"{_CRATES_BASE}/{name}/{version}/dependencies",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_CRATES_HEADERS,
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -766,9 +836,12 @@ def crates_get_dependents(
     if client is None:
         client = httpx.Client(headers=_CRATES_HEADERS, timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_CRATES_BASE}/{name}/reverse_dependencies",
+            allowed_domains=_ALLOWED_HOSTS,
             params={"per_page": max_results},
+            headers=_CRATES_HEADERS,
+            client=client,
         )
         if resp.status_code == 404:
             return []

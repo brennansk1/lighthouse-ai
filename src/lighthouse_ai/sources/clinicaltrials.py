@@ -22,10 +22,14 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _BASE = "https://clinicaltrials.gov/api/v2/studies"
 _HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
+# Public API host(s) this adapter contacts; the user invoked the ClinicalTrials
+# source for these, so they are authorized for egress.
+_ALLOWED_HOSTS = frozenset({"clinicaltrials.gov", "www.clinicaltrials.gov"})
 
 
 def _parse_studies(data: dict) -> list[Document]:
@@ -97,14 +101,16 @@ def search_trials(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             _BASE,
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "query.term": query,
                 "pageSize": max_results,
                 "format": "json",
             },
+            client=client,
         )
         resp.raise_for_status()
         return _parse_studies(resp.json())

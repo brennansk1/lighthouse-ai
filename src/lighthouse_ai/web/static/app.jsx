@@ -46,19 +46,22 @@ function NavIcon({ name, size = 16 }) {
 window.NavIcon = NavIcon;
 
 // Nav: Research (the landing page) leads, then the artifact-centric working
-// pages. Library surfaces drafts awaiting review (staged counter). Track shows
-// overdue positions; Activity shows in-flight runs. Info sits at the end near
-// Health. Page ids are stable internal keys; labels are user-facing.
+// pages. Library surfaces drafts awaiting review (staged counter). Forecasts
+// (id 'track') shows overdue positions; Runs (id 'activity') shows in-flight
+// runs. Info sits at the end near Health. Page ids are stable internal keys —
+// hashes, deep-links, and counters key off them — and must not change; only
+// the user-facing `label` is editable. 'Data Sandbox' disambiguates the
+// upload vault from the everyday "scratch playground" sense of the word.
 const APP_PAGES = [
-  { id: 'research',  label: 'Research',  icon: 'research',  group: 'Work',   counter: 'jobs_running',  get C() { return window.ResearchPage; } },
-  { id: 'library',   label: 'Library',   icon: 'library',   group: 'Work',   counter: 'drafts_staged', get C() { return window.LibraryPage; } },
-  { id: 'watch',     label: 'Watch',     icon: 'watch',     group: 'Work',   get C() { return window.WatchPage; } },
-  { id: 'track',     label: 'Track',     icon: 'track',     group: 'Work',   counter: 'positions_overdue', get C() { return window.TrackPage; } },
-  { id: 'activity',  label: 'Activity',  icon: 'activity',  group: 'Work',   counter: 'jobs_running',  get C() { return window.ActivityPage; } },
-  { id: 'sandbox',   label: 'Sandbox',   icon: 'sandbox',   group: 'System', get C() { return window.SandboxPage; } },
-  { id: 'health',    label: 'Health',    icon: 'system',    group: 'System', get C() { return window.HealthPage; } },
-  { id: 'info',      label: 'Guide',     icon: 'info',      group: 'System', get C() { return window.InfoPage; } },
-  { id: 'settings',  label: 'Settings',  icon: 'settings',  group: 'System', get C() { return window.SettingsPage; } },
+  { id: 'research',  label: 'Research',     icon: 'research',  group: 'Work',   counter: 'jobs_running',  get C() { return window.ResearchPage; } },
+  { id: 'library',   label: 'Library',      icon: 'library',   group: 'Work',   counter: 'drafts_staged', get C() { return window.LibraryPage; } },
+  { id: 'watch',     label: 'Watch',        icon: 'watch',     group: 'Work',   get C() { return window.WatchPage; } },
+  { id: 'track',     label: 'Forecasts',    icon: 'track',     group: 'Work',   counter: 'positions_overdue', get C() { return window.TrackPage; } },
+  { id: 'activity',  label: 'Runs',         icon: 'activity',  group: 'Work',   counter: 'jobs_running',  get C() { return window.ActivityPage; } },
+  { id: 'sandbox',   label: 'Data Sandbox', icon: 'sandbox',   group: 'System', get C() { return window.SandboxPage; } },
+  { id: 'health',    label: 'Health',       icon: 'system',    group: 'System', get C() { return window.HealthPage; } },
+  { id: 'info',      label: 'Guide',        icon: 'info',      group: 'System', get C() { return window.InfoPage; } },
+  { id: 'settings',  label: 'Settings',     icon: 'settings',  group: 'System', get C() { return window.SettingsPage; } },
 ];
 
 // Research is always the landing page; an explicit #hash always wins.

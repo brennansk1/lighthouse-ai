@@ -29,12 +29,28 @@ def test_sources_returns_catalog(client):
     # Tolerate an empty library, but if seed skills are present validate shape.
     if sources:
         ids = {s["id"] for s in sources}
-        # The four seed skills ship with the repo.
-        assert {"arxiv", "general_web", "wikipedia", "youtube"} <= ids
+        # Seed skills inside the current wedge ship visible by default.
+        assert {"arxiv", "general_web", "wikipedia"} <= ids
+        # Hidden verticals (outside the wedge) are not offered by default.
+        assert "youtube" not in ids
         for s in sources:
             for key in ("id", "name", "description", "category", "tier",
-                        "default_grade", "community", "enabled_by_default"):
+                        "default_grade", "community", "enabled_by_default",
+                        "hidden"):
                 assert key in s, f"missing {key} in source payload"
+            assert s["hidden"] is False
+
+
+def test_sources_include_hidden_surfaces_full_catalog(client):
+    """``include_hidden=true`` re-surfaces hidden verticals in the catalog so
+    they remain reachable when explicitly requested."""
+    default_ids = {s["id"] for s in client.get("/api/sources").json()["sources"]}
+    full = client.get("/api/sources", params={"include_hidden": "true"}).json()
+    full_ids = {s["id"] for s in full["sources"]}
+    if full_ids:  # tolerate an empty library
+        assert "youtube" in full_ids
+        assert "youtube" not in default_ids
+        assert default_ids <= full_ids
 
 
 # ======================= RECOMMEND-SOURCES =======================

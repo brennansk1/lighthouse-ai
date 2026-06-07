@@ -3,16 +3,27 @@
 Every detected contradiction is a first-class object in the audit chain. This
 module turns the discipline gate's cheap polarity heuristic plus (optional)
 entailment scores into structured :class:`Contradiction` records spanning the
-three detection layers of §6.1:
+detection layers of §6.1:
 
 1. **chunk** — overlapping subject tokens + opposing polarity (reuses
-   ``discipline.detect_contradictions``). Always cheap, precision-biased.
+   ``discipline.detect_contradictions`` plus the legal/temporal/causal/quantity
+   antonym pairs in :data:`_ANTONYM_PAIRS`). Always cheap, precision-biased.
 2. **claim** — entailment model flags claims with conflicting scores as
    *contested* rather than asserted true. Degrades gracefully when no
    entailment backend is installed.
 3. **cross_skill** — the same claim with opposing evidence drawn from *different*
    ``skill_id`` sources. Independent sources disagreeing is a stronger signal, so
    severity is elevated above an intra-skill disagreement.
+
+Honest-claim note (KNOWN LIMITED RECALL): detection is a *lexical / entailment
+heuristic*, not a semantic contradiction guarantee. The chunk layer fires only
+when two claims share subject tokens AND carry opposing polarity from a fixed
+antonym/negation lexicon; the claim/cross_skill layers depend on an optional
+entailment backend. Paraphrased, implied, or out-of-lexicon contradictions are
+*missed by design* — precision is favoured over recall so we don't manufacture
+false disagreements. Robust semantic contradiction detection is a documented
+future item, not a property of this module; do not describe it as exhaustive
+"3-layer detection" in user-facing copy.
 
 Determinism + offline-first: nothing here calls ``datetime.now()`` at import or
 at runtime — callers pass ``detected_at`` in. Entailment is optional and lazy;
@@ -41,6 +52,44 @@ _SUPPORTING_AT_OR_ABOVE: float = 0.5
 # A contradiction is "balanced" (→ high severity, the §6.4 condition) when
 # neither side dominates the evidence. We measure dominance by chunk count.
 _BALANCE_RATIO: float = 0.5  # minority/majority count must be >= this to be balanced
+
+# Antonym pairs for the chunk-layer polarity heuristic, extending the general
+# scientific pairs in ``discipline._ANTONYM_PAIRS`` with the legal/temporal/
+# causal/quantity vocabulary the legal wedge needs (affirmed vs reversed, etc.).
+# Same format as discipline's list: lower-case (left, right) members; either
+# member may be a multi-token phrase ("not liable"), in which case *all* of its
+# significant tokens must be present on a side for it to count as opposing.
+#
+# KNOWN LIMITED RECALL: this is a fixed lexicon, not a model. It catches the
+# explicit antonym surface forms below and nothing else — paraphrases and
+# out-of-lexicon opposites are missed by design (precision over recall).
+_ANTONYM_PAIRS: list[tuple[str, str]] = [
+    # legal
+    ("affirmed", "reversed"),
+    ("granted", "denied"),
+    ("guilty", "acquitted"),
+    ("liable", "not liable"),
+    ("upheld", "struck down"),
+    ("admissible", "inadmissible"),
+    ("constitutional", "unconstitutional"),
+    ("convicted", "exonerated"),
+    ("lawful", "unlawful"),
+    # temporal
+    ("before", "after"),
+    ("preceded", "followed"),
+    ("prior", "subsequent"),
+    # causal
+    ("causes", "prevents"),
+    ("caused", "prevented"),
+    ("triggers", "blocks"),
+    ("enables", "inhibits"),
+    # quantity / trend
+    ("increased", "declined"),
+    ("majority", "minority"),
+    ("gained", "lost"),
+    ("expanded", "contracted"),
+    ("surplus", "deficit"),
+]
 
 
 @dataclass(frozen=True)
@@ -199,6 +248,38 @@ def derive_severity(
 # Detection
 # --------------------------------------------------------------------------- #
 
+def _detect_extra_antonym_pairs(claim_texts: list[str]) -> list[tuple[str, str]]:
+    """Chunk-layer polarity pass over :data:`_ANTONYM_PAIRS`.
+
+    Mirrors ``discipline.detect_contradictions`` (shared subject tokens AND
+    opposing antonym members) but with the legal/temporal/causal/quantity
+    lexicon, so the legal wedge is covered without modifying the discipline gate.
+    Multi-token phrase members ("not liable") require *all* their significant
+    tokens on one side. Precision-biased; same KNOWN LIMITED RECALL caveat.
+    """
+    from .discipline import _significant_tokens
+
+    def _members(phrase: str) -> set[str]:
+        return _significant_tokens(phrase)
+
+    toks = [(_significant_tokens(t), t) for t in claim_texts]
+    out: list[tuple[str, str]] = []
+    for i in range(len(toks)):
+        ti, raw_i = toks[i]
+        for j in range(i + 1, len(toks)):
+            tj, raw_j = toks[j]
+            if len(ti & tj) < 2:
+                continue
+            for a, b in _ANTONYM_PAIRS:
+                am, bm = _members(a), _members(b)
+                if not (am and bm):
+                    continue
+                if (am <= ti and bm <= tj) or (bm <= ti and am <= tj):
+                    out.append((raw_i, raw_j))
+                    break
+    return out
+
+
 def _partition_by_entailment(
     refs: list[ChunkRef],
 ) -> tuple[list[ChunkRef], list[ChunkRef]]:
@@ -296,7 +377,13 @@ def detect(
         from .discipline import Claim as _Claim
         polarity_claims = [c if hasattr(c, "text") else _Claim(text=_claim_text(c))
                            for c in claim_list]
-        for raw_i, _raw_j in discipline.detect_contradictions(polarity_claims):
+        # Discipline's general scientific lexicon + our legal/temporal/causal/
+        # quantity pairs. ``_emit`` dedupes by id, so overlapping hits collapse.
+        polarity_hits = list(discipline.detect_contradictions(polarity_claims))
+        polarity_hits += _detect_extra_antonym_pairs(
+            [_claim_text(c) for c in claim_list]
+        )
+        for raw_i, _raw_j in polarity_hits:
             # Match the surfaced claim back to its index for load-bearing.
             idx = next((k for k, c in enumerate(claim_list)
                         if _claim_text(c) == raw_i), 0)

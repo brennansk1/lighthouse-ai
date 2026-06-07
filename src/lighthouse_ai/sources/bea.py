@@ -24,10 +24,12 @@ import os
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _BASE = "https://apps.bea.gov/api/data"
 _HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
+_ALLOWED_HOSTS = frozenset({"apps.bea.gov"})
 
 
 def _api_key(api_key: str | None) -> str:
@@ -121,14 +123,16 @@ def search_dataset(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             _BASE,
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "UserID": key,
                 "method": "GetDataSetList",
                 "ResultFormat": "JSON",
             },
+            client=client,
         )
         resp.raise_for_status()
         docs = _parse_dataset_list(resp.json(), query)
@@ -159,8 +163,9 @@ def fetch_table(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             _BASE,
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "UserID": key,
@@ -171,6 +176,7 @@ def fetch_table(
                 "Year": year,
                 "ResultFormat": "JSON",
             },
+            client=client,
         )
         resp.raise_for_status()
         docs = _parse_nipa_data(resp.json(), table_name)
@@ -197,8 +203,9 @@ def list_nipa_tables(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             _BASE,
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "UserID": key,
@@ -207,6 +214,7 @@ def list_nipa_tables(
                 "TargetParameter": "TableName",
                 "ResultFormat": "JSON",
             },
+            client=client,
         )
         resp.raise_for_status()
         result = resp.json().get("BEAAPI", {}).get("Results", {})
@@ -255,8 +263,9 @@ def get_industry_account(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             _BASE,
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "UserID": key,
@@ -268,6 +277,7 @@ def get_industry_account(
                 "Year": "ALL",
                 "ResultFormat": "JSON",
             },
+            client=client,
         )
         resp.raise_for_status()
         result = resp.json().get("BEAAPI", {}).get("Results", {})

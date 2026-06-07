@@ -24,10 +24,16 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _BASE = "https://www.federalregister.gov/api/v1"
 _HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
+
+# The only host this adapter contacts: the FederalRegister.gov API v1. A user
+# who invokes this source has authorized reaching the public API, so the host is
+# declared allowed here and the guard's decide-before-fetch check passes for it.
+_ALLOWED_HOSTS = frozenset({"www.federalregister.gov"})
 
 
 def _parse_documents(data: dict) -> list[Document]:
@@ -88,8 +94,9 @@ def search_rules(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/documents.json",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "conditions[term]": query,
@@ -106,6 +113,7 @@ def search_rules(
                     "citation",
                 ],
             },
+            client=client,
         )
         resp.raise_for_status()
         return _parse_documents(resp.json())
@@ -130,8 +138,9 @@ def fetch_rule(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/documents/{document_number}.json",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "fields[]": [
@@ -145,6 +154,7 @@ def fetch_rule(
                     "citation",
                 ],
             },
+            client=client,
         )
         resp.raise_for_status()
         item = resp.json()
@@ -176,8 +186,9 @@ def list_recent_in_agency(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/documents.json",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "conditions[agencies][]": agency_slug,
@@ -194,6 +205,7 @@ def list_recent_in_agency(
                     "citation",
                 ],
             },
+            client=client,
         )
         resp.raise_for_status()
         return _parse_documents(resp.json())
@@ -221,8 +233,9 @@ def get_executive_orders(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/documents.json",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "conditions[type][]": "PRESDOCU",
@@ -240,6 +253,7 @@ def get_executive_orders(
                     "citation",
                 ],
             },
+            client=client,
         )
         resp.raise_for_status()
         return _parse_documents(resp.json())
@@ -268,8 +282,9 @@ def track_rulemaking(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/documents.json",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "conditions[term]": query,
@@ -287,6 +302,7 @@ def track_rulemaking(
                     "citation",
                 ],
             },
+            client=client,
         )
         resp.raise_for_status()
         return _parse_documents(resp.json())

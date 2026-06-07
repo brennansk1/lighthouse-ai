@@ -29,9 +29,18 @@ from dataclasses import dataclass
 
 import httpx
 
+from ..net import EgressBlocked, guarded_get, guarded_request
+
 # The public Telegram Bot API root. The bot token is interpolated into the path
 # (``/bot<token>/<method>``), per Telegram's scheme, so it is not a header.
 API_ROOT = "https://api.telegram.org"
+
+# Telegram's API host. Routed through the egress guard so the send is gated by
+# the Governor's policy, audited in ``egress.jsonl``, and killed by
+# ``LIGHTHOUSE_AIRGAP``. The host is in ``DEFAULT_ALLOWED_DOMAINS``; we still pass
+# it explicitly so the guard permits it regardless of the platform allowlist in
+# force when an injected proxy is built from this set.
+_ALLOWED_HOSTS = frozenset({"api.telegram.org"})
 
 # Injectables typed for clarity. ``Clock`` returns monotonic-ish seconds; we use
 # it only for relative deadline math so any consistent source works. ``Sleep``
@@ -95,9 +104,16 @@ class TelegramChannel:
             payload["parse_mode"] = parse_mode
         client = self.client or httpx.Client(timeout=self.timeout)
         try:
-            response = client.post(_method_url(self.bot_token, "sendMessage"), json=payload)
-        except httpx.HTTPError:
-            # Network problems are an ordinary delivery failure for a fan-out
+            response = guarded_request(
+                "POST",
+                _method_url(self.bot_token, "sendMessage"),
+                allowed_domains=_ALLOWED_HOSTS,
+                json=payload,
+                client=client,
+            )
+        except (httpx.HTTPError, EgressBlocked):
+            # Network problems -- and an egress-policy refusal (e.g.
+            # LIGHTHOUSE_AIRGAP) -- are ordinary delivery failures for a fan-out
             # dispatcher; never raise (see the Channel protocol contract).
             return False
         finally:
@@ -189,11 +205,16 @@ def request_confirmation(
         # Step 1: deliver the prompt. If we cannot even ask, we must not assume
         # consent, so abort.
         try:
-            sent = http.post(
+            sent = guarded_request(
+                "POST",
                 _method_url(bot_token, "sendMessage"),
+                allowed_domains=_ALLOWED_HOSTS,
                 json={"chat_id": chat_id, "text": prompt},
+                client=http,
             )
-        except httpx.HTTPError:
+        except (httpx.HTTPError, EgressBlocked):
+            # Cannot deliver the prompt (network failure or an egress-policy
+            # refusal such as LIGHTHOUSE_AIRGAP) -> we must not assume consent.
             return False
         if not sent.is_success:
             return False
@@ -210,9 +231,15 @@ def request_confirmation(
             if offset is not None:
                 _params["offset"] = offset
             try:
-                response = http.get(_method_url(bot_token, "getUpdates"), params=_params)
-            except httpx.HTTPError:
-                # A transient polling error should not abort early; keep trying
+                response = guarded_get(
+                    _method_url(bot_token, "getUpdates"),
+                    allowed_domains=_ALLOWED_HOSTS,
+                    params=_params,
+                    client=http,
+                )
+            except (httpx.HTTPError, EgressBlocked):
+                # A transient polling error (or an egress-policy refusal) should
+                # not abort early; keep trying
                 # until the deadline, then fall through to the timeout abort.
                 if clock() >= deadline:
                     return False

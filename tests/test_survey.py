@@ -184,9 +184,10 @@ def test_evidence_cells_extract_and_gate():
     assert cell.attribute == "sample size"
     assert cell.value  # found a sentence mentioning sample size
     assert cell.citation_chunk_ids == ("d1",)
-    # Offline entailment returns 1.0 → entailed.
-    assert cell.entailed is True
-    assert cell.entailment_score == 1.0
+    # Offline (no real scorer) → unchecked: score is None and the cell is NOT
+    # marked entailed (an unchecked cell must never fabricate a pass).
+    assert cell.entailment_score is None
+    assert cell.entailed is False
 
 
 def test_empty_text_produces_empty_cell():

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -105,8 +106,37 @@ DEFAULT_ALLOWED_DOMAINS: frozenset[str] = frozenset(
         "theguardian.com",
         "guardianapis.com",
         "propublica.org",
+        # Notification transport (A3) — outbound alerts route through the guard.
+        "api.telegram.org",
     }
 )
+
+# Env var that, when truthy, disables *all* egress before any socket opens.
+_AIRGAP_ENV = "LIGHTHOUSE_AIRGAP"
+_TRUTHY = frozenset({"1", "true", "yes"})
+
+
+def _airgap_enabled() -> bool:
+    """True when ``LIGHTHOUSE_AIRGAP`` is set to a truthy value.
+
+    Read at *decision time* (not import time) so tests — and the user — can
+    toggle the kill switch within a running process. Accepts ``"1"``, ``"true"``,
+    ``"yes"`` (case-insensitive); anything else (including unset) is off.
+    """
+
+    return os.environ.get(_AIRGAP_ENV, "").strip().lower() in _TRUTHY
+
+
+def airgap_enabled() -> bool:
+    """Public alias for the ``LIGHTHOUSE_AIRGAP`` kill switch.
+
+    The httpx fetch path enforces airgap inside :meth:`EgressProxy.check`, but a
+    few non-httpx egress paths (SMTP email, the Playwright JS renderer) open
+    their own sockets and never reach the proxy. They consult this so the kill
+    switch genuinely means *no egress*, not "no httpx egress".
+    """
+
+    return _airgap_enabled()
 
 
 @dataclass(frozen=True)
@@ -198,13 +228,24 @@ class EgressProxy:
     ) -> EgressDecision:
         """Decide whether a request may leave the machine.
 
-        Order matters: a ``PRIVATE`` request is denied *before* the allowlist is
-        consulted, because the privacy tier — not the destination — is the
-        binding constraint (a private query must never egress even to an
-        allowlisted host). Allowlisted public requests are permitted.
+        Order matters: the ``LIGHTHOUSE_AIRGAP`` kill switch is checked *first*,
+        before anything else, so a single env var disables every egress path
+        regardless of tier or destination. Next a ``PRIVATE`` request is denied
+        *before* the allowlist is consulted, because the privacy tier — not the
+        destination — is the binding constraint (a private query must never
+        egress even to an allowlisted host). Allowlisted public requests are
+        permitted.
         """
 
         host = extract_host(url_or_host)
+
+        if _airgap_enabled():
+            return EgressDecision(
+                allowed=False,
+                host=host,
+                tier=tier,
+                reason="LIGHTHOUSE_AIRGAP: all egress disabled",
+            )
 
         if tier == PrivacyTier.PRIVATE:
             return EgressDecision(

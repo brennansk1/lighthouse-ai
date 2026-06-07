@@ -21,10 +21,16 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _BASE = "https://api.congress.gov/v3"
 _HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
+
+# The only host this adapter contacts: the Congress.gov API v3. A user who
+# invokes this source has authorized reaching the public API, so the host is
+# declared allowed here and the guard's decide-before-fetch check passes for it.
+_ALLOWED_HOSTS = frozenset({"api.congress.gov"})
 
 
 def _build_params(api_key: str | None, extra: dict) -> dict:
@@ -124,14 +130,16 @@ def search_bills(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/bill",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params=_build_params(api_key, {
                 "query": query,
                 "limit": max_results,
                 "sort": "updateDate+desc",
             }),
+            client=client,
         )
         resp.raise_for_status()
         return _parse_bills(resp.json())
@@ -162,10 +170,12 @@ def fetch_bill(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/bill/{congress}/{bill_type}/{bill_number}",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params=_build_params(api_key, {}),
+            client=client,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -201,10 +211,12 @@ def get_vote_record(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/bill/{congress}/{bill_type}/{bill_number}/actions",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params=_build_params(api_key, {}),
+            client=client,
         )
         resp.raise_for_status()
         return _parse_vote_actions(resp.json())
@@ -234,13 +246,15 @@ def track_committee(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/committee/{committee_code}/bills",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params=_build_params(api_key, {
                 "limit": max_results,
                 "sort": "updateDate+desc",
             }),
+            client=client,
         )
         resp.raise_for_status()
         data = resp.json()

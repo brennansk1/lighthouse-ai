@@ -24,6 +24,9 @@ from typing import Protocol, runtime_checkable
 
 import httpx
 
+from ..governor.egress_proxy import extract_host
+from ..net import EgressBlocked, guarded_request
+
 
 @runtime_checkable
 class Channel(Protocol):
@@ -122,8 +125,21 @@ class DiscordChannel:
         payload = {"content": content}
         client = self.client or httpx.Client(timeout=self.timeout)
         try:
-            response = client.post(self.webhook_url, json=payload)
-        except httpx.HTTPError:
+            # The webhook URL is user-configured, so its host is user-authorized
+            # egress: pass it in ``allowed_domains`` so the guard permits it (a
+            # Discord webhook host need not be in the platform allowlist). The
+            # guard still audits the send and honours ``LIGHTHOUSE_AIRGAP``.
+            response = guarded_request(
+                "POST",
+                self.webhook_url,
+                allowed_domains=frozenset({extract_host(self.webhook_url)}),
+                json=payload,
+                client=client,
+            )
+        except (httpx.HTTPError, EgressBlocked):
+            # A network error -- or an egress-policy refusal such as
+            # LIGHTHOUSE_AIRGAP -- is an ordinary delivery failure; never raise
+            # (see the Channel protocol contract), the dispatcher fans out.
             return False
         finally:
             # Only close clients we own; an injected client is the caller's.
@@ -187,6 +203,13 @@ class EmailChannel:
 
     def send(self, title: str, body: str) -> bool:
         if not self.to_addrs:
+            return False
+        # SMTP is real outbound network that never reaches the httpx egress
+        # guard, so honor the kill switch here for parity with the Telegram /
+        # Discord channels: an airgapped run must not emit mail (a digest could
+        # otherwise leak query-derived content to the configured mail server).
+        from ..governor.egress_proxy import airgap_enabled
+        if airgap_enabled():
             return False
         message = self.build_message(title, body)
         try:

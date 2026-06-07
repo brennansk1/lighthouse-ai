@@ -148,6 +148,83 @@ def all_modes() -> list[ModeSpec]:
     return [s for s in _SPECS if s.key != "digest"]
 
 
+# --- scope gate (reversible feature flag) ------------------------------------
+# The default UI ships a wedge: it OFFERS only ``investigate`` at the
+# quick/standard/thorough tiers. Everything else stays in the code and remains
+# runnable when requested by explicit key — these helpers only filter what is
+# *offered* in the picker (see config.toml ``[modes]``/``[depth]``).
+
+#: Wedge defaults applied when a config key is missing.
+WEDGE_MODES: tuple[str, ...] = ("investigate",)
+WEDGE_DEPTH_TIERS: tuple[str, ...] = ("quick", "standard", "thorough")
+
+
+@dataclass(frozen=True)
+class ScopeConfig:
+    """Typed view of the ``[modes].enabled`` / ``[depth].enabled_tiers`` flags."""
+
+    modes: tuple[str, ...] = WEDGE_MODES
+    depth_tiers: tuple[str, ...] = WEDGE_DEPTH_TIERS
+
+    @classmethod
+    def from_mapping(cls, data: dict | None) -> ScopeConfig:
+        """Build from a parsed config mapping; missing keys → wedge defaults."""
+        data = data or {}
+        modes = data.get("modes", {}).get("enabled")
+        tiers = data.get("depth", {}).get("enabled_tiers")
+        return cls(
+            modes=tuple(modes) if modes else WEDGE_MODES,
+            depth_tiers=tuple(tiers) if tiers else WEDGE_DEPTH_TIERS,
+        )
+
+    @classmethod
+    def from_config_file(cls, path) -> ScopeConfig:
+        """Read the scope flags from a config.toml; wedge defaults if absent."""
+        try:
+            import tomllib  # type: ignore[import-not-found]
+        except ModuleNotFoundError:  # py<3.11
+            import tomli as tomllib  # type: ignore[no-redef]
+        try:
+            with open(path, "rb") as fh:
+                data = tomllib.load(fh)
+        except (FileNotFoundError, OSError):
+            return cls()
+        return cls.from_mapping(data)
+
+
+def enabled_modes(config: dict | ScopeConfig | None = None) -> list[ModeSpec]:
+    """Primary modes the UI should OFFER, filtered to the config's enabled set.
+
+    Resolution is alias-aware (config may name a mode by any alias) and preserves
+    canonical display order. An empty/absent config yields the wedge default
+    (``investigate`` only). This gates what is *offered*, never what can run:
+    a hidden mode is still resolvable via :func:`resolve` when requested by key.
+    """
+    scope = config if isinstance(config, ScopeConfig) else ScopeConfig.from_mapping(config)
+    wanted: set[str] = set()
+    for name in scope.modes:
+        try:
+            wanted.add(canonical(name))
+        except KeyError:
+            continue  # unknown mode name in config → ignore, don't crash
+    return [s for s in all_modes() if s.key in wanted]
+
+
+def enabled_depth_tiers(config: dict | ScopeConfig | None = None) -> list[str]:
+    """Depth tiers the UI should OFFER, filtered to the config's enabled set.
+
+    Returns canonical tier keys in their canonical (quick→deep) order, filtered
+    to known tiers. An empty/absent config yields the wedge default (excludes
+    ``deep``). Gating is about what is offered; :mod:`lighthouse_ai.modes.depth`
+    still resolves a hidden tier when one is explicitly requested.
+    """
+    from .depth import DEPTH_TIERS, canonical_tier
+
+    scope = config if isinstance(config, ScopeConfig) else ScopeConfig.from_mapping(config)
+    wanted = {canonical_tier(t) for t in scope.depth_tiers}
+    return [t for t in DEPTH_TIERS if t in wanted]
+
+
 def load_engine(name: str) -> Callable:
     """Import and return the engine callable for a mode."""
     spec = resolve(name)

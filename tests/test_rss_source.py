@@ -110,27 +110,30 @@ def mocked_http():
 
 
 def test_fetch_feed_returns_parsed_items(mocked_http):
-    mocked_http.get("https://x/feed.xml").respond(
+    # bbc.co.uk is on the platform egress allowlist, so the guard admits the
+    # fetch; the RSS adapter has no fixed host of its own (it points at any
+    # registered feed, bounded by the platform allowlist).
+    mocked_http.get("https://bbc.co.uk/feed.xml").respond(
         200, content=ATOM_FIXTURE, headers={"content-type": "application/atom+xml"})
-    items = fetch_feed("https://x/feed.xml")
+    items = fetch_feed("https://bbc.co.uk/feed.xml")
     assert len(items) == 2
 
 
 def test_fetch_feed_with_broker_rejects_eicar(tmp_path, mocked_http):
     from lighthouse_ai.sandbox import Quarantine, SandboxBroker
     from lighthouse_ai.sandbox.scanners import EICAR_SIGNATURE, EICARScanner
-    mocked_http.get("https://x/evil.xml").respond(
+    mocked_http.get("https://bbc.co.uk/evil.xml").respond(
         200, content=EICAR_SIGNATURE, headers={"content-type": "text/xml"})
     q = Quarantine(tmp_path / "q.db", tmp_path / "Q")
     broker = SandboxBroker(q, [EICARScanner()])
-    items = fetch_feed("https://x/evil.xml", broker=broker)
+    items = fetch_feed("https://bbc.co.uk/evil.xml", broker=broker)
     assert items == []
 
 
 def test_fetch_feed_raises_on_http_error(mocked_http):
-    mocked_http.get("https://x/missing.xml").respond(404)
+    mocked_http.get("https://bbc.co.uk/missing.xml").respond(404)
     with pytest.raises(httpx.HTTPStatusError):
-        fetch_feed("https://x/missing.xml")
+        fetch_feed("https://bbc.co.uk/missing.xml")
 
 
 # --- CLI: monitor run ---
@@ -150,11 +153,11 @@ def initted_env(cli_env):
 
 
 def test_monitor_run_writes_html(initted_env, mocked_http, tmp_path):
-    mocked_http.get("https://x/feed.xml").respond(
+    mocked_http.get("https://bbc.co.uk/feed.xml").respond(
         200, content=ATOM_FIXTURE, headers={"content-type": "application/atom+xml"})
     runner = CliRunner()
     r = runner.invoke(app, [
-        "monitor", "run", "--source-url", "https://x/feed.xml",
+        "monitor", "run", "--source-url", "https://bbc.co.uk/feed.xml",
         "--topic", "test-topic",
     ])
     assert r.exit_code == 0, r.stdout
@@ -168,10 +171,10 @@ def test_monitor_run_writes_html(initted_env, mocked_http, tmp_path):
 
 
 def test_monitor_run_handles_empty_feed(initted_env, mocked_http):
-    mocked_http.get("https://x/empty.xml").respond(200, content=b"<rss><channel></channel></rss>")
+    mocked_http.get("https://bbc.co.uk/empty.xml").respond(200, content=b"<rss><channel></channel></rss>")
     runner = CliRunner()
     r = runner.invoke(app, [
-        "monitor", "run", "--source-url", "https://x/empty.xml",
+        "monitor", "run", "--source-url", "https://bbc.co.uk/empty.xml",
         "--topic", "empty",
     ])
     assert r.exit_code == 0
@@ -179,10 +182,10 @@ def test_monitor_run_handles_empty_feed(initted_env, mocked_http):
 
 
 def test_monitor_run_handles_fetch_failure(initted_env, mocked_http):
-    mocked_http.get("https://x/down.xml").side_effect = httpx.ConnectError("down")
+    mocked_http.get("https://bbc.co.uk/down.xml").side_effect = httpx.ConnectError("down")
     runner = CliRunner()
     r = runner.invoke(app, [
-        "monitor", "run", "--source-url", "https://x/down.xml",
+        "monitor", "run", "--source-url", "https://bbc.co.uk/down.xml",
         "--topic", "down",
     ])
     assert r.exit_code != 0

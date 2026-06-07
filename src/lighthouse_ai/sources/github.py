@@ -22,9 +22,13 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _API_BASE = "https://api.github.com"
+# Public GitHub REST API hosts this adapter contacts; on the DEFAULT platform
+# allowlist and authorized when the user invokes this source.
+_ALLOWED_HOSTS = frozenset({"api.github.com", "github.com"})
 _HEADERS = {
     "User-Agent": "Lighthouse/0.1",
     "Accept": "application/vnd.github+json",
@@ -40,7 +44,7 @@ def _auth_headers(token: str | None) -> dict[str, str]:
 
 
 def _make_client(token: str | None, timeout: float) -> httpx.Client:
-    return httpx.Client(headers=_auth_headers(token), timeout=timeout)
+    return httpx.Client(timeout=timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -67,9 +71,12 @@ def search_repos(
     if client is None:
         client = _make_client(token, timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_API_BASE}/search/repositories",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_auth_headers(token),
             params={"q": query, "per_page": max_results, "sort": "stars", "order": "desc"},
+            client=client,
         )
         resp.raise_for_status()
         items = resp.json().get("items") or []
@@ -126,7 +133,12 @@ def fetch_readme(
     if client is None:
         client = _make_client(token, timeout)
     try:
-        resp = client.get(f"{_API_BASE}/repos/{owner}/{repo}/readme")
+        resp = guarded_get(
+            f"{_API_BASE}/repos/{owner}/{repo}/readme",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_auth_headers(token),
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -177,9 +189,12 @@ def list_releases(
     if client is None:
         client = _make_client(token, timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_API_BASE}/repos/{owner}/{repo}/releases",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_auth_headers(token),
             params={"per_page": max_results},
+            client=client,
         )
         resp.raise_for_status()
         out: list[Document] = []
@@ -236,14 +251,17 @@ def list_recent_issues(
     if client is None:
         client = _make_client(token, timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_API_BASE}/repos/{owner}/{repo}/issues",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_auth_headers(token),
             params={
                 "state": state,
                 "sort": "created",
                 "direction": "desc",
                 "per_page": max_results,
             },
+            client=client,
         )
         resp.raise_for_status()
         out: list[Document] = []
@@ -303,8 +321,11 @@ def get_dependency_graph(
     if client is None:
         client = _make_client(token, timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_API_BASE}/repos/{owner}/{repo}/dependency-graph/sbom",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_auth_headers(token),
+            client=client,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -361,7 +382,12 @@ def get_license(
     if client is None:
         client = _make_client(token, timeout)
     try:
-        resp = client.get(f"{_API_BASE}/repos/{owner}/{repo}/license")
+        resp = guarded_get(
+            f"{_API_BASE}/repos/{owner}/{repo}/license",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_auth_headers(token),
+            client=client,
+        )
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -416,9 +442,12 @@ def get_security_advisories(
     if client is None:
         client = _make_client(token, timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_API_BASE}/repos/{owner}/{repo}/security-advisories",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_auth_headers(token),
             params={"per_page": max_results},
+            client=client,
         )
         resp.raise_for_status()
         out: list[Document] = []
@@ -482,9 +511,12 @@ def get_commit_history(
             params["since"] = since
         if path:
             params["path"] = path
-        resp = client.get(
+        resp = guarded_get(
             f"{_API_BASE}/repos/{owner}/{repo}/commits",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_auth_headers(token),
             params=params,
+            client=client,
         )
         resp.raise_for_status()
         out: list[Document] = []

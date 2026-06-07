@@ -17,7 +17,12 @@ import pytest
 import respx
 
 from lighthouse_ai.governor.egress_proxy import EgressProxy, PrivacyTier
-from lighthouse_ai.net import EgressBlocked, EgressGuardedClient, guarded_get
+from lighthouse_ai.net import (
+    EgressBlocked,
+    EgressGuardedClient,
+    guarded_get,
+    guarded_request,
+)
 
 ALLOWED = frozenset({"arxiv.org", "api.github.com"})
 
@@ -285,6 +290,95 @@ def test_redirect_to_allowed_host_succeeds_without_crash(tmp_path: Path) -> None
     assert rec["allowed"] is True
     assert rec["host"] == "export.arxiv.org"
     redir_client.close()
+
+
+# --- general request(): params, headers, POST ---
+
+
+@respx.mock
+def test_request_forwards_params_and_headers(tmp_path: Path) -> None:
+    """request() must carry the caller's query params and headers upstream."""
+    route = respx.get("https://api.github.com/search").mock(
+        return_value=httpx.Response(200, json={"ok": True})
+    )
+    client = EgressGuardedClient(_proxy(tmp_path))
+    resp = client.request(
+        "GET",
+        "https://api.github.com/search",
+        params={"q": "lighthouse", "page": 2},
+        headers={"X-Test": "abc"},
+    )
+    assert resp.status_code == 200
+    assert route.called
+    sent = route.calls.last.request
+    assert sent.url.params["q"] == "lighthouse"
+    assert sent.url.params["page"] == "2"
+    assert sent.headers["X-Test"] == "abc"
+
+
+@respx.mock
+def test_request_post_with_json_is_logged(tmp_path: Path) -> None:
+    """A POST with a JSON body fetches, sends the body, and is audit-logged."""
+    route = respx.post("https://api.github.com/markdown").mock(
+        return_value=httpx.Response(201, text="created")
+    )
+    client = EgressGuardedClient(_proxy(tmp_path))
+    resp = client.request(
+        "POST",
+        "https://api.github.com/markdown",
+        json={"text": "# hi"},
+    )
+    assert resp.status_code == 201
+    assert route.called
+    sent = route.calls.last.request
+    assert json.loads(sent.content) == {"text": "# hi"}
+    recs = _records(tmp_path)
+    assert len(recs) == 1
+    assert recs[0]["host"] == "api.github.com"
+    assert recs[0]["allowed"] is True
+    assert recs[0]["bytes_sent"] > 0
+
+
+@respx.mock
+def test_guarded_request_post_allows_allowlisted(tmp_path: Path) -> None:
+    route = respx.post("https://api.github.com/markdown").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
+    resp = guarded_request(
+        "POST",
+        "https://api.github.com/markdown",
+        allowed_domains=ALLOWED,
+        json={"text": "hi"},
+    )
+    assert resp.status_code == 200
+    assert route.called
+
+
+# --- central kill switch: LIGHTHOUSE_AIRGAP ---
+
+
+@respx.mock
+def test_airgap_denies_request_before_socket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With LIGHTHOUSE_AIRGAP set, an otherwise-allowed request is refused.
+
+    The respx route must never fire — the kill switch denies before any socket
+    is opened — and clearing the env var restores normal behaviour.
+    """
+    route = respx.get("https://arxiv.org/k").mock(return_value=httpx.Response(200))
+    client = EgressGuardedClient(_proxy(tmp_path))
+
+    monkeypatch.setenv("LIGHTHOUSE_AIRGAP", "1")
+    with pytest.raises(EgressBlocked) as exc:
+        client.request("GET", "https://arxiv.org/k")
+    assert "AIRGAP" in exc.value.reason
+    assert not route.called  # no socket opened — nothing leaked
+
+    monkeypatch.delenv("LIGHTHOUSE_AIRGAP")
+    resp = client.request("GET", "https://arxiv.org/k")
+    assert resp.status_code == 200
+    assert route.called
 
 
 # --- context manager ---

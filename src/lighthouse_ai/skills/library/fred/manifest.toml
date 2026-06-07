@@ -3,6 +3,7 @@ name        = "FRED (St. Louis Fed)"
 description = "FRED API: search and fetch U.S. macro time series (GDP, unemployment, inflation, interest rates, etc.), list data releases (watchable), get point-in-time revision vintages, and compare multiple series."
 category    = "economics"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- fetch policy ---
 tier        = "A"

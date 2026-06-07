@@ -153,6 +153,42 @@ def test_chunk_layer_polarity_heuristic_degrades_without_entailment():
     assert all(c.detection_layer == "chunk" for c in out)
 
 
+def test_chunk_layer_flags_legal_antonym_affirmed_reversed():
+    # Legal-wedge antonym pair: an appellate court "affirmed" vs "reversed" the
+    # same ruling. Shared subject tokens + opposing legal polarity → chunk layer.
+    claims = [
+        Claim(text="The appellate court affirmed the district court ruling."),
+        Claim(text="The appellate court reversed the district court ruling."),
+    ]
+    out = detect(claims, [], job_id="j", detected_at=FIXED_TS, load_bearing=True)
+    chunk_hits = [c for c in out if c.detection_layer == "chunk"]
+    assert chunk_hits, "expected affirmed/reversed to flag a chunk contradiction"
+
+
+def test_chunk_layer_flags_legal_antonym_guilty_acquitted():
+    # guilty vs acquitted over a shared defendant/charge subject.
+    claims = [
+        Claim(text="The jury found the defendant guilty on the fraud charge."),
+        Claim(text="The jury found the defendant acquitted on the fraud charge."),
+    ]
+    out = detect(claims, [], job_id="j", detected_at=FIXED_TS, load_bearing=False)
+    chunk_hits = [c for c in out if c.detection_layer == "chunk"]
+    assert chunk_hits
+    # A flagged opposing pair is a real disagreement → at least 'medium'.
+    order = {"low": 0, "medium": 1, "high": 2}
+    assert all(order[c.severity] >= order["medium"] for c in chunk_hits)
+
+
+def test_chunk_layer_flags_multitoken_antonym_upheld_struck_down():
+    # Multi-token phrase member ("struck down") must require all its tokens.
+    claims = [
+        Claim(text="The supreme court upheld the contested statute."),
+        Claim(text="The supreme court struck down the contested statute."),
+    ]
+    out = detect(claims, [], job_id="j", detected_at=FIXED_TS, load_bearing=True)
+    assert any(c.detection_layer == "chunk" for c in out)
+
+
 def test_layer_hint_restricts_detection():
     claim = "Remote work increases team productivity"
     out = detect([claim],

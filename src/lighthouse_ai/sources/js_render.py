@@ -81,6 +81,16 @@ def render_html(
         ``playwright install chromium`` must have been run for this to succeed.
         No stealth or anti-fingerprint options are applied.
     """
+    # Egress kill switch: a headless Chromium opens its own sockets and never
+    # passes through the EgressProxy, so honor LIGHTHOUSE_AIRGAP here before
+    # launching the browser. Returning None keeps the documented "never raises,
+    # degrades to static fetch" contract. (NB: when airgap is *off*, Tier-B
+    # rendering is still not host-allowlisted — see docs/SECURITY_POSTURE.md.)
+    from ..governor.egress_proxy import airgap_enabled
+    if airgap_enabled():
+        log.debug("js_render: LIGHTHOUSE_AIRGAP set; refusing to render %s", url)
+        return None
+
     # Lazy import so that importing this module never fails when playwright is
     # absent.  The import guard in skills/registry.py scans *skill* files; this
     # module lives in sources/ which is explicitly excluded from that scan.

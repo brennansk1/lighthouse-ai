@@ -27,6 +27,11 @@ from urllib.parse import urlsplit
 
 import httpx
 
+try:  # httpx's "defer to the client's own configuration" sentinel.
+    from httpx._client import USE_CLIENT_DEFAULT
+except ImportError:  # pragma: no cover - shields against httpx internals moving.
+    USE_CLIENT_DEFAULT = False  # type: ignore[assignment]
+
 from .governor.egress_proxy import (
     DEFAULT_ALLOWED_DOMAINS,
     EgressProxy,
@@ -118,19 +123,52 @@ class EgressGuardedClient:
         privacy: PrivacyTier = PrivacyTier.PUBLIC_OK,
         politeness: PolitenessGate | None = None,
     ) -> httpx.Response:
-        """Fetch ``url`` only if egress policy permits it.
+        """Fetch ``url`` with a GET only if egress policy permits it.
+
+        Thin convenience wrapper over :meth:`request`; all enforcement logic
+        (decide-before-fetch, redirect re-check, audit logging) lives there.
+        Redirect-following is left to the underlying client's configuration so
+        an injected ``follow_redirects=True`` client behaves as it always has.
+        """
+
+        return self.request(
+            "GET",
+            url,
+            follow_redirects=USE_CLIENT_DEFAULT,
+            privacy=privacy,
+            politeness=politeness,
+        )
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+        json: object | None = None,
+        data: object | None = None,
+        follow_redirects: bool | object = False,
+        privacy: PrivacyTier = PrivacyTier.PUBLIC_OK,
+        politeness: PolitenessGate | None = None,
+    ) -> httpx.Response:
+        """Issue ``method`` to ``url`` only if egress policy permits it.
+
+        This is the general form behind :meth:`get`, letting source adapters
+        route GET/POST through the guard while keeping their own ``params``,
+        ``headers``, and POST body (``json`` or ``data``) shapes intact.
 
         Policy is consulted before any request object is built. On a deny
         verdict we raise :class:`EgressBlocked` immediately — no socket is
-        opened, so nothing leaks. On an allow verdict we perform the GET, then
-        record the real host/byte/status figures to the egress audit log so the
-        user can see exactly what left the machine.
+        opened, so nothing leaks. On an allow verdict we perform the request,
+        then record the real host/byte/status figures to the egress audit log so
+        the user can see exactly what left the machine.
 
         The optional *politeness* parameter (or the instance-level gate set at
         construction time) is consulted **after** the egress allowlist check and
         **before** the socket is opened. A robots.txt disallow raises
         :class:`EgressBlocked`; a rate-limited request blocks until capacity is
-        available. When both are ``None`` behaviour is identical to the original.
+        available. When both are ``None`` behaviour is identical to a bare fetch.
         """
 
         decision = self._proxy.check(url, privacy)
@@ -145,7 +183,15 @@ class EgressGuardedClient:
             active_politeness.check(url)  # raises EgressBlocked or blocks
 
         started = time.monotonic()
-        response = self._client.get(url)
+        response = self._client.request(
+            method,
+            url,
+            params=params,
+            headers=headers,
+            json=json,
+            data=data,
+            follow_redirects=follow_redirects,
+        )
         duration_ms = (time.monotonic() - started) * 1000.0
 
         # Redirect-aware enforcement: an injected client may have
@@ -213,6 +259,8 @@ def guarded_get(
     url: str,
     *,
     allowed_domains: frozenset[str] | set[str] | None = None,
+    params: dict[str, object] | None = None,
+    headers: dict[str, str] | None = None,
     privacy: PrivacyTier = PrivacyTier.PUBLIC_OK,
     client: httpx.Client | None = None,
     politeness: PolitenessGate | None = None,
@@ -224,14 +272,60 @@ def guarded_get(
     it created. A blocked request raises :class:`EgressBlocked` and performs no
     network I/O, exactly as :meth:`EgressGuardedClient.get` does.
 
-    The optional *politeness* keyword argument is forwarded to the underlying
+    The optional *params* / *headers* are forwarded to the request so callers
+    can keep their query-string and header shapes; the optional *politeness*
+    keyword argument is forwarded to the underlying
     :class:`EgressGuardedClient`; see its documentation for semantics.
+    """
+
+    return guarded_request(
+        "GET",
+        url,
+        allowed_domains=allowed_domains,
+        params=params,
+        headers=headers,
+        privacy=privacy,
+        client=client,
+        politeness=politeness,
+    )
+
+
+def guarded_request(
+    method: str,
+    url: str,
+    *,
+    allowed_domains: frozenset[str] | set[str] | None = None,
+    params: dict[str, object] | None = None,
+    headers: dict[str, str] | None = None,
+    json: object | None = None,
+    data: object | None = None,
+    privacy: PrivacyTier = PrivacyTier.PUBLIC_OK,
+    client: httpx.Client | None = None,
+    politeness: PolitenessGate | None = None,
+) -> httpx.Response:
+    """One-shot guarded request for callers that do not hold a client.
+
+    The general-method twin of :func:`guarded_get`: constructs a throwaway
+    :class:`EgressGuardedClient` from ``allowed_domains``, enforces the same
+    decide-before-fetch invariant, and tears down any client it created. A
+    blocked request raises :class:`EgressBlocked` and performs no network I/O,
+    exactly as :meth:`EgressGuardedClient.request` does. The ``params``,
+    ``headers``, ``json``, and ``data`` arguments are forwarded so adapters keep
+    their query-string, header, and POST body shapes intact.
     """
 
     guard = EgressGuardedClient(
         allowed_domains=allowed_domains, client=client, politeness=politeness
     )
     try:
-        return guard.get(url, privacy=privacy)
+        return guard.request(
+            method,
+            url,
+            params=params,
+            headers=headers,
+            json=json,
+            data=data,
+            privacy=privacy,
+        )
     finally:
         guard.close()

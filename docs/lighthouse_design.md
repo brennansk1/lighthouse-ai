@@ -2,7 +2,9 @@
 
 > **Project name:** Lighthouse (was: ARGOS, working title through v0.3). Lock-in pending domain verification. Fallback: Argus. Tagline candidates: *"A research instrument."* / *"Local-first research, end to end."*
 
-A local-first, hardware-adaptive, 24/7 multi-agent research system for researchers across domains. Builds on patterns from Hermes-style closed-loop agents, Google's TTD-DR, Anthropic contextual retrieval, the Tongyi DeepResearch ReSum framework, Undermind's discovery-progress model, and intelligence-community analytic tradecraft (ACH, ICD-203, WEP). Designed to be the tool researchers reach for instead of Gemini Deep Research, OpenAI Deep Research, Claude Research, Perplexity Pro, Elicit, or Consensus — while running on their own hardware, on their own files, with reproducible, auditable outputs.
+A local-first, hardware-adaptive, 24/7 multi-agent research system for the regulated knowledge worker. Builds on patterns from Hermes-style closed-loop agents, Google's TTD-DR, Anthropic contextual retrieval, the Tongyi DeepResearch ReSum framework, Undermind's discovery-progress model, and intelligence-community analytic tradecraft (ACH, ICD-203, WEP). Designed to be the tool this buyer reaches for instead of Gemini Deep Research, OpenAI Deep Research, Claude Research, Perplexity Pro, Elicit, or Consensus — while running on their own hardware, on their own files, with reproducible, auditable outputs.
+
+> **v1.0 ICP (one buyer):** the **law-firm knowledge-management / practice-support lead** — the person accountable for confidential client research under **ABA Model Rule 1.6** (duty of confidentiality), for whom "runs entirely on our own hardware, on our own files" is a compliance requirement rather than a preference. Everything in v1.0 is scoped to that buyer. *Roadmap:* generalizing to researchers across other regulated and confidentiality-sensitive domains (medical, financial, IC/gov, corporate IP) is explicit post-v1.0 work, not a v1.0 commitment.
 
 **This document is two things in one:**
 

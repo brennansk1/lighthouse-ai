@@ -256,3 +256,97 @@ def test_audit_egress_surfaces_recorded_fetches(initted_env):
     assert "No external network calls" not in r.stdout
     assert "auto_fetch" in r.stdout
     assert "example.com" in r.stdout
+
+
+# --- init: zero-friction first run -------------------------------------
+
+def _fake_profile(total_ram_gb: float, tier: str):
+    """A HardwareProfile stand-in so init is deterministic + offline."""
+    from lighthouse_ai.hardware import HardwareProfile
+    return HardwareProfile(
+        platform="darwin", arch="arm64", apple_silicon=True,
+        total_ram_gb=total_ram_gb, free_ram_gb=total_ram_gb / 2,
+        cpu_cores_physical=8, cpu_cores_logical=8,
+        available_backends=["mlx", "ollama"], suggested_tier=tier,
+    )
+
+
+def test_init_writes_no_docker_default_config(cli_env, monkeypatch):
+    """Cold init must produce a usable config with the in-memory vector store —
+    no Docker/Qdrant required. Offline: probe() is mocked."""
+    import lighthouse_ai.cli as cli
+    monkeypatch.setattr(cli, "probe", lambda: _fake_profile(16.0, "T1"))
+
+    runner = CliRunner()
+    r = runner.invoke(app, ["init", "--data-dir", str(cli_env),
+                            "--no-install-service"])
+    assert r.exit_code == 0, r.stdout
+
+    cfg_text = (cli_env / "config.toml").read_text()
+    # The default vector store is the in-memory/SQLite spine, not Qdrant. Check
+    # the actual active assignment (ignore the explanatory comment lines).
+    active = [ln for ln in cfg_text.splitlines()
+              if ln.strip().startswith("vector_store")]
+    assert active == ['vector_store = "memory"'], active
+    # Qdrant is explicitly optional in the generated config.
+    assert "OPTIONAL" in cfg_text or "optional" in cfg_text
+
+    # ...and the printed next-steps say so plainly.
+    assert "No Docker needed to start" in r.stdout
+
+
+def test_init_prints_ram_appropriate_model_recommendation(cli_env, monkeypatch):
+    """init must auto-select a RAM-appropriate model via recommend_models and
+    print the single `ollama pull <tag>` the user still needs — not a hardcoded
+    qwen3:14b on a smaller box."""
+    import lighthouse_ai.cli as cli
+    # 16 GB box → T1; the budget-aware tag ladder lands below 14b.
+    monkeypatch.setattr(cli, "probe", lambda: _fake_profile(16.0, "T1"))
+
+    runner = CliRunner()
+    r = runner.invoke(app, ["init", "--data-dir", str(cli_env),
+                            "--no-install-service"])
+    assert r.exit_code == 0, r.stdout
+
+    # A model recommendation + the single pull command are printed.
+    assert "recommended model" in r.stdout
+    assert "ollama pull" in r.stdout
+    # RAM-appropriate, not the hardcoded 14b ceiling for a 16 GB box.
+    assert "qwen3:14b" not in r.stdout
+
+
+def test_init_pull_tag_scales_with_ram(cli_env, monkeypatch):
+    """The printed pull tag tracks the detected RAM: a bigger box gets a bigger
+    tag than a smaller one (proves it isn't hardcoded)."""
+    import lighthouse_ai.cli as cli
+
+    def _run(ram, tier):
+        monkeypatch.setattr(cli, "probe", lambda: _fake_profile(ram, tier))
+        out = CliRunner().invoke(
+            app, ["init", "--data-dir", str(cli_env),
+                  "--no-install-service", "--force"])
+        assert out.exit_code == 0, out.stdout
+        return out.stdout
+
+    small = _run(16.0, "T1")
+    large = _run(64.0, "T4")
+    # 16 GB → an 8b-class tag; 64 GB → a 32b-class tag. Different picks.
+    assert "qwen3:8b" in small
+    assert "qwen3:32b" in large
+
+
+def test_init_model_recommendation_is_best_effort(cli_env, monkeypatch):
+    """If model selection blows up, init still completes (never a hard fail)."""
+    import lighthouse_ai.cli as cli
+    monkeypatch.setattr(cli, "probe", lambda: _fake_profile(16.0, "T1"))
+
+    import lighthouse_ai.gateway as gw
+    monkeypatch.setattr(gw, "recommend_pull_tag",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    runner = CliRunner()
+    r = runner.invoke(app, ["init", "--data-dir", str(cli_env),
+                            "--no-install-service"])
+    assert r.exit_code == 0, r.stdout
+    assert "init complete" in r.stdout
+    assert "model recommendation unavailable" in r.stdout

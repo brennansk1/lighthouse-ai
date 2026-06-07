@@ -139,7 +139,7 @@ function SandboxPage() {
   return (
     <div>
       <window.PageHeader
-        title="Sandbox"
+        title="Data Sandbox"
         subtitle="Upload data for Lighthouse to analyze — every file is virus-scanned first."
         actions={
           <span style={{ display: 'flex', gap: 8 }}>

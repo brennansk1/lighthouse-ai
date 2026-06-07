@@ -26,10 +26,12 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _BASE = "https://api.regulations.gov/v4"
 _HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
+_ALLOWED_HOSTS = frozenset({"api.regulations.gov"})
 
 
 def _build_headers(api_key: str | None) -> dict[str, str]:
@@ -163,14 +165,16 @@ def search_dockets(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/dockets",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_build_headers(api_key),
             params={
                 "filter[searchTerm]": query,
                 "page[size]": max_results,
                 "sort": "lastModifiedDate,DESC",
             },
+            client=client,
         )
         resp.raise_for_status()
         return _parse_dockets(resp.json())
@@ -195,9 +199,11 @@ def fetch_docket(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/dockets/{docket_id}",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_build_headers(api_key),
+            client=client,
         )
         resp.raise_for_status()
         item = resp.json().get("data") or {}
@@ -229,14 +235,16 @@ def list_comments(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/comments",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_build_headers(api_key),
             params={
                 "filter[commentOnId]": docket_id,
                 "page[size]": max_results,
                 "sort": "postedDate,DESC",
             },
+            client=client,
         )
         resp.raise_for_status()
         return _parse_comments(resp.json())
@@ -265,14 +273,16 @@ def track_docket_activity(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/documents",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_build_headers(api_key),
             params={
                 "filter[docketId]": docket_id,
                 "page[size]": max_results,
                 "sort": "postedDate,DESC",
             },
+            client=client,
         )
         resp.raise_for_status()
         return _parse_documents(resp.json())

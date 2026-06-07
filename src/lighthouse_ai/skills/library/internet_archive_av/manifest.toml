@@ -11,6 +11,7 @@ Domains: archive.org / web.archive.org.\
 """
 category    = "media"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 tier        = "A"
 
 allowed_domains = ["archive.org", "web.archive.org"]

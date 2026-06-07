@@ -24,10 +24,16 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _API = "https://www.courtlistener.com/api/rest/v4/search/"
 _HEADERS = {"User-Agent": "Lighthouse/0.1"}
+
+# The only host this adapter contacts: the CourtListener REST API. A user who
+# invokes this source has authorized reaching the public API, so the host is
+# declared allowed here and the guard's decide-before-fetch check passes for it.
+_ALLOWED_HOSTS = frozenset({"www.courtlistener.com"})
 
 
 def _parse(data: dict) -> list[Document]:
@@ -90,11 +96,13 @@ def search_courtlistener(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        r = client.get(
+        r = guarded_get(
             _API,
+            allowed_domains=_ALLOWED_HOSTS,
             headers=headers,
             params={"q": query, "type": "o", "page_size": max_results,
                     "order_by": "score desc"},
+            client=client,
         )
         r.raise_for_status()
         return _parse(r.json())

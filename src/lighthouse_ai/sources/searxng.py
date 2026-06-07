@@ -17,10 +17,17 @@ from urllib.parse import urlparse
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 DEFAULT_URL = "http://localhost:8888"
 DEFAULT_TIMEOUT = 10.0
+
+# SearXNG is a self-hosted meta-search service the user runs locally (the
+# docker-compose stack binds it to localhost:8888). These loopback hosts are the
+# only endpoints this adapter contacts, so they are the authorized egress hosts
+# routed through the guard.
+_ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1"})
 
 # Source quality filter: only keep results from these domains when
 # scholarly=True is set. Extend this list as needed.
@@ -69,11 +76,26 @@ def _searxng_url() -> str:
     return os.environ.get("LIGHTHOUSE_SEARXNG_URL", DEFAULT_URL)
 
 
-def available(url: str | None = None) -> bool:
+def available(
+    url: str | None = None,
+    *,
+    client: httpx.Client | None = None,
+) -> bool:
     """True if SearXNG is reachable at the configured URL."""
     base = url or _searxng_url()
     try:
-        r = httpx.get(f"{base}/healthz", timeout=2.0)
+        owns_client = client is None
+        if owns_client:
+            client = httpx.Client(timeout=2.0)
+        try:
+            r = guarded_get(
+                f"{base}/healthz",
+                allowed_domains=_ALLOWED_HOSTS,
+                client=client,
+            )
+        finally:
+            if owns_client:
+                client.close()
         return r.status_code == 200
     except Exception:
         return False
@@ -87,6 +109,7 @@ def search(
     categories: str = "general",
     url: str | None = None,
     timeout: float = DEFAULT_TIMEOUT,
+    client: httpx.Client | None = None,
 ) -> list[SearxResult]:
     """Search SearXNG and return results.
 
@@ -97,6 +120,8 @@ def search(
         categories: SearXNG category string (e.g. "general", "science").
         url: Override the default SearXNG URL.
         timeout: HTTP timeout in seconds.
+        client: Optional injected httpx client (shares pool / config); when
+            omitted a throwaway client honoring ``timeout`` is constructed.
 
     Returns:
         List of SearxResult objects, empty list if SearXNG is unavailable.
@@ -111,8 +136,16 @@ def search(
         "categories": categories,
         "pageno": 1,
     }
+    owns_client = client is None
+    if owns_client:
+        client = httpx.Client(timeout=timeout)
     try:
-        resp = httpx.get(f"{base}/search", params=params, timeout=timeout)
+        resp = guarded_get(
+            f"{base}/search",
+            allowed_domains=_ALLOWED_HOSTS,
+            params=params,
+            client=client,
+        )
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise SearXNGUnavailable(
@@ -124,6 +157,9 @@ def search(
         raise SearXNGUnavailable(
             f"SearXNG at {base} returned error: {exc}"
         ) from exc
+    finally:
+        if owns_client:
+            client.close()
 
     data = resp.json()
     results: list[SearxResult] = []

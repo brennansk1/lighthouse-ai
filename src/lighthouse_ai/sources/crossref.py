@@ -16,10 +16,15 @@ import re
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _API = "https://api.crossref.org/works"
 _HEADERS = {"User-Agent": "Lighthouse/0.1 (mailto:research@lighthouse.local)"}
+# Public Crossref API host this adapter contacts; authorized because the user
+# invoked the Crossref source. Mirrors allowed_domains in the crossref skill
+# manifest so the skill rail and the adapter agree.
+_ALLOWED_HOSTS = frozenset({"api.crossref.org"})
 
 # Types we consider peer-reviewed for grading purposes.
 _GRADE_A_TYPES = {"journal-article", "proceedings-article", "book-chapter"}
@@ -92,7 +97,8 @@ def search_crossref(query: str, *, max_results: int = 5,
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        r = client.get(_API, headers=_HEADERS, params={
+        r = guarded_get(_API, allowed_domains=_ALLOWED_HOSTS,
+                        headers=_HEADERS, client=client, params={
             "query": query, "rows": max_results})
         r.raise_for_status()
         return _parse(r.json())

@@ -3,6 +3,7 @@ name        = "World Bank Open Data"
 description = "World Bank API: international development indicators for 200+ economies. GDP, poverty, health, education, infrastructure, environment. No authentication required."
 category    = "economics"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- fetch policy ---
 tier        = "A"

@@ -27,10 +27,15 @@ import os
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _BASE = "https://api.census.gov/data"
 _HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
+
+# Public Census API hosts this adapter contacts. The user invoked the census
+# source explicitly, so these hosts are authorized for egress.
+_ALLOWED_HOSTS = frozenset({"api.census.gov", "data.census.gov"})
 
 # Curated ACS variable descriptions (common variables)
 _ACS_VARS = {
@@ -116,9 +121,11 @@ def search_dataset(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             "https://api.census.gov/data.json",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
+            client=client,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -188,10 +195,12 @@ def fetch_acs_table(
         }
         if key:
             params["key"] = key
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/{year}/acs/acs5",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params=params,
+            client=client,
         )
         resp.raise_for_status()
         docs = _parse_census_response(resp.json(), f"ACS5/{year}", variables, geography)
@@ -231,10 +240,12 @@ def fetch_decennial(
         }
         if key:
             params["key"] = key
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/{year}/{dataset}",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params=params,
+            client=client,
         )
         resp.raise_for_status()
         docs = _parse_census_response(resp.json(), f"Decennial/{year}", variables, geography)

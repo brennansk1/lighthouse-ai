@@ -238,7 +238,7 @@ def check(text: str, *, min_coverage: float = 0.6,
                      f"have >=2 independent citations")
         passed = passed and (two >= sourced)
 
-    # --- entailment gate (MiniCheck / HHEM when available) ---
+    # --- entailment gate (MiniCheck when available) ---
     entailment_coverage = 0.0
     entailment_checked = False
     # Require *non-empty* evidence: with no chunks there is nothing to entail
@@ -266,7 +266,9 @@ def check(text: str, *, min_coverage: float = 0.6,
                     # Fall back to the first chunk if no id matches.
                     grounding = next(iter(chunk_by_id.values()))
                 score = _entailment.score_claim(claim.text, grounding)
-                if score >= _entailment.MINICHECK_THRESHOLD:
+                # An unchecked claim (score is None: no scorer / scorer error)
+                # must NOT be counted as entailed — that would fabricate a pass.
+                if score is not None and score >= _entailment.MINICHECK_THRESHOLD:
                     entailed += 1
             entailment_coverage = entailed / len(sourced_claims)
             entailment_checked = True
@@ -277,6 +279,17 @@ def check(text: str, *, min_coverage: float = 0.6,
                     f"{entailment_coverage:.0%} < 85%"
                 )
                 passed = False
+
+    # A high-stakes synthesis with sourced claims but NO entailment scorer was
+    # never actually verified.  It must not pass *silently*: surface the gap
+    # truthfully in notes (entailment_checked is already False) so callers can
+    # see the synthesis was citation-checked but not entailment-verified,
+    # rather than inferring a fabricated "fully entailed" pass.
+    if high_stakes and sourced and not entailment_checked:
+        notes.append(
+            "high-stakes entailment unchecked: no entailment scorer available "
+            "(citations verified, faithfulness NOT verified)"
+        )
 
     # --- triangulation + citation integrity (when evidence is supplied) ---
     triangulated = 0

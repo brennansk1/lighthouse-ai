@@ -411,3 +411,59 @@ def test_explicit_web_intent_surfaces_general_web(tmp_path):
     recs = recommend("Search the web for recent news about chip shortages",
                      mode="watch", skills=all_skills(lib), library_dir=lib)
     assert _ids(recs)[0] == GENERAL_WEB_ID
+
+
+# --------------------------------------------------------------------------- #
+# Hidden skills (verticals outside the current wedge) — not OFFERED by default,
+# but still loadable/usable when explicitly named.
+# --------------------------------------------------------------------------- #
+def test_hidden_skill_excluded_from_recommend(tmp_path):
+    """A skill with ``hidden = true`` is never offered by the recommender, even
+    when it matches the question's topic and mode strongly."""
+    lib = tmp_path / "library"
+    _write_full_skill(lib, "openalex", name="OpenAlex", category="academic",
+                      extra='topics = ["economics"]\n'
+                            'modes_natural_fit = ["investigate"]')
+    _write_full_skill(lib, "fred", name="FRED", category="economics",
+                      extra='hidden = true\n'
+                            'topics = ["economics", "inflation"]\n'
+                            'modes_natural_fit = ["investigate"]')
+    recs = recommend("explain recent inflation in the economics data",
+                     mode="investigate", skills=all_skills(lib), library_dir=lib)
+    assert "fred" not in _ids(recs)
+    assert "openalex" in _ids(recs)
+
+
+def test_hidden_skill_not_offered_even_when_explicitly_named(tmp_path):
+    """The hidden flag suppresses the recommender's *offer* unconditionally: a
+    hidden source is excluded from recommend() output even if the user names it.
+    It remains resolvable by id through the registry (loadable/usable), which is
+    the explicit-use path the dispatcher takes."""
+    lib = tmp_path / "library"
+    _write_full_skill(lib, "openalex", name="OpenAlex", category="academic",
+                      extra='modes_natural_fit = ["investigate"]')
+    _write_full_skill(lib, "fred", name="FRED", category="economics",
+                      extra='hidden = true\nmodes_natural_fit = ["investigate"]')
+    recs = recommend("pull the FRED series for unemployment",
+                     mode="investigate", skills=all_skills(lib), library_dir=lib)
+    assert "fred" not in _ids(recs)
+    # Still loadable/usable by id (the explicit-use path), proving "hidden" only
+    # gates the default offer, not availability.
+    from lighthouse_ai.skills.registry import load_skill
+    loaded = load_skill("fred", lib)
+    assert loaded.manifest.id == "fred"
+    assert loaded.manifest.hidden is True
+
+
+def test_hidden_flag_defaults_false_and_round_trips(tmp_path):
+    """``hidden`` defaults to False and survives the manifest round-trip into
+    ``as_dict`` (the picker catalog payload)."""
+    lib = tmp_path / "library"
+    _write_full_skill(lib, "visible", name="Visible Source")
+    _write_full_skill(lib, "hidden_src", name="Hidden Source",
+                      extra='hidden = true')
+    by_id = {m.id: m for m in all_skills(lib)}
+    assert by_id["visible"].hidden is False
+    assert by_id["hidden_src"].hidden is True
+    assert by_id["visible"].as_dict()["hidden"] is False
+    assert by_id["hidden_src"].as_dict()["hidden"] is True

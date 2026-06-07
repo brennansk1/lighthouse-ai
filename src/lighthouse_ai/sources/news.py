@@ -63,6 +63,21 @@ except ImportError:  # pragma: no cover — net module may not define this yet
 
 
 # ---------------------------------------------------------------------------
+# Egress allowlist
+# ---------------------------------------------------------------------------
+
+# News is the "point at any outlet" channel: the per-outlet skills register the
+# feed / search URLs, so this shared adapter has no fixed API host of its own.
+# Passing ``allowed_domains`` as ``None`` defers to the platform egress
+# allowlist (``DEFAULT_ALLOWED_DOMAINS``) as the ceiling — matching the rss
+# skill manifest, which declares ``allowed_domains = []`` for the same reason
+# (a registered outlet reaches whatever the platform already permits, never
+# wider). The guard still enforces decide-before-fetch, audit logging, and the
+# ``LIGHTHOUSE_AIRGAP`` kill before any socket opens.
+_ALLOWED_HOSTS: frozenset[str] | None = None
+
+
+# ---------------------------------------------------------------------------
 # HTML stripping helpers
 # ---------------------------------------------------------------------------
 
@@ -113,8 +128,15 @@ def fetch_outlet_feed(
             status = resp.status_code if hasattr(resp, "status_code") else 200
         else:
             import httpx  # allowed in sources/ — not inside skill scan
+
+            from lighthouse_ai.net import guarded_get
             with httpx.Client(timeout=30.0, follow_redirects=True) as hx:
-                r = hx.get(feed_url, headers={"User-Agent": "Lighthouse/0.1"})
+                r = guarded_get(
+                    feed_url,
+                    allowed_domains=_ALLOWED_HOSTS,
+                    headers={"User-Agent": "Lighthouse/0.1"},
+                    client=hx,
+                )
             payload = r.content
             status = r.status_code
 
@@ -168,8 +190,15 @@ def search_outlet(
                 status = resp.status_code if hasattr(resp, "status_code") else 200
             else:
                 import httpx
+
+                from lighthouse_ai.net import guarded_get
                 with httpx.Client(timeout=30.0, follow_redirects=True) as hx:
-                    r = hx.get(url, headers={"User-Agent": "Lighthouse/0.1"})
+                    r = guarded_get(
+                        url,
+                        allowed_domains=_ALLOWED_HOSTS,
+                        headers={"User-Agent": "Lighthouse/0.1"},
+                        client=hx,
+                    )
                 payload = r.content
                 status = r.status_code
 

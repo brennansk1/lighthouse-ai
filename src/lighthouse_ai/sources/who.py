@@ -24,10 +24,14 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _BASE = "https://ghoapi.azureedge.net/api"
 _HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
+# Public WHO GHO OData API host(s) this adapter contacts. The user invoked this
+# source for WHO health data, so these are authorized egress destinations.
+_ALLOWED_HOSTS = frozenset({"ghoapi.azureedge.net", "who.int"})
 
 
 def _parse_indicators(data: dict, query: str) -> list[Document]:
@@ -126,7 +130,12 @@ def search_who(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(f"{_BASE}/GHO", headers=_HEADERS)
+        resp = guarded_get(
+            f"{_BASE}/GHO",
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_HEADERS,
+            client=client,
+        )
         resp.raise_for_status()
         docs = _parse_indicators(resp.json(), query)
         return docs[:max_results]

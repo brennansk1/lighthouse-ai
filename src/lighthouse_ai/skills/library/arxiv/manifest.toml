@@ -7,7 +7,7 @@ version     = "0.1.0"
 # --- fetch policy ---
 tier        = "A"
 base_url    = "https://export.arxiv.org"
-allowed_domains = ["arxiv.org"]
+allowed_domains = ["export.arxiv.org", "arxiv.org"]
 rate_limit_per_sec = 0.34   # arXiv requests ~3-second spacing between API calls
 robots_policy = "obey"
 

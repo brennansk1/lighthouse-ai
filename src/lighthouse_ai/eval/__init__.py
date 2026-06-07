@@ -19,11 +19,15 @@ turns the same harness into a quality gate.
 from __future__ import annotations
 
 from .golden import (
+    ContradictionCase,
     GoldenCase,
     GoldenSet,
     build_golden_set,
     build_index,
     evaluate,
+    golden_to_json_dict,
+    load_golden_from_json,
+    save_golden_to_json,
 )
 from .metrics import (
     faithfulness,
@@ -34,14 +38,18 @@ from .metrics import (
 )
 
 __all__ = [
+    "ContradictionCase",
     "GoldenCase",
     "GoldenSet",
     "build_golden_set",
     "build_index",
     "evaluate",
     "faithfulness",
+    "golden_to_json_dict",
+    "load_golden_from_json",
     "mean_metric",
     "mrr",
     "precision_at_k",
     "recall_at_k",
+    "save_golden_to_json",
 ]

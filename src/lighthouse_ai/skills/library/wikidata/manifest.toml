@@ -3,6 +3,7 @@ name        = "Wikidata"
 description = "Wikidata structured knowledge graph: entity search, property lookup, and cross-source identifier resolution (ORCID, VIAF, IMDb, ISNI) via the Wikidata Action API."
 category    = "reference"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- fetch policy ---
 tier        = "A"

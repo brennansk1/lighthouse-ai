@@ -24,8 +24,28 @@ throttled_backoff_ms = 2000   # sleep before each permit when throttled
 paused_poll_ms = 5000         # re-poll cadence when paused
 max_concurrent_llm = 1        # global slot count (raise on T3+)
 
+[modes]
+# Reversible feature flag (the "wedge"): which research modes the default UI
+# OFFERS. Every mode stays in the code and remains runnable if requested by its
+# explicit key — this only gates what the picker surfaces. Widen this list to
+# re-expose the full mode set.
+enabled = ["investigate"]
+
 [depth]
 default_preset = "standard"
+# Reversible feature flag (the "wedge"): which depth tiers the default UI OFFERS.
+# "deep" (the recursive exhaustive tier) stays in the code but is hidden by
+# default. Add "deep" here to re-expose it.
+enabled_tiers = ["quick", "standard", "thorough"]
+
+[rag]
+# Vector store backend. Default "memory" needs NO Docker and NO Qdrant — it
+# uses the in-process store backed by the local SQLite spine, so `lighthouse`
+# runs out of the box. Switch to "qdrant" only if you want the production HNSW
+# index; that one requires booting the optional Docker stack
+# (scripts/lh-stack.docker-compose.yml). Qdrant is OPTIONAL, not required to start.
+vector_store = "memory"
+qdrant_url = "http://127.0.0.1:6333"   # only used when vector_store = "qdrant"
 
 [litestream]
 config_path = "{litestream_config}"

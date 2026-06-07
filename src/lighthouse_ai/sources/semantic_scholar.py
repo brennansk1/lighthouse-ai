@@ -17,11 +17,16 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _API = "https://api.semanticscholar.org/graph/v1/paper/search"
 _HEADERS = {"User-Agent": "Lighthouse/0.1"}
 _FIELDS = "title,abstract,year,citationCount,url"
+# Public Semantic Scholar Graph API host this adapter contacts; authorized
+# because the user invoked the Semantic Scholar source. Mirrors allowed_domains
+# in the semantic_scholar skill manifest so the skill rail and adapter agree.
+_ALLOWED_HOSTS = frozenset({"api.semanticscholar.org"})
 
 
 def _parse(data: dict) -> list[Document]:
@@ -76,10 +81,12 @@ def search_semantic_scholar(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        r = client.get(
+        r = guarded_get(
             _API,
+            allowed_domains=_ALLOWED_HOSTS,
             headers=headers,
             params={"query": query, "limit": max_results, "fields": _FIELDS},
+            client=client,
         )
         r.raise_for_status()
         return _parse(r.json())

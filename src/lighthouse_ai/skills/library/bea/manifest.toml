@@ -3,6 +3,7 @@ name        = "BEA (Bureau of Economic Analysis)"
 description = "BEA API: GDP, personal income, national accounts (NIPA tables), international trade, and regional/industry accounts. Authoritative source for U.S. national income and product accounts."
 category    = "economics"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- fetch policy ---
 tier        = "A"

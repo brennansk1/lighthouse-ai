@@ -24,9 +24,11 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _BASE = "https://sdmx.oecd.org/public/rest"
+_ALLOWED_HOSTS = frozenset({"sdmx.oecd.org"})
 _HEADERS = {
     "User-Agent": "Lighthouse/0.1",
     "Accept": "application/vnd.sdmx.data+json;version=1.0",
@@ -190,10 +192,12 @@ def fetch_dataset(
         client = httpx.Client(timeout=timeout)
     try:
         url = f"{_BASE}/data/{dataset_id}/{filter_expression}"
-        resp = client.get(
+        resp = guarded_get(
             url,
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={"dimensionAtObservation": "TIME_PERIOD", "startPeriod": "2015"},
+            client=client,
         )
         resp.raise_for_status()
         return _parse_sdmx_data(resp.json(), dataset_id)

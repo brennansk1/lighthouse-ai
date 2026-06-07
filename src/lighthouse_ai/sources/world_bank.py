@@ -22,10 +22,15 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _BASE = "https://api.worldbank.org/v2"
 _HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
+
+# Public API host this adapter contacts. The user invoked the World Bank source
+# explicitly, so this host is authorized; egress is gated to exactly this set.
+_ALLOWED_HOSTS = frozenset({"api.worldbank.org"})
 
 
 def _parse_indicator_list(data: list, query: str) -> list[Document]:
@@ -125,10 +130,12 @@ def search_indicator(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/indicator",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={"format": "json", "per_page": 100, "page": 1},
+            client=client,
         )
         resp.raise_for_status()
         docs = _parse_indicator_list(resp.json(), query)
@@ -158,10 +165,12 @@ def fetch_indicator(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/country/{country}/indicator/{indicator}",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={"format": "json", "per_page": 50, "mrv": 10},
+            client=client,
         )
         resp.raise_for_status()
         return _parse_indicator_data(resp.json(), country, indicator)
@@ -189,10 +198,12 @@ def list_indicators_by_topic(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/topic/{topic_id}/indicator",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={"format": "json", "per_page": max_results},
+            client=client,
         )
         resp.raise_for_status()
         docs = _parse_indicator_list(resp.json(), "")
@@ -252,10 +263,12 @@ def get_country_metadata(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/country/{country_code}",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={"format": "json"},
+            client=client,
         )
         resp.raise_for_status()
         data = resp.json()

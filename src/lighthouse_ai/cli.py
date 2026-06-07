@@ -116,6 +116,34 @@ def init(
         _install_service(paths, force=force)
 
     console.print("\n[bold green]lighthouse init complete.[/bold green]")
+
+    # Next steps: zero-friction first run. The default config uses the in-memory
+    # vector store (SQLite spine) so nothing external is required to start.
+    console.print("\n[bold]Next steps[/bold]")
+    console.print("  [green]✓[/green] No Docker needed to start — "
+                  "default vector store is in-memory (SQLite spine).")
+
+    # Auto-select a RAM-appropriate reasoning model and print the one pull the
+    # user still needs. Budget-aware via gateway.recommend_models / the tag
+    # ladder, so a small box gets a small tag instead of a hardcoded qwen3:14b.
+    try:
+        from .gateway import recommend_models, recommend_pull_tag
+        bindings = recommend_models(profile)
+        reasoning = bindings.get("synthesizer") or bindings.get("planner")
+        pull_tag = recommend_pull_tag(profile)
+        if reasoning is not None:
+            console.print(f"  recommended model (tier {profile.suggested_tier}): "
+                          f"[bold cyan]{reasoning.model}[/bold cyan] "
+                          f"→ pull [bold]{pull_tag}[/bold] "
+                          f"({profile.total_ram_gb} GB RAM)")
+        console.print(f"  [bold]ollama pull {pull_tag}[/bold]   "
+                      "(the only model you need to start)")
+    except Exception as exc:  # never let model selection break init
+        console.print(f"  [yellow]-[/yellow] model recommendation unavailable: {exc!r}")
+
+    console.print("  Qdrant/Docker are [bold]optional[/bold] — only for the "
+                  "production HNSW index (see scripts/lh-stack.docker-compose.yml).")
+
     if not ls.litestream_installed():
         console.print(f"[yellow]warning:[/yellow] {ls.install_hint()}")
 
@@ -299,9 +327,16 @@ def doctor() -> None:
     console.rule("[bold]packages[/bold]")
     console.print(f"  lighthouse-ai: {__version__}")
     console.print(f"  python: {sys.version.split()[0]}")
+    # docker is optional — only needed for the production Qdrant HNSW index.
+    _optional_tools = {"docker"}
     for tool in ("ollama", "docker", "bwrap", "sandbox-exec", "litestream"):
         path = shutil.which(tool)
-        mark = "[green]✓[/green]" if path else "[yellow]missing[/yellow]"
+        if path:
+            mark = "[green]✓[/green]"
+        elif tool in _optional_tools:
+            mark = "[dim]· optional — not required to start[/dim]"
+        else:
+            mark = "[yellow]missing[/yellow]"
         console.print(f"  {tool}: {mark} {path or ''}")
 
     # Section: directory structure
@@ -350,8 +385,10 @@ def doctor() -> None:
         else:
             console.print(f"  [green]✓[/green] {lag.name}: lag {lag.lag_seconds}s")
 
-    # Section: external services (optional; missing is a hint, not an error)
-    console.rule("[bold]external services[/bold]")
+    # Section: external services — all OPTIONAL. None of these are required to
+    # start Lighthouse (the default config runs on the in-memory SQLite spine),
+    # so a missing one is an informational note, never a blocker.
+    console.rule("[bold]external services (optional)[/bold]")
     try:
         from .backends.ollama import OllamaBackend
         ollama_ok = OllamaBackend().available()
@@ -370,8 +407,10 @@ def doctor() -> None:
     if qdrant_ok:
         console.print("  [green]✓[/green] qdrant at 127.0.0.1:6333")
     else:
-        console.print("  [yellow]-[/yellow] qdrant not reachable "
-                      "(boot via scripts/lh-stack.docker-compose.yml)")
+        console.print("  [dim]·[/dim] qdrant: optional — not required to start "
+                      "(default vector store is in-memory; boot the production "
+                      "HNSW index via scripts/lh-stack.docker-compose.yml only if "
+                      "you want it)")
 
     # Section: audit chain integrity
     console.rule("[bold]audit chain[/bold]")

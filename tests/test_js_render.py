@@ -80,6 +80,18 @@ def test_render_html_returns_none_when_playwright_absent():
         assert result is None, f"Expected None, got {result!r}"
 
 
+def test_render_html_returns_none_in_airgap(monkeypatch):
+    """LIGHTHOUSE_AIRGAP must refuse the JS render before launching Chromium.
+
+    The airgap check runs before the lazy playwright import, so render_html
+    returns None (degrading to static fetch) regardless of whether the browser
+    is installed — closing the Tier-B egress hole the kill switch must cover.
+    """
+    monkeypatch.setenv("LIGHTHOUSE_AIRGAP", "1")
+    mod = _js_render_module()
+    assert mod.render_html("https://example.com") is None
+
+
 def test_render_html_returns_none_no_raise_on_import_error():
     """render_html returns None (not raises) when sync_playwright ImportError occurs."""
     mod = _js_render_module()

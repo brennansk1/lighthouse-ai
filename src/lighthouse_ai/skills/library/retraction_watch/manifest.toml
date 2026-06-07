@@ -3,6 +3,7 @@ name        = "Retraction Watch"
 description = "Retraction Watch lookup utility: check whether a scholarly work has been retracted, had an expression of concern issued, or has a correction notice, by DOI, PMID, or arXiv ID. Uses Crossref Labs retraction data (DOI 10.13003/c23rw1d9). Not a destination skill — compose into arXiv, OpenAlex, PubMed, and Crossref workflows for integrity checks."
 category    = "utility"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- composing intent: not a destination skill ---
 # composing_skill=true is not a recognized SkillManifest field (schema is strict).

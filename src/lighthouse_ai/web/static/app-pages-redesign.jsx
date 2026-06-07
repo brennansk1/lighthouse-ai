@@ -50,6 +50,30 @@ function artifactLabel(t) {
 // Mode keys (verified against MODE_PROCESSES.md registry):
 //   watch | ask | investigate | survey | reconstruct | decide | adjudicate
 
+// ── Wedge config ───────────────────────────────────────────────────────────
+// The default UI exposes a deliberately narrow first surface: just the
+// 'investigate' mode at the quick/standard/thorough depth tiers (NOT Deep).
+// Every other mode, vertical, and the Deep tier stay in the code, hidden
+// behind these constants so the choice is fully reversible — flip the sets
+// back to the full taxonomy and the original UI returns unchanged.
+//
+// Mirrors the backend config keys (reversible, no server round-trip needed):
+//   [modes] enabled = ["investigate"]
+//   [depth] enabled_tiers = ["quick","standard","thorough"]
+// We read those off a window-global if the shell ever publishes them (e.g.
+// from /api/config), else fall back to the wedge set client-side.
+const WEDGE_MODES = (window.LH_ENABLED_MODES && window.LH_ENABLED_MODES.length)
+  ? window.LH_ENABLED_MODES
+  : ['investigate'];
+const WEDGE_DEPTH_TIERS = (window.LH_ENABLED_DEPTH_TIERS && window.LH_ENABLED_DEPTH_TIERS.length)
+  ? window.LH_ENABLED_DEPTH_TIERS
+  : ['quick', 'standard', 'thorough'];
+
+const wedgeModeEnabled = (key) => WEDGE_MODES.includes(key);
+// 'auto' is always available — it resolves to an enabled tier server-side and
+// is the recommended default; it is not itself a coverage tier.
+const wedgeTierEnabled = (key) => key === 'auto' || WEDGE_DEPTH_TIERS.includes(key);
+
 const INTENT_RECIPES = [
   {
     id: 'literature-review',
@@ -107,10 +131,65 @@ const INTENT_RECIPES = [
   },
 ];
 
+// Wedge recipe set — task-framed entry points for the investigate-only surface.
+// These re-cast the most common research jobs as Investigate runs at an enabled
+// depth, so a newcomer starts from a task ("Answer a question", "Quick look")
+// rather than from the Lighthouse verb. The full INTENT_RECIPES above stays in
+// the code for when the wedge widens back to the whole mode taxonomy.
+const WEDGE_INTENT_RECIPES = [
+  {
+    id: 'wedge-answer-question',
+    label: 'Answer a question',
+    blurb: 'Investigate a question and get back a focused, sourced report that answers it.',
+    mode: 'investigate',
+    depth: 'standard',
+    suggestedSkills: ['general_web', 'wikipedia'],
+    examplePrompt: 'e.g. What is driving the recent change in regional grid prices?',
+  },
+  {
+    id: 'wedge-literature-review',
+    label: 'Review the research on a topic',
+    blurb: 'Pull together what the sources say into a clear, cited write-up. Starts with research databases — add web or other sources too.',
+    mode: 'investigate',
+    depth: 'thorough',
+    suggestedSkills: ['openalex', 'pubmed', 'arxiv', 'semantic_scholar', 'general_web'],
+    examplePrompt: 'e.g. What does the recent literature say about GLP-1 drugs for weight maintenance?',
+  },
+  {
+    id: 'wedge-quick-look',
+    label: 'Quick look',
+    blurb: 'Get a fast, cited first pass on a pointed question. Good when you just need the top findings.',
+    mode: 'investigate',
+    depth: 'quick',
+    suggestedSkills: ['general_web', 'wikipedia'],
+    examplePrompt: 'e.g. What do the sources say about the 2023 supply agreement?',
+  },
+];
+
+// The recipes actually offered on the Research landing: filter to enabled
+// (wedge) modes, then clamp each recipe's depth to an enabled tier so a recipe
+// can never pre-select a hidden tier (e.g. Deep). When the wedge collapses the
+// full set to nothing (the investigate-only default), fall back to the
+// task-framed WEDGE_INTENT_RECIPES so the landing still leads with tasks.
+function clampRecipeDepth(depth) {
+  if (!depth || depth === 'auto') return 'auto';
+  return wedgeTierEnabled(depth) ? depth : 'auto';
+}
+function activeIntentRecipes() {
+  const enabled = INTENT_RECIPES
+    .filter((r) => wedgeModeEnabled(r.mode))
+    .map((r) => ({ ...r, depth: clampRecipeDepth(r.depth) }));
+  if (enabled.length >= 2) return enabled;
+  return WEDGE_INTENT_RECIPES
+    .filter((r) => wedgeModeEnabled(r.mode))
+    .map((r) => ({ ...r, depth: clampRecipeDepth(r.depth) }));
+}
+const ACTIVE_INTENT_RECIPES = activeIntentRecipes();
+
 // RecipeCard: one intent recipe chip.  Compact horizontal layout — label +
 // one-liner blurb + small "mode" badge — so six fit in a row without dominating
 // the mode grid below.
-function RecipeCard({ recipe, onSelect }) {
+function RecipeCard({ recipe, onSelect, hideMode }) {
   const [hover, setHover] = useState(false);
   return (
     <button
@@ -137,12 +216,14 @@ function RecipeCard({ recipe, onSelect }) {
         fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.4,
         marginBottom: 6,
       }}>{recipe.blurb}</div>
-      <span style={{
-        display: 'inline-block', fontSize: 10, fontWeight: 700,
-        lineHeight: 1, padding: '2px 6px', borderRadius: 3,
-        background: 'var(--rule-soft)', color: 'var(--ink-2)',
-        textTransform: 'uppercase', letterSpacing: '0.04em',
-      }}>{recipe.mode}</span>
+      {!hideMode && (
+        <span style={{
+          display: 'inline-block', fontSize: 10, fontWeight: 700,
+          lineHeight: 1, padding: '2px 6px', borderRadius: 3,
+          background: 'var(--rule-soft)', color: 'var(--ink-2)',
+          textTransform: 'uppercase', letterSpacing: '0.04em',
+        }}>{recipe.mode}</span>
+      )}
     </button>
   );
 }
@@ -187,12 +268,42 @@ function RecipeRow({ onRecipeSelect }) {
             source set. You can adjust everything in the next step.
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-            {INTENT_RECIPES.map((r) => (
+            {ACTIVE_INTENT_RECIPES.map((r) => (
               <RecipeCard key={r.id} recipe={r} onSelect={onRecipeSelect} />
             ))}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// RecipePanel: the primary, always-open task picker on the Research landing.
+// New users start from a task ("Answer a question", "Review the research")
+// rather than from a Lighthouse verb; the raw mode grid sits below as the
+// secondary path. Cards hide the internal mode badge here — under the current
+// wedge it would only ever read "investigate", which is the jargon we want to
+// keep out of the first decision.
+function RecipePanel({ onRecipeSelect }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{
+        fontFamily: 'var(--serif)', fontSize: 16, fontWeight: 700,
+        color: 'var(--ink)', marginBottom: 4,
+      }}>What do you want to do?</div>
+      <p style={{
+        fontSize: 12.5, color: 'var(--muted)', margin: '0 0 12px',
+        lineHeight: 1.5, maxWidth: '68ch',
+      }}>
+        Start from a task — Lighthouse picks a sensible depth and source set,
+        and you can adjust everything before you launch. Prefer to set it up
+        yourself? The full options are below.
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+        {ACTIVE_INTENT_RECIPES.map((r) => (
+          <RecipeCard key={r.id} recipe={r} onSelect={onRecipeSelect} hideMode />
+        ))}
+      </div>
     </div>
   );
 }
@@ -243,22 +354,50 @@ const DEPTH_TIERS = [
     blurb: 'The deepest option. Best left to run in the background, even overnight.' },
 ];
 const DEPTH_INVARIANT = 'More effort means wider coverage — it never lowers the bar on what counts as a reliable source.';
+// One-line plain gloss for the counter-intuitive part of the invariant: a
+// deeper run looks at more and is more sure of itself, but it is never more
+// willing to trust a shaky source. Sits under the invariant line.
+const DEPTH_INVARIANT_GLOSS = 'In plain terms: deeper means it checks more and can be more confident — not that it lowers its standards for what to believe.';
 const DEEP_BUDGETS = [
   { key: '30m', label: '30 min' }, { key: '1h', label: '1 hour' },
   { key: '2h', label: '2 hours' }, { key: 'overnight', label: 'Overnight' },
 ];
 
-// Depth selector: four tier cards + (for Deep) a required budget. Honors the
+// Depth selector: enabled tier cards + (for Deep) a required budget. Tiers
+// outside the wedge (currently Deep) render as a disabled "coming soon" tile
+// so the option is visibly on the roadmap but not selectable. Honors the
 // invariant tooltip and Adjudicate's Standard-minimum rule is enforced server-side.
 function DepthSelector({ depth, setDepth, budget, setBudget }) {
   return (
     <div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 2 }}
         title={DEPTH_INVARIANT}>{DEPTH_INVARIANT}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8,
+        lineHeight: 1.45, fontStyle: 'italic' }}>{DEPTH_INVARIANT_GLOSS}</div>
       <div style={{ display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
         {DEPTH_TIERS.map((t) => {
+          const enabled = wedgeTierEnabled(t.key);
           const on = depth === t.key;
+          if (!enabled) {
+            // Disabled "coming soon" tile — visible, greyed, not selectable.
+            return (
+              <div key={t.key} aria-disabled="true"
+                title={`${t.label} depth is coming soon`}
+                style={{ ...card, textAlign: 'left', padding: '10px 12px',
+                  cursor: 'not-allowed', opacity: 0.55,
+                  border: '1px dashed var(--rule)', background: 'var(--card)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'baseline', gap: 6 }}>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink)' }}>{t.label}</span>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.05em',
+                    textTransform: 'uppercase', color: 'var(--muted)' }}>Coming soon</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4,
+                  lineHeight: 1.4 }}>{t.blurb}</div>
+              </div>
+            );
+          }
           return (
             <button key={t.key} onClick={() => setDepth(t.key)} aria-pressed={on}
               style={{ ...card, textAlign: 'left', padding: '10px 12px', cursor: 'pointer',
@@ -275,7 +414,7 @@ function DepthSelector({ depth, setDepth, budget, setBudget }) {
           );
         })}
       </div>
-      {depth === 'deep' && (
+      {depth === 'deep' && wedgeTierEnabled('deep') && (
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8,
           flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }}>
@@ -352,12 +491,37 @@ function FirstRunCard({ onDismiss }) {
 // Launch POSTs to /api/jobs, which normalizes the mode key and validates Decide
 // server-side; on success we route to #activity.
 
-function ModeCard({ mode, selected, onSelect, primary }) {
+function ModeCard({ mode, selected, onSelect, primary, disabled }) {
   // Ask is shown "primary": a wider, accent-bordered card that reads as the
-  // simple, get-started option above the deeper research modes.
+  // simple, get-started option above the deeper research modes. Modes outside
+  // the current wedge render `disabled`: a greyed, non-selectable "coming soon"
+  // card so the broader taxonomy is visible on the roadmap but can't be picked.
   const summary = primary
     ? 'Get a quick, cited answer to a pointed question.'
     : mode.summary;
+  if (disabled) {
+    return (
+      <div aria-disabled="true" title={`${mode.label} is coming soon`}
+        style={{
+          ...card, textAlign: 'left', padding: '14px 16px',
+          cursor: 'not-allowed', width: '100%', opacity: 0.55,
+          border: '1px dashed var(--rule)', background: 'var(--card)',
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: 'var(--serif)', fontSize: 15,
+            fontWeight: 700, color: 'var(--ink)' }}>{mode.label}</span>
+          <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.05em',
+            textTransform: 'uppercase', color: 'var(--muted)' }}>Coming soon</span>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4,
+          lineHeight: 1.45 }}>{mode.summary}</div>
+        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 8,
+          textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          You get: {artifactLabel(mode.artifact_type)}
+        </div>
+      </div>
+    );
+  }
   return (
     <button
       onClick={() => onSelect(mode.key)}
@@ -933,7 +1097,11 @@ function ResearchPage({ toast }) {
         const c = await apiGet(`/api/classify?q=${encodeURIComponent(topic.trim())}`);
         setPlan(Array.isArray(c.sub_questions) ? c.sub_questions : []);
         if (depth === 'auto') {
-          const t = c.suggested_tier || 'standard';
+          // Never let Auto resolve to a tier outside the wedge (e.g. Deep) —
+          // fall back to the deepest enabled tier, Thorough.
+          const suggested = c.suggested_tier || 'standard';
+          const t = wedgeTierEnabled(suggested) && suggested !== 'auto'
+            ? suggested : 'thorough';
           setDepth(t);
           const label = (DEPTH_TIERS.find((x) => x.key === t) || {}).label || t;
           toast.show(`Auto chose ${label} depth (${(c.question_type || '').replace(/_/g, ' ')}).`, 'info');
@@ -1006,39 +1174,54 @@ function ResearchPage({ toast }) {
           {/* ── Step 1 — Choose what you want ── */}
           {step === 1 && (
             <div>
-              {/* Recipe row — collapsible, secondary; sits above the mode grid */}
-              <RecipeRow onRecipeSelect={applyRecipe} />
+              {/* Primary entry: task-framed recipes, so a newcomer starts from a
+                  task rather than from a Lighthouse verb. */}
+              <RecipePanel onRecipeSelect={applyRecipe} />
 
-              <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 14px',
-                lineHeight: 1.5, maxWidth: '60ch' }}>
-                Pick what you want. Just need a quick cited answer? Start with
-                <strong style={{ color: 'var(--ink-2)' }}> Ask</strong>. The other
-                options do deeper kinds of research.
-              </p>
-              {/* Ask first, primary — the simple "quick cited answer" option. The
-                  remaining six modes follow in their API order. */}
-              {(() => {
-                const askMode = modes.find((m) => m.key === 'ask');
-                const rest = modes.filter((m) => m.key !== 'ask');
-                return (
-                  <React.Fragment>
-                    {askMode && (
-                      <div style={{ marginBottom: 14 }}>
-                        <ModeCard mode={askMode} primary
-                          selected={askMode.key === selected} onSelect={chooseMode} />
+              {/* Secondary path: the raw mode grid. Enabled (wedge) modes are
+                  selectable; everything else shows as a greyed "coming soon"
+                  card so the broader taxonomy stays visible but out of the way. */}
+              <div style={{ borderTop: '1px solid var(--rule)', paddingTop: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em',
+                  textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 6 }}>
+                  Or set it up yourself
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 14px',
+                  lineHeight: 1.5, maxWidth: '60ch' }}>
+                  Pick the kind of research you want. More kinds are on the way.
+                </p>
+                {(() => {
+                  // Ask leads as "primary" only when it's an enabled wedge mode;
+                  // otherwise the enabled modes carry the grid and the rest show
+                  // as coming-soon, in API order.
+                  const askMode = modes.find((m) => m.key === 'ask');
+                  const askPrimary = askMode && wedgeModeEnabled('ask');
+                  const grid = modes.filter((m) => !(askPrimary && m.key === 'ask'));
+                  // Enabled modes first, disabled (coming-soon) after.
+                  const ordered = grid
+                    .slice()
+                    .sort((a, b) => Number(wedgeModeEnabled(b.key)) - Number(wedgeModeEnabled(a.key)));
+                  return (
+                    <React.Fragment>
+                      {askPrimary && (
+                        <div style={{ marginBottom: 14 }}>
+                          <ModeCard mode={askMode} primary
+                            selected={askMode.key === selected} onSelect={chooseMode} />
+                        </div>
+                      )}
+                      <div style={{ display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                        gap: 12 }}>
+                        {ordered.map((m) => (
+                          <ModeCard key={m.key} mode={m}
+                            disabled={!wedgeModeEnabled(m.key)}
+                            selected={m.key === selected} onSelect={chooseMode} />
+                        ))}
                       </div>
-                    )}
-                    <div style={{ display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-                      gap: 12 }}>
-                      {rest.map((m) => (
-                        <ModeCard key={m.key} mode={m} selected={m.key === selected}
-                          onSelect={chooseMode} />
-                      ))}
-                    </div>
-                  </React.Fragment>
-                );
-              })()}
+                    </React.Fragment>
+                  );
+                })()}
+              </div>
             </div>
           )}
 
@@ -2139,7 +2322,7 @@ function ActivityPage({ toast }) {
 
   return (
     <div style={{ padding: PAD, maxWidth: 1100 }}>
-      <PageHeader title="Activity"
+      <PageHeader title="Runs"
         subtitle="Research that is running or recently finished. Watch a run live as it progresses, and see each step the AI took." />
       {loading && !data && <Loading />}
       {error && <ErrorBox message={error} onRetry={reload} />}
@@ -3000,7 +3183,7 @@ function TrackPage(props) {
   const Insights = window.IntelligencePage;
   return (
     <div style={{ padding: PAD, maxWidth: 1200 }}>
-      <PageHeader title="Track"
+      <PageHeader title="Forecasts"
         subtitle="Predictions Lighthouse is tracking, and how accurate they turn out to be." />
       <SectionIntro title="What this tab is for">
         Lighthouse records clear predictions we can later check as right or wrong —

@@ -397,6 +397,12 @@ def _passes_hard_filters(
     # that matches no topic still out-scores the source the user actually named).
     if "composing" in manifest.audit_tags:
         return False
+    # Hidden skills (verticals outside the current wedge) are never OFFERED by
+    # the recommender. They remain loadable/usable when explicitly named — a
+    # caller that passes the manifest directly to the dispatcher bypasses this
+    # ranking path entirely — but they don't pollute the default candidate set.
+    if manifest.hidden:
+        return False
     if not allow_community and manifest.is_community:
         return False
     req_shape = weights.get("require_output_shape")

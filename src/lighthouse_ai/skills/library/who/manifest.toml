@@ -3,6 +3,7 @@ name        = "WHO (World Health Organization)"
 description = "WHO Global Health Observatory OData API: search health indicators, fetch country data series, compare countries on mortality/morbidity/prevalence metrics, and monitor outbreak alerts."
 category    = "public_health"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- fetch policy ---
 # NOTE: ghoapi.azureedge.net (and who.int) are NOT on the default platform

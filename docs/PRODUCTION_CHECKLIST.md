@@ -226,7 +226,7 @@ real data and harden it. Grouped by priority.
 
 ## Cross-cutting subsystems (built in parallel sprints)
 
-- ✅ Governor guards wired: **loop detector** in the Gateway (raises `LoopTripped` on runaway), **injection gate** screens every ingested chunk (injected content never enters the corpus). 🔌 `egress_proxy` built+tested but not yet on the fetch path.
+- ✅ Governor guards wired: **loop detector** in the Gateway (raises `LoopTripped` on runaway), **injection gate** screens every ingested chunk (injected content never enters the corpus), **`egress_proxy` now on the fetch path** — all source adapters + notifications route through the egress guard, and `LIGHTHOUSE_AIRGAP` hard-blocks egress. 🔌 caveat: Playwright/`js_render` is not yet routed through the guard.
 - ✅ **Scheduler Gate** (`governor/scheduler_gate.py`, OpenHuman §1): host-courtesy throttle (power/CPU/server → Aggressive/Normal/Throttled/Paused); cooperative `permit()` wraps Deep-Dive LLM calls; `lighthouse doctor` reports policy. See `OPENHUMAN_INTEGRATION.md`.
 - ✅ **Hotness Score** (`compounding/hotness.py`, OpenHuman §2): deterministic LLM-free entity-importance with named-term breakdown; available as a Monitor salience scorer. 🟡 persistence table + dossier materialisation deferred.
 - ✅ Notifications (`notify/`): desktop / Discord / email / Telegram + dispatcher; fired on `draft_ready`, **on `monitor_alert`** (supervisor `_notify_web_alert` → `notify_monitor_alert`, wired into the Watch sweep), and **on `budget_trip`/loop-guard** (`dispatcher._notify_budget_trip` at the config-aware edge + a `governor.tripped` event). One `notify_enabled` toggle gates all.
@@ -245,8 +245,8 @@ real data and harden it. Grouped by priority.
 - [ ] **Browser render QA** of all 7 webapp pages (manual + ideally Playwright)
 - [ ] **Real-backend integration suite** run green with `LIGHTHOUSE_REAL_BACKEND=1` (Ollama + Qdrant up)
 - [x] ~~Wire replay, restic/integrity, ingestion, notifications into the CLI~~ (done — `replay`/`backup`/`integrity`/`research --url`/draft_ready notify)
-- [x] ~~Wire the Governor guards (loop detection, injection gate) into the gateway + research loop~~ (done — egress proxy built+tested, not yet on fetch path)
-- [ ] Wire egress proxy into the fetch path; emit PROV-O sidecar per run; schedule backup+integrity on a cadence
+- [x] ~~Wire the Governor guards (loop detection, injection gate) into the gateway + research loop~~ (done)
+- [x] ~~Wire egress proxy into the fetch path~~ (done — all source adapters + notifications route through the egress guard, `LIGHTHOUSE_AIRGAP` hard-blocks egress; ⬜ caveat: Playwright/`js_render` not yet guarded); emit PROV-O sidecar per run; schedule backup+integrity on a cadence
 - [ ] Fire notifications on `budget_trip` / `monitor_alert`
 - [ ] **Coverage target** (design: ≥80% on persistence/supervisor — currently met there; raise overall)
 - [ ] **Lint + type-check clean**: `ruff check` and `mypy` with no errors
@@ -337,7 +337,7 @@ Test-type legend: **U** unit · **I** integration (real deps, skip-if-absent) ·
 | Token buckets | U+P+Concurrency: hierarchical debit; 10-thread race | sum never negative; math exact under concurrency | ✅ |
 | Degradation tiers | U: thresholds 50/70/85/95/100% | correct tier at each boundary | ✅ |
 | Loop detection | U: per-job/per-node caps, recursion, repeat; gateway raises | trips at cap; `LoopTripped` from gateway on runaway | ✅ U + gateway-wired |
-| Egress proxy | U: allowlist + privacy tiers + log | PRIVATE blocked; non-allowlisted blocked; all conns logged | 🟡 built+U; ⬜ not wired into fetch path |
+| Egress proxy | U: allowlist + privacy tiers + log | PRIVATE blocked; non-allowlisted blocked; all conns logged | ✅ built+U + **on the fetch path** (all source adapters + notifications route through the guard; `LIGHTHOUSE_AIRGAP` hard-blocks egress). ⬜ caveat: Playwright/`js_render` not yet guarded |
 | Kill switch | I: `kill` drains then stops; Telegram-confirm | graceful drain, no cross-store corruption | 🟡 API kill ✅; Telegram-confirm ⬜ |
 
 ## 7. Surfaces (web + TUI)

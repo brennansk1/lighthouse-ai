@@ -30,10 +30,10 @@ tamper-evident.
 - `brier.py` — `brier_score`, `mean_brier`. Squared-error calibration
   score; lower is better; range [0, 1].
 - `entailment.py` — `score_claim`, `score_claims`, `available`,
-  `MINICHECK_THRESHOLD`. Lazy-loaded entailment scorer: prefers
-  MiniCheck-Flan-T5-Large (MIT, 770 M params); falls back to
-  HHEM-2.1-Open (cosine proxy); returns 1.0 (no penalty) when neither
-  is installed so `discipline.check` degrades to regex-only coverage.
+  `MINICHECK_THRESHOLD`. Lazy-loaded entailment scorer: uses
+  MiniCheck-Flan-T5-Large (MIT, 770 M params) as the only real scorer;
+  returns `None` ("unchecked") when it is not installed so consumers
+  refuse to count the claim as entailed instead of fabricating a pass.
 - `audit_chain.py` — `append_event`, `seal_event_chain`,
   `verify_audit_chain`, `AuditEvent`, `resolve_secret`. HMAC-chained
   audit log: each row seals over `(prev_hmac ‖ seq ‖ ts ‖ actor ‖
@@ -73,7 +73,8 @@ tamper-evident.
 - `downgrade_wep` always returns a WEPBand; it never raises on valid
   probability input.
 - `run_resolver_pass` with `dry_run=True` never writes to the database.
-- `entailment.score_claim` returns 1.0 (neutral / no penalty) when no
-  scorer is available — discipline degrades gracefully, never hardens.
+- `entailment.score_claim` returns `None` ("unchecked") when no scorer
+  is available — an unchecked claim is never counted as entailed, so the
+  gate fails honest rather than fabricating a fully-entailed pass.
 - `audit_chain.verify_audit_chain` returns an empty list iff the chain
   is intact; any tampered seq appears in the returned list.

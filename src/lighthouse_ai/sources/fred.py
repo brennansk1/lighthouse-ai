@@ -27,9 +27,11 @@ import os
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _BASE = "https://api.stlouisfed.org/fred"
+_ALLOWED_HOSTS = frozenset({"api.stlouisfed.org"})
 _HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
 
 
@@ -153,8 +155,9 @@ def search_series(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/series/search",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "search_text": query,
@@ -162,6 +165,7 @@ def search_series(
                 "file_type": "json",
                 "api_key": key,
             },
+            client=client,
         )
         resp.raise_for_status()
         return _parse_series_search(resp.json())
@@ -188,14 +192,16 @@ def fetch_series(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/series/observations",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "series_id": series_id,
                 "file_type": "json",
                 "api_key": key,
             },
+            client=client,
         )
         resp.raise_for_status()
         return _parse_observations(resp.json(), series_id)
@@ -221,14 +227,16 @@ def list_releases(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/releases",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "limit": max_results,
                 "file_type": "json",
                 "api_key": key,
             },
+            client=client,
         )
         resp.raise_for_status()
         docs = _parse_releases(resp.json())
@@ -257,14 +265,16 @@ def get_revisions(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/series/vintagedates",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={
                 "series_id": series_id,
                 "file_type": "json",
                 "api_key": key,
             },
+            client=client,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -317,14 +327,16 @@ def compare_series(
     try:
         docs: list[Document] = []
         for series_id in series_ids[:max_results]:
-            resp = client.get(
+            resp = guarded_get(
                 f"{_BASE}/series",
+                allowed_domains=_ALLOWED_HOSTS,
                 headers=_HEADERS,
                 params={
                     "series_id": series_id,
                     "file_type": "json",
                     "api_key": key,
                 },
+                client=client,
             )
             resp.raise_for_status()
             data = resp.json()

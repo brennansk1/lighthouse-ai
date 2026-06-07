@@ -123,10 +123,12 @@ class EvidenceCell:
     citation_chunk_ids:
         Identifiers of the source chunks that ground the value.
     entailment_score:
-        Score in ``[0.0, 1.0]`` from the entailment checker; ``1.0`` when no
-        scorer is available (graceful degradation).
+        Score in ``[0.0, 1.0]`` from the entailment checker, or ``None`` when
+        the cell was left *unchecked* because no real scorer is available.  An
+        unchecked cell is never reported as a fabricated pass.
     entailed:
-        ``True`` when ``entailment_score >= MINICHECK_THRESHOLD``.
+        ``True`` only when ``entailment_score`` is not ``None`` and
+        ``>= MINICHECK_THRESHOLD``.  Unchecked cells are ``False``.
     contested:
         ``True`` when at least one other included document reports a *different*
         non-empty value for this attribute (§6.2 Survey cell badging).  Survey
@@ -139,7 +141,7 @@ class EvidenceCell:
     attribute: str
     value: str
     citation_chunk_ids: tuple[str, ...]
-    entailment_score: float
+    entailment_score: float | None
     entailed: bool
     contested: bool = False
     contested_by: tuple[str, ...] = ()
@@ -725,12 +727,17 @@ def run_survey(
             value = extract_fn(doc, attr)
             if value:
                 score = _entailment.score_claim(value, doc.text)
+                # ``score`` is None when no real scorer is available
+                # ("unchecked"): an unchecked cell must NOT be marked entailed.
+                entailed = (
+                    score is not None and score >= _entailment.MINICHECK_THRESHOLD
+                )
                 cells.append(EvidenceCell(
                     attribute=attr.label,
                     value=value,
                     citation_chunk_ids=(doc.doc_id,),
-                    entailment_score=round(score, 3),
-                    entailed=score >= _entailment.MINICHECK_THRESHOLD,
+                    entailment_score=round(score, 3) if score is not None else None,
+                    entailed=entailed,
                 ))
             else:
                 missing.append(attr.label)

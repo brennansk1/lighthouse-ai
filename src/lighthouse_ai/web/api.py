@@ -1258,14 +1258,18 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
     # ============================ SOURCES ==========================
 
     @app.get("/api/sources", tags=["research"])
-    def list_sources() -> dict[str, Any]:
+    def list_sources(include_hidden: bool = False) -> dict[str, Any]:
         """The skill catalog for the source picker (Zone K).
 
         Each entry is ``SkillManifest.as_dict()`` plus two fields the picker uses
         to gate key-required sources: ``requires_key`` (this source needs a free
         API key) and ``key_present`` (a key is already configured). The UI hides
         a key-required source from the checkbox list until its key is saved.
-        Tolerates an empty library."""
+        Tolerates an empty library.
+
+        Skills marked ``hidden`` (verticals outside the current wedge) are
+        omitted from the default listing so the picker doesn't offer them; pass
+        ``include_hidden=true`` to surface the full catalog."""
         from ..secrets import SecretStore
         from ..skills.registry import all_skills
 
@@ -1279,6 +1283,8 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         try:
             sources = []
             for m in all_skills():
+                if m.hidden and not include_hidden:
+                    continue
                 d = m.as_dict()
                 key_name = key_required.get(m.id)
                 d["requires_key"] = bool(key_name)

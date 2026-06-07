@@ -8,9 +8,14 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _API = "https://api.openalex.org/works"
+# Public OpenAlex hosts this adapter contacts; authorized because the user
+# invoked the OpenAlex source. Mirrors allowed_domains in the openalex skill
+# manifest so the skill rail and the adapter agree.
+_ALLOWED_HOSTS = frozenset({"api.openalex.org", "openalex.org"})
 
 
 def _reconstruct_abstract(inv: dict | None) -> str:
@@ -43,13 +48,25 @@ def _parse(data: dict) -> list[Document]:
 
 
 def search_openalex(query: str, *, max_results: int = 5,
+                    client: httpx.Client | None = None,
                     timeout: float = 30.0, mailto: str | None = None) -> list[Document]:
-    """Search OpenAlex works. ``mailto`` joins the polite pool (recommended)."""
+    """Search OpenAlex works. ``mailto`` joins the polite pool (recommended).
+
+    Pass ``client`` to reuse a connection (and to make the call mockable in
+    tests); otherwise a temporary client is used.
+    """
     params: dict[str, str | int] = {"search": query, "per_page": max_results,
                                     "sort": "relevance_score:desc"}
     if mailto:
         params["mailto"] = mailto
-    with httpx.Client(timeout=timeout) as c:
-        r = c.get(_API, params=params, headers={"User-Agent": "Lighthouse/0.1"})
-    r.raise_for_status()
-    return _parse(r.json())
+    owns_client = client is None
+    if client is None:
+        client = httpx.Client(timeout=timeout)
+    try:
+        r = guarded_get(_API, allowed_domains=_ALLOWED_HOSTS, params=params,
+                        headers={"User-Agent": "Lighthouse/0.1"}, client=client)
+        r.raise_for_status()
+        return _parse(r.json())
+    finally:
+        if owns_client:
+            client.close()

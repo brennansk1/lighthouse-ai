@@ -3,6 +3,7 @@ name        = "ClinicalTrials.gov"
 description = "ClinicalTrials.gov v2 REST API: search trials by condition/intervention/sponsor, fetch individual protocol records, extract pre-registered endpoints (for outcome-switching detection), and track amendment history."
 category    = "clinical"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- fetch policy ---
 # NOTE: clinicaltrials.gov is NOT on the default platform allowlist.

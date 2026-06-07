@@ -30,9 +30,11 @@ import os
 
 import httpx
 
+from ..net import guarded_get, guarded_request
 from ..rag.chunker import Document
 
 _BASE = "https://api.bls.gov/publicAPI/v2"
+_ALLOWED_HOSTS = frozenset({"api.bls.gov"})
 _HEADERS = {
     "User-Agent": "Lighthouse/0.1",
     "Accept": "application/json",
@@ -159,10 +161,13 @@ def fetch_series(
         }
         if key:
             payload["registrationkey"] = key
-        resp = client.post(
+        resp = guarded_request(
+            "POST",
             f"{_BASE}/timeseries/data/",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             json=payload,
+            client=client,
         )
         resp.raise_for_status()
         return _parse_series_data(resp.json())
@@ -189,10 +194,12 @@ def list_releases(
         client = httpx.Client(timeout=timeout)
     try:
         params = {"registrationkey": key} if key else {}
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/surveys",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params=params,
+            client=client,
         )
         resp.raise_for_status()
         result = resp.json()

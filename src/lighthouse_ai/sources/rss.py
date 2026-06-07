@@ -21,11 +21,21 @@ import xml.etree.ElementTree as ET
 import httpx
 
 from ..modes.monitor import MonitorItem
+from ..net import guarded_get
 from ..sandbox.broker import SandboxBroker, Verdict
 
 # Atom namespace used by most modern feeds.
 _NS = {"atom": "http://www.w3.org/2005/Atom"}
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+# RSS is the "point at any feed" channel skill: the user registers the feed URL,
+# so this adapter has no fixed API host of its own. Passing ``allowed_domains``
+# as ``None`` defers to the platform egress allowlist
+# (``DEFAULT_ALLOWED_DOMAINS``) as the ceiling — matching the rss skill manifest,
+# which declares ``allowed_domains = []`` for the same reason (a registered feed
+# reaches whatever the platform already permits, never wider). The guard still
+# enforces decide-before-fetch, audit logging, and the LIGHTHOUSE_AIRGAP kill.
+_ALLOWED_HOSTS: frozenset[str] | None = None
 
 
 def _strip_tags(s: str | None) -> str:
@@ -98,10 +108,28 @@ def parse_feed_bytes(payload: bytes) -> list[MonitorItem]:
 
 
 def fetch_feed(url: str, *, broker: SandboxBroker | None = None,
+               client: httpx.Client | None = None,
                timeout: float = 30.0) -> list[MonitorItem]:
-    """Fetch ``url`` and return parsed items. Sandbox-admits the body first."""
-    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-        r = client.get(url, headers={"User-Agent": "Lighthouse/0.1"})
+    """Fetch ``url`` and return parsed items. Sandbox-admits the body first.
+
+    The fetch is routed through the egress guard (``guarded_get``), which
+    enforces decide-before-fetch, audit logging, and the ``LIGHTHOUSE_AIRGAP``
+    kill before any socket opens. Pass ``client`` to reuse a connection (and to
+    make the request mockable in tests); otherwise a temporary client is used.
+    """
+    owns_client = client is None
+    if client is None:
+        client = httpx.Client(timeout=timeout, follow_redirects=True)
+    try:
+        r = guarded_get(
+            url,
+            allowed_domains=_ALLOWED_HOSTS,
+            headers={"User-Agent": "Lighthouse/0.1"},
+            client=client,
+        )
+    finally:
+        if owns_client:
+            client.close()
     r.raise_for_status()
     payload = r.content
     if broker is not None:

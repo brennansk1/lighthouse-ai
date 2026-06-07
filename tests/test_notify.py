@@ -214,6 +214,20 @@ def test_email_send_calls_injected_sender():
     assert chan is ch
 
 
+def test_email_send_false_in_airgap(monkeypatch):
+    """LIGHTHOUSE_AIRGAP must block SMTP egress before the sender is invoked."""
+    monkeypatch.setenv("LIGHTHOUSE_AIRGAP", "1")
+    called: list = []
+    ch = EmailChannel(
+        smtp_host="smtp.test",
+        from_addr="from@test",
+        to_addrs=["a@test"],
+        sender=lambda m, c: called.append(m),
+    )
+    assert ch.send("Subj", "Body") is False
+    assert called == []  # no transport attempted — no socket opened
+
+
 def test_email_send_false_when_no_recipients():
     sent: list = []
     ch = EmailChannel(

@@ -3,6 +3,7 @@ name        = "PyPI / npm / crates.io"
 description = "Three package registries under one skill: PyPI (Python), npm (JavaScript/Node.js), crates.io (Rust). Tools: search, fetch metadata, list versions, get dependencies, get dependents, watch recent releases. Primary for supply-chain research, dependency auditing, and library evaluation."
 category    = "engineering"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- fetch policy ---
 # pypi.org, registry.npmjs.org, and crates.io must be on the egress allowlist.

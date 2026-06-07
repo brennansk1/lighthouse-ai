@@ -1,0 +1,264 @@
+{
+  "version": 1,
+  "name": "legal-gold",
+  "_README": [
+    "STARTER SCAFFOLD — NOT a validated gold standard.",
+    "Synthetic-but-realistic legal/compliance passages and queries authored to",
+    "exercise the retrieval + faithfulness harness deterministically. The text is",
+    "paraphrased general knowledge, NOT quotations from statutes or regulations; do",
+    "NOT cite it as legal authority. The maintainer should expand this set (more",
+    "queries, real labelled passages, adjudicated relevance) and validate the",
+    "relevance + contradiction labels before treating any number off it as a quality",
+    "bar. Each query reuses vocabulary from its gold document(s) so a working lexical",
+    "pipeline ranks the right passage first; that is by design for a smoke-grade set.",
+    "The 'contradictions' subset pairs a claim with a passage that entails it and a",
+    "passage that refutes it: a real entailment scorer must flag the contradicting",
+    "passage, where a lexical-overlap shortcut would wave it through."
+  ],
+  "documents": [
+    {
+      "id": "gdpr-lawful-basis",
+      "text": "Under the GDPR a controller must have a lawful basis before processing personal data. The six lawful bases are consent, contract, legal obligation, vital interests, public task, and legitimate interests. The controller documents which lawful basis applies to each processing activity in its record of processing.",
+      "metadata": {"topic": "data-protection", "regime": "gdpr"}
+    },
+    {
+      "id": "gdpr-dsar",
+      "text": "A data subject access request lets an individual obtain a copy of the personal data a controller holds about them. The controller must respond to the access request within one month and may extend it by two further months for complex requests. No fee is charged for a first access request.",
+      "metadata": {"topic": "data-protection", "regime": "gdpr"}
+    },
+    {
+      "id": "gdpr-breach-notification",
+      "text": "When a personal data breach is likely to risk the rights of individuals, the controller must notify the supervisory authority without undue delay and within seventy-two hours of becoming aware of the breach. If the risk to individuals is high the controller must also communicate the breach to the affected data subjects.",
+      "metadata": {"topic": "data-protection", "regime": "gdpr"}
+    },
+    {
+      "id": "gdpr-dpia",
+      "text": "A data protection impact assessment is required when processing is likely to result in a high risk to individuals, such as large-scale profiling or systematic monitoring of a public area. The DPIA describes the processing, assesses necessity and proportionality, and sets out measures to mitigate the risk.",
+      "metadata": {"topic": "data-protection", "regime": "gdpr"}
+    },
+    {
+      "id": "gdpr-transfers",
+      "text": "Transferring personal data outside the European Economic Area requires an adequacy decision, appropriate safeguards such as standard contractual clauses, or a specific derogation. Standard contractual clauses bind the data importer to EU-level protection, and a transfer impact assessment evaluates the law of the destination country.",
+      "metadata": {"topic": "data-protection", "regime": "gdpr"}
+    },
+    {
+      "id": "ccpa-consumer-rights",
+      "text": "The California Consumer Privacy Act gives consumers the right to know what personal information a business collects, the right to delete that information, and the right to opt out of the sale of their personal information. A business must provide at least two methods for submitting a request, including a toll-free telephone number.",
+      "metadata": {"topic": "data-protection", "regime": "ccpa"}
+    },
+    {
+      "id": "ccpa-opt-out-sale",
+      "text": "Under the CCPA a business that sells personal information must post a clear Do Not Sell My Personal Information link on its homepage so a consumer can opt out of the sale. The business may not discriminate against a consumer who exercises the opt-out right by denying goods or charging a different price.",
+      "metadata": {"topic": "data-protection", "regime": "ccpa"}
+    },
+    {
+      "id": "hipaa-phi",
+      "text": "HIPAA protects individually identifiable health information held by a covered entity as protected health information. A covered entity may use or disclose protected health information for treatment, payment, and health care operations without the patient's authorization, but most other disclosures require written authorization.",
+      "metadata": {"topic": "healthcare", "regime": "hipaa"}
+    },
+    {
+      "id": "hipaa-breach-rule",
+      "text": "The HIPAA breach notification rule requires a covered entity to notify affected individuals of a breach of unsecured protected health information without unreasonable delay and no later than sixty days after discovery. Breaches affecting five hundred or more individuals must also be reported to the Secretary and the media.",
+      "metadata": {"topic": "healthcare", "regime": "hipaa"}
+    },
+    {
+      "id": "hipaa-minimum-necessary",
+      "text": "The HIPAA minimum necessary standard requires a covered entity to limit the use and disclosure of protected health information to the minimum amount needed to accomplish the intended purpose. The standard does not apply to disclosures to a provider for treatment, where the full record may be needed.",
+      "metadata": {"topic": "healthcare", "regime": "hipaa"}
+    },
+    {
+      "id": "sox-internal-controls",
+      "text": "Section 404 of the Sarbanes-Oxley Act requires management of a public company to assess and report on the effectiveness of internal control over financial reporting. The external auditor must attest to management's assessment, and a material weakness in internal controls must be disclosed to investors.",
+      "metadata": {"topic": "securities", "regime": "sox"}
+    },
+    {
+      "id": "sox-whistleblower",
+      "text": "The Sarbanes-Oxley Act protects employees of public companies who report fraud from retaliation. An employee who blows the whistle on securities fraud or accounting irregularities may not be discharged, demoted, or harassed, and a retaliated-against whistleblower may seek reinstatement and back pay.",
+      "metadata": {"topic": "securities", "regime": "sox"}
+    },
+    {
+      "id": "sox-records-retention",
+      "text": "Sarbanes-Oxley requires public companies and their auditors to retain audit and review work papers for seven years. Knowingly destroying or falsifying records to obstruct a federal investigation is a criminal offense carrying substantial penalties for the responsible officers.",
+      "metadata": {"topic": "securities", "regime": "sox"}
+    },
+    {
+      "id": "aml-kyc",
+      "text": "Anti-money-laundering rules require a financial institution to perform customer due diligence and know-your-customer checks before opening an account. The institution verifies the customer's identity, identifies the beneficial owner of a legal entity, and assesses the money-laundering risk the customer presents.",
+      "metadata": {"topic": "financial-crime", "regime": "aml"}
+    },
+    {
+      "id": "aml-sar",
+      "text": "A financial institution that detects a transaction it knows or suspects involves money laundering must file a suspicious activity report with the financial intelligence unit. The institution must not tip off the customer that a suspicious activity report has been filed, as tipping off is itself an offense.",
+      "metadata": {"topic": "financial-crime", "regime": "aml"}
+    },
+    {
+      "id": "aml-ctr",
+      "text": "A currency transaction report must be filed for a cash transaction that exceeds ten thousand dollars in a single business day. Structuring a series of smaller cash deposits to evade the currency transaction reporting threshold is a separate criminal offense.",
+      "metadata": {"topic": "financial-crime", "regime": "aml"}
+    },
+    {
+      "id": "contract-consideration",
+      "text": "A valid contract requires offer, acceptance, consideration, and an intention to create legal relations. Consideration is the bargained-for exchange of value between the parties; a gratuitous promise unsupported by consideration is generally not enforceable as a contract.",
+      "metadata": {"topic": "contracts"}
+    },
+    {
+      "id": "contract-breach-remedies",
+      "text": "When a party breaches a contract the innocent party may claim damages to put it in the position it would have occupied had the contract been performed. A material breach that goes to the root of the contract also entitles the innocent party to terminate and treat its own obligations as discharged.",
+      "metadata": {"topic": "contracts"}
+    },
+    {
+      "id": "contract-force-majeure",
+      "text": "A force majeure clause excuses a party from performing its contractual obligations when an extraordinary event beyond its control, such as a natural disaster or government order, prevents performance. The clause is construed narrowly and the affected party must show the event actually made performance impossible, not merely more expensive.",
+      "metadata": {"topic": "contracts"}
+    },
+    {
+      "id": "contract-limitation-liability",
+      "text": "A limitation of liability clause caps the damages one party can recover from the other, often at the value of the contract. Many jurisdictions refuse to enforce a clause that purports to exclude liability for death, personal injury, or fraud, treating such exclusions as void.",
+      "metadata": {"topic": "contracts"}
+    },
+    {
+      "id": "ip-copyright-term",
+      "text": "Copyright protects original works of authorship such as books, music, and software code from the moment they are fixed in a tangible medium. In many jurisdictions copyright lasts for the life of the author plus seventy years, after which the work enters the public domain.",
+      "metadata": {"topic": "intellectual-property"}
+    },
+    {
+      "id": "ip-trademark",
+      "text": "A trademark protects a brand name, logo, or slogan that distinguishes the goods of one trader from another. Registering a trademark grants exclusive rights in the relevant class of goods, and a registration can be renewed indefinitely so long as the mark remains in use.",
+      "metadata": {"topic": "intellectual-property"}
+    },
+    {
+      "id": "ip-trade-secret",
+      "text": "A trade secret is confidential business information, such as a formula or customer list, that derives value from being secret and is subject to reasonable steps to keep it secret. Unlike a patent, a trade secret has no fixed term and is protected for as long as the information remains confidential.",
+      "metadata": {"topic": "intellectual-property"}
+    },
+    {
+      "id": "ip-patent",
+      "text": "A patent grants an inventor an exclusive right to make, use, and sell an invention for a limited term, typically twenty years from the filing date. In exchange the inventor must publicly disclose how the invention works, and the invention must be novel, non-obvious, and useful to be patentable.",
+      "metadata": {"topic": "intellectual-property"}
+    },
+    {
+      "id": "employment-at-will",
+      "text": "Under at-will employment either the employer or the employee may end the employment relationship at any time for any lawful reason or for no reason. The at-will rule is limited by exceptions that prohibit termination for an unlawful reason such as discrimination or retaliation.",
+      "metadata": {"topic": "employment"}
+    },
+    {
+      "id": "employment-discrimination",
+      "text": "Employment discrimination law prohibits an employer from treating an employee less favorably because of a protected characteristic such as race, sex, age, religion, or disability. An employer must also provide reasonable accommodation for an employee's disability unless doing so causes undue hardship.",
+      "metadata": {"topic": "employment"}
+    },
+    {
+      "id": "employment-overtime",
+      "text": "Wage and hour law requires an employer to pay a non-exempt employee overtime at one and a half times the regular rate for hours worked over forty in a workweek. Whether an employee is exempt from overtime depends on the salary level and the duties the employee actually performs.",
+      "metadata": {"topic": "employment"}
+    },
+    {
+      "id": "antitrust-price-fixing",
+      "text": "Antitrust law prohibits competitors from agreeing to fix prices, rig bids, or allocate markets among themselves. Such horizontal agreements are treated as per se illegal, meaning the agreement itself is unlawful and no inquiry into its reasonableness or actual market effect is needed.",
+      "metadata": {"topic": "antitrust"}
+    },
+    {
+      "id": "antitrust-merger-review",
+      "text": "A merger that may substantially lessen competition can be challenged by the competition authority. Parties to a large merger must notify the authority before closing and observe a waiting period, during which the agency reviews whether the combined firm would gain market power that harms consumers.",
+      "metadata": {"topic": "antitrust"}
+    },
+    {
+      "id": "ediscovery-litigation-hold",
+      "text": "When litigation is reasonably anticipated a party must issue a litigation hold to preserve relevant documents and suspend routine deletion. Failing to preserve electronically stored information can lead to spoliation sanctions, including an adverse inference instruction telling the jury to assume the lost evidence was unfavorable.",
+      "metadata": {"topic": "litigation"}
+    }
+  ],
+  "queries": [
+    {"query": "GDPR lawful basis required before a controller processes personal data consent contract legitimate interests", "relevant_doc_ids": ["gdpr-lawful-basis"]},
+    {"query": "data subject access request copy of personal data controller respond within one month", "relevant_doc_ids": ["gdpr-dsar"]},
+    {"query": "personal data breach notify supervisory authority within seventy-two hours", "relevant_doc_ids": ["gdpr-breach-notification"]},
+    {"query": "data protection impact assessment required high risk large-scale profiling DPIA", "relevant_doc_ids": ["gdpr-dpia"]},
+    {"query": "transfer personal data outside the EEA standard contractual clauses adequacy decision", "relevant_doc_ids": ["gdpr-transfers"]},
+    {"query": "California Consumer Privacy Act right to know delete and opt out of sale of personal information", "relevant_doc_ids": ["ccpa-consumer-rights"]},
+    {"query": "Do Not Sell My Personal Information link homepage opt out CCPA no discrimination", "relevant_doc_ids": ["ccpa-opt-out-sale"]},
+    {"query": "HIPAA protected health information covered entity disclose for treatment payment operations", "relevant_doc_ids": ["hipaa-phi"]},
+    {"query": "HIPAA breach notification rule notify individuals within sixty days unsecured protected health information", "relevant_doc_ids": ["hipaa-breach-rule"]},
+    {"query": "HIPAA minimum necessary standard limit use and disclosure to minimum amount needed", "relevant_doc_ids": ["hipaa-minimum-necessary"]},
+    {"query": "Sarbanes-Oxley section 404 internal control over financial reporting management assessment auditor attest", "relevant_doc_ids": ["sox-internal-controls"]},
+    {"query": "Sarbanes-Oxley whistleblower protection from retaliation reporting securities fraud", "relevant_doc_ids": ["sox-whistleblower"]},
+    {"query": "audit work papers retention seven years destroying records obstruct federal investigation", "relevant_doc_ids": ["sox-records-retention"]},
+    {"query": "anti-money-laundering customer due diligence know your customer verify identity beneficial owner", "relevant_doc_ids": ["aml-kyc"]},
+    {"query": "suspicious activity report money laundering must not tip off the customer", "relevant_doc_ids": ["aml-sar"]},
+    {"query": "currency transaction report cash exceeding ten thousand dollars structuring deposits", "relevant_doc_ids": ["aml-ctr"]},
+    {"query": "valid contract offer acceptance consideration intention to create legal relations bargained exchange", "relevant_doc_ids": ["contract-consideration"]},
+    {"query": "breach of contract damages innocent party terminate material breach root of the contract", "relevant_doc_ids": ["contract-breach-remedies"]},
+    {"query": "force majeure clause excuses performance extraordinary event beyond control natural disaster", "relevant_doc_ids": ["contract-force-majeure"]},
+    {"query": "limitation of liability clause caps damages exclude liability for personal injury or fraud void", "relevant_doc_ids": ["contract-limitation-liability"]},
+    {"query": "copyright original works of authorship life of the author plus seventy years public domain", "relevant_doc_ids": ["ip-copyright-term"]},
+    {"query": "trademark brand name logo distinguishes goods exclusive rights renewed while in use", "relevant_doc_ids": ["ip-trademark"]},
+    {"query": "trade secret confidential business information formula no fixed term reasonable steps to keep secret", "relevant_doc_ids": ["ip-trade-secret"]},
+    {"query": "patent exclusive right invention twenty years filing date novel non-obvious useful disclose", "relevant_doc_ids": ["ip-patent"]},
+    {"query": "at-will employment either party end relationship any lawful reason exceptions discrimination retaliation", "relevant_doc_ids": ["employment-at-will"]},
+    {"query": "employment discrimination protected characteristic reasonable accommodation disability undue hardship", "relevant_doc_ids": ["employment-discrimination"]},
+    {"query": "overtime pay non-exempt employee one and a half times over forty hours workweek exempt duties", "relevant_doc_ids": ["employment-overtime"]},
+    {"query": "antitrust competitors agree to fix prices rig bids allocate markets per se illegal", "relevant_doc_ids": ["antitrust-price-fixing"]},
+    {"query": "merger review substantially lessen competition notify authority waiting period market power", "relevant_doc_ids": ["antitrust-merger-review"]},
+    {"query": "litigation hold preserve documents spoliation sanctions adverse inference electronically stored information", "relevant_doc_ids": ["ediscovery-litigation-hold"]}
+  ],
+  "contradictions": [
+    {
+      "id": "c-gdpr-breach-window",
+      "claim": "Under the GDPR a controller must notify the supervisory authority of a personal data breach within seventy-two hours of becoming aware of it.",
+      "supporting_passage": "GDPR Article 33 requires the controller to notify the competent supervisory authority of a personal data breach without undue delay and, where feasible, no later than seventy-two hours after becoming aware of it.",
+      "contradicting_passage": "Under the GDPR the controller has no fixed deadline and may notify the supervisory authority of a personal data breach whenever convenient, even several months after discovery."
+    },
+    {
+      "id": "c-ccpa-discrimination",
+      "claim": "Under the CCPA a business may not discriminate against a consumer for exercising the right to opt out of the sale of personal information.",
+      "supporting_passage": "The CCPA prohibits a business from discriminating against a consumer who exercises a privacy right, including by denying goods or services or charging a different price, when the consumer opts out of the sale of personal information.",
+      "contradicting_passage": "Under the CCPA a business is free to charge consumers who opt out of the sale of their personal information a higher price and may deny them service entirely."
+    },
+    {
+      "id": "c-hipaa-authorization",
+      "claim": "A covered entity may use protected health information for treatment without obtaining the patient's authorization.",
+      "supporting_passage": "HIPAA permits a covered entity to use and disclose protected health information for treatment, payment, and health care operations without first obtaining the patient's written authorization.",
+      "contradicting_passage": "HIPAA requires a covered entity to obtain the patient's signed written authorization before using protected health information for any purpose, including ordinary treatment."
+    },
+    {
+      "id": "c-sox-retention",
+      "claim": "Sarbanes-Oxley requires auditors to retain audit work papers for seven years.",
+      "supporting_passage": "Under Sarbanes-Oxley, accountants who audit a public company must retain all audit and review work papers for a period of seven years.",
+      "contradicting_passage": "Sarbanes-Oxley allows auditors to discard their audit work papers immediately after the engagement closes, with no minimum retention period."
+    },
+    {
+      "id": "c-aml-tipping-off",
+      "claim": "A financial institution must not tip off a customer that a suspicious activity report has been filed about them.",
+      "supporting_passage": "Anti-money-laundering law makes it an offense for a financial institution to tip off a customer that a suspicious activity report concerning the customer has been filed.",
+      "contradicting_passage": "Anti-money-laundering rules encourage a financial institution to inform the customer promptly whenever it files a suspicious activity report about that customer's transactions."
+    },
+    {
+      "id": "c-contract-consideration",
+      "claim": "A gratuitous promise unsupported by consideration is generally not enforceable as a contract.",
+      "supporting_passage": "Contract law requires consideration as a bargained-for exchange of value; a purely gratuitous promise that lacks consideration is generally unenforceable.",
+      "contradicting_passage": "Contract law enforces every promise regardless of consideration, so a purely gratuitous promise is just as binding as a bargained-for exchange."
+    },
+    {
+      "id": "c-copyright-term",
+      "claim": "In many jurisdictions copyright lasts for the life of the author plus seventy years.",
+      "supporting_passage": "In many jurisdictions the term of copyright protection runs for the life of the author plus an additional seventy years before the work enters the public domain.",
+      "contradicting_passage": "Copyright protection expires the moment a work is published, so a work enters the public domain immediately and the author retains no exclusive rights."
+    },
+    {
+      "id": "c-patent-disclosure",
+      "claim": "To obtain a patent the inventor must publicly disclose how the invention works.",
+      "supporting_passage": "A patent is granted in exchange for the inventor publicly disclosing how the invention works, so that others can learn from it once the patent term ends.",
+      "contradicting_passage": "A patent lets an inventor keep the workings of the invention completely secret, requiring no public disclosure of how it functions."
+    },
+    {
+      "id": "c-employment-overtime",
+      "claim": "A non-exempt employee must be paid overtime for hours worked over forty in a workweek.",
+      "supporting_passage": "Wage and hour law entitles a non-exempt employee to overtime pay at one and a half times the regular rate for every hour worked beyond forty in a single workweek.",
+      "contradicting_passage": "Wage and hour law sets no overtime obligation, and an employer may require a non-exempt employee to work any number of hours at the flat regular rate."
+    },
+    {
+      "id": "c-antitrust-price-fixing",
+      "claim": "An agreement among competitors to fix prices is per se illegal under antitrust law.",
+      "supporting_passage": "Antitrust law treats a horizontal agreement among competitors to fix prices as per se illegal, so the agreement is unlawful without any inquiry into its market effects.",
+      "contradicting_passage": "Antitrust law permits competitors to agree on prices as long as they believe the agreed price is fair and reasonable to consumers."
+    }
+  ]
+}

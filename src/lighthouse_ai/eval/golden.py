@@ -14,7 +14,9 @@ pipeline should rank the right document first.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from ..rag.bm25 import BM25Index
 from ..rag.chunker import Document, chunk_document
@@ -27,11 +29,15 @@ from .metrics import mean_metric, mrr, precision_at_k, recall_at_k
 __all__ = [
     "GOLDEN_CASES",
     "GOLDEN_DOCUMENTS",
+    "ContradictionCase",
     "GoldenCase",
     "GoldenSet",
     "build_golden_set",
     "build_index",
     "evaluate",
+    "golden_to_json_dict",
+    "load_golden_from_json",
+    "save_golden_to_json",
 ]
 
 
@@ -44,15 +50,36 @@ class GoldenCase:
 
 
 @dataclass(frozen=True)
+class ContradictionCase:
+    """One faithfulness probe: a claim with a supporting and a contradicting passage.
+
+    Used by the entailment harness: a real NLI scorer should rate
+    ``supporting_passage`` as entailing the claim and ``contradicting_passage``
+    as *not* entailing it. The lexical cosine/overlap path that ``entailment``
+    deliberately deleted would wave the contradiction through (high word
+    overlap), so this subset is the regression that proves the real scorer earns
+    its keep.
+    """
+
+    claim: str
+    supporting_passage: str
+    contradicting_passage: str
+    id: str = ""
+
+
+@dataclass(frozen=True)
 class GoldenSet:
     """An immutable bundle of documents and their labelled queries.
 
     Bundling the two together keeps the contract obvious: the relevant ids in
-    every case must refer to documents present in ``documents``.
+    every case must refer to documents present in ``documents``. An optional
+    ``contradictions`` subset rides along for the faithfulness/entailment
+    harness; it is independent of the retrieval corpus.
     """
 
     documents: tuple[Document, ...]
     cases: tuple[GoldenCase, ...]
+    contradictions: tuple[ContradictionCase, ...] = ()
 
 
 # --- Corpus: 8 documents across 3 topics -----------------------------------
@@ -178,6 +205,150 @@ GOLDEN_CASES: tuple[GoldenCase, ...] = (
 def build_golden_set() -> GoldenSet:
     """Return the immutable built-in golden set."""
     return GoldenSet(documents=GOLDEN_DOCUMENTS, cases=GOLDEN_CASES)
+
+
+# --- JSON (de)serialisation -------------------------------------------------
+# The in-code golden set is the zero-setup default, but a real, maintainer-
+# curated set wants to live as data so it can grow past a handful of hand-typed
+# documents. The schema below is the contract for that file.
+#
+# Schema (all keys lower_snake_case):
+#
+#   {
+#     "version": 1,                      # int, schema version (currently 1)
+#     "name": "legal-gold",              # str, optional human label
+#     "documents": [                     # the retrieval corpus
+#       {"id": "doc-1",                  # str, unique within the set (required)
+#        "text": "...",                  # str, the passage body (required)
+#        "metadata": {"topic": "..."}}   # object, optional free-form labels
+#     ],
+#     "queries": [                       # the labelled retrieval cases
+#       {"query": "...",                 # str, the query text (required)
+#        "relevant_doc_ids": ["doc-1"]}  # list[str], gold doc ids (required);
+#     ],                                 #   every id MUST exist in "documents"
+#     "contradictions": [                # optional faithfulness/entailment subset
+#       {"id": "c-1",                    # str, optional case id
+#        "claim": "...",                 # str, the asserted claim (required)
+#        "supporting_passage": "...",    # str, a passage that entails it (required)
+#        "contradicting_passage": "..."} # str, a passage that refutes it (required)
+#     ]
+#   }
+#
+# ``load_golden_from_json`` validates the doc-id referential integrity so a
+# typo in a gold label fails loudly at load time, not as a silent recall miss.
+
+
+def load_golden_from_json(path: str | Path) -> GoldenSet:
+    """Load a :class:`GoldenSet` from a JSON file following the documented schema.
+
+    Validates that every ``relevant_doc_ids`` entry refers to a document
+    actually present in the set — a dangling gold id is almost always a typo,
+    and surfacing it as a ``ValueError`` at load time beats letting it masquerade
+    as a permanent recall miss in the metrics. The ``contradictions`` block is
+    optional; when absent the returned set simply has an empty subset.
+
+    Raises ``ValueError`` on a malformed file (missing required keys, wrong
+    types, or a dangling gold doc id).
+    """
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError("golden JSON root must be an object")
+
+    docs_raw = raw.get("documents")
+    if not isinstance(docs_raw, list):
+        raise ValueError("golden JSON requires a 'documents' list")
+    documents: list[Document] = []
+    for i, d in enumerate(docs_raw):
+        if not isinstance(d, dict) or "id" not in d or "text" not in d:
+            raise ValueError(f"document[{i}] needs 'id' and 'text'")
+        documents.append(
+            Document(
+                id=str(d["id"]),
+                text=str(d["text"]),
+                metadata=dict(d.get("metadata") or {}),
+            )
+        )
+    doc_ids = {doc.id for doc in documents}
+
+    queries_raw = raw.get("queries")
+    if not isinstance(queries_raw, list):
+        raise ValueError("golden JSON requires a 'queries' list")
+    cases: list[GoldenCase] = []
+    for i, q in enumerate(queries_raw):
+        if not isinstance(q, dict) or "query" not in q:
+            raise ValueError(f"query[{i}] needs a 'query'")
+        rel = q.get("relevant_doc_ids") or []
+        if not isinstance(rel, list):
+            raise ValueError(f"query[{i}].relevant_doc_ids must be a list")
+        rel_ids = frozenset(str(r) for r in rel)
+        dangling = rel_ids - doc_ids
+        if dangling:
+            raise ValueError(
+                f"query[{i}] references unknown doc ids: {sorted(dangling)}"
+            )
+        cases.append(GoldenCase(query=str(q["query"]), relevant_doc_ids=rel_ids))
+
+    contradictions: list[ContradictionCase] = []
+    for i, c in enumerate(raw.get("contradictions") or []):
+        required = ("claim", "supporting_passage", "contradicting_passage")
+        if not isinstance(c, dict) or any(k not in c for k in required):
+            raise ValueError(f"contradiction[{i}] needs {required}")
+        contradictions.append(
+            ContradictionCase(
+                claim=str(c["claim"]),
+                supporting_passage=str(c["supporting_passage"]),
+                contradicting_passage=str(c["contradicting_passage"]),
+                id=str(c.get("id", "")),
+            )
+        )
+
+    return GoldenSet(
+        documents=tuple(documents),
+        cases=tuple(cases),
+        contradictions=tuple(contradictions),
+    )
+
+
+def golden_to_json_dict(golden: GoldenSet, *, name: str | None = None) -> dict:
+    """Serialise a :class:`GoldenSet` to a plain dict matching the load schema.
+
+    The round-trip ``load_golden_from_json(... save_golden_to_json(g) ...)`` is
+    lossless for the fields the schema models (ids, text, metadata, queries,
+    contradictions). Frozensets are emitted as sorted lists so the output is
+    deterministic and diff-friendly.
+    """
+    out: dict = {"version": 1}
+    if name is not None:
+        out["name"] = name
+    out["documents"] = [
+        {"id": d.id, "text": d.text, "metadata": dict(d.metadata)}
+        for d in golden.documents
+    ]
+    out["queries"] = [
+        {"query": c.query, "relevant_doc_ids": sorted(c.relevant_doc_ids)}
+        for c in golden.cases
+    ]
+    if golden.contradictions:
+        out["contradictions"] = [
+            {
+                "id": c.id,
+                "claim": c.claim,
+                "supporting_passage": c.supporting_passage,
+                "contradicting_passage": c.contradicting_passage,
+            }
+            for c in golden.contradictions
+        ]
+    return out
+
+
+def save_golden_to_json(
+    golden: GoldenSet, path: str | Path, *, name: str | None = None
+) -> None:
+    """Write ``golden`` to ``path`` as UTF-8 JSON following the documented schema."""
+    payload = golden_to_json_dict(golden, name=name)
+    Path(path).write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
 
 
 def build_index(

@@ -3,6 +3,7 @@ name        = "U.S. Census Bureau"
 description = "Census Data API: American Community Survey (ACS), decennial census, and population estimates. Demographics, income, housing, education, and geographic data down to tract/block group level."
 category    = "demographics"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- fetch policy ---
 tier        = "A"

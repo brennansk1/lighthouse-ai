@@ -64,6 +64,12 @@ class SkillManifest:
     license: str = "unknown"
     signed: bool = False
     enabled_by_default: bool = False
+    # When true the skill is loadable/usable if explicitly named but is not
+    # OFFERED by default — it's kept out of the recommender's candidate set and
+    # the default ``/api/sources`` picker listing. Used to hide verticals that
+    # fall outside the current wedge (legal/practice-support) without deleting
+    # the manifest, so they can be re-surfaced later.
+    hidden: bool = False
     rate_limit_per_sec: float = 1.0
     robots_policy: str = "obey"
     audit_tags: tuple[str, ...] = ()
@@ -139,6 +145,7 @@ class SkillManifest:
             "signed": self.signed,
             "community": self.is_community,
             "enabled_by_default": self.enabled_by_default,
+            "hidden": self.hidden,
             "tierc_escalation": self.tierc_escalation,
             "modes_natural_fit": list(self.modes_natural_fit),
             "modes_weak_fit": list(self.modes_weak_fit),
@@ -199,6 +206,7 @@ def manifest_from_dict(data: dict, *, expected_id: str | None = None) -> SkillMa
         license=str(data.get("license", "unknown")),
         signed=bool(data.get("signed", False)),
         enabled_by_default=bool(data.get("enabled_by_default", False)),
+        hidden=bool(data.get("hidden", False)),
         rate_limit_per_sec=float(data.get("rate_limit_per_sec", 1.0)),
         robots_policy=str(data.get("robots_policy", "obey")),
         audit_tags=_as_tuple(data.get("audit_tags"), "audit_tags", skill_id),

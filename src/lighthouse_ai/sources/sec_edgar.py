@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _API = "https://efts.sec.gov/LATEST/search-index"
@@ -30,6 +31,12 @@ _HEADERS = {
     "User-Agent": "Lighthouse/0.1 (mailto:research@lighthouse.local)",
     "Accept": "application/json",
 }
+# Public SEC EDGAR hosts this adapter contacts; authorized because the user
+# invoked the SEC EDGAR source. The full-text search API lives on the
+# ``efts.sec.gov`` subdomain, which matches the allowlisted ``sec.gov`` via the
+# egress guard's subdomain rule. Mirrors allowed_domains in the sec_edgar skill
+# manifest so the skill rail and the adapter agree.
+_ALLOWED_HOSTS = frozenset({"sec.gov", "www.sec.gov"})
 
 
 def _parse(data: dict) -> list[Document]:
@@ -106,14 +113,16 @@ def search_sec_edgar(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        r = client.get(
+        r = guarded_get(
             _API,
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params={"q": query, "dateRange": "custom", "_source": "true",
                     "from": 0, "hits.hits.total.value": max_results,
                     "hits.hits._source": "true",
                     "hits.hits.highlight": "true",
                     "category": "form-type"},
+            client=client,
         )
         r.raise_for_status()
         return _parse(r.json())

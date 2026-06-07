@@ -27,10 +27,15 @@ from __future__ import annotations
 
 import httpx
 
+from ..net import guarded_get
 from ..rag.chunker import Document
 
 _BASE = "https://api.govinfo.gov"
 _HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
+
+# Public API host this adapter contacts. The user invoked the GovInfo source
+# explicitly, so this host is authorized; egress is gated to exactly this set.
+_ALLOWED_HOSTS = frozenset({"api.govinfo.gov"})
 
 
 def _build_params(api_key: str | None, extra: dict) -> dict:
@@ -99,10 +104,12 @@ def search_collection(
         }
         if collection:
             params["collection"] = collection
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/search",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params=_build_params(api_key, params),
+            client=client,
         )
         resp.raise_for_status()
         return _parse_search_results(resp.json())
@@ -127,10 +134,12 @@ def fetch_document(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/packages/{package_id}/summary",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params=_build_params(api_key, {}),
+            client=client,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -185,8 +194,9 @@ def get_cfr_section(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/search",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params=_build_params(api_key, {
                 "query": query,
@@ -194,6 +204,7 @@ def get_cfr_section(
                 "pageSize": 5,
                 "offsetMark": "*",
             }),
+            client=client,
         )
         resp.raise_for_status()
         return _parse_search_results(resp.json())
@@ -222,8 +233,9 @@ def get_uscode_section(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/search",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params=_build_params(api_key, {
                 "query": query,
@@ -231,6 +243,7 @@ def get_uscode_section(
                 "pageSize": 5,
                 "offsetMark": "*",
             }),
+            client=client,
         )
         resp.raise_for_status()
         return _parse_search_results(resp.json())
@@ -262,13 +275,15 @@ def list_recent_in_collection(
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        resp = client.get(
+        resp = guarded_get(
             f"{_BASE}/collections/{collection}",
+            allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
             params=_build_params(api_key, {
                 "pageSize": max_results,
                 "offsetMark": "*",
             }),
+            client=client,
         )
         resp.raise_for_status()
         data = resp.json()

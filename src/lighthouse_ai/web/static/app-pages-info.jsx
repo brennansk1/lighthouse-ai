@@ -9,7 +9,7 @@
 //
 // Documentation outline:
 //   Overview      · What Lighthouse is · Getting started
-//   The tabs      · Research · Library · Watch · Track · Activity · Sandbox · Health · Settings
+//   The tabs      · Research · Library · Watch · Forecasts · Runs · Data Sandbox · Health · Settings
 //   Concepts      · Research modes · Depth tiers · Sources · How we keep it trustworthy
 //   How to        · Common tasks, step by step
 
@@ -32,9 +32,9 @@ const TOC = [
       { id: 'tab-research', label: 'Research' },
       { id: 'tab-library',  label: 'Library' },
       { id: 'tab-watch',    label: 'Watch' },
-      { id: 'tab-track',    label: 'Track' },
-      { id: 'tab-activity', label: 'Activity' },
-      { id: 'tab-sandbox',  label: 'Sandbox' },
+      { id: 'tab-track',    label: 'Forecasts' },
+      { id: 'tab-activity', label: 'Runs' },
+      { id: 'tab-sandbox',  label: 'Data Sandbox' },
       { id: 'tab-health',   label: 'Health' },
       { id: 'tab-settings', label: 'Settings' },
     ],
@@ -249,9 +249,9 @@ const TABS = [
     ],
   },
   {
-    id: 'tab-track', icon: 'track', name: 'Track',
+    id: 'tab-track', icon: 'track', name: 'Forecasts',
     summary: 'Hold predictions accountable over time.',
-    body: 'Track records clear predictions — specific claims with a stated chance. When a prediction comes due, Lighthouse settles it from fresh evidence rather than its own memory; what it cannot settle on its own lands in "Needs your call" for you to decide. As predictions resolve, it scores how accurate they were (an accuracy score, technically the Brier score), plots the trend, and shows — for each confidence level — how often those claims actually came true, with a range that reflects how few have resolved so far.',
+    body: 'Forecasts records clear predictions — specific claims with a stated chance. When a prediction comes due, Lighthouse settles it from fresh evidence rather than its own memory; what it cannot settle on its own lands in "Needs your call" for you to decide. As predictions resolve, it scores how accurate they were (an accuracy score, technically the Brier score), plots the trend, and shows — for each confidence level — how often those claims actually came true, with a range that reflects how few have resolved so far.',
     points: [
       'See, by confidence level, how often the predictions actually came true.',
       'Decide the predictions Lighthouse could not settle from evidence on its own.',
@@ -259,7 +259,7 @@ const TABS = [
     ],
   },
   {
-    id: 'tab-activity', icon: 'activity', name: 'Activity',
+    id: 'tab-activity', icon: 'activity', name: 'Runs',
     summary: 'Watch runs in flight and see each step the AI took.',
     body: 'See every research run move from queued, to running, to ready for review — and pause, resume, or cancel any of them. Below the live runs, the History panel lists what happened: each step, source fetch, and model call.',
     points: [
@@ -269,9 +269,9 @@ const TABS = [
     ],
   },
   {
-    id: 'tab-sandbox', icon: 'sandbox', name: 'Sandbox',
+    id: 'tab-sandbox', icon: 'sandbox', name: 'Data Sandbox',
     summary: 'A secured workspace for your own files.',
-    body: 'Bring in documents you want analyzed — PDFs, spreadsheets, papers. Every file is scanned on the way in before it can enter the pipeline. The Sandbox has two zones: your read-only uploads, and an assistant workspace for analysis results. Because everything runs locally, sensitive files never leave your machine.',
+    body: 'Bring in documents you want analyzed — PDFs, spreadsheets, papers. Every file is scanned on the way in before it can enter the pipeline. The Data Sandbox has two zones: your read-only uploads, and an assistant workspace for analysis results. Because everything runs locally, sensitive files never leave your machine.',
     points: [
       'Scanners check for malware signatures, PDF/HTML script injection, and zip bombs.',
       'Failed files are quarantined and reported; they never reach the pipeline.',
@@ -681,7 +681,7 @@ function SectionTrustworthiness() {
     { title: 'Contradictions surfaced, not smoothed',
       body: 'When sources disagree, Lighthouse surfaces the disagreement rather than picking one and ignoring the other. Contradictions are first-class artifacts: they appear in reports, escalate to Adjudicate when load-bearing, and are never silently resolved.' },
     { title: 'Calibration',
-      body: 'Every claim carries a confidence band (remote / unlikely / even chance / likely / almost certain). These are honest: a poorly-sourced answer is never labeled "almost certain," and the band is downgraded when citation coverage is thin. Over time, the Track tab records how stated probabilities matched real outcomes (Brier score).' },
+      body: 'Every claim carries a confidence band (remote / unlikely / even chance / likely / almost certain). These are honest: a poorly-sourced answer is never labeled "almost certain," and the band is downgraded when citation coverage is thin. Over time, the Forecasts tab records how stated probabilities matched real outcomes (Brier score).' },
     { title: 'The audit trail',
       body: 'Every artifact\'s Library footer shows its provenance compactly: mode, depth tier, time taken, and which model ran. The full audit log — every state transition, source fetch, and model call — is HMAC-chained, so tampering breaks the chain. You can replay a job ID and verify the same inputs produce the same result.' },
   ];
@@ -703,7 +703,10 @@ function SectionTrustworthiness() {
       </div>
       <div style={callout}>
         <strong>The invariant that never changes with depth:</strong> depth scales coverage and
-        confidence, never trust. Every tier — Quick through Deep — runs the grounding gate. A Quick run
+        confidence, never trust.{' '}
+        <em>In plain terms: a deeper run checks more and can be more confident — it never lowers
+        its standards for which sources to believe.</em>{' '}
+        Every tier — Quick through Deep — runs the grounding gate. A Quick run
         produces less, with humbler confidence bands. It never lies to go faster.
       </div>
     </section>

@@ -620,6 +620,37 @@ def resolve_against_installed(profile: HardwareProfile, installed: list[str],
     return out
 
 
+def recommend_pull_tag(profile: HardwareProfile,
+                       *, budget_gb: float | None = None) -> str:
+    """Best *pullable* Ollama reasoning tag for this machine's RAM budget.
+
+    Unlike :func:`recommend_models` (which returns the catalog's capability-class
+    placeholders such as ``qwen3.6-35b-a3b``), this returns the one real tag a
+    cold-install user must ``ollama pull`` to get a working reasoning model.
+
+    For the *first-run* recommendation we want a tag that fits resident in the
+    measured RAM budget so the box gets a genuinely small download — not a
+    multi-GB MoE that only "fits" by paging experts off the SSD. So we walk the
+    largest→smallest tag ladder and return the first *dense* tag whose live
+    footprint fits the budget. Only if nothing dense fits do we fall back to the
+    first pageable-MoE that the resolver would accept, and finally to the
+    smallest known tag. The result is RAM-appropriate: a small box gets a small
+    tag instead of a hardcoded 14b.
+    """
+    from .hardware import llm_budget_gb
+    budget = llm_budget_gb(profile) if budget_gb is None else budget_gb
+    # First pass: a dense tag that genuinely fits resident (no SSD paging).
+    for tag in _REASONING_PREFERENCE:
+        if not is_pageable_moe(tag) and _tag_fits(tag, budget):
+            return tag
+    # Second pass: accept a pageable-MoE (slower, but usable) if one fits.
+    for tag in _REASONING_PREFERENCE:
+        if _tag_fits(tag, budget):
+            return tag
+    # Very tight box — fall back to the smallest known tag.
+    return _REASONING_PREFERENCE[-1]
+
+
 def _tag_fits(tag: str, budget_gb: float) -> bool:
     """Best-effort: does this installed tag fit the live RAM budget?
 

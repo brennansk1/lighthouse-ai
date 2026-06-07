@@ -3,6 +3,7 @@ name        = "BLS (Bureau of Labor Statistics)"
 description = "BLS Public Data API: employment, unemployment, CPI, PPI, productivity, wages, and occupational data. Authoritative U.S. source for labor market and price statistics."
 category    = "economics"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- fetch policy ---
 tier        = "A"

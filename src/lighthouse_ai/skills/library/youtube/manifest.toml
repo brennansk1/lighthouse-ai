@@ -3,6 +3,7 @@ name        = "YouTube"
 description = "YouTube video search, metadata, and transcript extraction for talks, tutorials, primary-source video, and popular reception research."
 category    = "video"
 version     = "0.1.0"
+hidden      = true   # outside current wedge (legal/practice-support); loadable if explicitly named, not offered by default
 
 # --- fetch policy ---
 tier        = "A"
