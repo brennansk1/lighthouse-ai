@@ -21,6 +21,11 @@
    Update the relevant rows in `docs/PRODUCTION_CHECKLIST.md` → "Deployment readiness" and the acceptance
    tables, and append a results section to `docs/dev/DEV_LOG.md`.
 
+> **2026-06-10 update:** the authoritative test matrix now lives in
+> **`docs/LIVE_TEST_PLAN.md`** — run that, phase by phase, recording results as
+> described there. This file remains the operator safety guide and cold-start
+> reference. Offline suite is now 3,140+ pass / ~106 skip.
+
 ## Current state
 - Branch `main` (latest pushed). Offline suite: ~2860 pass / ~103 skip, **mypy 0**, **ruff clean**,
   coverage ~82%, CI green on macOS + Linux × py3.11/3.12. ~32 real bugs fixed in a 4-wave audit.

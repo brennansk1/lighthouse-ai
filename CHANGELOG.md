@@ -21,6 +21,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   "+N acquired during research" (from the new acquisition stats) alongside the
   existing type / source-count / date / confidence strip.
 
+## [Unreleased] — Plain-language pass + live-test plan (2026-06-10)
+
+### Changed
+- **Every on-screen string passes the average-user bar** (audited against the
+  DEFINITION_OF_DONE UX standard): "VOI" → "priority" with a hover explainer,
+  "Governor tripped" → "Work paused — reason", "known unknowns" → "open
+  questions", "load-bearing dispute" → "what the verdict turns on"; mode cards
+  describe steelman/crux concepts in plain words.
+- **Guide tab rewritten for the current product**: new "Reading your results"
+  section (header strip decoded, zero-sources caution, all seven result types
+  in plain words, export formats), a plain-language glossary, and refreshed
+  Watch / Runs / Library / depth-tier content covering website monitors,
+  live synthesis streaming, iterative acquisition, and the new wizard inputs.
+- **Review tab renders typed artifacts** via the shared ArtifactBody renderer —
+  the approve/reject decision is made from the same professional views as the
+  Library.
+
+### Added
+- **`docs/LIVE_TEST_PLAN.md`** — the authoritative live-validation matrix:
+  every test that must run on real hardware/backends before release, each with
+  its command, pass standard, and where to record the result.
+
 ## [Unreleased] — Iterative acquisition: frontier-class deep-research breadth (2026-06-10)
 
 ### Added

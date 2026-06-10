@@ -56,10 +56,14 @@ by itself make you compliant with any regulation, and there is no certification 
 
 A full research slice runs end-to-end, locally, today: ingest documents → frame the
 question with an LLM-powered pipeline → retrieve with `bge-m3` embeddings + BM25 +
-FlagReranker → synthesize with a local LLM via Ollama → enforce a citation-discipline
-gate → record calibration positions → stage a draft → review it in the dashboard.
-Every claim carries a confidence band and the HMAC-chained audit log makes the entire
-run tamper-evident.
+FlagReranker → **acquire as it learns** (a thin line of inquiry triggers new
+per-sub-question web searches mid-run, through the egress/politeness rails) →
+synthesize with a local LLM via Ollama, **streamed live to the dashboard** →
+enforce a citation-discipline gate → record calibration positions → stage a draft →
+review it in the dashboard with typed views per artifact (decision matrices with
+what-would-flip-this analysis, evidence tables with contested-cell markers, timelines
+with disputed-date splits, structured debate verdicts). Every claim carries a
+confidence band and the HMAC-chained audit log makes the entire run tamper-evident.
 
 The full capability surface, the path to deployment, and the test/status wall live in
 **[`CAPABILITIES.md`](./CAPABILITIES.md)**. The in-app **Guide** tab walks every feature
@@ -127,15 +131,17 @@ Every corpus mode takes a **depth tier** — see
 
 | Tier | Feel | Behavior |
 |------|------|----------|
-| Quick | ~1–3 min | fast grounded scan |
-| Standard | ~5–10 min | balanced, coverage-checked (≈ frontier deep research) |
-| Thorough | ~20–60 min | + adversarial refutation + triangulation + coverage critic |
-| Deep | hours (budgeted) | recursive question-tree to exhaustion — checkpointed |
+| Quick | ~1–3 min | fast grounded scan, one upfront source pass |
+| Standard | ~5–10 min | iterative: thin sub-questions re-search the web mid-run (≤60 docs) |
+| Thorough | ~20–60 min | wider acquisition (≤150 docs, multi-phrasing) + adversarial refutation + two-source rule + coverage critic |
+| Deep | hours (budgeted) | recursive question tree; every branch runs its own searches (≤400 docs) and chases the most-cited links — checkpointed |
 
 **The invariant: depth scales coverage and confidence, never trust.** Every tier
 runs the grounding gate — a claim is entailed by a real cited source or it is
 dropped/flagged, never asserted. Claude & Gemini deep research time-box to
-~10–20 min (≈ Standard); Thorough and Deep are depth they structurally can't reach.
+~10–20 min (≈ Standard); Thorough and Deep buy the same acquire-as-you-learn
+loop more time, more sources, and a skeptic pass — depth a time-boxed service
+structurally can't reach, with citation honesty they don't enforce.
 
 ### What makes the output trustworthy
 
@@ -206,8 +212,9 @@ and the full capability inventory live in **[`CAPABILITIES.md`](./CAPABILITIES.m
 ## Development
 
 ```bash
-uv run pytest -q                          # 2950 pass, 83 skip
+uv run pytest -q                          # 3140+ pass, ~106 skip
 uv run ruff check src tests               # 0 errors
+uv run mypy src/lighthouse_ai             # 0 errors (blocking CI gate)
 LIGHTHOUSE_REAL_BACKEND=1 uv run pytest tests/test_backends_ollama.py  # real LLM
 ```
 
@@ -231,6 +238,7 @@ require unit tests; integration tests for real-backend paths must be gated on
 - [`docs/DEFINITION_OF_DONE.md`](./docs/DEFINITION_OF_DONE.md) — the production-grade bar (what "done" means)
 - [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md) — release-readiness status
 - [`docs/RELEASE.md`](./docs/RELEASE.md) — the live-only release gates (soak, cross-platform, signing, PyPI) made turnkey
+- [`docs/LIVE_TEST_PLAN.md`](./docs/LIVE_TEST_PLAN.md) — **the live validation matrix**: every test that must run on real hardware/backends, each with its pass standard
 - [`deploy/`](./deploy/) — systemd / launchd service units for running the supervisor
 - [`docs/webapp_tui_design.md`](./docs/webapp_tui_design.md) — dashboard / TUI design
 - `docs/dev/` — working notes (sprint plans, build logs)
