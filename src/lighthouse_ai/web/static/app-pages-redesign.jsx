@@ -3590,5 +3590,9 @@ function TrackPage(props) {
 
 Object.assign(window, {
   ResearchPage, LibraryPage, ActivityPage, WatchPage, TrackPage,
+  // Shared typed-artifact renderer: the Review tab reuses it so the
+  // approve/reject decision is made from the same professional view the
+  // Library shows, not from flattened body_html.
+  ArtifactBody,
 });
 })();

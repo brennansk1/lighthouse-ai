@@ -2014,20 +2014,36 @@
           {draft.mode && <ModeBadge mode={draft.mode} />}
         </div>
 
-        {/* Body HTML */}
-        {draft.body_html ? (
-          <div
-            className="lh-body-html lh-prose"
-            style={{
-              fontFamily: 'var(--serif)', fontSize: 15, lineHeight: 1.65, color: 'var(--ink-2)',
-            }}
-            dangerouslySetInnerHTML={{ __html: draft.body_html }}
-          />
-        ) : (
-          <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>
-            This draft has no body content yet.
-          </div>
-        )}
+        {/* Body — typed view when the shared renderer + structured body are
+            available (matrix/table/timeline/verdict/transcript/deep tree get
+            the same professional rendering as the Library); body_html prose
+            otherwise. The approve/reject call deserves the full picture. */}
+        {(() => {
+          const TypedBody = window.ArtifactBody;
+          let body = draft.body || null;
+          if (!body && draft.body_json) {
+            try { body = JSON.parse(draft.body_json); } catch (e) { body = null; }
+          }
+          if (TypedBody && (body || draft.body_html)) {
+            return <TypedBody artifact={{ ...draft, body }} />;
+          }
+          if (draft.body_html) {
+            return (
+              <div
+                className="lh-body-html lh-prose"
+                style={{
+                  fontFamily: 'var(--serif)', fontSize: 15, lineHeight: 1.65, color: 'var(--ink-2)',
+                }}
+                dangerouslySetInnerHTML={{ __html: draft.body_html }}
+              />
+            );
+          }
+          return (
+            <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>
+              This draft has no body content yet.
+            </div>
+          );
+        })()}
 
         {/* Evidence table — shown when there is body content or sources */}
         {(draft.body_html || sources > 0) && (
