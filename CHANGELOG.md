@@ -3,6 +3,33 @@
 All notable changes to Lighthouse are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased] — Feature-priority sweep: invariant hardening + export (2026-06-10)
+
+### Fixed
+- **Fabricated-citation detection now runs on the main research path.** The
+  pipeline's discipline gate was called without the run's evidence chunks, so
+  the citation-integrity check (out-of-range `[N]` → fabricated), triangulation,
+  and the entailment gate were all silently skipped — a direct gap against the
+  zero-fabricated-citations invariant. Evidence is now passed; runs with no
+  evidence keep the historical skip.
+- **Entailment never grades a fabricated citation.** A claim whose citation ids
+  resolve to no real chunk used to be scored against an arbitrary fallback
+  chunk; it now stays in the denominator as not-entailed.
+- **Egress allowlist label-boundary matching**: degenerate hosts with empty
+  labels (`.arxiv.org`, `a..arxiv.org`) no longer match a subdomain allowlist
+  entry (defense-in-depth; DNS would have rejected them anyway).
+- **Provenance sidecar tmp name**: atomic writes now use `<name>.tmp` instead of
+  `with_suffix(".prov.tmp")`, which doubled the suffix and could collide two
+  sidecars sharing a stem.
+
+### Added
+- **`lighthouse export --markdown FILE`** (`targets/markdown.py`): standalone,
+  portable Markdown report with the run's full W3C PROV-O manifest embedded —
+  models, source slots, content hash, and the raw sidecar in a fenced block
+  (FUTURE_FEATURES §7, smallest honest slice). The Logseq path now also passes
+  `body_json`/`artifact_type` through, enabling the typed renderers the CLI
+  previously bypassed.
+
 ## [Unreleased] — Deep sweep: modernization + UX polish (2026-06-10)
 
 ### Added

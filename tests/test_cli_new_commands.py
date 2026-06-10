@@ -447,3 +447,69 @@ def test_init_model_recommendation_is_best_effort(cli_env, monkeypatch):
     assert r.exit_code == 0, r.stdout
     assert "init complete" in r.stdout
     assert "model recommendation unavailable" in r.stdout
+
+
+# --- export: standalone Markdown with provenance -------------------------
+
+def _stage_draft(data_dir: Path, draft_id: str = "d-exp001") -> str:
+    from lighthouse_ai.persistence import open_db
+    conn = open_db(data_dir / "state.db")
+    try:
+        conn.execute(
+            "INSERT INTO drafts (id, topic, title, body_html, wep_phrase, "
+            "source_count, status) VALUES (?, ?, ?, ?, ?, ?, 'staged')",
+            (draft_id, "Quantum", "Quantum readiness",
+             "<p>Qubits are fragile [1].</p><p>Error correction helps [2].</p>",
+             "likely", 2))
+    finally:
+        conn.close()
+    return draft_id
+
+
+def test_export_markdown_includes_body_and_provenance(initted_env, tmp_path):
+    from lighthouse_ai.provenance import build_run_sidecar, write_run_sidecar
+
+    draft_id = _stage_draft(initted_env)
+    sidecar = build_run_sidecar(
+        draft_id=draft_id, job_id="j-exp", question="Quantum?",
+        mode="deep-dive", backends={"synthesizer": "qwen3:8b"}, source_count=2)
+    write_run_sidecar(initted_env / "staging" / f"{draft_id}.prov.json", sidecar)
+
+    out = tmp_path / "report.md"
+    r = CliRunner().invoke(app, ["export", draft_id, "--markdown", str(out)])
+    assert r.exit_code == 0, r.stdout
+    text = out.read_text(encoding="utf-8")
+    assert text.startswith("# Quantum readiness")
+    assert "Qubits are fragile [1]." in text
+    assert "## Provenance" in text
+    assert "synthesizer=qwen3:8b" in text       # model summary line
+    assert '"lighthouse:jobId": "j-exp"' in text  # embedded manifest
+
+
+def test_export_markdown_without_sidecar_still_exports(initted_env, tmp_path):
+    draft_id = _stage_draft(initted_env, "d-exp002")
+    out = tmp_path / "report.md"
+    r = CliRunner().invoke(app, ["export", draft_id, "--markdown", str(out)])
+    assert r.exit_code == 0, r.stdout
+    text = out.read_text(encoding="utf-8")
+    assert "Error correction helps [2]." in text
+    assert "## Provenance" not in text  # absent sidecar is not an error
+
+
+def test_export_requires_exactly_one_target(initted_env, tmp_path):
+    draft_id = _stage_draft(initted_env, "d-exp003")
+    r = CliRunner().invoke(app, ["export", draft_id])
+    assert r.exit_code == 2
+    r2 = CliRunner().invoke(
+        app, ["export", draft_id, "--markdown", str(tmp_path / "a.md"),
+              "--logseq", str(tmp_path / "graph")])
+    assert r2.exit_code == 2
+
+
+def test_export_logseq_path_still_works(initted_env, tmp_path):
+    draft_id = _stage_draft(initted_env, "d-exp004")
+    graph = tmp_path / "graph"
+    r = CliRunner().invoke(app, ["export", draft_id, "--logseq", str(graph)])
+    assert r.exit_code == 0, r.stdout
+    pages = list((graph / "pages").glob("*.md"))
+    assert len(pages) == 1

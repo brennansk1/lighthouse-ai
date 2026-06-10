@@ -218,7 +218,17 @@ class EgressProxy:
         if host in self._allowed:
             return True
         if self._allow_subdomains:
-            return any(host.endswith("." + dom) for dom in self._allowed)
+            # Compare whole labels, not string suffixes: a bare suffix check
+            # accepts the degenerate ".arxiv.org" (empty leading label), which
+            # is not a real subdomain of "arxiv.org".
+            labels = host.split(".")
+            if "" in labels:
+                return False
+            for dom in self._allowed:
+                dom_labels = dom.split(".")
+                if (len(labels) > len(dom_labels)
+                        and labels[-len(dom_labels):] == dom_labels):
+                    return True
         return False
 
     # --- combined decision (§24.9) ---

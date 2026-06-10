@@ -282,7 +282,7 @@ class TestWriteAndLoadSidecar:
         )
         p = tmp_path / "d-cl.prov.json"
         write_run_sidecar(p, s)
-        tmp = p.with_suffix(".prov.tmp")
+        tmp = p.with_name(p.name + ".tmp")
         assert not tmp.exists()
 
 

@@ -292,3 +292,30 @@ def test_discipline_check_accepts_evidence_chunks_kwarg():
     rep = check("The result is positive [1].", evidence_chunks=[])
     assert rep is not None
     assert rep.entailment_checked is False
+
+
+def test_entailment_skips_claims_with_only_fabricated_citations(monkeypatch):
+    """A claim whose citations resolve to NO real chunk must not be scored
+    against an arbitrary chunk — it stays in the denominator as not-entailed.
+    Regression: the gate used to fall back to chunk 1, manufacturing an
+    entailment score for a fabricated citation."""
+    from lighthouse_ai.verification import entailment as ent
+
+    graded: list[str] = []
+
+    def _fake_score(claim_text: str, grounding: str) -> float:
+        graded.append(grounding)
+        return 0.99  # everything graded "passes" — isolation for the skip path
+
+    monkeypatch.setattr(ent, "available", lambda: True)
+    monkeypatch.setattr(ent, "score_claim", _fake_score)
+
+    ev = [_Chunk("the real evidence text", "doc-a")]
+    rep = check("Grounded claim [1]. Fabricated claim [9].",
+                evidence_chunks=ev, min_coverage=0.0)
+    # Only the resolvable claim was ever graded…
+    assert graded == ["the real evidence text"]
+    # …and the fabricated one drags coverage down instead of inflating it.
+    assert rep.entailment_checked is True
+    assert rep.entailment_coverage == 0.5
+    assert rep.fabricated_citations == 1

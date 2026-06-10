@@ -329,7 +329,10 @@ def write_run_sidecar(
     """
     dest = Path(sidecar_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(".prov.tmp")
+    # Append ".tmp" to the FULL name: with_suffix() would replace only the
+    # final suffix ("d-x.prov.json" → "d-x.prov.prov.tmp"), and two dests
+    # differing only in their last suffix would collide on one tmp path.
+    tmp = dest.with_name(dest.name + ".tmp")
     try:
         tmp.write_text(json.dumps(sidecar, sort_keys=True, indent=2), encoding="utf-8")
         tmp.replace(dest)

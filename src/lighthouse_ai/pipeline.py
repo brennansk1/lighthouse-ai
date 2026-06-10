@@ -360,10 +360,19 @@ class ResearchPipeline:
         # --- quality discipline gate + calibration (§12, §22) ---
         from .verification.discipline import check as discipline_check
         from .verification.discipline import downgrade_wep
-        rep = discipline_check(synthesis)
+        # Citation integrity needs the run's evidence: a claim citing an [N]
+        # outside 1..len(evidence) is fabricated and must be flagged (the
+        # zero-fabricated-citations invariant). NB deepdive sections number
+        # their evidence per-section, so a within-range id is not positionally
+        # exact against this global list — but out-of-range detection is sound
+        # (the global list is a superset of every section's local numbering).
+        # ``or None`` keeps the historical skip when a run has no evidence at
+        # all (e.g. QUC turns), where an empty list would mark every cited
+        # claim fabricated.
+        _evidence = getattr(report, "evidence_chunks", []) if report is not None else []
+        rep = discipline_check(synthesis, evidence_chunks=_evidence or None)
         # source diversity — how many independent source domains were cited
         from .verification.discipline import check_source_diversity as _check_div
-        _evidence = getattr(report, "evidence_chunks", []) if report is not None else []
         distinct_sources = _check_div(_evidence)
         # Stated confidence starts at "likely" (0.75); discipline downgrades it.
         band = downgrade_wep(0.75, rep)

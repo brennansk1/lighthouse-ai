@@ -880,25 +880,63 @@ def eval_retrieval(
 @app.command()
 def export(
     draft_id: str = typer.Argument(..., help="Draft id to export."),
-    logseq: Path = typer.Option(..., "--logseq", help="Logseq graph directory."),
+    logseq: Path = typer.Option(None, "--logseq", help="Logseq graph directory."),
+    markdown: Path = typer.Option(
+        None, "--markdown",
+        help="Write a standalone .md report (with the provenance manifest)."),
 ) -> None:
-    """Export a staged/published draft to a Logseq graph (filesystem markdown)."""
+    """Export a staged/published draft (Logseq graph or standalone Markdown)."""
+    if (logseq is None) == (markdown is None):
+        err_console.print("[red]pick exactly one target: --logseq DIR "
+                          "or --markdown FILE[/red]")
+        raise typer.Exit(2)
     paths = _paths_from_env()
     conn = open_db(paths.state_db)
     try:
         rows = conn.execute(
-            "SELECT id, topic, title, body_html, wep_phrase, source_count "
-            "FROM drafts WHERE id=?", (draft_id,)).fetchall()
+            "SELECT id, topic, title, body_html, wep_phrase, source_count, "
+            "body_json, artifact_type FROM drafts WHERE id=?",
+            (draft_id,)).fetchall()
     finally:
         conn.close()
     if not rows:
         err_console.print(f"[red]no draft {draft_id}[/red]")
         raise typer.Exit(1)
-    _id, topic, title, body_html, wep_phrase, source_count = rows[0]
+    (_id, topic, title, body_html, wep_phrase, source_count,
+     body_json_raw, artifact_type) = rows[0]
+    import json as _json
+    body_json = None
+    if body_json_raw:
+        try:
+            body_json = _json.loads(body_json_raw)
+        except Exception:
+            body_json = None
+
+    if markdown is not None:
+        # The provenance manifest travels with the report when the run's
+        # sidecar exists; older drafts predate it, so absence is not an error.
+        provenance = None
+        sidecar = paths.staging_dir / f"{_id}.prov.json"
+        if sidecar.exists():
+            try:
+                provenance = _json.loads(sidecar.read_text(encoding="utf-8"))
+            except Exception:
+                provenance = None
+        from .targets.markdown import export_markdown
+        out = export_markdown(markdown, draft_id=_id, title=title,
+                              body_html=body_html, topic=topic,
+                              wep_phrase=wep_phrase,
+                              source_count=source_count or 0,
+                              provenance=provenance)
+        suffix = " (provenance included)" if provenance else ""
+        console.print(f"[green]wrote Markdown report →[/green] {out}{suffix}")
+        return
+
     from .targets.logseq import export_draft
     page = export_draft(logseq, draft_id=_id, title=title, body_html=body_html,
                         topic=topic, wep_phrase=wep_phrase,
-                        source_count=source_count or 0)
+                        source_count=source_count or 0,
+                        body_json=body_json, artifact_type=artifact_type)
     console.print(f"[green]wrote Logseq page →[/green] {page.path}")
 
 

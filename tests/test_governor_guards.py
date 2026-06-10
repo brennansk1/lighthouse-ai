@@ -283,6 +283,16 @@ def test_allowed_host_exact_and_subdomain():
     assert not proxy.is_allowed_host("evilarxiv.org")
 
 
+def test_allowed_host_rejects_degenerate_labels():
+    """Label-boundary matching, not string-suffix matching: '.arxiv.org'
+    (empty leading label) and 'a..arxiv.org' are not real subdomains and a
+    suffix check would wrongly accept them."""
+    proxy = EgressProxy(allowed_domains={"arxiv.org"})
+    assert not proxy.is_allowed_host(".arxiv.org")
+    assert not proxy.is_allowed_host("a..arxiv.org")
+    assert proxy.is_allowed_host("a.b.arxiv.org")  # genuine deep subdomain
+
+
 def test_subdomain_match_can_be_disabled():
     proxy = EgressProxy(allowed_domains={"arxiv.org"}, allow_subdomains=False)
     assert proxy.is_allowed_host("arxiv.org")

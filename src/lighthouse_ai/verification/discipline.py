@@ -262,9 +262,12 @@ def check(text: str, *, min_coverage: float = 0.6,
                     if cid in chunk_by_id:
                         grounding = chunk_by_id[cid]
                         break
-                if not grounding and chunk_by_id:
-                    # Fall back to the first chunk if no id matches.
-                    grounding = next(iter(chunk_by_id.values()))
+                if not grounding:
+                    # No cited id resolves to real evidence: the claim cannot
+                    # be verified, so it stays in the denominator and counts as
+                    # NOT entailed. Grounding it against an arbitrary chunk
+                    # would manufacture a score for a fabricated citation.
+                    continue
                 score = _entailment.score_claim(claim.text, grounding)
                 # An unchecked claim (score is None: no scorer / scorer error)
                 # must NOT be counted as entailed — that would fabricate a pass.

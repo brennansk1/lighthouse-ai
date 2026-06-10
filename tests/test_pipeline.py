@@ -327,3 +327,26 @@ def test_pipeline_auto_fetch_disabled_by_flag(migrated_paths):
                             config=PipelineConfig(offline=True, auto_fetch_sources=False))
     result = pipe.research("some question")
     assert result.chunks_ingested == 0
+
+
+def test_pipeline_passes_evidence_to_discipline_gate(migrated_paths, monkeypatch):
+    """The discipline gate must receive the run's evidence chunks — without
+    them, fabricated-citation detection silently never runs on the main
+    research path (regression for the zero-fabricated-citations invariant)."""
+    from lighthouse_ai.verification import discipline as disc
+
+    seen: dict = {}
+    real_check = disc.check
+
+    def _spy(text, **kwargs):
+        seen["evidence_chunks"] = kwargs.get("evidence_chunks")
+        return real_check(text, **kwargs)
+
+    monkeypatch.setattr(disc, "check", _spy)
+    pipe = ResearchPipeline(migrated_paths,
+                            config=PipelineConfig(offline=True, mode="deep-dive"))
+    pipe.ingest_text("d1", "Quantum computing uses qubits. Superposition matters.")
+    pipe.research("What is quantum computing?")
+    assert "evidence_chunks" in seen, "gate was never called"
+    ev = seen["evidence_chunks"]
+    assert ev is not None and len(ev) >= 1
