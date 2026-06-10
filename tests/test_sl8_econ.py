@@ -20,7 +20,6 @@ No datetime.now() at import. All fixtures are deterministic and offline.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import pytest
 
@@ -171,11 +170,6 @@ _CENSUS_DOCS = [
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture()
-def broker(tmp_path: Path):
-    return build_default_broker(tmp_path)
 
 
 @pytest.fixture()

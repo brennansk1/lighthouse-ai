@@ -16,14 +16,10 @@ No datetime.now() at import time.  No real network calls.
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from unittest.mock import MagicMock
-
-import pytest
 
 from lighthouse_ai.net import EgressBlocked
 from lighthouse_ai.rag.chunker import Document
-from lighthouse_ai.sandbox.broker import build_default_broker
 from lighthouse_ai.skills import discover_skills, load_skill
 
 # ---------------------------------------------------------------------------
@@ -85,11 +81,6 @@ def _make_ctx(broker, skill_id: str = SKILL_ID, rss_bytes: bytes = _RSS_BYTES):
     ctx.skill_id = skill_id
     ctx.skill_version = "0.1.0"
     return ctx
-
-
-@pytest.fixture()
-def broker(tmp_path: Path):
-    return build_default_broker(tmp_path)
 
 
 # ---------------------------------------------------------------------------

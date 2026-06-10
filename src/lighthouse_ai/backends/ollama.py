@@ -1,8 +1,8 @@
 """Ollama HTTP backend — chat, embed, model management.
 
 Ollama serves a small REST surface on ``127.0.0.1:11434`` by default. This
-adapter talks to it directly via ``httpx`` (no ``litellm`` indirection
-because we want predictable timeouts and the option to stream later).
+adapter talks to it directly via ``httpx`` (no ``litellm`` indirection,
+so timeouts and the streaming path stay predictable).
 
 The class is intentionally narrow: chat / embed / pull / list / delete.
 ``chat`` streams when given an ``on_token`` callback (the SSE dashboard's

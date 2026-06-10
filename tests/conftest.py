@@ -21,3 +21,14 @@ def tmp_paths(tmp_path: Path) -> Paths:
 def migrated_paths(tmp_paths: Paths) -> Paths:
     migrate_all(kinds_for(tmp_paths))
     return tmp_paths
+
+
+@pytest.fixture
+def broker(tmp_path: Path):
+    """Default sandbox broker on a temp dir — shared by the skill-library suites.
+
+    Files that need a bespoke broker (custom scanners) keep a local ``broker``
+    fixture, which shadows this one by pytest's resolution order.
+    """
+    from lighthouse_ai.sandbox.broker import build_default_broker
+    return build_default_broker(tmp_path)

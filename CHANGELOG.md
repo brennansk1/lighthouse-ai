@@ -3,6 +3,46 @@
 All notable changes to Lighthouse are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased] — Deep sweep: modernization + UX polish (2026-06-10)
+
+### Added
+- **Live synthesis streaming**: `OllamaBackend.chat(on_token=…)` streams the
+  completion; the gateway's new `token_sink` forwards synthesizer tokens, the
+  dispatcher publishes them as SSE `synthesis.token` events, and the dashboard's
+  run trace renders a "Writing synthesis…" pane that fills as the model writes.
+  The audit record is unchanged (it hashes the final assembled text).
+- **`lighthouse doctor` privacy & secrets section**: airgap kill-switch state in
+  plain language, the effective secrets backend (OS keychain vs file fallback via
+  the new `SecretStore.backend_status()`), a hard failure when `secrets.toml` is
+  readable by other users, and a disk-space line (<5 GB free is an issue).
+- **`lighthouse audit-egress --summary`**: a one-paragraph plain-English verdict
+  (call count + hosts) so a non-technical reader can check the privacy claim
+  without parsing the table.
+- **First-run card**: `lighthouse init` ends with the three steps to a first
+  research run (pull → start → research) plus the dashboard URL and a pointer to
+  `doctor`.
+- Dedicated unit suites for `net_politeness` (31 tests — canonicalization,
+  robots cache, rate budgets and crawl-delay under injected clocks) and
+  `provenance` (43 tests — record shape, JSONL log invariants, sidecar
+  determinism, torn-line tolerance).
+
+### Changed
+- **Uniform scheduler-gate coverage**: debate, quc, exhaustive (synthesis + VOI
+  nudge), and monitor's gateway salience scorer now wrap their LLM calls in the
+  host-courtesy gate like the other engines (keyword-only `gate=None` params —
+  no-op when unwired). `modes/_gate.complete_structured_or` replaces six
+  hand-rolled try/call/parse/fallback blocks across survey/reconstruct/decide.
+- CI also runs on `claude/**`/`feature/**` pushes and `workflow_dispatch`, so
+  gate drift surfaces before a PR.
+
+### Fixed
+- **mypy back to 0 errors** (11 had accumulated): the guarded fetch path now
+  uses precise httpx-compatible types (covariant `Mapping`-based query params,
+  `Mapping[str, Any]` POST data, `bool | UseClientDefault` redirects), and
+  `sources/searxng.py` narrows its optional injected client correctly.
+- `lighthouse init` now honors `$LIGHTHOUSE_DATA_DIR` like every other command
+  (it used to silently write to `~/.lighthouse`).
+
 ## [Unreleased] — Production-grade push (2026-05-31)
 
 Established `docs/DEFINITION_OF_DONE.md` as the authoritative bar (7 per-feature

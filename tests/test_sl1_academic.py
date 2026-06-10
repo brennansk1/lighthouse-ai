@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 
@@ -149,11 +148,6 @@ _RW_DOCS = [
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture()
-def broker(tmp_path: Path) -> object:
-    return build_default_broker(tmp_path)
 
 
 @pytest.fixture()

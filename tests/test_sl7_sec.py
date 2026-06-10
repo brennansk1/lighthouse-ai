@@ -19,7 +19,6 @@ from pathlib import Path
 import pytest
 
 from lighthouse_ai.rag.chunker import Document
-from lighthouse_ai.sandbox.broker import build_default_broker
 from lighthouse_ai.skills import load_skill, run_skill, run_watchable
 
 # ---------------------------------------------------------------------------
@@ -155,11 +154,6 @@ None.
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-@pytest.fixture()
-def broker(tmp_path):
-    return build_default_broker(tmp_path)
-
 
 @pytest.fixture()
 def skill():

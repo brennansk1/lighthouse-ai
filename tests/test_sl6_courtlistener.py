@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 
@@ -101,11 +100,6 @@ def _reset_transcript_state():
     yield
     _transcript.clear_cache()
     _transcript.clear_providers()
-
-
-@pytest.fixture()
-def broker(tmp_path: Path):
-    return build_default_broker(tmp_path)
 
 
 @pytest.fixture()

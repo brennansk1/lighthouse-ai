@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -148,11 +147,6 @@ def _make_ctx(broker, skill_id: str, rss_bytes: bytes = _RSS_BYTES, extra_client
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-@pytest.fixture()
-def broker(tmp_path: Path):
-    return build_default_broker(tmp_path)
-
 
 # ---------------------------------------------------------------------------
 # 1. Load + manifest checks for all 6 skills

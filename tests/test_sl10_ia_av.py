@@ -188,11 +188,6 @@ def _reset_transcript_state():
 
 
 @pytest.fixture()
-def broker(tmp_path: Path):
-    return build_default_broker(tmp_path)
-
-
-@pytest.fixture()
 def ia_skill():
     return load_skill("internet_archive_av", library_dir=_LIBRARY_DIR)
 
