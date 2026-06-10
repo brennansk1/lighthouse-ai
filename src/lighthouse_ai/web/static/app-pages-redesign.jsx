@@ -609,6 +609,7 @@ function CriteriaEditor({ criteria, setCriteria }) {
         textTransform: 'uppercase', color: 'var(--muted)' }}>
         <span style={{ flex: 1 }}>Criterion</span>
         <span style={{ width: 80 }}>Weight</span>
+        <span style={{ width: 110 }}>Direction</span>
         <span style={{ width: 30 }} />
       </div>
       {criteria.map((c, i) => (
@@ -622,6 +623,14 @@ function CriteriaEditor({ criteria, setCriteria }) {
             onChange={(e) => update(i, 'weight', parseFloat(e.target.value) || 0)}
             style={{ width: 80, padding: '6px 9px', border: '1px solid var(--rule)',
               borderRadius: 6, fontSize: 13 }} />
+          <select value={c.higher_is_better === false ? 'lower' : 'higher'}
+            aria-label="direction"
+            onChange={(e) => update(i, 'higher_is_better', e.target.value === 'higher')}
+            style={{ width: 110, padding: '6px 6px', border: '1px solid var(--rule)',
+              borderRadius: 6, fontSize: 12.5, background: 'var(--bg, white)' }}>
+            <option value="higher">higher = good</option>
+            <option value="lower">lower = good</option>
+          </select>
           <Btn kind="ghost" onClick={() => remove(i)} aria-label="remove criterion">×</Btn>
         </div>
       ))}
@@ -629,8 +638,8 @@ function CriteriaEditor({ criteria, setCriteria }) {
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8,
         lineHeight: 1.5 }}>
         Weight is each criterion's relative importance — a criterion weighted 2
-        counts twice as much as one weighted 1. Score each option 0 to 10 later;
-        higher is better.
+        counts twice as much as one weighted 1. Use “lower = good” for criteria
+        like cost or risk, where a smaller score should win.
       </div>
     </div>
   );
@@ -1023,6 +1032,8 @@ function ResearchPage({ toast }) {
   const [topic, setTopic] = useState('');
   const [options, setOptions] = useState(['', '']);
   const [criteria, setCriteria] = useState([{ label: '', weight: 1.0 }]);
+  const [attributes, setAttributes] = useState([{ label: '', keywords: '' }]);
+  const [draft, setDraft] = useState('');
   const [urls, setUrls] = useState('');
   const [depth, setDepth] = useState('auto');
   const [budget, setBudget] = useState('1h');
@@ -1034,16 +1045,25 @@ function ResearchPage({ toast }) {
   const modes = (data && Array.isArray(data.modes)) ? data.modes : [];
   const sel = modes.find((m) => m.key === selected) || null;
   const isDecide = sel && sel.key === 'decide';
+  const isSurvey = sel && sel.key === 'survey';
+  const isAdjudicate = sel && sel.key === 'adjudicate';
   const wantsUrls = sel && URL_MODES.has(sel.key);
   const wantsDepth = sel && DEPTH_MODES.has(sel.key);
 
   const cleanOptions = options.map((o) => o.trim()).filter(Boolean);
   const cleanCriteria = criteria.filter((c) => c.label.trim() && c.weight > 0);
+  const cleanAttributes = attributes
+    .filter((a) => a.label.trim())
+    .map((a) => ({
+      label: a.label.trim(),
+      keywords: a.keywords.split(',').map((k) => k.trim()).filter(Boolean),
+    }));
   const cleanUrls = urls.split(/[\n,]+/).map((u) => u.trim()).filter(Boolean);
 
   function reset() {
     setStep(1); setSelected(null); setTopic('');
     setOptions(['', '']); setCriteria([{ label: '', weight: 1.0 }]); setUrls('');
+    setAttributes([{ label: '', keywords: '' }]); setDraft('');
     setDepth('auto'); setBudget('1h'); setPlan([]); setSelectedSkills([]);
   }
 
@@ -1123,6 +1143,8 @@ function ResearchPage({ toast }) {
         body.options = cleanOptions;
         body.criteria = cleanCriteria;
       }
+      if (isSurvey && cleanAttributes.length) body.attributes = cleanAttributes;
+      if (isAdjudicate && draft.trim()) body.draft = draft.trim();
       if (wantsDepth) {
         body.depth = depth;
         if (depth === 'deep') body.budget = budget;
@@ -1276,6 +1298,52 @@ function ResearchPage({ toast }) {
                 </React.Fragment>
               )}
 
+              {isSurvey && (
+                <WizardField label="Evidence table columns (optional)"
+                  hint="What to extract from every document — each becomes a column (e.g. “sample size”, “methodology”). Keywords help find the value; leave blank for a one-column summary.">
+                  {attributes.map((a, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                      <input value={a.label} placeholder={i === 0 ? 'e.g. sample size' : 'column'}
+                        onChange={(e) => {
+                          const next = attributes.slice();
+                          next[i] = { ...next[i], label: e.target.value };
+                          setAttributes(next);
+                        }}
+                        style={{ flex: 1, padding: '6px 9px', border: '1px solid var(--rule)',
+                          borderRadius: 6, fontSize: 13 }} />
+                      <input value={a.keywords} placeholder="keywords, comma-separated"
+                        aria-label="keywords"
+                        onChange={(e) => {
+                          const next = attributes.slice();
+                          next[i] = { ...next[i], keywords: e.target.value };
+                          setAttributes(next);
+                        }}
+                        style={{ flex: 1, padding: '6px 9px', border: '1px solid var(--rule)',
+                          borderRadius: 6, fontSize: 13 }} />
+                      {attributes.length > 1 && (
+                        <Btn kind="ghost"
+                          onClick={() => setAttributes(attributes.filter((_, j) => j !== i))}
+                          aria-label="remove column">×</Btn>
+                      )}
+                    </div>
+                  ))}
+                  <Btn kind="ghost"
+                    onClick={() => setAttributes([...attributes, { label: '', keywords: '' }])}>
+                    + Add column</Btn>
+                </WizardField>
+              )}
+
+              {isAdjudicate && (
+                <WizardField label="Text to stress-test (optional)"
+                  hint="Paste the draft, claim write-up, or conclusion the perspectives should critique. Leave blank to debate the claim above on its own.">
+                  <textarea value={draft} onChange={(e) => setDraft(e.target.value)}
+                    rows={5} placeholder={'Paste the analysis or conclusion to be debated…'}
+                    style={{ width: '100%', padding: '8px 11px',
+                      border: '1px solid var(--rule)', borderRadius: 7, fontSize: 13,
+                      boxSizing: 'border-box', resize: 'vertical' }} />
+                </WizardField>
+              )}
+
               {wantsUrls && (
                 <WizardField label="Source URLs (optional)"
                   hint="Paste one URL per line to point the run at specific sources. Leave blank to use your sources.">
@@ -1329,6 +1397,10 @@ function ResearchPage({ toast }) {
                 <Row k="Mode" v={sel.label} />
                 <Row k="You get" v={artifactLabel(sel.artifact_type)} />
                 <Row k="Question" v={topic.trim()} />
+                {isSurvey && cleanAttributes.length > 0 &&
+                  <Row k="Columns" v={cleanAttributes.map((a) => a.label).join(', ')} />}
+                {isAdjudicate && draft.trim() &&
+                  <Row k="Stress-testing" v={`${draft.trim().slice(0, 80)}${draft.trim().length > 80 ? '…' : ''}`} />}
                 {isDecide && <Row k="Options" v={cleanOptions.join(', ')} />}
                 {isDecide && <Row k="Criteria"
                   v={cleanCriteria.map((c) => `${c.label} (×${c.weight})`).join(', ')} />}
@@ -1389,29 +1461,153 @@ function MatrixView({ body }) {
   if (!body || !body.cells) return null;
   const options = (body.options || []).map((o) => o.label || o);
   const criteria = (body.criteria || []).map((c) => c.label || c);
+  const decisive = new Set(body.decisive_criteria || []);
+  const contested = new Set(body.contested_criteria || []);
   const cell = (opt, crit) => {
     const c = body.cells.find((x) => x.option === opt && x.criterion === crit);
     return c ? c.score : '';
   };
   return (
-    <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>
-      <thead><tr>
-        <th style={{ textAlign: 'left', padding: '6px 10px' }}></th>
-        {criteria.map((c) => <th key={c} style={{ padding: '6px 10px' }}>{c}</th>)}
-        <th style={{ padding: '6px 10px' }}>Total</th>
-      </tr></thead>
-      <tbody>
-        {options.map((o) => (
-          <tr key={o} style={{ borderTop: '1px solid var(--rule-soft)' }}>
-            <td style={{ padding: '6px 10px', fontWeight: 700 }}>{o}</td>
-            {criteria.map((c) => <td key={c} style={{ padding: '6px 10px', textAlign: 'center' }}>{cell(o, c)}</td>)}
-            <td style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700 }}>
-              {body.totals && body.totals[o] != null ? body.totals[o] : ''}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div>
+      {body.winner && (
+        <div style={{ fontSize: 13.5, color: 'var(--ink)', marginBottom: 10 }}>
+          Winner: <strong>{body.winner}</strong>
+          {body.runner_up && <span style={{ color: 'var(--muted)' }}>
+            {' '}over {body.runner_up}{body.margin != null ? ` (margin ${body.margin})` : ''}</span>}
+        </div>
+      )}
+      <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>
+        <thead><tr>
+          <th style={{ textAlign: 'left', padding: '6px 10px' }}></th>
+          {criteria.map((c) => (
+            <th key={c} style={{ padding: '6px 10px' }}>
+              {c}
+              {decisive.has(c) &&
+                <span title="decisive: dropping this criterion flips the winner"
+                  style={{ color: 'var(--coral, #bf5820)' }}> ◆</span>}
+              {contested.has(c) &&
+                <span title="the evidence on this criterion is contested"
+                  style={{ color: '#d97706' }}> ⚠</span>}
+            </th>
+          ))}
+          <th style={{ padding: '6px 10px' }}>Total</th>
+        </tr></thead>
+        <tbody>
+          {options.map((o) => (
+            <tr key={o} style={{ borderTop: '1px solid var(--rule-soft)',
+              background: o === body.winner ? 'var(--green-soft, rgba(46,125,50,0.07))' : 'transparent' }}>
+              <td style={{ padding: '6px 10px', fontWeight: 700 }}>{o}</td>
+              {criteria.map((c) => <td key={c} style={{ padding: '6px 10px', textAlign: 'center' }}>{cell(o, c)}</td>)}
+              <td style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700 }}>
+                {body.totals && body.totals[o] != null ? body.totals[o] : ''}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {(decisive.size > 0 || contested.size > 0) && (
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
+          ◆ decisive criterion (removing it flips the winner) · ⚠ contested evidence
+        </div>
+      )}
+      {body.crux && (
+        <div style={{ ...card, padding: '10px 14px', marginTop: 12,
+          borderLeft: '3px solid var(--primary)', fontSize: 13, lineHeight: 1.55 }}>
+          <strong>What would change this:</strong> {body.crux}
+        </div>
+      )}
+      {(body.robust_to_weights != null || body.robust_to_evidence != null) && (
+        <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 12,
+          color: 'var(--ink-2)', flexWrap: 'wrap' }}>
+          {body.robust_to_weights != null && (
+            <span>{body.robust_to_weights ? '✓' : '✗'} survives dropping any one criterion</span>
+          )}
+          {body.robust_to_evidence != null && (
+            <span>{body.robust_to_evidence ? '✓' : '✗'} survives the contested evidence going the other way</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VerdictView({ body }) {
+  if (!body || !Array.isArray(body.responses) || body.responses.length === 0) return null;
+  const judge = body.judge_backend === 'llm' ? 'model judge' : 'heuristic judge';
+  return (
+    <div>
+      {body.judge_summary && (
+        <div style={{ fontSize: 13.5, color: 'var(--ink)', marginBottom: 4 }}>
+          <strong>Verdict:</strong> {body.judge_summary}
+          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}> · {judge}</span>
+        </div>
+      )}
+      {body.crux && (
+        <div style={{ ...card, padding: '10px 14px', margin: '10px 0',
+          borderLeft: '3px solid var(--coral, #bf5820)', fontSize: 13, lineHeight: 1.55 }}>
+          <strong>The load-bearing dispute:</strong> {body.crux}
+          {body.crux_perspective && (
+            <span style={{ color: 'var(--muted)' }}> — raised by {body.crux_perspective}</span>
+          )}
+          {body.resolves_with && (
+            <div style={{ marginTop: 4, color: 'var(--ink-2)' }}>
+              Would resolve with: {body.resolves_with}
+            </div>
+          )}
+        </div>
+      )}
+      {body.responses.map((r, i) => {
+        const name = (r.perspective && r.perspective.name) || `Perspective ${i + 1}`;
+        return (
+          <div key={i} style={{ padding: '10px 0',
+            borderTop: '1px solid var(--rule-soft)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+              <span style={{ fontWeight: 700, fontSize: 13 }}>{name}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px',
+                borderRadius: 99,
+                color: r.agrees ? 'var(--green-dark, #2e7d32)' : 'var(--coral, #bf5820)',
+                background: r.agrees ? 'rgba(46,125,50,0.1)' : 'rgba(191,88,32,0.1)' }}>
+                {r.agrees ? 'agrees' : 'disputes'}
+              </span>
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55 }}>
+              {r.critique}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TranscriptView({ body }) {
+  if (!body || !Array.isArray(body.turns) || body.turns.length === 0) return null;
+  return (
+    <div>
+      {body.turns.map((t, i) => {
+        const isUser = t.role === 'user';
+        return (
+          <div key={i} style={{ display: 'flex', marginBottom: 10,
+            justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
+            <div style={{ maxWidth: '82%', padding: '9px 13px', borderRadius: 10,
+              fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap',
+              background: isUser ? 'var(--primary-soft, rgba(31,84,128,0.09))' : 'var(--card, #fff)',
+              border: '1px solid var(--rule-soft)' }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em',
+                textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 3 }}>
+                {isUser ? 'You' : 'Lighthouse'}
+              </div>
+              {t.text}
+              {Array.isArray(t.citations) && t.citations.length > 0 && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>
+                  Cites: {t.citations.join(', ')}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1437,7 +1633,17 @@ function TableView({ body }) {
               <td style={{ padding: '6px 10px', fontWeight: 600 }}>{row.title || row.doc_id}</td>
               {attrs.map((a) => {
                 const c = (row.cells || []).find((x) => x.attribute === a);
-                return <td key={a} style={{ padding: '6px 10px' }}>{c ? c.value : ''}</td>;
+                if (!c) return <td key={a} style={{ padding: '6px 10px' }} />;
+                return (
+                  <td key={a} style={{ padding: '6px 10px',
+                    background: c.contested ? 'rgba(217,119,6,0.08)' : 'transparent' }}>
+                    {c.value}
+                    {c.contested && (
+                      <span title={`Sources disagree: ${(c.contested_by || []).join(', ')}`}
+                        style={{ color: '#d97706', marginLeft: 5, cursor: 'help' }}>⚠</span>
+                    )}
+                  </td>
+                );
               })}
             </tr>
           ))}
@@ -1460,8 +1666,17 @@ function TimelineView({ body }) {
             {e.action}
             {e.date_conflicts && e.date_conflicts.length > 0 && (
               <span style={{ fontSize: 11, color: 'var(--coral, #bf5820)', marginLeft: 8 }}>
-                (disputed; certainty {e.certainty})
+                (disputed; certainty {e.certainty}
+                {e.winning_source_count != null && e.total_source_count != null
+                  ? ` — ${e.winning_source_count} of ${e.total_source_count} sources agree`
+                  : ''})
               </span>
+            )}
+            {Array.isArray(e.alternate_dates) && e.alternate_dates.length > 0 && (
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                Other sources say: {e.alternate_dates.map(
+                  (ad) => `${ad[0]} (${ad[1]} source${ad[1] === 1 ? '' : 's'})`).join(', ')}
+              </div>
             )}
           </div>
         </div>
@@ -2003,7 +2218,27 @@ function ArtifactBody({ artifact }) {
       {artifact.id && <EvidenceConnections artifactId={artifact.id} />}
     </React.Fragment>
   );
-  // report / verdict / transcript / digest → professional reading view.
+  // Verdict / transcript get their typed views when the structured body is
+  // present (the whole debate / conversation was previously flattened to
+  // body_html); absent a usable body they fall through to the reading view.
+  if (t === 'verdict' && body && Array.isArray(body.responses) && body.responses.length > 0) {
+    return (
+      <React.Fragment>
+        <VerdictView body={body} />
+        <Contradictions items={contradictions} />
+        {artifact.id && <EvidenceConnections artifactId={artifact.id} />}
+      </React.Fragment>
+    );
+  }
+  if (t === 'transcript' && body && Array.isArray(body.turns) && body.turns.length > 0) {
+    return (
+      <React.Fragment>
+        <TranscriptView body={body} />
+        {artifact.id && <EvidenceConnections artifactId={artifact.id} />}
+      </React.Fragment>
+    );
+  }
+  // report / digest → professional reading view.
   // When the body exposes structured sections we render them with anchors, a
   // table of contents, and formatted citations; otherwise we render the
   // body_html prose under the same readable typography.
@@ -2480,6 +2715,37 @@ function verdictStyle(status) {
   return { icon: '✗', iconColor: '#c62828', bg: '#ffebee', border: '#ef9a9a', label: 'Cannot be monitored' };
 }
 
+// Recent fired alerts — the watch's actual output. Without this panel the
+// alerts table was written by the tick runner but unreadable from the UI.
+function WebMonitorAlerts() {
+  const { data } = useApi('/api/watch/web/alerts?limit=20', { pollMs: 30000 });
+  const alerts = (data && data.alerts) || [];
+  if (!alerts.length) return null;
+  return (
+    <div style={{ marginTop: 18 }}>
+      <div style={{ fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 700,
+        letterSpacing: '0.05em', textTransform: 'uppercase',
+        color: 'var(--muted)', marginBottom: 8 }}>
+        Recent alerts
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {alerts.map((a) => (
+          <div key={a.id} style={{ ...card, padding: '10px 14px',
+            borderLeft: '3px solid var(--coral, #bf5820)' }}>
+            <div style={{ fontSize: 13, color: 'var(--ink)', marginBottom: 2 }}>
+              {a.reason}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {a.url} · {a.fired_at}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── WebMonitorSection ────────────────────────────────────────────────────────
 function WebMonitorSection({ toast }) {
   // URL entry + verify state
@@ -2591,6 +2857,18 @@ function WebMonitorSection({ toast }) {
       listReload();
     } catch (err) {
       toast.show(err.message || 'Could not delete. Try again.', 'error');
+    }
+  }
+
+  // Pause/resume without losing the monitor's baseline snapshot.
+  async function handleToggle(m) {
+    const next = (m.status || 'active') === 'active' ? 'paused' : 'active';
+    try {
+      await apiPatch(`/api/watch/web/${m.id}`, { status: next });
+      toast.show(next === 'paused' ? 'Monitor paused.' : 'Monitor resumed.', 'info');
+      listReload();
+    } catch (err) {
+      toast.show(err.message || 'Could not update. Try again.', 'error');
     }
   }
 
@@ -2899,6 +3177,9 @@ function WebMonitorSection({ toast }) {
                       <StatusPill status={status} />
                     </div>
                   </div>
+                  <Btn kind="ghost" size="sm" onClick={() => handleToggle(m)}>
+                    {(m.status || 'active') === 'active' ? 'Pause' : 'Resume'}
+                  </Btn>
                   <Btn kind="danger" size="sm" onClick={() => setConfirmDel(m.id)}>
                     Remove
                   </Btn>
@@ -2907,6 +3188,8 @@ function WebMonitorSection({ toast }) {
             })}
           </div>
         )}
+
+        <WebMonitorAlerts />
       </div>
 
       {/* ── Delete confirm modal ── */}

@@ -34,6 +34,12 @@ class NewJob(BaseModel):
     budget: str | None = None  # Deep-tier wall-clock/node budget (30m/1h/2h/overnight)
     options: list[str] = []
     criteria: list[dict[str, Any]] = []
+    # Survey evidence-table columns: [{"label": str, "keywords": [str, ...]}].
+    # Without them the dispatcher falls back to a single "summary" column.
+    attributes: list[dict[str, Any]] = []
+    # Adjudicate's debate target: the text the perspectives critique. Without
+    # it the engine debates the bare claim.
+    draft: str | None = None
     source_urls: list[str] = []
     selected_skills: list[str] = []  # skill ids chosen in the source picker (Zone K)
 
@@ -388,6 +394,10 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
             meta["options"] = body.options
         if body.criteria:
             meta["criteria"] = body.criteria
+        if body.attributes:
+            meta["attributes"] = body.attributes
+        if body.draft:
+            meta["draft"] = body.draft
         if body.source_urls:
             meta["source_urls"] = body.source_urls
         if body.selected_skills:
@@ -702,6 +712,27 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
     def watch_web_list() -> dict[str, Any]:
         from ..modes.web_monitor_store import list_web_monitors
         return {"monitors": list_web_monitors(paths.state_db)}
+
+    @app.get("/api/watch/web/alerts", tags=["watch"])
+    def watch_web_alerts(monitor_id: str | None = None,
+                         limit: int = 50) -> dict[str, Any]:
+        """Fired alerts, newest first. The watch's OUTPUT — a monitor that
+        fires into a table nobody can read is not a feature."""
+        from ..modes.web_monitor_store import list_web_monitor_alerts
+        return {"alerts": list_web_monitor_alerts(
+            paths.state_db, monitor_id=monitor_id, limit=max(1, min(limit, 200)))}
+
+    @app.patch("/api/watch/web/{monitor_id}", tags=["watch"])
+    def watch_web_set_status(monitor_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Pause/resume a monitor without losing its baseline snapshot."""
+        from ..modes.web_monitor_store import set_web_monitor_status
+        status = str(body.get("status", "")).strip().lower()
+        if status not in ("active", "paused"):
+            raise HTTPException(422, "status must be 'active' or 'paused'")
+        monitor = set_web_monitor_status(paths.state_db, monitor_id, status)
+        if monitor is None:
+            raise HTTPException(404, f"monitor {monitor_id} not found")
+        return monitor
 
     @app.delete("/api/watch/web/{monitor_id}", tags=["watch"])
     def watch_web_delete(monitor_id: str) -> dict[str, Any]:

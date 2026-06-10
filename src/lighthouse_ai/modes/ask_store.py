@@ -121,7 +121,9 @@ def get_session_dict(state_db, session_id: str) -> dict[str, Any] | None:
     return {
         "id": row[0], "job_id": row[1], "topic": row[2], "title": row[3],
         "status": row[4], "created_at": row[5], "updated_at": row[6],
-        "turns": [{"role": t.role, "text": t.text, "citations": t.citations}
+        "turns": [{"role": t.role, "text": t.text, "citations": t.citations,
+                   "skill_ids_used": t.skill_ids_used,
+                   "adjudicate_flag": t.adjudicate_flag}
                   for t in turns],
     }
 

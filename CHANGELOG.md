@@ -3,6 +3,39 @@
 All notable changes to Lighthouse are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased] — User-seat sweep: every mode reachable, every result readable (2026-06-10)
+
+### Added
+- **Wizard now exposes what the engines were built for**: Survey gets an
+  evidence-table column editor (label + keywords — previously every run fell
+  back to a lone "summary" column), Adjudicate gets a "text to stress-test"
+  field (previously it always debated the bare claim), and Decide criteria get
+  a higher/lower-is-better direction toggle. `POST /api/jobs` accepts
+  `attributes` and `draft` and threads them into job meta.
+- **Watch alerts are visible**: new `GET /api/watch/web/alerts` endpoint, a
+  "Recent alerts" panel on the Watch page, fired alerts on the landing-page
+  alert strip, and `PATCH /api/watch/web/{id}` pause/resume that preserves the
+  monitor's baseline snapshot (the alerts table was previously written by the
+  tick runner but unreadable from any UI).
+- **Typed artifact views in the Library**: Adjudicate verdicts render the full
+  structured debate (perspectives with agree/dispute badges, the load-bearing
+  crux, judge backend) instead of flat HTML; Decide matrices show the winner,
+  decisive/contested criterion markers, the "what would change this" crux, and
+  both robustness checks; Survey tables mark contested cells (⚠ with the
+  disagreeing documents); timelines show source-agreement counts and the
+  alternate dates other sources report; Ask transcripts render as a
+  conversation.
+- **Landing alert strip** now also surfaces calibration positions awaiting a
+  human call.
+
+### Fixed
+- Ask session reads (`get_session_dict`) no longer strip the per-turn skill
+  audit trail (`skill_ids_used`, `adjudicate_flag`).
+
+### Deferred (recorded in FUTURE_FEATURES.md)
+- Interactive Ask chat in the dashboard — needs a synchronous turn endpoint
+  with a live gateway in the web process; the transcript viewer ships now.
+
 ## [Unreleased] — Per-mode sweep: fix / upgrade / optimize across all eight engines (2026-06-10)
 
 ### Fixed

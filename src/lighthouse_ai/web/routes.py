@@ -208,6 +208,11 @@ def _read_budget(paths: Paths) -> dict[str, Any]:
 
 
 def _build_alerts(paths: Paths, dashboard: dict[str, Any]) -> list[dict[str, str]]:
+    """Everything that needs the user's attention, in one strip.
+
+    Best-effort per source — a failure in one signal must never blank the
+    dashboard, so each block swallows its own errors.
+    """
     alerts: list[dict[str, str]] = []
     budget = dashboard.get("budget", {}) or {}
     cloud = budget.get("cloud")
@@ -219,4 +224,29 @@ def _build_alerts(paths: Paths, dashboard: dict[str, Any]) -> list[dict[str, str
                 "text": f"Monthly cloud budget at {pct:.0f}%",
                 "topic": "",
             })
+    # Fired website-watch alerts: the watch's output must reach the landing
+    # page, not sit in a table the user has to know to query.
+    try:
+        from ..modes.web_monitor_store import list_web_monitor_alerts
+        fired = list_web_monitor_alerts(paths.state_db, limit=5)
+        if fired:
+            latest = fired[0]
+            text = (f"{len(fired)} watched page(s) changed — latest: "
+                    f"{latest.get('reason', 'change detected')}")
+            alerts.append({"kind": "watch", "text": text, "topic": ""})
+    except Exception:
+        pass
+    # Calibration positions waiting on a human call.
+    try:
+        from ..verification.positions import list_human_queue
+        queue = list_human_queue(paths.positions_db)
+        if queue:
+            alerts.append({
+                "kind": "positions",
+                "text": f"{len(queue)} prediction(s) need your call — "
+                        "resolve them in Track",
+                "topic": "",
+            })
+    except Exception:
+        pass
     return alerts

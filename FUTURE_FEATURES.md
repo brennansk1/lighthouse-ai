@@ -116,6 +116,14 @@ state instead of silently going quiet.
   machine resolutions.
 - **VOI tuning from outcomes.** Learn the value-of-information weights in the Deep tree from which
   branches actually changed final answers.
+- **Interactive Ask chat in the dashboard.** The Ask engine is conversational
+  (sessions, directives `/sources` `@skill` `/adjudicate`, per-turn skill audit)
+  but the dashboard treats every Ask as a one-shot job that lands as a static
+  transcript. A real chat surface needs a synchronous turn endpoint that runs
+  `quc.ask` with the live gateway inside the web process (today only the
+  dispatcher holds a gateway), plus a continuation UI. The transcript *viewer*
+  ships (Library renders turns as chat bubbles); the interactive loop is this
+  deliberate, separately-designed feature.
 - **Auto-Adjudicate sub-job spawn.** The dispatcher's §6.4 hook
   (`dispatcher._maybe_flag_auto_adjudicate`) detects contradictions and records the decision on the
   artifact/job meta, but deliberately does not enqueue the Adjudicate sub-job itself: a job that

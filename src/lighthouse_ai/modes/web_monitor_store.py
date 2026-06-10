@@ -213,6 +213,34 @@ def get_web_monitor(state_db: str | Path, monitor_id: str) -> dict[str, Any] | N
     return _row_to_dict(row) if row else None
 
 
+def set_web_monitor_status(
+    state_db: str | Path, monitor_id: str, status: str
+) -> dict[str, Any] | None:
+    """Pause or resume a monitor. Returns the updated row, ``None`` if absent.
+
+    Only ``active``/``paused`` are accepted — the tick runner picks up
+    ``status = 'active'`` rows, so pausing is a pure flag flip and the
+    monitor's snapshot/baseline is preserved for resume.
+    """
+    if status not in ("active", "paused"):
+        raise ValueError(f"status must be 'active' or 'paused', not {status!r}")
+    conn = open_db(state_db)
+    try:
+        _ensure_table(conn)
+        cur = conn.execute(
+            "UPDATE web_monitors SET status = ? WHERE id = ?",
+            (status, monitor_id),
+        )
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute(
+            f"SELECT {_SELECT_COLS} FROM web_monitors WHERE id = ?", (monitor_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return _row_to_dict(row) if row else None
+
+
 def delete_web_monitor(state_db: str | Path, monitor_id: str) -> bool:
     """Delete a monitor (and its alerts). Returns ``True`` when a row was removed."""
     conn = open_db(state_db)

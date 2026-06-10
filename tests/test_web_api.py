@@ -519,3 +519,108 @@ def test_calibration_timeline_empty(client):
     r = client.get("/api/calibration/timeline").json()
     assert r["bucket"] == "week"
     assert r["buckets"] == []
+
+
+# ============== mode-specific wizard inputs (UX sweep) ==============
+
+def test_job_create_passes_survey_attributes(client):
+    """Survey's evidence-table columns must reach job meta — without them the
+    dispatcher falls back to a single placeholder 'summary' column."""
+    r = client.post("/api/jobs", json={
+        "mode": "survey", "topic": "GLP-1 trials",
+        "attributes": [{"label": "sample size", "keywords": ["patients", "n="]},
+                       {"label": "methodology", "keywords": []}]})
+    assert r.status_code == 200
+    meta = client.get(f"/api/jobs/{r.json()['id']}").json()["metadata"]
+    assert [a["label"] for a in meta["attributes"]] == ["sample size", "methodology"]
+
+
+def test_job_create_passes_adjudicate_draft(client):
+    """Adjudicate's debate target must reach job meta — without it the engine
+    debates the bare claim."""
+    r = client.post("/api/jobs", json={
+        "mode": "adjudicate", "topic": "The rollout is safe",
+        "draft": "Our analysis concludes the rollout is safe because…"})
+    assert r.status_code == 200
+    meta = client.get(f"/api/jobs/{r.json()['id']}").json()["metadata"]
+    assert meta["draft"].startswith("Our analysis concludes")
+
+
+# ===================== watch alerts + pause/resume =====================
+
+def _make_monitor(client, url="https://example.com/page"):
+    r = client.post("/api/watch/web", json={"url": url})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _insert_alert(state_db, monitor_id: str, url: str, reason: str) -> None:
+    """Insert a fired alert the way the tick runner does (inline SQL)."""
+    import uuid
+
+    from lighthouse_ai.persistence import open_db
+
+    conn = open_db(state_db)
+    try:
+        conn.execute(
+            "INSERT INTO web_monitor_alerts "
+            "(id, monitor_id, url, fired_at, reason, details_json) "
+            "VALUES (?, ?, ?, ?, ?, '{}')",
+            (uuid.uuid4().hex, monitor_id, url, "2026-06-10T12:00:00", reason))
+    finally:
+        conn.close()
+
+
+def test_watch_alerts_endpoint_lists_fired_alerts(client, migrated_paths):
+    m = _make_monitor(client)
+    _insert_alert(migrated_paths.state_db, m["id"], m["url"],
+                  "keyword 'recall' newly present")
+    r = client.get("/api/watch/web/alerts")
+    assert r.status_code == 200
+    alerts = r.json()["alerts"]
+    assert len(alerts) == 1
+    assert alerts[0]["reason"] == "keyword 'recall' newly present"
+    # Filter by monitor id works too.
+    assert client.get(f"/api/watch/web/alerts?monitor_id={m['id']}").json()["alerts"]
+    assert client.get("/api/watch/web/alerts?monitor_id=nope").json()["alerts"] == []
+
+
+def test_watch_pause_and_resume(client):
+    m = _make_monitor(client)
+    r = client.patch(f"/api/watch/web/{m['id']}", json={"status": "paused"})
+    assert r.status_code == 200
+    assert r.json()["status"] == "paused"
+    listed = client.get("/api/watch/web").json()["monitors"]
+    assert listed[0]["status"] == "paused"
+    r2 = client.patch(f"/api/watch/web/{m['id']}", json={"status": "active"})
+    assert r2.json()["status"] == "active"
+
+
+def test_watch_pause_validates_input(client):
+    m = _make_monitor(client)
+    assert client.patch(f"/api/watch/web/{m['id']}",
+                        json={"status": "destroyed"}).status_code == 422
+    assert client.patch("/api/watch/web/nope",
+                        json={"status": "paused"}).status_code == 404
+
+
+def test_dashboard_alert_strip_surfaces_fired_watch_alerts(client, migrated_paths):
+    m = _make_monitor(client)
+    _insert_alert(migrated_paths.state_db, m["id"], m["url"], "page changed")
+    dash = client.get("/api/dashboard").json()
+    kinds = [a["kind"] for a in dash.get("alerts", [])]
+    assert "watch" in kinds
+
+
+def test_ask_session_dict_exposes_skill_audit_trail(client, migrated_paths):
+    from lighthouse_ai.modes.ask_store import get_session_dict, save_session
+    from lighthouse_ai.modes.quc import QUCSession, Turn
+
+    s = QUCSession(id="a-ux1", topic="Rates")
+    s.history.append(Turn(role="assistant", text="Answer [1].",
+                          citations=["c1"], skill_ids_used=["fred"],
+                          adjudicate_flag=True))
+    save_session(migrated_paths.state_db, s)
+    d = get_session_dict(migrated_paths.state_db, "a-ux1")
+    assert d["turns"][0]["skill_ids_used"] == ["fred"]
+    assert d["turns"][0]["adjudicate_flag"] is True
