@@ -3,6 +3,40 @@
 All notable changes to Lighthouse are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased] — Iterative acquisition: frontier-class deep-research breadth (2026-06-10)
+
+### Added
+- **The acquire-as-you-learn loop** (`acquisition.py`): research iterations now
+  fetch new web evidence instead of forever re-ranking the upfront corpus —
+  the defining behavior of frontier deep-research systems. Two engine
+  triggers: a line of inquiry that comes back thin (open section or <2
+  citations) acquires for exactly that sub-question from round 2 on, and a
+  run that would stop saturated-but-with-open-questions spends one
+  acquisition pass before being allowed to end. Per-sub-question source
+  selection via the recommender (an FDA sub-question reaches
+  `regulations_gov` even when the topic-level pick was arxiv), LLM query
+  fan-out (offline → identity), URL/doc dedup ledger, hard per-run caps.
+- **Deep tier = the full loop**: every tree node acquires for ITS question
+  before researching it, then one-hop chases the most-referenced links in
+  what it found (broker-gated; non-allowlisted hosts skipped — egress never
+  widens). Sub-questions discovered at depth 2 trigger their own searches.
+- **Acquisition scales with depth tier**: standard 2 skills × 5 results × 1
+  query (≤60 docs/run); thorough 3 × 5 × 2 (≤150); deep 3 × 8 × 3 + link
+  budget 5/node (≤400). Quick keeps the historical one-shot behavior, and
+  offline runs construct no acquirer at all (bit-identical).
+- **Citations ride along end-to-end**: acquired documents carry skill_id /
+  grade / URL provenance, extend `meta["documents"]` and the skill-docs
+  ledger, so triangulation, two-source independence, contradiction detection,
+  auto-Adjudicate, source counts, and the PROV-O sidecar all cover
+  late-acquired evidence; the live trace shows "+N documents from M sources"
+  steps as the corpus grows.
+
+### Fixed
+- **Job-corpus ingestion is now injection-screened** (§24.8): the dispatcher
+  indexed skill-fetched web content without the InjectionGate (the pipeline
+  path screened, the job path did not). Both the upfront corpus and every
+  acquired document now pass the gate before entering the retrievable index.
+
 ## [Unreleased] — User-seat sweep: every mode reachable, every result readable (2026-06-10)
 
 ### Added

@@ -116,6 +116,12 @@ state instead of silently going quiet.
   machine resolutions.
 - **VOI tuning from outcomes.** Learn the value-of-information weights in the Deep tree from which
   branches actually changed final answers.
+- **Acquisition v2 — beyond one hop.** The iterative acquisition loop
+  (`acquisition.py`) ships with single-hop citation chasing and
+  recommender-driven source selection. Deliberate next steps: multi-hop link
+  chasing with per-hop decay budgets, learned source selection (use
+  calibration outcomes to up/down-weight skills per question type), and
+  cross-run acquisition caching so repeated topics reuse politeness budget.
 - **Interactive Ask chat in the dashboard.** The Ask engine is conversational
   (sessions, directives `/sources` `@skill` `/adjudicate`, per-turn skill audit)
   but the dashboard treats every Ask as a one-shot job that lands as a static

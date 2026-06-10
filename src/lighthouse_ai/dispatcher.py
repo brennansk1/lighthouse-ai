@@ -174,6 +174,44 @@ def _meta_documents(meta: dict) -> list[dict]:
     return list(docs) if isinstance(docs, list) else []
 
 
+def _empty_hybrid(gateway):
+    """An empty ``HybridSearch`` the Acquirer can populate mid-run.
+
+    Used when a job starts with no upfront corpus but iterative acquisition is
+    available — the index grows as the run researches. Best-effort: ``None``
+    on any backend failure, matching :func:`_build_hybrid`.
+    """
+    try:
+        from .pipeline import make_embedder, make_vector_store
+        from .rag import BM25Index, HybridSearch
+
+        offline = gateway is None
+        embedder, _en, _ew = make_embedder(offline=offline)
+        store, _sn, _sw = make_vector_store(embedder.dim, offline=offline)
+        return HybridSearch(store, embedder, BM25Index())
+    except Exception:
+        return None
+
+
+def _build_acquirer(meta: dict, *, gateway, hybrid, emitter):
+    """Best-effort per-job :class:`~acquisition.Acquirer` (None on failure)."""
+    try:
+        from .acquisition import Acquirer, policy_for_tier
+
+        policy = policy_for_tier(meta.get("depth"))
+        if not policy.iterative:
+            return None
+        broker = meta.get(_BROKER_META_KEY)
+        if broker is None:
+            return None
+        return Acquirer(policy=policy, broker=broker, gateway=gateway,
+                        hybrid=hybrid, meta=meta,
+                        mode=str(meta.get("mode") or "investigate"),
+                        depth=meta.get("depth"), progress=emitter)
+    except Exception:
+        return None
+
+
 def _build_hybrid(meta: dict, *, gateway):
     """Build a populated ``HybridSearch`` from ``meta["documents"]``.
 
@@ -182,27 +220,26 @@ def _build_hybrid(meta: dict, *, gateway):
     the real backend factories; offline we force the in-memory + hash stubs so
     no model loads. Any failure degrades to ``None`` rather than raising — the
     dispatcher must never crash a job over corpus assembly.
+
+    Chunks are injection-screened (§24.8, via ``acquisition.screen_and_chunk``)
+    — skill-fetched web content must never reach the retrievable index with an
+    embedded prompt injection, exactly as on the pipeline ingest path.
     """
     docs = _meta_documents(meta)
     if not docs:
         return None
     try:
+        from .acquisition import screen_and_chunk
         from .pipeline import make_embedder, make_vector_store
-        from .rag import BM25Index, Document, HybridSearch, chunk_document
+        from .rag import BM25Index, HybridSearch
 
         offline = gateway is None
         embedder, _en, _ew = make_embedder(offline=offline)
         store, _sn, _sw = make_vector_store(embedder.dim, offline=offline)
         hybrid = HybridSearch(store, embedder, BM25Index())
-        chunks = []
-        for i, d in enumerate(docs):
-            doc_id = str(d.get("doc_id") or d.get("id") or f"doc{i}")
-            text = str(d.get("text", ""))
-            if not text.strip():
-                continue
-            chunks.extend(chunk_document(
-                Document(id=doc_id, text=text,
-                         metadata={"source": str(d.get("title", doc_id))})))
+        chunks, blocked = screen_and_chunk(docs)
+        if blocked:
+            _log.warning("dispatcher.corpus.injection_blocked", chunks=blocked)
         if not chunks:
             return None
         hybrid.add(chunks)
@@ -662,9 +699,22 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
     topic = meta.get("topic", "") or "Investigation"
     hybrid = _build_hybrid(meta, gateway=gateway)
     max_nodes = _DEEP_BUDGET_NODES.get(str(meta.get("budget", "1h")), 15)
+    # Deep tier = the full frontier loop: every tree node acquires evidence
+    # for ITS question before researching it, then chases the most-referenced
+    # links in what it found. Sub-questions discovered at depth 2 trigger
+    # their own searches — the corpus expands as the tree explores.
+    acquirer = None
+    if gateway is not None:
+        if hybrid is None:
+            hybrid = _empty_hybrid(gateway)
+        acquirer = _build_acquirer(meta, gateway=gateway, hybrid=hybrid,
+                                   emitter=meta.get(_PROGRESS_META_KEY))
 
     def _research(q: str):
         try:
+            if acquirer is not None:
+                if acquirer.acquire(q) > 0:
+                    acquirer.follow_links()
             r = run_deepdive(q, hybrid=hybrid, gateway=gateway, job_id=job_id,
                              gate=gate, max_rounds=1, top_k=knobs["top_k"])
             cites = sorted({c for s in r.sections for c in s.citations})
@@ -745,9 +795,19 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
     hybrid = _build_hybrid(meta, gateway=gateway)
     emitter = meta.get(_PROGRESS_META_KEY)
     on_round = emitter.round_cb if emitter is not None else None
+    # Iterative acquisition (online runs): thin lines of inquiry trigger new
+    # per-sub-question web acquisition mid-run. The Acquirer indexes into the
+    # run's hybrid, so an upfront-empty corpus needs an empty index to grow.
+    acquirer = None
+    if gateway is not None:
+        if hybrid is None:
+            hybrid = _empty_hybrid(gateway)
+        acquirer = _build_acquirer(meta, gateway=gateway, hybrid=hybrid,
+                                   emitter=emitter)
     report = run_deepdive(topic, hybrid=hybrid, gateway=gateway,
                           job_id=job_id, gate=gate, on_round=on_round,
-                          max_rounds=knobs["max_rounds"], top_k=knobs["top_k"])
+                          max_rounds=knobs["max_rounds"], top_k=knobs["top_k"],
+                          acquire_fn=acquirer.acquire if acquirer else None)
     parts = []
     for s in report.sections:
         parts.append(f"<h3>{_html.escape(s.title)}</h3>")

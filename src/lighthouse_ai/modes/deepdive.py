@@ -459,6 +459,7 @@ def run_deepdive(
     depth_tier: str = "thorough",
     auto_adjudicate_disabled: bool = False,
     saturation_slope_floor: float | None = None,
+    acquire_fn: Callable[[str], int] | None = None,
 ) -> DraftReport:
     # Forward the gateway so the planner-primary framing path runs (matching
     # exhaustive.py). Offline (gateway=None) this is bit-for-bit the
@@ -479,7 +480,23 @@ def run_deepdive(
     rounds_used = 0
     prev_open_count: int | None = None
     working_context: CompactedContext | None = None
+    # One stuck-but-open acquisition retry per run: when saturation would end
+    # the run with open questions remaining, spend time acquiring instead of
+    # stopping — but only once, so the loop stays bounded by max_rounds.
+    stuck_acquired = False
     for round_idx in range(1, max_rounds + 1):
+        # Iterative acquisition (frontier deep-research loop): from round 2 on,
+        # lines of inquiry that came back thin trigger NEW web acquisition for
+        # exactly that sub-question before being researched again. acquire_fn
+        # is injected by the dispatcher (None offline → bit-identical runs);
+        # it indexes into `hybrid` as a side effect and returns new-doc count.
+        if acquire_fn is not None and round_idx >= 2:
+            for sec in sections:
+                if not sec.body.strip() or len(sec.citations) < 2:
+                    try:
+                        acquire_fn(sec.sub_question)
+                    except Exception:
+                        pass  # acquisition is best-effort, never fatal
         round_evidence: list[HybridResult] = []
         new_sections: list[Section] = []
         section_evidence: dict[str, list[HybridResult]] = {}
@@ -550,6 +567,22 @@ def run_deepdive(
                 sections, section_evidence,
                 floor=min_entailment_for_early_stop)
         if stuck and open_unchanged and entailment_ok and round_idx > 1:
+            # Stuck-but-open: before giving up on open questions, acquire new
+            # evidence for them once and keep going — the corpus was the
+            # bottleneck, not the question. No new evidence → stop as before.
+            if (acquire_fn is not None and open_count > 0
+                    and not stuck_acquired and round_idx < max_rounds):
+                stuck_acquired = True
+                gained = 0
+                for sec in sections:
+                    if not sec.body.strip():
+                        try:
+                            gained += acquire_fn(sec.sub_question)
+                        except Exception:
+                            pass
+                if gained > 0:
+                    prev_open_count = open_count
+                    continue
             break
         prev_open_count = open_count
 

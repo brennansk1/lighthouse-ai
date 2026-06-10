@@ -23,6 +23,14 @@ overview, see [`README.md`](./README.md).
   sections; adds crux as a new sub-question
 - **Entailment gate** (`verification/entailment.py`): lazy MiniCheck/HHEM; degrades
   gracefully to no-penalty when the PyPI package is absent
+- **Iterative acquisition** (`acquisition.py`) — the frontier deep-research loop:
+  research rounds acquire NEW web evidence instead of re-ranking a one-shot fetch.
+  Thin lines of inquiry re-search per sub-question (recommender-selected sources +
+  LLM query fan-out); the Deep tier acquires per tree node and one-hop chases the
+  most-cited links. Breadth scales with tier (standard ≤60 docs/run, thorough ≤150,
+  deep ≤400), every fetch rides the egress/politeness/broker rails, every chunk is
+  injection-screened, and acquired evidence flows into citations, triangulation,
+  contradiction detection, and the PROV-O manifest.
 - **Auto web retrieval**: fetches arXiv + OpenAlex when corpus is empty at research
   start (CRAG-style pre-loop)
 - **Evidence-grounded auto-resolver** (`verification/resolver.py`): at the deadline a

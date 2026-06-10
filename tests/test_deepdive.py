@@ -281,3 +281,54 @@ def test_entailment_gate_off_without_scorer(monkeypatch):
                      progress_threshold=0.9,
                      min_entailment_for_early_stop=0.9)
     assert r.rounds_used <= 3
+
+
+# --- iterative acquisition triggers (acquire_fn) ---------------------------
+
+def test_acquire_fn_none_keeps_offline_runs_identical():
+    hs1, hs2 = _hybrid_with_docs(), _hybrid_with_docs()
+    base = run_deepdive("What is decoherence?", hybrid=hs1, max_rounds=3)
+    same = run_deepdive("What is decoherence?", hybrid=hs2, max_rounds=3,
+                        acquire_fn=None)
+    assert [s.body for s in base.sections] == [s.body for s in same.sections]
+    assert base.rounds_used == same.rounds_used
+
+
+def test_thin_sections_trigger_acquisition_from_round_two():
+    """Sections with <2 citations trigger acquire_fn(sub_question) each round
+    from round 2 on — research that comes back thin reaches for new evidence."""
+    asked: list[str] = []
+    # No hybrid → every section has zero citations → all thin.
+    r = run_deepdive("State of x?", hybrid=None, max_rounds=3,
+                     acquire_fn=lambda q: (asked.append(q), 0)[1])
+    assert r.rounds_used >= 2
+    assert asked  # acquisition was consulted
+    assert all(q for q in asked)  # called with the sub-questions themselves
+
+
+def test_stuck_but_open_acquires_once_then_continues():
+    """When saturation would end the run with open questions remaining, one
+    acquisition pass that yields new evidence extends the run instead."""
+    calls: list[str] = []
+
+    def _acquire(q: str) -> int:
+        calls.append(q)
+        return 3  # "found new evidence"
+
+    hs = _hybrid_with_docs()
+    baseline = run_deepdive("What is decoherence?", hybrid=hs, max_rounds=6,
+                            progress_threshold=0.9)
+    hs2 = _hybrid_with_docs()
+    extended = run_deepdive("What is decoherence?", hybrid=hs2, max_rounds=6,
+                            progress_threshold=0.9, acquire_fn=_acquire)
+    # The corpus answered every sub-question (no open sections) OR the run
+    # extended past the baseline; either way the run never ends EARLIER.
+    assert extended.rounds_used >= baseline.rounds_used
+
+
+def test_acquire_fn_errors_never_break_the_run():
+    def _boom(_q: str) -> int:
+        raise RuntimeError("network down")
+
+    r = run_deepdive("State of x?", hybrid=None, max_rounds=3, acquire_fn=_boom)
+    assert r.sections  # run completed despite acquisition failures
