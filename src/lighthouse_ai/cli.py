@@ -80,7 +80,9 @@ def init(
     install_service: bool = typer.Option(True, help="Install launchd/systemd unit"),
 ) -> None:
     """Create the Lighthouse data directory and OS service unit."""
-    paths = make_paths(data_dir) if data_dir else make_paths()
+    # Honor $LIGHTHOUSE_DATA_DIR like every other command (paths_from_env);
+    # an explicit --data-dir still wins.
+    paths = make_paths(data_dir) if data_dir else _paths_from_env()
     paths.ensure()
     console.print(f"[bold]Data dir:[/bold] {paths.data_dir}")
 
@@ -146,6 +148,16 @@ def init(
 
     if not ls.litestream_installed():
         console.print(f"[yellow]warning:[/yellow] {ls.install_hint()}")
+
+    # The three-step card: the whole first run in one glance, no docs required.
+    console.print("\n[bold]Your first research run, in three steps:[/bold]")
+    console.print("  1. pull the model shown above:  [cyan]ollama pull <model>[/cyan]")
+    console.print("  2. start Lighthouse:            [cyan]lighthouse start[/cyan]")
+    console.print("  3. ask your first question:     "
+                  "[cyan]lighthouse research 'your question'[/cyan]")
+    console.print(f"  Dashboard: [cyan]http://localhost:{DEFAULT_PORT}[/cyan] — "
+                  "drafts appear there for review. "
+                  "Stuck? [cyan]lighthouse doctor[/cyan] explains what's missing.")
 
 
 def _install_service(paths: Paths, *, force: bool) -> None:
@@ -308,6 +320,24 @@ def doctor() -> None:
     console.print(f"  backends: {', '.join(profile.available_backends)}")
     console.print(f"  suggested tier: [bold]{profile.suggested_tier}[/bold]")
 
+    # Disk space on the data-dir volume: models + corpus + WORM log live here,
+    # and a full disk corrupts long runs silently. <5 GB is a hard issue.
+    try:
+        disk_probe = paths.data_dir if paths.data_dir.exists() else paths.data_dir.parent
+        usage = shutil.disk_usage(disk_probe)
+        free_gb = usage.free / 1e9
+        if free_gb < 5:
+            console.print(f"  disk: [red]✗ {free_gb:.1f} GB free[/red] — "
+                          "research runs and model pulls need room; free up space")
+            issues.append(f"disk space {free_gb:.1f} GB free (<5 GB)")
+        elif free_gb < 20:
+            console.print(f"  disk: [yellow]{free_gb:.1f} GB free[/yellow] "
+                          "(model pulls take 1-9 GB each)")
+        else:
+            console.print(f"  disk: [green]✓[/green] {free_gb:.0f} GB free")
+    except Exception as exc:
+        console.print(f"  disk: [yellow]-[/yellow] could not probe: {exc!r}")
+
     # Section: scheduler gate (host-courtesy throttle)
     from .governor.scheduler_gate import (
         SchedulerGateConfig,
@@ -411,6 +441,34 @@ def doctor() -> None:
                       "(default vector store is in-memory; boot the production "
                       "HNSW index via scripts/lh-stack.docker-compose.yml only if "
                       "you want it)")
+
+    # Section: privacy & secrets — the regulated-setting checks. Plain language:
+    # the reader here may be a lawyer/clinician verifying the box, not a dev.
+    console.rule("[bold]privacy & secrets[/bold]")
+    from .governor.egress_proxy import airgap_enabled
+    if airgap_enabled():
+        console.print("  [green]✓[/green] airgap kill switch is ON "
+                      "(LIGHTHOUSE_AIRGAP) — every outbound network call is refused")
+    else:
+        console.print("  [dim]·[/dim] airgap off (normal) — external fetches allowed "
+                      "per the egress allowlist; set LIGHTHOUSE_AIRGAP=1 to refuse all")
+    try:
+        from .secrets import SecretStore, _fallback_path
+        backend = SecretStore(paths.data_dir).backend_status()
+        if backend == "keyring":
+            console.print("  [green]✓[/green] secrets: OS keychain in use")
+        else:
+            console.print("  [yellow]-[/yellow] secrets: no OS keychain available — "
+                          f"falling back to {_fallback_path(paths.data_dir)} (mode 0600)")
+        fb = _fallback_path(paths.data_dir)
+        if fb.exists():
+            mode = fb.stat().st_mode & 0o777
+            if mode != 0o600:
+                console.print(f"  [red]✗[/red] {fb} permissions are {mode:o}, "
+                              "expected 600 — other users on this machine can read it")
+                issues.append(f"secrets.toml permissions {mode:o} != 600")
+    except Exception as exc:
+        console.print(f"  [yellow]-[/yellow] secrets: could not probe: {exc!r}")
 
     # Section: audit chain integrity
     console.rule("[bold]audit chain[/bold]")
@@ -1410,6 +1468,9 @@ def integrity() -> None:
 def audit_egress(
     since: str = typer.Option("24h", help="Time window: '24h', '7d', '30d'"),
     output: str = typer.Option(None, help="Write report to file"),
+    summary: bool = typer.Option(
+        False, "--summary",
+        help="Print a plain-English verdict instead of the full table."),
 ) -> None:
     """Produce a signed report of all network calls in the audit log."""
     paths = _paths_from_env()
@@ -1431,6 +1492,34 @@ def audit_egress(
     if not rows:
         console.print("[green]✓ No external network calls found in the audit log.[/green]")
         console.print("  This confirms Lighthouse operated in airplane-mode for the audit window.")
+        return
+    if summary:
+        # Plain-English verdict for non-technical readers (the privacy claim is
+        # meant to be checkable by a lawyer or clinician, not just a developer).
+        import json
+        from urllib.parse import urlsplit
+        hosts: dict[str, int] = {}
+        for _event_type, payload_json, _ts in rows:
+            try:
+                payload = json.loads(payload_json or "{}")
+            except Exception:
+                payload = {}
+            url = payload.get("url") or ""
+            host = (urlsplit(url).hostname or payload.get("host")
+                    or payload.get("source") or "unknown")
+            hosts[host] = hosts.get(host, 0) + 1
+        top = sorted(hosts.items(), key=lambda kv: -kv[1])
+        host_phrase = ", ".join(f"{h} ({n})" for h, n in top[:5])
+        if len(top) > 5:
+            host_phrase += f", and {len(top) - 5} more"
+        console.print(
+            f"In the last {since}, Lighthouse made [bold]{len(rows)}[/bold] "
+            f"external network call(s), to: {host_phrase}.")
+        console.print(
+            "  Your corpus documents are never uploaded — these calls are "
+            "source fetches and notifications recorded in the tamper-evident "
+            "audit log. Run [cyan]lighthouse audit-egress[/cyan] (without "
+            "--summary) for the full call-by-call table.")
         return
     table = Table(title=f"Egress audit ({since})", show_lines=True)
     table.add_column("Time", style="dim")

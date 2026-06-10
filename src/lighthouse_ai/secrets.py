@@ -122,6 +122,22 @@ class SecretStore:
         """List keys in the TOML fallback. Keyring backends don't reliably enumerate."""
         return sorted(_read_fallback(_fallback_path(self.data_dir)).keys())
 
+    def backend_status(self) -> str:
+        """Which backend a ``put`` would land in right now: 'keyring' or 'file'.
+
+        Probes the keychain with a read-only ``get_password`` (never writes) so
+        callers like ``lighthouse doctor`` can report the effective secret
+        storage without mutating the user's keychain.
+        """
+        kr = self._keyring()
+        if kr is not None:
+            try:
+                kr.get_password(self.service, "__lighthouse_doctor_probe__")
+                return "keyring"
+            except Exception:
+                pass
+        return "file"
+
     # --- convenience: random secret on first access ---
     def get_or_create(self, key: str, *, nbytes: int = 32) -> str:
         existing = self.get(key)

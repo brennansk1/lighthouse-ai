@@ -258,6 +258,74 @@ def test_audit_egress_surfaces_recorded_fetches(initted_env):
     assert "example.com" in r.stdout
 
 
+def test_audit_egress_summary_is_plain_english(initted_env):
+    """--summary gives a one-paragraph verdict naming hosts, not a table."""
+    from lighthouse_ai.verification.audit_chain import append_event
+
+    for url in ("https://example.com/feed.xml",
+                "https://example.com/page2",
+                "https://api.crossref.org/works/x"):
+        append_event(
+            initted_env / "audit.db",
+            actor="ingest",
+            event_type="auto_fetch",
+            payload={"url": url},
+            data_dir=initted_env,
+        )
+    runner = CliRunner()
+    r = runner.invoke(app, ["audit-egress", "--summary"])
+    assert r.exit_code == 0, r.stdout
+    # Collapse rich's console wrapping before asserting on phrases.
+    flat = " ".join(r.stdout.split())
+    assert "external network call" in flat
+    assert "example.com (2)" in flat
+    assert "api.crossref.org (1)" in flat
+    # The verdict replaces the table — no per-event rows.
+    assert "Egress audit" not in flat
+
+
+def test_audit_egress_summary_empty_still_all_clear(initted_env):
+    """--summary on a clean log keeps the airplane-mode all-clear message."""
+    runner = CliRunner()
+    r = runner.invoke(app, ["audit-egress", "--summary"])
+    assert r.exit_code == 0, r.stdout
+    assert "No external network calls" in r.stdout
+
+
+# --- doctor: privacy & secrets section ----------------------------------
+
+def test_doctor_reports_airgap_on(initted_env, monkeypatch):
+    """With the kill switch set, doctor states plainly that egress is refused."""
+    monkeypatch.setenv("LIGHTHOUSE_AIRGAP", "1")
+    r = CliRunner().invoke(app, ["doctor", "check"])
+    assert "airgap kill switch is ON" in r.stdout
+
+
+def test_doctor_reports_airgap_off_with_howto(initted_env, monkeypatch):
+    monkeypatch.delenv("LIGHTHOUSE_AIRGAP", raising=False)
+    r = CliRunner().invoke(app, ["doctor", "check"])
+    assert "airgap off" in r.stdout
+    assert "LIGHTHOUSE_AIRGAP=1" in r.stdout
+
+
+def test_doctor_reports_secrets_backend(initted_env):
+    """Doctor names the effective secret storage (keychain or file fallback)."""
+    r = CliRunner().invoke(app, ["doctor", "check"])
+    assert "secrets:" in r.stdout
+
+
+def test_doctor_flags_loose_secrets_file_permissions(initted_env):
+    """A secrets.toml readable by other users is a hard issue (exit 1)."""
+    import os
+
+    fb = initted_env / "secrets.toml"
+    fb.write_text('[secrets]\nk = "v"\n')
+    os.chmod(fb, 0o644)
+    r = CliRunner().invoke(app, ["doctor", "check"])
+    assert r.exit_code == 1, r.stdout
+    assert "permissions" in r.stdout
+
+
 # --- init: zero-friction first run -------------------------------------
 
 def _fake_profile(total_ram_gb: float, tier: str):
@@ -333,6 +401,35 @@ def test_init_pull_tag_scales_with_ram(cli_env, monkeypatch):
     # 16 GB → an 8b-class tag; 64 GB → a 32b-class tag. Different picks.
     assert "qwen3:8b" in small
     assert "qwen3:32b" in large
+
+
+def test_init_prints_three_step_card(cli_env, monkeypatch):
+    """init ends with the three-step first-run card and the dashboard URL."""
+    import lighthouse_ai.cli as cli
+    monkeypatch.setattr(cli, "probe", lambda: _fake_profile(16.0, "T1"))
+
+    runner = CliRunner()
+    r = runner.invoke(app, ["init", "--data-dir", str(cli_env),
+                            "--no-install-service"])
+    assert r.exit_code == 0, r.stdout
+    assert "three steps" in r.stdout
+    assert "lighthouse start" in r.stdout
+    assert "lighthouse research" in r.stdout
+    assert "http://localhost:8765" in r.stdout
+    assert "lighthouse doctor" in r.stdout
+
+
+def test_init_honors_data_dir_env(cli_env, monkeypatch):
+    """Without --data-dir, init must honor $LIGHTHOUSE_DATA_DIR like every
+    other command (it used to silently write to ~/.lighthouse instead)."""
+    import lighthouse_ai.cli as cli
+    monkeypatch.setattr(cli, "probe", lambda: _fake_profile(16.0, "T1"))
+
+    runner = CliRunner()
+    r = runner.invoke(app, ["init", "--no-install-service"])
+    assert r.exit_code == 0, r.stdout
+    # cli_env IS the $LIGHTHOUSE_DATA_DIR set by the fixture.
+    assert (cli_env / "config.toml").exists()
 
 
 def test_init_model_recommendation_is_best_effort(cli_env, monkeypatch):
