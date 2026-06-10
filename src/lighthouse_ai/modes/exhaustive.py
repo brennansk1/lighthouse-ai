@@ -434,6 +434,14 @@ def run_exhaustive(
         pruned = 0
         done = 0
 
+    # Every input to a pending node's VOI score is frozen when it is enqueued
+    # (load_bearing, depth, parent_grounded), so score each node exactly once
+    # and reuse it across pops. Without this the selection loop re-scored the
+    # whole frontier per pop — O(n²), and with a gateway each re-score was a
+    # fresh LLM nudge call. Memoizing also makes the online ordering stable
+    # (one nudge per node, not a different sample per pop).
+    voi_memo: dict[int, float] = {}
+
     while pending:
         # VOI selection: pick the highest-scoring pending node. Tie-break on the
         # creation counter (lower = enqueued earlier) so the order is total and
@@ -441,8 +449,11 @@ def run_exhaustive(
         best_i = 0
         best_key: tuple[float, int] | None = None
         for i, (node, parent_grounded, ordr) in enumerate(pending):
-            voi = _voi_score(node, parent_grounded=parent_grounded,
-                             gateway=gateway, job_id=job_id, gate=gate)
+            voi = voi_memo.get(id(node))
+            if voi is None:
+                voi = _voi_score(node, parent_grounded=parent_grounded,
+                                 gateway=gateway, job_id=job_id, gate=gate)
+                voi_memo[id(node)] = voi
             key = (voi, -ordr)  # higher VOI first; earlier creation breaks ties
             if best_key is None or key > best_key:
                 best_key = key

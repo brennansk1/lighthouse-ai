@@ -55,6 +55,22 @@ class TestContestedCells:
         assert cells_by_doc["a"].contested is True
         assert cells_by_doc["b"].contested is True
 
+    def test_case_only_difference_is_not_a_contest(self):
+        """Values that differ only in letter case / internal whitespace are the
+        same finding — flagging them was a false cross-source conflict.
+        Display values stay verbatim; only the comparison normalizes."""
+        docs = [
+            Document("a", "Trial A", "Methods: the Sample Size was Two Hundred patients."),
+            Document("b", "Trial B", "methods: the sample size was two hundred patients."),
+        ]
+        r = run_survey("q", docs, criteria=[], attributes=[SAMPLE_ATTR])
+        cells_by_doc = {row.doc_id: row.cells[0] for row in r.rows}
+        assert cells_by_doc["a"].value  # extraction produced a value
+        assert cells_by_doc["a"].contested is False
+        assert cells_by_doc["b"].contested is False
+        # The original casing is preserved on each cell.
+        assert "Sample Size" in cells_by_doc["a"].value
+
     def test_contested_by_points_to_other_doc(self):
         """contested_by must name the other disagreeing document, not self."""
         docs = [

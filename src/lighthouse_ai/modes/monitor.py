@@ -300,6 +300,14 @@ def make_hotness_salience(
     return _score
 
 
+#: Cap on the semantic-dedup embedding ledger. Each near-duplicate check is a
+#: linear cosine scan over this list, so unbounded growth makes every polling
+#: cycle of a long-lived watch progressively slower (O(n) per item) for dedup
+#: value that decays with age. FIFO-trimmed; exact-URL dedup (seen_keys) is
+#: unbounded and still catches old exact repeats.
+MAX_SEEN_TITLE_EMBEDDINGS = 512
+
+
 @dataclass
 class MonitorState:
     """In-memory dedup ledger; production persists to ``state.db``."""
@@ -413,12 +421,18 @@ def run_monitor(
     deduped: list[tuple[MonitorItem, list[float] | None]] = []
     for i, it in enumerate(unique):
         emb = titles_embeddings[i] if titles_embeddings else None
-        if emb is not None and _near_duplicate(emb, st):
+        is_dup = emb is not None and _near_duplicate(emb, st)
+        if emb is not None:
+            # Record SUPPRESSED items in the ledger too: a later item that is
+            # a near-duplicate of a suppressed one (but not quite of its
+            # keeper) must still be caught next cycle.
+            st.seen_titles.append((it.title, emb))
+        if is_dup:
             suppressed += 1
             continue
-        if emb is not None:
-            st.seen_titles.append((it.title, emb))
         deduped.append((it, emb))
+    if len(st.seen_titles) > MAX_SEEN_TITLE_EMBEDDINGS:
+        del st.seen_titles[:-MAX_SEEN_TITLE_EMBEDDINGS]
     _ = pre_semantic  # silence linter
 
     # 3. classify each survivor.

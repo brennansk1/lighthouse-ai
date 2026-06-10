@@ -203,3 +203,17 @@ def test_unknown_kind_no_fire():
     r = evaluate_trigger(snap("a"), snap("b"), {"kind": "bogus"})
     assert r.matched is False
     assert "unknown" in r.reason.lower()
+
+
+def test_threshold_equals_fires_with_float_tolerance():
+    """'equals' must match within float tolerance — exact == on parsed floats
+    misfires on values like 0.30000000000000004."""
+    crit = {"kind": "threshold", "label": "Result:", "equals": 0.3}
+    r = evaluate_trigger(None, snap(f"Result: {0.1 + 0.2}"), crit)
+    assert r.matched is True
+
+
+def test_threshold_equals_no_fire_when_different():
+    crit = {"kind": "threshold", "label": "Result:", "equals": 0.3}
+    r = evaluate_trigger(None, snap("Result: 0.31"), crit)
+    assert r.matched is False

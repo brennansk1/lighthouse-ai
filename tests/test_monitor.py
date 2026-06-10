@@ -116,3 +116,34 @@ def test_render_monitor_html_handles_empty_report():
                            digest=[], suppressed_duplicates=0, total_seen=0)
     html = render_monitor_html(report)
     assert "(none)" in html
+
+
+def test_suppressed_near_duplicate_still_recorded_in_ledger():
+    """A suppressed near-duplicate's embedding must enter the dedup ledger:
+    a third item near-identical to the SUPPRESSED one (seen in a later cycle)
+    has to be caught too. Regression: suppressed items were never recorded."""
+    e = HashEmbedder(dim=128)
+    st = MonitorState()
+    first = [MonitorItem(source="s1", url="https://x/1",
+                         title="Quantum breakthrough at MIT lab",
+                         body="Long body. " * 30)]
+    run_monitor("q", first, state=st, embed_titles=lambda ts: e.embed(ts))
+    dup = [MonitorItem(source="s2", url="https://x/2",
+                       title="Quantum breakthrough at MIT lab",
+                       body="Long body. " * 30)]
+    r2 = run_monitor("q", dup, state=st, embed_titles=lambda ts: e.embed(ts))
+    assert r2.suppressed_duplicates >= 1
+    # The suppressed item is in the ledger (two entries: keeper + suppressed).
+    assert len(st.seen_titles) == 2
+
+
+def test_seen_titles_ledger_is_bounded():
+    from lighthouse_ai.modes.monitor import MAX_SEEN_TITLE_EMBEDDINGS
+
+    e = HashEmbedder(dim=8)
+    st = MonitorState()
+    items = [MonitorItem(source="s", url=f"https://x/{i}",
+                         title=f"Completely distinct headline number {i} {i*7}",
+                         body="b") for i in range(MAX_SEEN_TITLE_EMBEDDINGS + 50)]
+    run_monitor("q", items, state=st, embed_titles=lambda ts: e.embed(ts))
+    assert len(st.seen_titles) <= MAX_SEEN_TITLE_EMBEDDINGS

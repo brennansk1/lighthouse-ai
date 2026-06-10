@@ -414,7 +414,10 @@ def _eval_threshold(
         )
     if "equals" in criteria:
         bound = float(criteria["equals"])
-        matched = new_val == bound
+        # Tolerance-based equality: page values arrive as parsed floats, and a
+        # user's "equals 0.3" must match a computed 0.30000000000000004.
+        # Relative tolerance for large magnitudes, absolute floor for ~0.
+        matched = abs(new_val - bound) <= max(1e-9, abs(bound) * 1e-9)
         return TriggerResult(
             matched=matched,
             kind="threshold",

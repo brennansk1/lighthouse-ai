@@ -233,3 +233,24 @@ def test_tree_state_dataclass_helpers_match_module_fns():
     assert restored.root.question == "Q"
     assert restored.root.voi == 0.9
     assert restored.pending[0] is restored.root
+
+
+def test_voi_gateway_nudge_called_at_most_once_per_node(monkeypatch):
+    """The frontier-selection loop must not re-nudge the same pending node on
+    every pop: each node's VOI inputs are frozen at enqueue, so one LLM nudge
+    per node suffices. Regression for the O(n^2) re-scoring of the frontier."""
+    from lighthouse_ai.modes import exhaustive as ex
+
+    nudged: list[str] = []
+
+    def _fake_nudge(node, *, gateway, job_id, gate=None) -> float:
+        nudged.append(node.question)
+        return 0.5
+
+    monkeypatch.setattr(ex, "_voi_gateway_nudge", _fake_nudge)
+    report = ex.run_exhaustive(
+        "root question?", gateway=object(),  # non-None → nudge path active
+        max_nodes=10, max_depth=2, synthesize=False)
+    assert report.total_nodes >= 3  # the stub fans out sub-questions
+    # Every nudge target is distinct — no node was ever re-scored.
+    assert len(nudged) == len(set(nudged))

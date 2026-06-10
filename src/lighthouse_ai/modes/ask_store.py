@@ -18,8 +18,13 @@ from .quc import QUCSession, Turn
 
 
 def _turns_to_json(session: QUCSession) -> str:
+    # Every Turn field round-trips: dropping the Zone S additions
+    # (skill_ids_used, adjudicate_flag) here silently erased the skill audit
+    # trail on save/load. The loader tolerates their absence in old rows.
     return json.dumps([
-        {"role": t.role, "text": t.text, "citations": list(t.citations)}
+        {"role": t.role, "text": t.text, "citations": list(t.citations),
+         "skill_ids_used": list(t.skill_ids_used),
+         "adjudicate_flag": t.adjudicate_flag}
         for t in session.history
     ])
 
@@ -30,7 +35,9 @@ def _turns_from_json(raw: str | None) -> list[Turn]:
     out: list[Turn] = []
     for d in json.loads(raw):
         out.append(Turn(role=d.get("role", "user"), text=d.get("text", ""),
-                        citations=list(d.get("citations", []))))
+                        citations=list(d.get("citations", [])),
+                        skill_ids_used=list(d.get("skill_ids_used", [])),
+                        adjudicate_flag=bool(d.get("adjudicate_flag", False))))
     return out
 
 

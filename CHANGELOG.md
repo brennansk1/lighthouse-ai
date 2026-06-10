@@ -3,6 +3,37 @@
 All notable changes to Lighthouse are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased] — Per-mode sweep: fix / upgrade / optimize across all eight engines (2026-06-10)
+
+### Fixed
+- **Watch — suppressed near-duplicates now enter the dedup ledger**: an item
+  suppressed as a semantic near-duplicate was never recorded, so a later item
+  resembling the *suppressed* one (but not its keeper) slipped through.
+- **Watch — `equals` threshold trigger uses float tolerance**: exact `==` on
+  parsed page values misfired on artifacts like `0.1 + 0.2`.
+- **Ask — session round-trip preserves the skill audit trail**: serialization
+  dropped `skill_ids_used`/`adjudicate_flag`, silently resetting every reloaded
+  turn; old rows still load with defaults.
+- **Survey — case/whitespace-only differences are no longer cross-source
+  conflicts**: contested-cell detection now compares casefolded, space-collapsed
+  values while displayed values stay verbatim.
+
+### Changed / Optimized
+- **Investigate (Deep tier) — VOI frontier scoring memoized**: the selection
+  loop re-scored every pending node on every pop (O(n²); with a gateway, a
+  fresh LLM nudge per node per pop). Each node is now scored exactly once,
+  which also stabilizes the online ordering.
+- **Watch — semantic-dedup ledger bounded** (`MAX_SEEN_TITLE_EMBEDDINGS=512`,
+  FIFO): long-lived watches no longer slow down every polling cycle as the
+  embedding history grows without limit.
+
+### Added
+- **Investigate — the entailment-gated early stop is now real**: a saturated
+  draft whose sections fail entailment against their *own* per-section evidence
+  keeps researching instead of stopping early. The
+  `min_entailment_for_early_stop` parameter was a dead stub (`entailment_ok`
+  hardwired `True`); default 0.0 and absent-scorer behavior are unchanged.
+
 ## [Unreleased] — Feature-priority sweep: invariant hardening + export (2026-06-10)
 
 ### Fixed

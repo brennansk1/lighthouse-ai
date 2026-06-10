@@ -403,6 +403,45 @@ def _extract_debate_subquestions(
     return new_subs[:2]  # cap at 2 new sub-questions per round to control runaway loops
 
 
+def _entailment_early_stop_ok(
+    sections: list[Section],
+    section_evidence: dict[str, list[HybridResult]],
+    *,
+    floor: float,
+) -> bool:
+    """True when the entailed fraction of drafted sections meets ``floor``.
+
+    Each section body is scored against its OWN evidence (the per-section
+    grounding is correctly aligned, unlike the report-level evidence list).
+    Conservative degradations keep behavior identical to the pre-gate code:
+    no scorer installed, no scorable sections, or scorer errors → True
+    (the gate only ever *blocks* an early stop, never forces one).
+    """
+    from ..verification import entailment as _entailment
+
+    if not _entailment.available():
+        return True
+    scored = 0
+    entailed = 0
+    for sec in sections:
+        body = sec.body.strip()
+        if not body:
+            continue
+        evid = section_evidence.get(sec.title) or []
+        grounding = "\n".join(e.chunk.text for e in evid)
+        if not grounding.strip():
+            continue
+        score = _entailment.score_claim(body[:2000], grounding[:4000])
+        if score is None:  # scorer error — unchecked, not counted either way
+            continue
+        scored += 1
+        if score >= _entailment.MINICHECK_THRESHOLD:
+            entailed += 1
+    if scored == 0:
+        return True
+    return (entailed / scored) >= floor
+
+
 def run_deepdive(
     question: str,
     *,
@@ -500,10 +539,16 @@ def run_deepdive(
         stuck = _saturated(cumulative_unique, slope_floor=saturation_slope_floor,
                            round_idx=round_idx)
         open_unchanged = prev_open_count is not None and open_count == prev_open_count
-        # Entailment gate (seam for pipeline.py to pass a threshold later)
+        # Entailment gate: a saturated draft must not stop early while its
+        # sections are unfaithful to their own evidence. Sections are scored
+        # against their OWN per-section evidence (correctly aligned grounding,
+        # unlike the global evidence list). 0.0 (the default) or an absent
+        # scorer disables the gate — behavior is then identical to before.
         entailment_ok = True
         if min_entailment_for_early_stop > 0.0:
-            entailment_ok = True  # conservative default; pipeline fills this in
+            entailment_ok = _entailment_early_stop_ok(
+                sections, section_evidence,
+                floor=min_entailment_for_early_stop)
         if stuck and open_unchanged and entailment_ok and round_idx > 1:
             break
         prev_open_count = open_count

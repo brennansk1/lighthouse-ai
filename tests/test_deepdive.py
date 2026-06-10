@@ -241,3 +241,43 @@ def test_working_context_parameter_accepted():
     result_sec, evidence = _research_section(sec, None, None,
                                               job_id=None, working_context=ctx)
     assert result_sec.sub_question == "What is X?"
+
+
+# --- entailment-gated early stop (min_entailment_for_early_stop) -----------
+
+def _patch_scorer(monkeypatch, score: float):
+    from lighthouse_ai.verification import entailment as ent
+    monkeypatch.setattr(ent, "available", lambda: True)
+    monkeypatch.setattr(ent, "score_claim", lambda _claim, _grounding: score)
+
+
+def test_low_entailment_blocks_early_stop(monkeypatch):
+    """A saturated draft whose sections are unfaithful to their own evidence
+    must keep researching instead of stopping early. Regression: the gate was
+    a dead stub (entailment_ok hardwired True)."""
+    _patch_scorer(monkeypatch, 0.05)  # everything unfaithful
+    hs = _hybrid_with_docs()
+    r = run_deepdive("What is decoherence?", hybrid=hs, max_rounds=5,
+                     progress_threshold=0.9,
+                     min_entailment_for_early_stop=0.9)
+    assert r.rounds_used == 5  # gate blocked the plateau stop every round
+
+
+def test_high_entailment_allows_early_stop(monkeypatch):
+    _patch_scorer(monkeypatch, 0.99)  # everything faithful
+    hs = _hybrid_with_docs()
+    r = run_deepdive("What is decoherence?", hybrid=hs, max_rounds=5,
+                     progress_threshold=0.9,
+                     min_entailment_for_early_stop=0.9)
+    assert r.rounds_used <= 3  # same early stop as the ungated baseline
+
+
+def test_entailment_gate_off_without_scorer(monkeypatch):
+    """No scorer installed → behavior identical to before the gate existed."""
+    from lighthouse_ai.verification import entailment as ent
+    monkeypatch.setattr(ent, "available", lambda: False)
+    hs = _hybrid_with_docs()
+    r = run_deepdive("What is decoherence?", hybrid=hs, max_rounds=5,
+                     progress_threshold=0.9,
+                     min_entailment_for_early_stop=0.9)
+    assert r.rounds_used <= 3

@@ -409,6 +409,12 @@ def _mark_contested(rows: list[EvidenceRow]) -> list[EvidenceRow]:
     if not rows:
         return rows
 
+    def _norm(value: str) -> str:
+        # Comparison-time normalization ONLY (display values are never
+        # rewritten): "Double-blind RCT" vs "double-blind  RCT" is the same
+        # finding, not a cross-source conflict.
+        return " ".join(value.split()).casefold()
+
     # Collect non-empty values per attribute: attr_label → {doc_id: value}
     attr_values: dict[str, dict[str, str]] = {}
     for row in rows:
@@ -419,7 +425,7 @@ def _mark_contested(rows: list[EvidenceRow]) -> list[EvidenceRow]:
     # Determine which attributes are contested (more than one distinct value).
     contested_attrs: dict[str, set[str]] = {}  # attr → set of doc_ids with a value
     for attr, doc_map in attr_values.items():
-        distinct_values = set(doc_map.values())
+        distinct_values = {_norm(v) for v in doc_map.values()}
         if len(distinct_values) > 1:
             contested_attrs[attr] = set(doc_map.keys())
 
@@ -436,7 +442,8 @@ def _mark_contested(rows: list[EvidenceRow]) -> list[EvidenceRow]:
                 others = sorted(
                     doc_id for doc_id in contested_attrs[cell.attribute]
                     if doc_id != row.doc_id
-                    and attr_values[cell.attribute].get(doc_id, "") != cell.value
+                    and _norm(attr_values[cell.attribute].get(doc_id, ""))
+                    != _norm(cell.value)
                 )
                 if others:
                     new_cells.append(EvidenceCell(
