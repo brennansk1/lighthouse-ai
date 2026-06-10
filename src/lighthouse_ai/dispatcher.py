@@ -419,9 +419,11 @@ def _maybe_flag_auto_adjudicate(meta: dict, summary: dict, documents: list) -> N
                 meta["auto_adjudicate"] = c.contradiction_id
                 if isinstance(summary.get("body_json"), dict):
                     summary["body_json"]["auto_adjudicate"] = c.contradiction_id
+                # Sub-job spawn is deliberately NOT done here: it needs
+                # loop-guard + budget-inheritance treatment first (tracked in
+                # FUTURE_FEATURES.md §6, "Auto-Adjudicate sub-job spawn").
                 _log.info("dispatcher.auto_adjudicate.flagged",
                           contradiction=c.contradiction_id,
-                          # TODO(P/R): spawn the Adjudicate sub-job from this hook.
                           depth=depth_tier)
                 return
     except Exception as exc:  # never let detection crash a job

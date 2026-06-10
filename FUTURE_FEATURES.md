@@ -116,6 +116,12 @@ state instead of silently going quiet.
   machine resolutions.
 - **VOI tuning from outcomes.** Learn the value-of-information weights in the Deep tree from which
   branches actually changed final answers.
+- **Auto-Adjudicate sub-job spawn.** The dispatcher's §6.4 hook
+  (`dispatcher._maybe_flag_auto_adjudicate`) detects contradictions and records the decision on the
+  artifact/job meta, but deliberately does not enqueue the Adjudicate sub-job itself: a job that
+  spawns jobs needs loop-guard and budget treatment first (a contradiction loop must trip
+  `LoopTripped`, and the child must draw down the parent's budget, not a fresh one). Wire the spawn
+  through the governor once those two guarantees are specified.
 
 ---
 
