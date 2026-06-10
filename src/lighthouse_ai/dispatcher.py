@@ -774,10 +774,21 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
             _count(c, acc)
         return acc
     source_count = len(_count(tree.root, set()))
-    body_html = (
-        f"<p>Recursive deep research: {tree.grounded}/{tree.total_nodes} nodes "
-        f"grounded (depth {tree.max_depth_reached}"
+    # The woven cross-node synthesis IS the deliverable of a Deep run — it
+    # must reach the artifact (body_json for the typed viewer, body_html so
+    # even the plain reading view shows the narrative, not a one-line stat).
+    synthesis = (tree.synthesis or "").strip()
+    body_json["synthesis"] = synthesis
+    stats_line = (
+        f"<p class='meta'>Recursive deep research: {tree.grounded}/{tree.total_nodes} "
+        f"nodes grounded (depth {tree.max_depth_reached}"
         f"{', budget-truncated' if tree.truncated else ''}).</p>")
+    if synthesis:
+        body_html = "".join(
+            f"<p>{_html.escape(p.strip())}</p>"
+            for p in synthesis.split("\n\n") if p.strip()) + stats_line
+    else:
+        body_html = stats_line
     return {"title": topic, "body_html": body_html, "body_json": body_json,
             "source_count": source_count}
 

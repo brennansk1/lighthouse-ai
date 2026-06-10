@@ -3,6 +3,24 @@
 All notable changes to Lighthouse are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased] — Artifact presentation: the Deep report reads like a report (2026-06-10)
+
+### Fixed
+- **The Deep tier's synthesis narrative now reaches the artifact.** The woven
+  cross-node synthesis — the run's actual deliverable — was computed and then
+  dropped: the persisted draft carried a one-line node-count stat and a raw
+  JSON tree. `body_json.synthesis` + paragraph-rendered `body_html` now carry
+  the narrative.
+
+### Added
+- **Deep report view in the Library**: the synthesis in reading typography, a
+  coverage strip (grounded/total, open known-unknowns, depth explored,
+  budget-truncated flag), and a collapsible "How the question was explored"
+  tree — each sub-question with its grounding status and citation count.
+- **Artifact header meta chips**: research depth, rounds used, and
+  "+N acquired during research" (from the new acquisition stats) alongside the
+  existing type / source-count / date / confidence strip.
+
 ## [Unreleased] — Iterative acquisition: frontier-class deep-research breadth (2026-06-10)
 
 ### Added

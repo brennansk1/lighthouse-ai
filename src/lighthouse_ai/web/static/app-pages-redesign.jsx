@@ -1531,6 +1531,84 @@ function MatrixView({ body }) {
   );
 }
 
+// Deep-tier research tree: the woven synthesis is the report; the question
+// tree below it shows HOW the answer was assembled — each node a sub-question
+// with its grounding status, collapsible via native <details> (no JS state).
+function DeepTreeNode({ node }) {
+  const grounded = node.status === 'grounded';
+  const label = (
+    <span>
+      <span aria-hidden="true" style={{ color: grounded
+        ? 'var(--green-dark, #2e7d32)' : '#d97706', marginRight: 6 }}>
+        {grounded ? '●' : '○'}
+      </span>
+      <span style={{ fontSize: 13, fontWeight: node.depth === 0 ? 700 : 600,
+        color: 'var(--ink)' }}>{node.question}</span>
+      {Array.isArray(node.citations) && node.citations.length > 0 && (
+        <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 7 }}>
+          {node.citations.length} citation{node.citations.length === 1 ? '' : 's'}
+        </span>
+      )}
+    </span>
+  );
+  const hasInner = (node.body && node.body.trim())
+    || (node.children && node.children.length > 0);
+  if (!hasInner) {
+    return <div style={{ padding: '5px 0' }}>{label}</div>;
+  }
+  return (
+    <details open={node.depth === 0} style={{ padding: '3px 0' }}>
+      <summary style={{ cursor: 'pointer', listStylePosition: 'outside' }}>
+        {label}
+      </summary>
+      <div style={{ marginLeft: 18, borderLeft: '2px solid var(--rule-soft)',
+        paddingLeft: 12, marginTop: 4 }}>
+        {node.body && node.body.trim() && (
+          <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.55,
+            marginBottom: 6, whiteSpace: 'pre-wrap' }}>
+            {node.body.length > 600 ? node.body.slice(0, 600) + '…' : node.body}
+          </div>
+        )}
+        {(node.children || []).map((c, i) => <DeepTreeNode key={i} node={c} />)}
+      </div>
+    </details>
+  );
+}
+
+function DeepReportView({ body }) {
+  if (!body || !body.tree) return null;
+  const synthesis = (body.synthesis || '').trim();
+  return (
+    <div>
+      {synthesis && (
+        <div className="lh-reading" style={{ marginBottom: 22 }}>
+          {synthesis.split(/\n{2,}/).map((p, i) => (
+            <p key={i} style={{ fontSize: 14.5, lineHeight: 1.7,
+              color: 'var(--ink)' }}>{p}</p>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12,
+        color: 'var(--muted)', padding: '10px 0', borderTop: '1px solid var(--rule)',
+        borderBottom: '1px solid var(--rule-soft)', marginBottom: 10 }}>
+        <span><strong style={{ color: 'var(--ink-2)' }}>{body.grounded}</strong> of{' '}
+          <strong style={{ color: 'var(--ink-2)' }}>{body.total_nodes}</strong> questions grounded</span>
+        {body.known_unknowns > 0 && (
+          <span>{body.known_unknowns} open (known unknowns)</span>)}
+        {body.max_depth_reached != null && (
+          <span>explored {body.max_depth_reached} level{body.max_depth_reached === 1 ? '' : 's'} deep</span>)}
+        {body.truncated && <span style={{ color: '#d97706' }}>stopped at budget</span>}
+      </div>
+      <div style={{ fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 700,
+        letterSpacing: '0.05em', textTransform: 'uppercase',
+        color: 'var(--muted)', margin: '14px 0 6px' }}>
+        How the question was explored
+      </div>
+      <DeepTreeNode node={body.tree} />
+    </div>
+  );
+}
+
 function VerdictView({ body }) {
   if (!body || !Array.isArray(body.responses) || body.responses.length === 0) return null;
   const judge = body.judge_backend === 'llm' ? 'model judge' : 'heuristic judge';
@@ -2218,6 +2296,20 @@ function ArtifactBody({ artifact }) {
       {artifact.id && <EvidenceConnections artifactId={artifact.id} />}
     </React.Fragment>
   );
+  // Deep-tier reports carry a question tree + woven synthesis instead of
+  // sections — render the narrative and the collapsible exploration tree
+  // (previously this fell back to a one-line body_html stat).
+  if (t === 'report' && body && body.tree) {
+    return (
+      <React.Fragment>
+        <ReadingStyles />
+        <DeepReportView body={body} />
+        <Contradictions items={contradictions} />
+        <KnownUnknowns openQuestions={openQuestions} />
+        {artifact.id && <EvidenceConnections artifactId={artifact.id} />}
+      </React.Fragment>
+    );
+  }
   // Verdict / transcript get their typed views when the structured body is
   // present (the whole debate / conversation was previously flattened to
   // body_html); absent a usable body they fall through to the reading view.
@@ -2478,6 +2570,16 @@ function LibraryPage({ toast }) {
                       {detail.source_count != null && (
                         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                           {detail.source_count} source{detail.source_count === 1 ? '' : 's'}</span>)}
+                      {detail.body && detail.body.depth && (
+                        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                          {String(detail.body.depth)} depth</span>)}
+                      {detail.body && detail.body.rounds_used != null && (
+                        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                          {detail.body.rounds_used} research round{detail.body.rounds_used === 1 ? '' : 's'}</span>)}
+                      {detail.body && detail.body.acquisition
+                        && detail.body.acquisition.documents_acquired > 0 && (
+                        <span style={{ fontSize: 11.5, color: 'var(--green-dark, #2e7d32)' }}>
+                          +{detail.body.acquisition.documents_acquired} acquired during research</span>)}
                       {detail.created_at && (
                         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{detail.created_at}</span>)}
                     </div>

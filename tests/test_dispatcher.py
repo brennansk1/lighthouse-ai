@@ -646,3 +646,24 @@ def test_build_hybrid_screens_injected_chunks():
     assert hybrid is not None
     hits = hybrid.search("instructions system prompt", top_k=5)
     assert all("Ignore all previous" not in h.chunk.text for h in hits)
+
+
+def test_deep_tier_artifact_carries_the_synthesis_narrative():
+    """The woven cross-node synthesis IS the Deep run's deliverable — it must
+    reach both body_json (typed viewer) and body_html (reading fallback).
+    Regression: the artifact used to carry only a one-line node-count stat."""
+    from lighthouse_ai.dispatcher import _adapt_investigate_deep
+    from lighthouse_ai.modes.depth import resolve_depth
+
+    meta = {"topic": "What is decoherence?", "budget": "30m",
+            "documents": [
+                {"doc_id": "d1", "title": "Qubits",
+                 "text": "Decoherence is the loss of quantum coherence. "
+                         "Error correction mitigates decoherence."}]}
+    summary = _adapt_investigate_deep(meta, resolve_depth("deep"),
+                                      gateway=None, gate=None, job_id=None)
+    body = summary["body_json"]
+    assert body["synthesis"].strip()                # narrative present
+    first_paragraph = body["synthesis"].split("\n\n")[0].strip()
+    assert first_paragraph in summary["body_html"].replace("&#x27;", "'")
+    assert body["tree"]["question"] == "What is decoherence?"
