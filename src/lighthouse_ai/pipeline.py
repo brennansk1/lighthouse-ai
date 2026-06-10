@@ -157,6 +157,7 @@ class PipelineConfig:
     top_k: int = 5
     auto_fetch_sources: bool = True    # auto-fetch from arXiv/OpenAlex when corpus is empty
     auto_fetch_max_results: int = 5    # max papers per source
+    depth: str = "standard"            # acquisition tier (quick disables the iterative loop)
 
 
 @dataclass
@@ -321,6 +322,31 @@ class ResearchPipeline:
             )
             self._backend_warnings.append(msg)
 
+    def _build_acquirer(self):
+        """Best-effort iterative-acquisition engine for online deep-dives.
+
+        ``None`` (never raises) when offline, the tier is non-iterative, or
+        the broker cannot be built — run_deepdive then behaves exactly as
+        before the acquisition loop existed.
+        """
+        if self.config.offline:
+            return None
+        try:
+            from .acquisition import Acquirer, policy_for_tier
+            from .dispatcher import _build_broker
+
+            policy = policy_for_tier(self.config.depth)
+            if not policy.iterative:
+                return None
+            broker = _build_broker(self.paths)
+            if broker is None:
+                return None
+            return Acquirer(policy=policy, broker=broker, gateway=self.gateway,
+                            hybrid=self.hybrid, meta={"documents": []},
+                            mode="investigate", depth=self.config.depth)
+        except Exception:
+            return None
+
     # --- run ---
     def research(self, question: str, *, job_id: str | None = None) -> ResearchResult:
         job_id = job_id or uuid.uuid4().hex[:8]
@@ -347,10 +373,15 @@ class ResearchPipeline:
             real_rerank = type(self.reranker).__name__ == "FlagReranker"
             dd_top_k = 8 if real_rerank else self.config.top_k
             dd_candidates = 50 if real_rerank else None
+            # Iterative acquisition on the CLI path too: online deep-dives may
+            # pull new web evidence for thin sub-questions mid-run. Offline
+            # stays hermetic (no acquirer, no network, bit-identical output).
+            acquirer = self._build_acquirer()
             report = run_deepdive(question, hybrid=self.hybrid, gateway=self.gateway,
                                   max_rounds=self.config.max_rounds,
                                   top_k=dd_top_k, rerank_candidates=dd_candidates,
-                                  job_id=job_id, gate=self.scheduler_gate)
+                                  job_id=job_id, gate=self.scheduler_gate,
+                                  acquire_fn=acquirer.acquire if acquirer else None)
             synthesis = "\n\n".join(s.body for s in report.sections)
             body_html = _report_to_html(report)
             source_count = len({c for s in report.sections for c in s.citations})

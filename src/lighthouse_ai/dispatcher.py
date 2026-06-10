@@ -762,6 +762,11 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
         "coverage": tree.coverage_ratio, "truncated": tree.truncated,
         "max_depth_reached": tree.max_depth_reached,
     }
+    if acquirer is not None and acquirer.total_docs:
+        body_json["acquisition"] = {
+            "documents_acquired": acquirer.total_docs,
+            "blocked_chunks": acquirer.blocked_chunks,
+        }
 
     def _count(node, acc):
         acc.update(node.citations)
@@ -832,6 +837,12 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
         "open_questions": list(report.open_questions),
         "ruled_out": list(report.ruled_out),
     }
+    # Acquisition stats: how far the run reached beyond the upfront corpus.
+    if acquirer is not None and acquirer.total_docs:
+        body_json["acquisition"] = {
+            "documents_acquired": acquirer.total_docs,
+            "blocked_chunks": acquirer.blocked_chunks,
+        }
     # Coverage critic: which planned (load-bearing) sub-questions are answered?
     # Runs from Standard up; a gap is recorded as a known-unknown.
     if knobs.get("coverage_critic"):

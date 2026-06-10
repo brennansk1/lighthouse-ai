@@ -350,3 +350,17 @@ def test_pipeline_passes_evidence_to_discipline_gate(migrated_paths, monkeypatch
     assert "evidence_chunks" in seen, "gate was never called"
     ev = seen["evidence_chunks"]
     assert ev is not None and len(ev) >= 1
+
+
+def test_pipeline_offline_builds_no_acquirer(migrated_paths):
+    """Offline runs must stay hermetic: no acquisition engine, no network."""
+    pipe = ResearchPipeline(migrated_paths, config=PipelineConfig(offline=True))
+    assert pipe._build_acquirer() is None
+
+
+def test_pipeline_quick_depth_disables_acquisition(migrated_paths, monkeypatch):
+    pipe = ResearchPipeline(migrated_paths,
+                            config=PipelineConfig(offline=True))
+    # Even pretending to be online, a quick-tier config is non-iterative.
+    pipe.config = PipelineConfig(offline=False, depth="quick")
+    assert pipe._build_acquirer() is None
