@@ -332,7 +332,8 @@ class ResearchPipeline:
             self._auto_fetch(question)
         if self.config.mode == "quc":
             session = QUCSession(id=job_id, topic=question)
-            turn = quc_ask(session, question, hybrid=self.hybrid, gateway=self.gateway)
+            turn = quc_ask(session, question, hybrid=self.hybrid,
+                           gateway=self.gateway, gate=self.scheduler_gate)
             synthesis = turn.text
             body_html = f"<p>{_escape(synthesis)}</p>"
             source_count = len(turn.citations)

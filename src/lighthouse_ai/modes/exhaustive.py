@@ -51,6 +51,8 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from ..framing.pipeline import run_framing
+from ..governor.scheduler_gate import SchedulerGate
+from ._gate import gate_ctx
 
 NodeStatus = Literal["grounded", "known_unknown"]
 
@@ -298,7 +300,8 @@ def _default_research_fn(question: str) -> tuple[str, list[int], bool]:
 
 
 def _voi_score(node: TreeNode, *, parent_grounded: bool, gateway=None,
-               job_id: str | None = None) -> float:
+               job_id: str | None = None,
+               gate: SchedulerGate | None = None) -> float:
     """Decision-impact score in [0, 1+] for a pending node — higher = research first.
 
     Deterministic heuristic (the always-on, must-be-correct path):
@@ -322,14 +325,16 @@ def _voi_score(node: TreeNode, *, parent_grounded: bool, gateway=None,
 
     if gateway is not None:
         try:
-            nudge = _voi_gateway_nudge(node, gateway=gateway, job_id=job_id)
+            nudge = _voi_gateway_nudge(node, gateway=gateway, job_id=job_id,
+                                       gate=gate)
             score += 0.1 * nudge  # bounded influence: ranking stays deterministic-led
         except Exception:
             pass
     return round(score, 6)
 
 
-def _voi_gateway_nudge(node: TreeNode, *, gateway, job_id: str | None) -> float:
+def _voi_gateway_nudge(node: TreeNode, *, gateway, job_id: str | None,
+                       gate: SchedulerGate | None = None) -> float:
     """Ask the model for a 0..1 impact estimate; bounded, best-effort, optional."""
     prompt = (
         "Rate, as a single number between 0 and 1, how decision-relevant this "
@@ -337,7 +342,8 @@ def _voi_gateway_nudge(node: TreeNode, *, gateway, job_id: str | None) -> float:
         "could flip the conclusion, 0 = trivia). Reply with ONLY the number.\n\n"
         f"Sub-question: {node.question}"
     )
-    resp = gateway.complete_structured(prompt, job_id=job_id)
+    with gate_ctx(gate):
+        resp = gateway.complete_structured(prompt, job_id=job_id)
     m = re.search(r"[01](?:\.\d+)?", resp.text.strip())
     if not m:
         return 0.0
@@ -350,6 +356,7 @@ def run_exhaustive(
     research_fn: ResearchFn | None = None,
     gateway=None,
     job_id: str | None = None,
+    gate: SchedulerGate | None = None,
     max_nodes: int = 25,
     max_depth: int = 3,
     on_node: Callable[[TreeNode, int, int], None] | None = None,
@@ -435,7 +442,7 @@ def run_exhaustive(
         best_key: tuple[float, int] | None = None
         for i, (node, parent_grounded, ordr) in enumerate(pending):
             voi = _voi_score(node, parent_grounded=parent_grounded,
-                             gateway=gateway, job_id=job_id)
+                             gateway=gateway, job_id=job_id, gate=gate)
             key = (voi, -ordr)  # higher VOI first; earlier creation breaks ties
             if best_key is None or key > best_key:
                 best_key = key
@@ -528,7 +535,8 @@ def run_exhaustive(
         pruned=pruned,
     )
     if synthesize:
-        report.synthesis = synthesize_tree(root, gateway=gateway, job_id=job_id)
+        report.synthesis = synthesize_tree(root, gateway=gateway, job_id=job_id,
+                                           gate=gate)
     return report
 
 
@@ -552,7 +560,8 @@ def _iter_tree(node: TreeNode):
     return out
 
 
-def synthesize_tree(root: TreeNode, *, gateway=None, job_id: str | None = None) -> str:
+def synthesize_tree(root: TreeNode, *, gateway=None, job_id: str | None = None,
+                    gate: SchedulerGate | None = None) -> str:
     """Weave the tree's node bodies into one coherent narrative (gap #8).
 
     With a ``gateway`` we hand the synthesizer role a structured outline of every
@@ -567,7 +576,8 @@ def synthesize_tree(root: TreeNode, *, gateway=None, job_id: str | None = None) 
         return digest
     try:
         prompt = _synthesis_prompt(root)
-        resp = gateway.complete("synthesizer", prompt, job_id=job_id)
+        with gate_ctx(gate):
+            resp = gateway.complete("synthesizer", prompt, job_id=job_id)
         woven = (resp.text or "").strip()
         return woven or digest
     except Exception:

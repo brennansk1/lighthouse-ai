@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from ..gateway import Gateway
 from ..governor.scheduler_gate import SchedulerGate
 from ..verification import entailment as _entailment
-from ._gate import gate_ctx
+from ._gate import complete_structured_or
 
 # ---------------------------------------------------------------------------
 # Public dataclasses — field names are stable; the dispatcher serialises these
@@ -550,13 +550,15 @@ def _llm_synthesis(
         + "\n\nIdentify key trends, patterns, and cross-document contradictions. "
         "Do NOT arbitrate contested values. Reply with one observation per line."
     )
-    try:
-        with gate_ctx(gate):
-            resp = gateway.complete_structured(prompt, job_id=job_id)
-        raw_notes = [ln.strip(" -•*") for ln in resp.text.splitlines() if ln.strip()]
-        return raw_notes if raw_notes else _stub_synthesis(rows, discordant)
-    except Exception:
-        return _stub_synthesis(rows, discordant)
+    def _parse(text: str) -> list[str] | None:
+        notes = [ln.strip(" -•*") for ln in text.splitlines() if ln.strip()]
+        return notes or None
+
+    return complete_structured_or(
+        gateway, prompt, parse=_parse,
+        fallback=lambda: _stub_synthesis(rows, discordant),
+        gate=gate, job_id=job_id,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -582,15 +584,17 @@ def _llm_screen(gateway: Gateway, question: str, doc: Document,
         "Should this document be INCLUDED in the survey? "
         "Reply 'INCLUDE' or 'EXCLUDE' followed by a one-line reason."
     )
-    try:
-        with gate_ctx(gate):
-            resp = gateway.complete_structured(prompt, job_id=job_id)
-        text = resp.text.strip()
+    def _parse(raw: str) -> ScreenDecision:
+        text = raw.strip()
         included = text.upper().lstrip().startswith("INCLUDE")
         reason = text.split("\n", 1)[0][:200]
         return ScreenDecision(doc.doc_id, included=included, reason=reason)
-    except Exception:
-        return _stub_screen(doc, criteria)
+
+    return complete_structured_or(
+        gateway, prompt, parse=_parse,
+        fallback=lambda: _stub_screen(doc, criteria),
+        gate=gate, job_id=job_id,
+    )
 
 
 def _llm_extract(gateway: Gateway, doc: Document, attr: AttributeSpec, *,
@@ -606,13 +610,15 @@ def _llm_extract(gateway: Gateway, doc: Document, attr: AttributeSpec, *,
         "Reply with only the value, grounded in the document. "
         "If absent, reply 'N/A'."
     )
-    try:
-        with gate_ctx(gate):
-            resp = gateway.complete_structured(prompt, job_id=job_id)
-        val = resp.text.strip()
+    def _parse(raw: str) -> str:
+        val = raw.strip()
         return "" if val.upper() in {"N/A", "NONE", ""} else val
-    except Exception:
-        return _stub_extract(doc, attr)
+
+    return complete_structured_or(
+        gateway, prompt, parse=_parse,
+        fallback=lambda: _stub_extract(doc, attr),
+        gate=gate, job_id=job_id,
+    )
 
 
 # ---------------------------------------------------------------------------

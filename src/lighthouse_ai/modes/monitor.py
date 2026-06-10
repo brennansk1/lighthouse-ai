@@ -27,13 +27,13 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable, Iterable
-from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from ..gateway import Gateway
 from ..rag.embedder import cosine
+from ._gate import gate_ctx
 
 if TYPE_CHECKING:
     from ..compounding.hotness import EntityStats
@@ -105,6 +105,7 @@ def make_gateway_salience(
     topic_interests: str,
     *,
     job_id: str = "monitor",
+    gate: SchedulerGate | None = None,
 ) -> SalienceFn:
     """Return a salience function backed by the ``aux_context`` LLM role.
 
@@ -142,7 +143,8 @@ def make_gateway_salience(
                 'Reply with ONLY a JSON object like {"score": 0.82, "category": "alert"} '
                 "where score is 0..1 and category is one of alert, informational, noise."
             )
-            resp = gateway.complete("aux_context", prompt, job_id=job_id)
+            with gate_ctx(gate):
+                resp = gateway.complete("aux_context", prompt, job_id=job_id)
             import json as _json
             import re as _re
             # Extract the first {...} from the response (tolerates trailing text).
@@ -385,7 +387,7 @@ def run_monitor(
         effective_salience = salience_fn
     elif gateway is not None and topic_interests:
         effective_salience = make_gateway_salience(
-            gateway, topic_interests, job_id=f"monitor:{topic}"
+            gateway, topic_interests, job_id=f"monitor:{topic}", gate=gate
         )
     else:
         effective_salience = salience_fn  # default_salience
@@ -404,8 +406,7 @@ def run_monitor(
     # 2. optional semantic dedupe on titles (near-duplicates from different URLs).
     titles_embeddings: list[list[float]] = []
     if embed_titles is not None and unique:
-        ctx = gate.permit() if gate is not None else nullcontext()
-        with ctx:
+        with gate_ctx(gate):
             titles_embeddings = embed_titles(it.title for it in unique)
 
     pre_semantic = len(unique)

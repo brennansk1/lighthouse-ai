@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 
 from ..gateway import Gateway
 from ..governor.scheduler_gate import SchedulerGate
-from ._gate import gate_ctx
+from ._gate import complete_structured_or
 
 # ---------------------------------------------------------------------------
 # Date recognition
@@ -312,19 +312,20 @@ def _llm_extract(gateway: Gateway, question: str, doc: Document, *,
         "List the dated events as lines of the form 'DATE | what happened'. "
         "Use ISO dates (YYYY-MM-DD). One event per line."
     )
-    try:
-        with gate_ctx(gate):
-            resp = gateway.complete_structured(prompt, job_id=job_id)
+    def _parse(text: str) -> list[tuple[str, str]] | None:
         pairs: list[tuple[str, str]] = []
-        for line in resp.text.splitlines():
+        for line in text.splitlines():
             if "|" in line:
                 date_raw, action = line.split("|", 1)
                 date = _find_date(date_raw.strip())
                 if date and action.strip():
                     pairs.append((date, action.strip()))
-        return pairs or _stub_extract(doc)
-    except Exception:
-        return _stub_extract(doc)
+        return pairs or None
+
+    return complete_structured_or(
+        gateway, prompt, parse=_parse, fallback=lambda: _stub_extract(doc),
+        gate=gate, job_id=job_id,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -399,13 +400,15 @@ def _llm_synthesis_reconstruct(
         "timeline. Note any disputed dates or factual contradictions. "
         "Reply with one observation per line."
     )
-    try:
-        with gate_ctx(gate):
-            resp = gateway.complete_structured(prompt, job_id=job_id)
-        raw = [ln.strip(" -•*") for ln in resp.text.splitlines() if ln.strip()]
-        return raw if raw else _stub_synthesis_reconstruct(events)
-    except Exception:
-        return _stub_synthesis_reconstruct(events)
+    def _parse(text: str) -> list[str] | None:
+        raw = [ln.strip(" -•*") for ln in text.splitlines() if ln.strip()]
+        return raw or None
+
+    return complete_structured_or(
+        gateway, prompt, parse=_parse,
+        fallback=lambda: _stub_synthesis_reconstruct(events),
+        gate=gate, job_id=job_id,
+    )
 
 
 # ---------------------------------------------------------------------------

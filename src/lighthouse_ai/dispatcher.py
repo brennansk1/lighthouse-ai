@@ -562,7 +562,7 @@ def _adapt_ask(meta, *, gateway, gate, job_id, positions_db) -> dict:
     topic = meta.get("topic", "") or "Ask"
     session = QUCSession(id=job_id or "ask", topic=topic)
     hybrid = _build_hybrid(meta, gateway=gateway)
-    quc_ask(session, topic, hybrid=hybrid, gateway=gateway)
+    quc_ask(session, topic, hybrid=hybrid, gateway=gateway, gate=gate)
     turns = [
         {"role": t.role, "text": t.text, "citations": list(t.citations)}
         for t in session.history
@@ -695,8 +695,8 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
 
     on_node = emitter.node_cb if emitter is not None else None
     tree = run_exhaustive(topic, research_fn=_research, gateway=gateway,
-                          job_id=job_id, max_nodes=max_nodes, max_depth=3,
-                          on_node=on_node,
+                          job_id=job_id, gate=gate, max_nodes=max_nodes,
+                          max_depth=3, on_node=on_node,
                           on_checkpoint=on_checkpoint, resume_state=resume_state)
 
     # Completed run → drop the checkpoint so a future job with this id starts
@@ -821,7 +821,8 @@ def _adapt_adjudicate(meta, *, gateway, gate, job_id, positions_db) -> dict:
     _inject_skill_documents(meta, gateway=gateway)
     topic = meta.get("topic", "") or "Claim under debate"
     draft = str(meta.get("draft", "")) or topic
-    result = run_debate(claim=topic, draft=draft, gateway=gateway, job_id=job_id)
+    result = run_debate(claim=topic, draft=draft, gateway=gateway, job_id=job_id,
+                        gate=gate)
     persp = "".join(
         f"<li><strong>{_html.escape(r.perspective.name)}:</strong> "
         f"{_html.escape(r.critique)}</li>" for r in result.responses)

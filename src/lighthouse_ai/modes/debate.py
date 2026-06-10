@@ -19,6 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..gateway import Gateway
+from ..governor.scheduler_gate import SchedulerGate
+from ._gate import gate_ctx
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,7 @@ def run_debate(
     perspectives: tuple[Perspective, ...] = PERSPECTIVES,
     agree_predicate: Callable[[str], bool] | None = None,
     job_id: str | None = None,
+    gate: SchedulerGate | None = None,
 ) -> DebateResult:
     """Run each perspective on the claim+draft, then judge for the crux.
 
@@ -111,7 +114,8 @@ def run_debate(
             # was previously guarded, so one failing PERSPECTIVE took everything
             # down.
             try:
-                resp = gateway.complete("researcher", prompt, job_id=job_id)
+                with gate_ctx(gate):
+                    resp = gateway.complete("researcher", prompt, job_id=job_id)
                 critique = resp.text
             except Exception:
                 critique = _heuristic_response(p, claim, draft)
@@ -125,7 +129,7 @@ def run_debate(
     if gateway is None:
         return _heuristic_verdict(claim, draft, responses, agreements, disputes)
     return _llm_verdict(gateway, claim, draft, responses, agreements, disputes,
-                        job_id=job_id)
+                        job_id=job_id, gate=gate)
 
 
 def _heuristic_verdict(
@@ -218,6 +222,7 @@ def _llm_verdict(
     disputes: list[str],
     *,
     job_id: str | None,
+    gate: SchedulerGate | None = None,
 ) -> DebateResult:
     """Real judge: a ``synthesizer`` role call analyses every critique and names
     the load-bearing crux. Any failure (gateway error, unparseable reply) falls
@@ -226,7 +231,8 @@ def _llm_verdict(
     valid_names = {r.perspective.name for r in responses}
     try:
         prompt = _judge_prompt(claim, draft, responses)
-        resp = gateway.complete("synthesizer", prompt, job_id=job_id)
+        with gate_ctx(gate):
+            resp = gateway.complete("synthesizer", prompt, job_id=job_id)
         parsed = _parse_judge(resp.text, valid_names)
     except Exception:
         return _heuristic_verdict(claim, draft, responses, agreements, disputes)

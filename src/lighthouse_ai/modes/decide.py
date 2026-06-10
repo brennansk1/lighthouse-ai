@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 
 from ..gateway import Gateway
 from ..governor.scheduler_gate import SchedulerGate
-from ._gate import gate_ctx
+from ._gate import complete_structured_or
 
 
 @dataclass(frozen=True)
@@ -153,18 +153,20 @@ def _llm_score(gateway: Gateway, question: str, option: str, criterion: str,
         "On a scale of 0.0 to 1.0, how well does this option satisfy this "
         "criterion? Reply with only the number."
     )
-    try:
-        with gate_ctx(gate):
-            resp = gateway.complete_structured(prompt, job_id=job_id)
-        for token in resp.text.replace(",", " ").split():
+    def _parse(text: str) -> float | None:
+        for token in text.replace(",", " ").split():
             try:
                 val = float(token)
             except ValueError:
                 continue
             return max(0.0, min(1.0, val))
-    except Exception:
-        pass
-    return _stub_score(option, criterion)
+        return None
+
+    return complete_structured_or(
+        gateway, prompt, parse=_parse,
+        fallback=lambda: _stub_score(option, criterion),
+        gate=gate, job_id=job_id,
+    )
 
 
 def _compute_totals(

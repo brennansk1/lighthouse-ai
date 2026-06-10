@@ -36,7 +36,9 @@ from datetime import datetime
 from typing import Literal
 
 from ..gateway import Gateway
+from ..governor.scheduler_gate import SchedulerGate
 from ..rag.hybrid import HybridSearch
+from ._gate import gate_ctx
 
 Role = Literal["user", "assistant", "system"]
 
@@ -262,6 +264,7 @@ def ask(
     recommended_skills: list[str] | None = None,
     pinned_skills: list[str] | None = None,
     contradiction_timestamp: datetime | None = None,
+    gate: SchedulerGate | None = None,
 ) -> Turn:
     """Append the user turn, optionally retrieve evidence, draft an answer.
 
@@ -343,7 +346,8 @@ def ask(
             f"Evidence:\n{evidence_block}\n\n"
             f"USER: {user_text}\n\nDraft a concise answer with [N] citations."
         )
-        resp = gateway.complete("researcher", prompt, job_id=session.id)
+        with gate_ctx(gate):
+            resp = gateway.complete("researcher", prompt, job_id=session.id)
         answer = resp.text
 
     # Prepend contradiction note to the answer (always plain, never hidden).

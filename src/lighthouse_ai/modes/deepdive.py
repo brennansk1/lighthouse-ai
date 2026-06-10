@@ -21,7 +21,6 @@ plug LangGraph in later if desired.
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -32,16 +31,12 @@ from ..rag.compaction import compact as compact_evidence
 from ..rag.hybrid import HybridResult, HybridSearch
 from ..verification import contradiction as _contradiction
 from ..verification.contradiction import Contradiction
+from ._gate import gate_ctx
 
 # Fixed, deterministic timestamp stamped onto contradictions when a caller does
 # not supply one. NEVER datetime.now() at import — the epoch keeps offline runs
 # byte-reproducible; live dispatch passes a real `detected_at` through.
 DEFAULT_DETECTED_AT = datetime(1970, 1, 1, tzinfo=UTC)
-
-
-def _gate_ctx(gate: SchedulerGate | None):
-    """Host-courtesy permit around an LLM call; no-op when no gate is wired."""
-    return gate.permit() if gate is not None else nullcontext()
 
 # Imported at module level so tests can patch lighthouse_ai.modes.deepdive.run_debate
 try:
@@ -148,7 +143,7 @@ def _research_section(
                 f"Evidence:\n" + evidence_lines
                 + "\n\nDraft a 2-paragraph answer with [N] citations."
             )
-        with _gate_ctx(gate):
+        with gate_ctx(gate):
             resp = gateway.complete("researcher", prompt, job_id=job_id)
         body = resp.text
     from dataclasses import replace
@@ -359,7 +354,7 @@ def _denoise(
         "Do not add new sections or change section titles."
     )
     try:
-        with _gate_ctx(gate):
+        with gate_ctx(gate):
             resp = gateway.complete("synthesizer", prompt, job_id=job_id)
         revised = _parse_synthesizer_sections(resp.text, sections)
     except Exception:
@@ -373,6 +368,7 @@ def _extract_debate_subquestions(
     sections: list[Section],
     gateway: Gateway | None,
     job_id: str | None,
+    gate: SchedulerGate | None = None,
 ) -> list[str]:
     """Run Debate on load-bearing sections with [CONTRADICTION] markers.
 
@@ -395,6 +391,7 @@ def _extract_debate_subquestions(
                 draft=sec.body,
                 gateway=gateway,
                 job_id=job_id,
+                gate=gate,
             )
             # The first unresolved dispute becomes a new sub-question
             if result.disputes:
@@ -463,7 +460,8 @@ def run_deepdive(
 
         # Debate auto-wiring: trigger on load-bearing sections with contradictions
         if gateway is not None and round_idx < max_rounds:
-            new_subs = _extract_debate_subquestions(sections, gateway, job_id)
+            new_subs = _extract_debate_subquestions(sections, gateway, job_id,
+                                                    gate=gate)
             if new_subs:
                 for sq in new_subs:
                     sections.append(Section(
