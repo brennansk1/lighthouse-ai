@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 import httpx
@@ -40,7 +40,16 @@ from .governor.egress_proxy import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from httpx._client import UseClientDefault
+
     from .net_politeness import PolitenessGate
+
+    # Query-param shape httpx accepts; Mapping keeps caller dicts covariant
+    # (a dict[str, str | int] is a valid argument, unlike with dict[str, object]).
+    _ParamValue = str | int | float | bool | None
+    QueryParams = Mapping[str, _ParamValue | Sequence[_ParamValue]]
 
 logger = logging.getLogger(__name__)
 
@@ -144,11 +153,11 @@ class EgressGuardedClient:
         method: str,
         url: str,
         *,
-        params: dict[str, object] | None = None,
+        params: QueryParams | None = None,
         headers: dict[str, str] | None = None,
         json: object | None = None,
-        data: object | None = None,
-        follow_redirects: bool | object = False,
+        data: Mapping[str, Any] | None = None,
+        follow_redirects: bool | UseClientDefault = False,
         privacy: PrivacyTier = PrivacyTier.PUBLIC_OK,
         politeness: PolitenessGate | None = None,
     ) -> httpx.Response:
@@ -259,7 +268,7 @@ def guarded_get(
     url: str,
     *,
     allowed_domains: frozenset[str] | set[str] | None = None,
-    params: dict[str, object] | None = None,
+    params: QueryParams | None = None,
     headers: dict[str, str] | None = None,
     privacy: PrivacyTier = PrivacyTier.PUBLIC_OK,
     client: httpx.Client | None = None,
@@ -295,10 +304,10 @@ def guarded_request(
     url: str,
     *,
     allowed_domains: frozenset[str] | set[str] | None = None,
-    params: dict[str, object] | None = None,
+    params: QueryParams | None = None,
     headers: dict[str, str] | None = None,
     json: object | None = None,
-    data: object | None = None,
+    data: Mapping[str, Any] | None = None,
     privacy: PrivacyTier = PrivacyTier.PUBLIC_OK,
     client: httpx.Client | None = None,
     politeness: PolitenessGate | None = None,

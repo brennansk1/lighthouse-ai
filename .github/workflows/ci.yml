@@ -2,10 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Working branches run the gates too — drift on a feature branch (e.g. a
+    # mypy regression) must surface before it reaches a PR, not after.
+    branches: [main, "claude/**", "feature/**"]
     tags: ["v*.*.*"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:

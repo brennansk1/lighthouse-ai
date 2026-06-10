@@ -85,7 +85,7 @@ def available(
     base = url or _searxng_url()
     try:
         owns_client = client is None
-        if owns_client:
+        if client is None:
             client = httpx.Client(timeout=2.0)
         try:
             r = guarded_get(
@@ -137,7 +137,7 @@ def search(
         "pageno": 1,
     }
     owns_client = client is None
-    if owns_client:
+    if client is None:
         client = httpx.Client(timeout=timeout)
     try:
         resp = guarded_get(
