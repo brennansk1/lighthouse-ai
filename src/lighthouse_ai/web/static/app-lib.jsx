@@ -886,8 +886,12 @@ function TraceStep({ ev, phaseIcon, active }) {
             <TraceIcon name={chip.icon} size={12} />{chip.text}
           </span>
           {ev.data && ev.data.voi != null && (
+            // Plain language for the priority score: "VOI" (value of
+            // information) is internal optimization jargon.
             <span style={{ fontFamily: 'var(--mono, monospace)', fontSize: 10,
-              color: 'var(--muted)' }}>VOI {Number(ev.data.voi).toFixed(2)}</span>
+              color: 'var(--muted)' }}
+              title="How much answering this question could change the conclusion">
+              priority {Number(ev.data.voi).toFixed(2)}</span>
           )}
           {ev.data && ev.data.status && ev.kind === 'node' && (
             <span style={{ fontSize: 10, color: 'var(--muted)' }}>· {ev.data.status}</span>

@@ -517,7 +517,8 @@ function App() {
     if (name === 'draft.staged') {
       show(`New draft staged${data && data.title ? `: ${data.title}` : ''}`, 'info');
     } else if (name === 'governor.tripped') {
-      show(`Governor tripped${data && data.reason ? `: ${data.reason}` : ' — work paused'}`, 'error');
+      // Plain language: "Governor" is internal architecture, not a user concept.
+      show(`Work paused${data && data.reason ? ` — ${data.reason}` : ' — a safety limit was reached'}`, 'error');
     }
   }, [show]));
 

@@ -1594,7 +1594,7 @@ function DeepReportView({ body }) {
         <span><strong style={{ color: 'var(--ink-2)' }}>{body.grounded}</strong> of{' '}
           <strong style={{ color: 'var(--ink-2)' }}>{body.total_nodes}</strong> questions grounded</span>
         {body.known_unknowns > 0 && (
-          <span>{body.known_unknowns} open (known unknowns)</span>)}
+          <span>{body.known_unknowns} open question{body.known_unknowns === 1 ? '' : 's'} remaining</span>)}
         {body.max_depth_reached != null && (
           <span>explored {body.max_depth_reached} level{body.max_depth_reached === 1 ? '' : 's'} deep</span>)}
         {body.truncated && <span style={{ color: '#d97706' }}>stopped at budget</span>}
@@ -1623,7 +1623,7 @@ function VerdictView({ body }) {
       {body.crux && (
         <div style={{ ...card, padding: '10px 14px', margin: '10px 0',
           borderLeft: '3px solid var(--coral, #bf5820)', fontSize: 13, lineHeight: 1.55 }}>
-          <strong>The load-bearing dispute:</strong> {body.crux}
+          <strong>What the verdict turns on:</strong> {body.crux}
           {body.crux_perspective && (
             <span style={{ color: 'var(--muted)' }}> — raised by {body.crux_perspective}</span>
           )}
