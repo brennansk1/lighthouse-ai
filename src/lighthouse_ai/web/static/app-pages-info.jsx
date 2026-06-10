@@ -10,7 +10,8 @@
 // Documentation outline:
 //   Overview      · What Lighthouse is · Getting started
 //   The tabs      · Research · Library · Watch · Forecasts · Runs · Data Sandbox · Health · Settings
-//   Concepts      · Research modes · Depth tiers · Sources · How we keep it trustworthy
+//   Concepts      · Reading your results · Research modes · Depth tiers · Sources
+//                 · How we keep it trustworthy · Plain-language glossary
 //   How to        · Common tasks, step by step
 
 (function () {
@@ -42,10 +43,12 @@ const TOC = [
   {
     group: 'Concepts',
     items: [
+      { id: 'results',     label: 'Reading your results' },
       { id: 'modes',       label: 'Research modes' },
       { id: 'depth',       label: 'Depth tiers' },
       { id: 'sources',     label: 'Sources' },
       { id: 'trustworthy', label: 'How we keep it trustworthy' },
+      { id: 'glossary',    label: 'Plain-language glossary' },
     ],
   },
   {
@@ -158,8 +161,8 @@ const MODES = [
   {
     name: 'Survey', key: 'survey', artifact: 'Evidence table',
     tagline: 'Screen many documents into a sortable grid.',
-    body: 'Define what to include and what columns you care about. Lighthouse screens each document, extracts a cell per column with citations and a faithfulness check, and reports a PRISMA-style inclusion flow (identified → screened → included).',
-    when: 'You have a corpus to triage and want a comparable table, not prose.',
+    body: 'Define the columns you care about right in the wizard — each gets a name (like "sample size") and optional keywords that help find the value; leave them blank for a one-column summary. Lighthouse screens each document, extracts a cell per column with citations, and reports how many documents were found, screened, and kept. When sources disagree on a value, the cell is marked with a ⚠ and names the documents that conflict — Lighthouse surfaces the disagreement, it never picks a side for you.',
+    when: 'You have a pile of documents to triage and want a comparable table, not prose.',
   },
   {
     name: 'Reconstruct', key: 'reconstruct', artifact: 'Timeline',
@@ -170,13 +173,13 @@ const MODES = [
   {
     name: 'Decide', key: 'decide', artifact: 'Decision matrix',
     tagline: 'Score options against weighted criteria.',
-    body: 'Provide your options and weighted criteria. Lighthouse scores each cell, computes weighted totals, runs a sensitivity sweep, and names the crux — the criterion that, if wrong, flips the result.',
+    body: 'List your options and the criteria that matter, each with a weight and a direction — "higher = good" for things like quality, "lower = good" for things like cost or risk. Lighthouse scores every cell, computes weighted totals, then stress-tests the result: it tells you which single criterion would flip the winner if its weight is wrong ("What would change this"), and whether the winner survives the contested evidence going the other way.',
     when: 'You are choosing between options and want the trade-offs made explicit.',
   },
   {
     name: 'Adjudicate', key: 'adjudicate', artifact: 'Verdict',
-    tagline: 'Run a structured debate and name the crux.',
-    body: 'Lighthouse argues four perspectives on a contested question (steelman, devil\'s advocate, base rate, fragility), weighs them, and delivers a verdict that names the crux of disagreement rather than flattening it into one take.',
+    tagline: 'Stress-test a claim from four angles.',
+    body: 'Paste the claim — and optionally the draft or conclusion you want challenged — and Lighthouse argues four perspectives against it: the strongest case for it, the strongest case against it, what usually happens in situations like this, and where the argument is most fragile. The verdict names exactly what the disagreement turns on instead of flattening it into one take.',
     when: 'A question is genuinely contested and you want the tensions surfaced rather than smoothed.',
   },
   {
@@ -206,13 +209,13 @@ const SOURCE_FAMILIES = [
 // ── Depth tiers ───────────────────────────────────────────────────────────────
 const DEPTH_TIERS = [
   { name: 'Quick', feel: '~1–3 min',
-    desc: 'A fast, grounded scan. Fewer retrieval rounds, smaller source set. Produces less with humbler confidence — but never lies to go faster.' },
+    desc: 'A fast, grounded scan. Fewer research rounds, one upfront pass over your chosen sources. Produces less with humbler confidence — but never lies to go faster.' },
   { name: 'Standard', feel: '~5–10 min',
-    desc: 'Balanced coverage with gap-filling and deduplication. Roughly equivalent in depth to what frontier services (Claude, Gemini) reach in their time-boxed runs.' },
+    desc: 'Balanced coverage. When a line of inquiry comes back thin, Lighthouse goes back out and searches again for exactly that sub-question (up to ~60 documents per run) — research that learns as it goes, not one fetch re-read forever.' },
   { name: 'Thorough', feel: '~20–60 min',
-    desc: 'Adds adversarial refutation (a skeptic tries to knock down each key claim), a coverage critic (fills missing angles), and triangulation (key claims need at least two independent sources). Depth frontier services can\'t structurally reach.' },
+    desc: 'Wider acquisition (more sources per sub-question, multiple search phrasings, up to ~150 documents), plus a skeptic pass that tries to knock down each key claim, a coverage check that fills missing angles, and a rule that key claims need at least two independent sources before they stand.' },
   { name: 'Deep', feel: 'Hours (you set the budget)',
-    desc: 'A recursive question-tree run to exhaustion — sub-questions decompose into sub-sub-questions until each leaf is grounded or recorded as a known unknown. Requires a committed budget (30 min / 1 h / 2 h / overnight) before it starts.' },
+    desc: 'A recursive question tree run to exhaustion — sub-questions decompose into sub-sub-questions, every branch runs its own searches (up to ~400 documents), and the most-cited links inside what it finds get followed too. Each branch ends grounded in evidence or honestly recorded as an open question. Requires a committed budget (30 min / 1 h / 2 h / overnight) before it starts.' },
 ];
 
 // ── Per-tab guide ─────────────────────────────────────────────────────────────
@@ -235,17 +238,19 @@ const TABS = [
     points: [
       'Filter by artifact type (report, table, timeline, matrix, verdict, digest).',
       'Each artifact carries an audit footer showing exactly what produced it.',
-      'Export to share a result with a colleague.',
+      'Export as Markdown (a portable document with the full audit record attached), CSV (tables and matrices), or JSON (everything, machine-readable).',
+      'See "Reading your results" below for what each part of the result means.',
     ],
   },
   {
     id: 'tab-watch', icon: 'watch', name: 'Watch',
     summary: 'Monitor a topic or website over time.',
-    body: 'Set up a topic — a subject, entity, or question you want to follow — and Lighthouse polls your chosen sources on a schedule, deduplicates what it has seen, and scores each new item for salience. High-salience items become alerts; the rest are batched into a digest in the Library.',
+    body: 'Two kinds of watching. A topic monitor follows a subject across your chosen sources on a schedule, filters out what you have already seen, and batches the rest into a digest — important items become alerts. A website monitor watches one specific page: paste a link, Lighthouse first checks it can actually be monitored (you get a clear ✓ / ◐ / ✗ verdict), then you pick how often to check and what counts as an alert.',
     points: [
-      'Only sources with a live feed (marked "watchable") appear for Watch topics.',
-      'Two layers of dedup: exact URL match, then semantic near-duplicate titles.',
-      'Configure a notification channel in Settings to get alerts.',
+      'Website alert rules in plain terms: any change, a keyword appearing, a number crossing a threshold, or a specific section changing.',
+      'Recent alerts appear right on the Watch page — and on your home page, so a change finds you.',
+      'Pause any monitor without losing its place; resume it later with one click.',
+      'Configure a notification channel in Settings to get alerts off-screen.',
     ],
   },
   {
@@ -261,11 +266,12 @@ const TABS = [
   {
     id: 'tab-activity', icon: 'activity', name: 'Runs',
     summary: 'Watch runs in flight and see each step the AI took.',
-    body: 'See every research run move from queued, to running, to ready for review — and pause, resume, or cancel any of them. Below the live runs, the History panel lists what happened: each step, source fetch, and model call.',
+    body: 'See every research run move from queued, to running, to ready for review — and pause, resume, or cancel any of them. Open a running job to watch the work happen: each research step appears as it completes, "+N documents" steps show new sources being pulled in mid-run, and during the writing phase you can watch the answer being written live, word by word.',
     points: [
       'Live status for queued, running, paused, and review-ready jobs.',
+      'A live "Writing synthesis…" pane streams the answer as the model writes it.',
       'Per-run controls: pause, resume, cancel.',
-      'History is tamper-evident (HMAC-chained), so any edit breaks the chain.',
+      'History is tamper-evident — any attempt to edit the record breaks its seal visibly.',
     ],
   },
   {
@@ -434,7 +440,82 @@ function HowToCard({ recipe }) {
   );
 }
 
+// ── Glossary (plain one-liners for the harder concepts) ───────────────────────
+const GLOSSARY = [
+  ['Confidence band', 'How sure the evidence makes us, shown as a colored bar from red to green: remote → unlikely → even chance → likely → almost certain. It is always shown, so you are never misled about certainty.'],
+  ['Sources', 'The real documents a result is built from. Every claim must trace to one — a claim that cannot is dropped or flagged, never asserted.'],
+  ['Open question', 'Something the run looked into but could not ground in evidence. Lighthouse records these honestly instead of papering over them.'],
+  ['What would change this', 'The single factor that, if it were wrong, would flip the result — shown on decisions and verdicts so you know exactly where to push.'],
+  ['Contested (⚠)', 'Your sources disagree on this value or claim. Lighthouse shows you both sides and names the disagreeing documents; it never silently picks one.'],
+  ['Two-source rule', 'At Thorough depth and above, a key claim needs at least two independent sources before it stands.'],
+  ['Accuracy score', 'How well past predictions matched what actually happened (0 is perfect; lower is better). Statisticians call it a Brier score.'],
+  ['Audit record', 'The tamper-evident trail of exactly what produced a result: which mode, depth, sources, and model, and when. It travels with every export.'],
+  ['Acquired during research', 'Documents the run went out and found mid-research, when a line of inquiry needed more evidence — beyond the sources it started with.'],
+];
+
 // ── Sections ──────────────────────────────────────────────────────────────────
+
+function SectionResults() {
+  const row = (label, text) => (
+    <div style={{ display: 'flex', gap: 12, padding: '8px 0', borderTop: '1px solid var(--rule-soft)' }}>
+      <div style={{ width: 170, flexShrink: 0, fontFamily: 'var(--sans)', fontSize: 12.5,
+        fontWeight: 700, color: 'var(--ink)' }}>{label}</div>
+      <div style={{ ...prose, fontSize: 13.5 }}>{text}</div>
+    </div>
+  );
+  return (
+    <section id="results" style={sectionBox}>
+      <h2 style={h2style}>Reading your results</h2>
+      <p style={prose}>
+        Every finished run lands in the Library as one document. The header strip tells you,
+        at a glance, how much to trust what follows: the type of result, how many sources it
+        cites, the research depth, how many rounds it ran, whether it pulled in extra
+        documents mid-run ("+N acquired during research"), and the confidence bar — a
+        red-to-green scale from <em>remote</em> to <em>almost certain</em>.
+      </p>
+      <div style={callout}>
+        If a result shows <strong>0 sources</strong>, it came from the AI's own knowledge and
+        was not checked against any evidence. Lighthouse flags this loudly — treat such an
+        answer as a starting point, never a finding.
+      </div>
+      <p style={prose}>Each mode produces a different kind of result, and each is shown the way you would want to read it:</p>
+      <div style={{ ...window.card, padding: '6px 18px 10px', marginTop: 10 }}>
+        {row('Report', 'Sections with citations and a table of contents. Conflicts found along the way and questions still open are listed at the end — never hidden.')}
+        {row('Deep report', 'The written answer first, then "How the question was explored": every sub-question the run pursued, marked grounded (●) or still open (○), expandable to see its evidence.')}
+        {row('Decision matrix', 'Your options scored against your criteria, the winner highlighted, ◆ marking the criterion that decides it, ⚠ marking contested evidence — plus "What would change this" in plain words.')}
+        {row('Evidence table', 'One row per document, one column per thing you asked about. ⚠ on a cell means your sources disagree there; hover to see which ones.')}
+        {row('Timeline', 'Events in order with their dates. A disputed date shows how many sources agree and what the other sources say instead.')}
+        {row('Verdict', 'Four perspectives argued for and against the claim, each marked agrees / disputes, with what the verdict turns on called out at the top.')}
+        {row('Transcript', 'Your question-and-answer conversation, with the sources each answer drew on.')}
+      </div>
+      <p style={{ ...prose, marginTop: 14 }}>
+        <strong>Exporting:</strong> Markdown gives you a portable document with the full audit
+        record attached (good for sharing and citing); CSV exports tables and matrices for a
+        spreadsheet; JSON carries everything for other tools. Nothing is ever published
+        automatically — exports happen only when you click.
+      </p>
+    </section>
+  );
+}
+
+function SectionGlossary() {
+  return (
+    <section id="glossary" style={sectionBox}>
+      <h2 style={h2style}>Plain-language glossary</h2>
+      <p style={prose}>The handful of terms worth knowing, in one place.</p>
+      <div style={{ ...window.card, padding: '6px 18px 10px', marginTop: 10 }}>
+        {GLOSSARY.map(([term, def]) => (
+          <div key={term} style={{ display: 'flex', gap: 12, padding: '8px 0',
+            borderTop: '1px solid var(--rule-soft)' }}>
+            <div style={{ width: 170, flexShrink: 0, fontFamily: 'var(--sans)', fontSize: 12.5,
+              fontWeight: 700, color: 'var(--ink)' }}>{term}</div>
+            <div style={{ ...prose, fontSize: 13.5 }}>{def}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function SectionWelcome() {
   return (
@@ -801,10 +882,12 @@ function InfoPage() {
           <SectionWelcome />
           <SectionGettingStarted />
           <SectionTabs />
+          <SectionResults />
           <SectionModes />
           <SectionDepth />
           <SectionSources />
           <SectionTrustworthiness />
+          <SectionGlossary />
           <SectionHowTo />
 
           <div style={{ marginTop: 36, paddingTop: 24, borderTop: '1px solid var(--rule)', textAlign: 'center' }}>
