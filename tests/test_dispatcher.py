@@ -549,3 +549,34 @@ def test_run_job_no_notification_without_config(migrated_paths):
     _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
     draft_id = dispatch_once(migrated_paths)
     assert draft_id is not None
+
+
+# --- live synthesis token feed (_wire_token_stream) ------------------------
+
+def test_wire_token_stream_publishes_synthesizer_tokens_only():
+    from types import SimpleNamespace
+
+    from lighthouse_ai.dispatcher import _wire_token_stream
+
+    published: list[tuple[str, dict]] = []
+    bus = SimpleNamespace(publish=lambda ev, data: published.append((ev, data)))
+    gateway = SimpleNamespace(token_sink=None)
+    _wire_token_stream(gateway, bus)
+    assert gateway.token_sink is not None
+
+    gateway.token_sink("synthesizer", "j1", "tok")
+    gateway.token_sink("planner", "j1", "noise")      # filtered: wrong role
+    gateway.token_sink("synthesizer", None, "noise")  # filtered: no job id
+    assert published == [("synthesis.token", {"job_id": "j1", "token": "tok"})]
+
+
+def test_wire_token_stream_never_replaces_an_existing_sink():
+    from types import SimpleNamespace
+
+    from lighthouse_ai.dispatcher import _wire_token_stream
+
+    sentinel = lambda *_a: None  # noqa: E731
+    gateway = SimpleNamespace(token_sink=sentinel)
+    bus = SimpleNamespace(publish=lambda *_a: None)
+    _wire_token_stream(gateway, bus)
+    assert gateway.token_sink is sentinel

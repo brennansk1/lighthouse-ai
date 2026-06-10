@@ -129,7 +129,8 @@ function useApi(path, { pollMs = 0, deps = [] } = {}) {
 
 // ── useEvents: subscribe to the SSE channel with auto-reconnect ──────────
 const SSE_EVENTS = [
-  'job.progress', 'job.status', 'job.step', 'draft.staged', 'draft.approved',
+  'job.progress', 'job.status', 'job.step', 'synthesis.token',
+  'draft.staged', 'draft.approved',
   'draft.rejected', 'position.resolved', 'audit.appended',
   'governor.tier', 'governor.tripped',
 ];
@@ -1027,9 +1028,18 @@ function JobTrace({ jobId, onClose }) {
     }
   }, [trace]);
 
+  // Live synthesis text — synthesizer tokens streamed over SSE. Kept to the
+  // most recent ~6000 chars; the staged artifact is the full record.
+  const [liveText, setLiveText] = useState('');
+
   // Live SSE append — only for our job, deduped by seq.
   useEvents((name, data) => {
-    if (name !== 'job.step' || !data || data.job_id !== jobId) return;
+    if (!data || data.job_id !== jobId) return;
+    if (name === 'synthesis.token' && data.token) {
+      setLiveText((prev) => (prev + data.token).slice(-6000));
+      return;
+    }
+    if (name !== 'job.step') return;
     setEvents((prev) => traceMergeEvents(prev, [{
       seq: data.seq, ts: data.ts, phase: data.phase, kind: data.kind,
       label: data.label, pct: data.pct, data: data.data || {},
@@ -1145,6 +1155,25 @@ function JobTrace({ jobId, onClose }) {
 
       {/* Deep-tier live tree */}
       {isDeep && <TraceTree events={events} />}
+
+      {/* Live synthesis — the model's narrative as it is written. Replaced by
+          the staged artifact once the run completes. */}
+      {!terminal && liveText && (
+        <div style={{ ...card, padding: '10px 14px', marginBottom: 12,
+          borderLeft: '3px solid var(--primary)' }}>
+          <div style={{ fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 700,
+            letterSpacing: '0.05em', textTransform: 'uppercase',
+            color: 'var(--muted)', marginBottom: 6 }}>
+            Writing synthesis…
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.55,
+            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            maxHeight: 220, overflowY: 'auto' }}>
+            {liveText}
+            <span aria-hidden="true" style={{ opacity: 0.6 }}>▌</span>
+          </div>
+        </div>
+      )}
 
       {/* Post-completion review: artifact link, entity graph, verification */}
       {terminal && (

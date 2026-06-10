@@ -27,6 +27,7 @@ import re
 import shutil
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
@@ -782,7 +783,8 @@ class Gateway:
                  *,
                  sampling: dict[str, SamplingParams] | None = None,
                  default_sampling: SamplingParams | None = None,
-                 locked: bool = False):
+                 locked: bool = False,
+                 token_sink: Callable[[str, str | None, str], None] | None = None):
         self.governor = governor
         self.audit_db = audit_db
         self.profile = profile or probe()
@@ -847,6 +849,12 @@ class Gateway:
         self._locked = locked
         self._default_sampling = default_sampling or SamplingParams()
         self._sampling: dict[str, SamplingParams] = dict(sampling or {})
+        # Live token feed: ``(role, job_id, token)`` per streamed chunk from a
+        # real backend. The dispatcher wires this to the SSE bus so the
+        # dashboard renders synthesis as it is generated. Optional and
+        # best-effort — None (the default) keeps every call non-streaming, and
+        # the audit record is unchanged either way (it hashes the final text).
+        self.token_sink = token_sink
 
     # --- backend access (lazy) ---
     def _get_ollama(self):
@@ -978,8 +986,21 @@ class Gateway:
                         backend_used = "mock-lowmem"
                     else:
                         try:
-                            chat_resp = ollama.chat(b.model, prompt,
-                                                    sampling=effective_sampling)
+                            chat_kwargs: dict[str, Any] = {
+                                "sampling": effective_sampling,
+                            }
+                            if self.token_sink is not None:
+                                sink = self.token_sink
+
+                                def _on_token(tok: str, _role: str = role,
+                                              _job: str | None = job_id) -> None:
+                                    try:
+                                        sink(_role, _job, tok)
+                                    except Exception:
+                                        pass
+
+                                chat_kwargs["on_token"] = _on_token
+                            chat_resp = ollama.chat(b.model, prompt, **chat_kwargs)
                             text = chat_resp.text
                             prompt_tokens = chat_resp.prompt_tokens
                             completion_tokens = chat_resp.completion_tokens

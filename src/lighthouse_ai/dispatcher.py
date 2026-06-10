@@ -1073,6 +1073,28 @@ def _emit_verification(progress, summary: dict) -> None:
         pass
 
 
+def _wire_token_stream(gateway, bus) -> None:
+    """Publish synthesizer tokens as SSE ``synthesis.token`` events.
+
+    Only the synthesizer role streams — that is the user-visible narrative the
+    dashboard renders live; planner/researcher chatter would be noise. The sink
+    is best-effort by contract (the gateway swallows its exceptions) and
+    idempotent to wire: an existing sink is never replaced.
+    """
+    try:
+        if getattr(gateway, "token_sink", None) is not None:
+            return
+
+        def _sink(role: str, job_id: str | None, token: str) -> None:
+            if role != "synthesizer" or not job_id:
+                return
+            bus.publish("synthesis.token", {"job_id": job_id, "token": token})
+
+        gateway.token_sink = _sink
+    except Exception:  # never let live-feed wiring break a job
+        pass
+
+
 def run_job(paths: Paths, job: ClaimedJob, *,
             gateway: Gateway | None = None,
             gate: SchedulerGate | None = None,
@@ -1118,6 +1140,12 @@ def run_job(paths: Paths, job: ClaimedJob, *,
     job.meta[_PROGRESS_META_KEY] = progress
     progress.emit("framing", "start", f"Framing: {mode_key}", 5.0,
                   {"mode": mode_key, "depth": job.meta.get("depth")})
+
+    # Live synthesis feed: stream the synthesizer's tokens to the dashboard so
+    # a long run shows text being written instead of a frozen progress bar.
+    # Wired once per gateway (the sink is stateless — job_id arrives per call).
+    if bus is not None and gateway is not None:
+        _wire_token_stream(gateway, bus)
 
     backends: dict = {}
     try:

@@ -88,6 +88,63 @@ def test_dispatch_routes_ollama_when_available(migrated_paths, stub_profile):
     assert fake.calls[0]["model"]  # whatever T3 planner is
 
 
+# --- live token streaming (token_sink) ------------------------------------
+
+@dataclass
+class _StreamingFakeOllama(_FakeOllama):
+    """Fake whose chat() accepts on_token, like the real OllamaBackend."""
+    chunks: tuple = ("Hel", "lo.")
+
+    def chat(self, model: str, prompt: str, *, sampling=None, system=None,
+             on_token=None) -> ChatResponse:
+        assert self.calls is not None
+        self.calls.append({"model": model, "prompt": prompt,
+                           "sampling": sampling, "streamed": on_token is not None})
+        if on_token is not None:
+            for tok in self.chunks:
+                on_token(tok)
+        return ChatResponse(
+            text="".join(self.chunks), prompt_tokens=self.prompt_tokens,
+            completion_tokens=self.completion_tokens, model=model,
+        )
+
+
+def test_token_sink_receives_role_job_and_tokens(migrated_paths, stub_profile):
+    fake = _StreamingFakeOllama()
+    g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
+    seen: list[tuple] = []
+    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile,
+                 ollama=fake, prefer_real_backends=True,
+                 token_sink=lambda role, job_id, tok: seen.append((role, job_id, tok)))
+    resp = gw.complete("synthesizer", "weave it", job_id="j-stream")
+    assert resp.text == "Hello."
+    assert seen == [("synthesizer", "j-stream", "Hel"),
+                    ("synthesizer", "j-stream", "lo.")]
+    assert fake.calls[0]["streamed"] is True
+
+
+def test_no_token_sink_keeps_chat_non_streaming(migrated_paths, stub_profile):
+    """Without a sink the gateway must not even pass on_token — the plain
+    _FakeOllama (whose chat() lacks the kwarg) proves backward compatibility."""
+    fake = _FakeOllama()
+    gw = _gateway_with_fake(migrated_paths, stub_profile, fake)
+    resp = gw.complete("synthesizer", "weave it", job_id="j1")
+    assert resp.text == "ollama-says-hi"
+
+
+def test_token_sink_errors_never_break_completion(migrated_paths, stub_profile):
+    fake = _StreamingFakeOllama()
+    g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
+
+    def _boom(_role, _job, _tok):
+        raise RuntimeError("sink crashed")
+
+    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile,
+                 ollama=fake, prefer_real_backends=True, token_sink=_boom)
+    resp = gw.complete("synthesizer", "weave it", job_id="j1")
+    assert resp.text == "Hello."
+
+
 def test_dispatch_runs_real_moe_tag_under_tight_ram(migrated_paths, stub_profile):
     """A fine-grained MoE bound to a real tag (``qwen3:30b-a3b``) pages from SSD,
     so even under near-zero free RAM it must run on real Ollama — never silently

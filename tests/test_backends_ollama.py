@@ -125,6 +125,72 @@ def test_chat_raises_on_network_error(mocked):
         _backend(mocked).chat("x", "p")
 
 
+# --- chat streaming (on_token) -------------------------------------------
+
+def _stream_body(*chunks: dict) -> str:
+    """Ollama streams newline-delimited JSON frames."""
+    return "\n".join(json.dumps(c) for c in chunks)
+
+
+def test_chat_streams_with_on_token(mocked):
+    route = mocked.post("/api/chat").respond(200, text=_stream_body(
+        {"message": {"content": "Hel"}, "done": False},
+        {"message": {"content": "lo."}, "done": False},
+        {"message": {"content": ""}, "done": True, "model": "qwen3:8b",
+         "prompt_eval_count": 11, "eval_count": 2, "done_reason": "stop"},
+    ))
+    got: list[str] = []
+    resp = _backend(mocked).chat("qwen3:8b", "hi", on_token=got.append)
+    # The streamed result is identical in shape to the non-streaming one.
+    assert resp.text == "Hello."
+    assert got == ["Hel", "lo."]
+    assert resp.prompt_tokens == 11
+    assert resp.completion_tokens == 2
+    assert resp.done_reason == "stop"
+    body = json.loads(route.calls.last.request.content)
+    assert body["stream"] is True
+
+
+def test_chat_stream_sink_errors_never_break_the_call(mocked):
+    """A broken UI sink must not kill the model call (best-effort contract)."""
+    mocked.post("/api/chat").respond(200, text=_stream_body(
+        {"message": {"content": "ok"}, "done": False},
+        {"message": {"content": ""}, "done": True,
+         "prompt_eval_count": 1, "eval_count": 1},
+    ))
+
+    def _boom(_tok: str) -> None:
+        raise RuntimeError("sink crashed")
+
+    resp = _backend(mocked).chat("x", "p", on_token=_boom)
+    assert resp.text == "ok"
+
+
+def test_chat_stream_skips_malformed_frames(mocked):
+    mocked.post("/api/chat").respond(200, text=(
+        "not-json\n"
+        + _stream_body(
+            {"message": {"content": "fine"}, "done": True,
+             "prompt_eval_count": 1, "eval_count": 1})
+    ))
+    got: list[str] = []
+    resp = _backend(mocked).chat("x", "p", on_token=got.append)
+    assert resp.text == "fine"
+    assert got == ["fine"]
+
+
+def test_chat_stream_raises_on_non_200(mocked):
+    mocked.post("/api/chat").respond(500, text="boom")
+    with pytest.raises(OllamaUnavailable):
+        _backend(mocked).chat("x", "p", on_token=lambda _t: None)
+
+
+def test_chat_stream_raises_on_network_error(mocked):
+    mocked.post("/api/chat").side_effect = httpx.ConnectError("down")
+    with pytest.raises(OllamaUnavailable):
+        _backend(mocked).chat("x", "p", on_token=lambda _t: None)
+
+
 def test_embed_returns_vectors(mocked):
     mocked.post("/api/embed").respond(200, json={
         "model": "nomic", "embeddings": [[0.1, 0.2], [0.3, 0.4]],

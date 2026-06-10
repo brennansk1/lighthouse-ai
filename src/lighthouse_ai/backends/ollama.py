@@ -5,14 +5,15 @@ adapter talks to it directly via ``httpx`` (no ``litellm`` indirection
 because we want predictable timeouts and the option to stream later).
 
 The class is intentionally narrow: chat / embed / pull / list / delete.
-Streaming is a TODO for Sprint 22 alongside the SSE dashboard work.
+``chat`` streams when given an ``on_token`` callback (the SSE dashboard's
+live-synthesis feed); without one it is a single blocking request.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -155,8 +156,17 @@ class OllamaBackend:
     # ----------------------------------------------------- chat ---------
     def chat(self, model: str, prompt: str, *,
              sampling: dict[str, Any] | None = None,
-             system: str | None = None) -> ChatResponse:
-        """Single-turn chat. Returns the full completion (no streaming)."""
+             system: str | None = None,
+             on_token: Callable[[str], None] | None = None) -> ChatResponse:
+        """Single-turn chat. Returns the full completion.
+
+        With ``on_token`` supplied the request streams: each content chunk is
+        handed to the callback as it arrives (a UI sink; its exceptions are
+        swallowed so a broken sink can never kill the model call) and the
+        chunks are assembled into the same :class:`ChatResponse` the
+        non-streaming path returns — callers see an identical result either
+        way, including the token counts from Ollama's final frame.
+        """
         messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
@@ -164,9 +174,11 @@ class OllamaBackend:
         body = {
             "model": model,
             "messages": messages,
-            "stream": False,
+            "stream": on_token is not None,
             "options": _sampling_to_options(sampling or {}),
         }
+        if on_token is not None:
+            return self._chat_stream(model, body, on_token)
         try:
             r = self._client.post("/api/chat", json=body)
         except httpx.HTTPError as exc:
@@ -183,6 +195,50 @@ class OllamaBackend:
             completion_tokens=int(data.get("eval_count", 0)),
             model=str(data.get("model", model)),
             done_reason=data.get("done_reason"),
+        )
+
+    def _chat_stream(self, model: str, body: dict[str, Any],
+                     on_token: Callable[[str], None]) -> ChatResponse:
+        """Streaming twin of :meth:`chat` — JSON-lines, same shape as ``pull``."""
+        parts: list[str] = []
+        prompt_tokens = 0
+        completion_tokens = 0
+        model_name = model
+        done_reason: str | None = None
+        try:
+            with self._client.stream("POST", "/api/chat", json=body) as r:
+                if r.status_code != 200:
+                    detail = r.read().decode(errors="replace")[:300]
+                    raise OllamaUnavailable(
+                        f"POST /api/chat → {r.status_code}: {detail}"
+                    )
+                for line in r.iter_lines():
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    tok = (chunk.get("message", {}) or {}).get("content", "")
+                    if tok:
+                        parts.append(tok)
+                        try:
+                            on_token(tok)
+                        except Exception:
+                            pass
+                    if chunk.get("done"):
+                        prompt_tokens = int(chunk.get("prompt_eval_count", 0))
+                        completion_tokens = int(chunk.get("eval_count", 0))
+                        model_name = str(chunk.get("model", model))
+                        done_reason = chunk.get("done_reason")
+        except httpx.HTTPError as exc:
+            raise OllamaUnavailable(f"POST /api/chat failed: {exc}") from exc
+        return ChatResponse(
+            text="".join(parts),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            model=model_name,
+            done_reason=done_reason,
         )
 
     # ----------------------------------------------------- embed --------
