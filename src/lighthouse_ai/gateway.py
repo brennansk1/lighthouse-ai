@@ -541,17 +541,24 @@ def fingerprint(model: str, backend: str) -> ModelFingerprint:
 #: Preference order (best→smallest) of real Ollama tags we know how to use
 #: for the reasoning roles. First installed match wins.
 _REASONING_PREFERENCE = [
-    "qwen3:32b", "qwen3:30b-a3b", "mistral-small:24b", "gemma2:27b",
-    "qwen3:14b-q4_K_M", "qwen3:14b", "qwen2.5:14b", "qwen2.5-coder:14b",
+    "qwen3.6:35b-a3b", "qwen3:32b", "qwen3:30b-a3b", "mistral-small:24b",
+    "gemma2:27b",
+    "qwen3:14b-q4_K_M", "qwen3:14b", "qwen2.5:14b",
+    # The newer-generation general 9B outranks a CODER tag of any size for
+    # research roles (live finding 2026-06-10: this ladder predated qwen3.5,
+    # so the documented T1 pick was invisible and a 24 GB box bound all
+    # reasoning roles to qwen2.5-coder:14b).
+    "qwen3.5:9b", "qwen2.5-coder:14b",
     "qwen3:8b", "llama3.1:8b",
     # Small-RAM rung: lets a 4-8 GB box step down to a tiny model instead of
     # degrading straight to the mock. Footprints come from the param-count hint
     # in the tag, so admission stays honest for these too.
-    "qwen3:4b", "qwen2.5:3b", "llama3.2:3b", "gemma2:2b",
+    "qwen3.5:4b", "qwen3:4b", "qwen2.5:3b", "llama3.2:3b", "gemma2:2b",
     "qwen3:1.7b", "llama3.2:1b", "qwen2.5:0.5b",
 ]
 #: Smaller/faster tags for the aux role.
-_AUX_PREFERENCE = ["qwen3:8b", "llama3.1:8b", "qwen2.5:14b", "qwen3:14b-q4_K_M"]
+_AUX_PREFERENCE = ["qwen3:8b", "llama3.1:8b", "qwen3.5:4b", "qwen3.5:9b",
+                   "qwen2.5:14b", "qwen3:14b-q4_K_M"]
 #: Embedding tags Ollama can serve.
 _EMBED_PREFERENCE = ["bge-m3", "bge-m3:latest", "nomic-embed-text", "mxbai-embed-large"]
 
@@ -564,9 +571,13 @@ def _first_installed(prefs: list[str], installed: list[str]) -> str | None:
             return p
         if f"{p}:latest" in installed_set:
             return f"{p}:latest"
-        # match base name (e.g. pref "bge-m3" vs installed "bge-m3:latest")
+        # Same model + size with a variant suffix: pref "qwen3:14b" matches
+        # installed "qwen3:14b-q4_K_M"; pref "bge-m3" matches "bge-m3:latest".
+        # NOT a family-only match — pref "qwen3:8b" must never resolve to
+        # "qwen3:14b-…" (live finding 2026-06-10: the aux role asked for an
+        # 8B and was handed a 9-10 GB 14B because both share base "qwen3").
         for inst in installed:
-            if inst.split(":")[0] == p.split(":")[0]:
+            if inst.startswith(p) or (":" not in p and inst.split(":")[0] == p):
                 return inst
     return None
 
@@ -616,14 +627,17 @@ def resolve_against_installed(profile: HardwareProfile, installed: list[str],
         inst = _first_installed([t], installed)
         if inst and inst not in resolved_pref:
             resolved_pref.append(inst)
-    # prefer the first that fits the budget; else the last (smallest) installed
+    # prefer the first that fits the budget; else the smallest installed —
+    # genuinely smallest by param-count hint, not last-in-ladder-order (live
+    # finding 2026-06-10: ladder order returned a 9 GB coder tag while a
+    # 3.4 GB qwen3.5:4b sat installed).
     for tag in resolved_pref:
         # crude footprint by param hint in the tag name
         if _tag_fits(tag, budget):
             reasoning = tag
             break
     if reasoning is None and resolved_pref:
-        reasoning = resolved_pref[-1]
+        reasoning = min(resolved_pref, key=_tag_params_hint)
     if reasoning:
         for role in ("planner", "researcher", "synthesizer"):
             out[role] = reasoning
@@ -667,6 +681,17 @@ def recommend_pull_tag(profile: HardwareProfile,
             return tag
     # Very tight box — fall back to the smallest known tag.
     return _REASONING_PREFERENCE[-1]
+
+
+def _tag_params_hint(tag: str) -> float:
+    """Param count (in B) parsed from the tag name; unknown sorts large.
+
+    Used to find the genuinely smallest fallback when nothing fits the
+    budget — an unknown-size tag must never win that comparison.
+    """
+    import re
+    m = re.search(r"(\d+)\s*b", tag.lower())
+    return float(m.group(1)) if m else float("inf")
 
 
 def _tag_fits(tag: str, budget_gb: float) -> bool:

@@ -289,11 +289,12 @@ Test-type legend: **U** unit · **I** integration (real deps, skip-if-absent) ·
 |---|---|---|---|
 | SQLite PRAGMA discipline | U: every `.db` opens with all §26.1 PRAGMAs; readback asserts | 100% of opens pass PRAGMA assertions; WAL on every on-disk db | ✅ |
 | Migrations | U: forward apply, idempotent re-run, CHECK constraints reject bad rows | re-run is a no-op; bad inserts raise | ✅ |
-| Outbox / saga | U+P+Chaos: idempotency by key; kill effector mid-drain | **zero** duplicate or orphaned writes after recovery | ✅ (chaos at 50 intents; ⬜ scale to 1000) |
+| Outbox / saga | U+P+Chaos: idempotency by key; kill effector mid-drain | **zero** duplicate or orphaned writes after recovery | ✅ chaos at 1000 intents incl. mid-drain restart, exactly-once, ~2.4s (permanent test, 2026-06-10) |
 | Litestream replication | I: start replicate, write, restore to fresh path, integrity ok | replica lag **<10s** sustained; restore integrity `ok` | ✅ live 2026-06-10 (0.5.12; e2e test un-skipped locally; binary still absent in CI) |
 | restic backup | I: init → backup → check → snapshots | `restic check` clean; restore RTO **<1 min** for state.db | ✅ live 2026-06-10: all rc=0, restore RTO **0.71 s**, integrity ok; wrong-pass fails loudly |
 | Disaster recovery | E: kill supervisor mid-write → restore → schema intact | in-flight jobs marked `interrupted`; no corruption | ✅ sqlite-backup variant + litestream replicate→kill→restore→integrity-ok drill (2026-06-10) |
-| 24h soak | Perf: supervisor runs 24h under load | no OOM, no fd/conn leak, RSS stable | 🟡 running (started 2026-06-10 18:52 local) |
+| 24h soak | Perf: supervisor runs 24h under load | no OOM, no fd/conn leak, RSS stable | 🟡 1h57m clean under load (2026-06-10: 0 loop deaths, RSS ~86 MB stable, fds plateau ~10) — stopped by operator; full 24h window still needed |
+| DR kill -9 drill | E: kill -9 mid-dispatch (20 queued) → restart → integrity | restart healthy; orphan reaped+requeued; 5/5 DBs `integrity ok` | ✅ live 2026-06-10, clean SIGTERM rc 0 |
 
 ## 2. Hardware adaptation & model gateway
 

@@ -403,3 +403,53 @@ def test_high_tier_box_uses_ollama_not_mock(migrated_paths):
         assert "[mock" not in gw2.complete("planner", "hi").text
     finally:
         gmod.estimate_resident_gb = orig
+
+
+def test_resolver_knows_qwen35_family():
+    """Live finding (2026-06-10, Mac mini): the runtime preference ladder
+    predated qwen3.5, so the *documented T1 pick* qwen3.5:9b (and the 4b) were
+    invisible — research roles bound to qwen2.5-coder:14b, a coder model.
+    The exact installed set from the box:"""
+    from lighthouse_ai.gateway import resolve_against_installed
+    p = _profile(25.77, tier="T2")
+    installed = ["qwen3.5:9b", "qwen3.5:4b", "bge-m3:latest", "qwen3:14b-q4_K_M",
+                 "qwen2.5-coder:14b", "qwen2.5-coder:14b-instruct",
+                 "devstral-small-2:latest", "mistral-small:24b"]
+    # ~6 GB live budget: the 14Bs (~10 GB) don't fit; qwen3.5:9b (~6.6 GB
+    # weights, picked as ≤ budget by param hint) is the right general-purpose
+    # reasoner — never a coder model.
+    out = resolve_against_installed(p, installed, budget_gb=8.0)
+    assert out["planner"] == "qwen3.5:9b", out
+    assert "coder" not in out["researcher"]
+
+
+def test_resolver_no_fit_falls_back_to_smallest_not_last():
+    """When nothing fits the budget, fall back to the SMALLEST installed
+    preference (docstring contract), not whatever is last in ladder order —
+    on the live box that returned a 9 GB coder model over the 3.4 GB 4b."""
+    from lighthouse_ai.gateway import resolve_against_installed
+    p = _profile(25.77, tier="T2")
+    installed = ["qwen3.5:9b", "qwen3.5:4b", "qwen3:14b-q4_K_M",
+                 "qwen2.5-coder:14b", "mistral-small:24b"]
+    out = resolve_against_installed(p, installed, budget_gb=1.0)
+    assert out["planner"] == "qwen3.5:4b", out
+
+
+def test_aux_role_prefers_small_new_gen_over_a_14b():
+    """Aux is the 'smaller/faster' role: with qwen3.5:4b installed it must not
+    resolve to a 9-10 GB 14B tag (the live box did exactly that)."""
+    from lighthouse_ai.gateway import resolve_against_installed
+    p = _profile(25.77, tier="T2")
+    installed = ["qwen3.5:4b", "qwen3:14b-q4_K_M", "qwen2.5-coder:14b"]
+    out = resolve_against_installed(p, installed, budget_gb=12.0)
+    assert out["aux_context"] == "qwen3.5:4b", out
+
+
+def test_first_installed_never_resolves_across_size_classes():
+    """Pref 'qwen3:8b' must not match installed 'qwen3:14b-q4_K_M' just
+    because the family is the same; variant suffixes of the SAME size do
+    match (qwen3:14b → qwen3:14b-q4_K_M)."""
+    from lighthouse_ai.gateway import _first_installed
+    assert _first_installed(["qwen3:8b"], ["qwen3:14b-q4_K_M"]) is None
+    assert _first_installed(["qwen3:14b"], ["qwen3:14b-q4_K_M"]) == "qwen3:14b-q4_K_M"
+    assert _first_installed(["bge-m3"], ["bge-m3:latest"]) == "bge-m3:latest"

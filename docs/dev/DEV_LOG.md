@@ -30,6 +30,35 @@ for the user's clarity and control over engineering elegance.
   parked until the user provides their Mac mini. The gated integration harness (`tests/test_real_*`)
   is already written so that validation is turnkey then.
 
+## Live validation results (2026-06-10, Mac mini, continuous-loop session)
+Working the new `docs/LIVE_TEST_PLAN.md` matrix top-to-bottom (running tracker with per-row
+status: `docs/dev/LIVE_RUN_2026-06-10.md`). **11 real bugs found + fixed**, each with
+failing-first regression tests, suite green throughout (3,177+ pass, mypy 0, ruff clean):
+soak/smoke harnesses silently built a real gateway (offline flag added); soak leak-detector
+warmup false-positives; soak hammering live RSS under --load (now airgapped); **restic
+passphrase never reached the binary**; **restic rc never checked** (failed backups logged
+`backup_ok`); backup loop unable to ever succeed on a fresh box (turnkey auto-init added);
+`litestream restore` missing `-config` in test + both runbooks; a test-pollution flake;
+**model-selection ladder predated qwen3.5** (research roles bound to a 9 GB CODER model);
+no-fit fallback returned last-ladder-match not smallest; `_first_installed` matched across
+size classes (8b pref → 14b tag). Binaries installed: litestream 0.5.12 + restic.
+
+**Measured (recorded in PRODUCTION_CHECKLIST):** eval recall@5/MRR **1.000/1.000** (real
+bge-m3 + FlagReranker); per-mode E2E **7/7** + modes-real-backend **2/2** vs real qwen3:14b
+(58.5 min, zero fabricated citations per artifact); litestream replicate→restore→integrity
+ok; restic full matrix rc=0, restore **RTO 0.71 s**; DR kill -9 drill ✅ (orphan reaped,
+5/5 DBs ok); outbox chaos **1000 intents exactly-once** across mid-drain restart (~2.4 s,
+now a permanent test); sandbox red-team 4/4 blocked; audit tamper detected at exact seq,
+exit 1; secrets keychain-only; UX sweep 9/9 tabs zero console errors; doctor honesty (644
+secrets → exit 1); launchd plist lints. **Soak: 1h57m clean under load** (0 loop deaths,
+RSS ~86 MB stable) — stopped by operator; full 24h window still needed. **Blocked on
+operator:** MiniCheck install for the entailment gate (`uv pip install
+"git+https://github.com/Liyan06/MiniCheck"`, the pyproject-prescribed source — agent
+permission policy correctly refuses git installs); note the `faithfulness` extra is stale.
+**Remaining:** 24h soak window, Phase 2 tier-breadth ladder (unblocked by the model fixes),
+Phase 3 web-wizard pass, 4.1/4.2 live capture, 5.2-5.6, 6.4 calibration week, 6.5 RAM
+guardrails, cross-platform/signing.
+
 ## Live validation results (2026-05-29, on the user's Mac mini)
 Running the gated real-backend suite (`LIGHTHOUSE_REAL_BACKEND=1`, macOS arm64, 25.8 GB RAM, Ollama with
 `bge-m3` + `llama3.1:8b`) surfaced and fixed three real issues — the value of live testing over mocks:
