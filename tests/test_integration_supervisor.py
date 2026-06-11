@@ -144,6 +144,8 @@ def test_dispatch_loop_offline_flag_never_builds_real_gateway(tmp_paths, monkeyp
     gateway and the soak either dispatches real LLM jobs or starves behind the
     runtime RAM gate. The offline flag pins the dispatch loop to the stub path.
     """
+    import threading
+
     from lighthouse_ai import dispatcher, supervisor
 
     calls: list[object] = []
@@ -153,6 +155,18 @@ def test_dispatch_loop_offline_flag_never_builds_real_gateway(tmp_paths, monkeyp
         return object()
 
     monkeypatch.setattr(dispatcher, "build_runtime_gateway", _fake_build)
+
+    # Inert Thread: never actually runs the loop, so no 'dispatch-loop' daemon
+    # leaks into later tests (test_create_app_starts_no_daemon enumerates them).
+    class _InertThread:
+        def __init__(self, *args, **kwargs):
+            self.daemon = kwargs.get("daemon", False)
+            self.name = kwargs.get("name", "")
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(threading, "Thread", _InertThread)
 
     t = supervisor._start_dispatch_loop(tmp_paths, interval_s=999.0, offline=True)
     assert t.daemon
