@@ -54,14 +54,19 @@ class _BackupRunner(Protocol):
     inside the loop thread.
     """
 
+    def init(self, repo: str, passphrase: str
+             ) -> subprocess.CompletedProcess[str]: ...
+
     def backup(
         self,
         paths: Sequence[Path],
         *,
         repo: str,
+        passphrase: str | None = None,
     ) -> subprocess.CompletedProcess[str]: ...
 
-    def check(self, repo: str) -> subprocess.CompletedProcess[str]: ...
+    def check(self, repo: str, *, passphrase: str | None = None
+              ) -> subprocess.CompletedProcess[str]: ...
 
 
 def _set_state(paths: Paths, status: str, pid: int | None) -> None:
@@ -384,8 +389,22 @@ def _backup_tick(
         log.info("backup.tick.skipped", reason="passphrase_not_configured")
         return
 
+    # Turnkey: initialize the repository on first use. Without this the hourly
+    # tick fails forever until an operator runs `lighthouse backup --init`.
     try:
-        runner.backup(paths.all_dbs(), repo=repo)
+        repo_path = Path(repo)
+        if not repo_path.exists() or not any(repo_path.iterdir()):
+            runner.init(repo, passphrase)
+            log.info("backup.tick.repo_initialized", repo=repo)
+    except ResticUnavailable as exc:
+        log.warning("backup.tick.restic_unavailable", exc=str(exc))
+        return
+    except Exception as exc:
+        log.warning("backup.tick.init_error", exc=str(exc))
+        return
+
+    try:
+        runner.backup(paths.all_dbs(), repo=repo, passphrase=passphrase)
         log.info("backup.tick.backup_ok", repo=repo)
     except ResticUnavailable as exc:
         log.warning("backup.tick.restic_unavailable", exc=str(exc))
@@ -395,7 +414,7 @@ def _backup_tick(
         return
 
     try:
-        runner.check(repo)
+        runner.check(repo, passphrase=passphrase)
         log.info("backup.tick.check_ok", repo=repo)
     except ResticUnavailable as exc:
         log.warning("backup.tick.restic_unavailable", exc=str(exc))

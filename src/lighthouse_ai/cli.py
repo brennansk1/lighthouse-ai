@@ -1460,7 +1460,7 @@ def backup(repo: str = typer.Option(None, help="restic repo path (default: data_
            init: bool = typer.Option(False, "--init", help="Initialize the repo first."),
            passphrase: str = typer.Option(None, help="restic passphrase (else from keychain).")) -> None:
     """Back up the data dir with restic (§26.3)."""
-    from .backup import ResticBackup, ResticUnavailable, restic_installed
+    from .backup import ResticBackup, ResticError, ResticUnavailable, restic_installed
     if not restic_installed():
         err_console.print("[red]restic not installed.[/red] brew install restic")
         raise typer.Exit(1)
@@ -1469,7 +1469,7 @@ def backup(repo: str = typer.Option(None, help="restic repo path (default: data_
     if passphrase is None:
         from .secrets import SecretStore
         passphrase = SecretStore(paths.data_dir).get_or_create("restic.passphrase")
-    rb = ResticBackup()
+    rb = ResticBackup(passphrase=passphrase)
     try:
         if init:
             rb.init(repo, passphrase)
@@ -1477,7 +1477,7 @@ def backup(repo: str = typer.Option(None, help="restic repo path (default: data_
         rb.backup([paths.state_db, paths.audit_db, paths.positions_db,
                    paths.hypotheses_db, paths.intents_db,
                    paths.reflections_db, paths.entity_hotness_db], repo=repo)
-    except ResticUnavailable as exc:
+    except (ResticUnavailable, ResticError) as exc:
         err_console.print(f"[red]backup failed:[/red] {exc}")
         raise typer.Exit(1) from None
     console.print(f"[green]backed up to {repo}[/green]")

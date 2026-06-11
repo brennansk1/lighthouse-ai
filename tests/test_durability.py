@@ -30,16 +30,20 @@ from lighthouse_ai.recovery import (
 
 
 class FakeRunner:
-    """Records argv it was called with and returns a canned result."""
+    """Records argv (+ env, when injected) and returns a canned result."""
 
-    def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
         self.calls: list[list[str]] = []
+        self.envs: list[dict | None] = []
         self.returncode = returncode
         self.stdout = stdout
+        self.stderr = stderr
 
-    def __call__(self, argv):  # type: ignore[no-untyped-def]
+    def __call__(self, argv, env=None):  # type: ignore[no-untyped-def]
         self.calls.append(list(argv))
-        return subprocess.CompletedProcess(list(argv), self.returncode, self.stdout, "")
+        self.envs.append(env)
+        return subprocess.CompletedProcess(
+            list(argv), self.returncode, self.stdout, self.stderr)
 
 
 class FakeProcess:
@@ -152,6 +156,43 @@ def test_snapshots_invokes_runner_when_installed(monkeypatch):
     monkeypatch.setattr(backup, "restic_installed", lambda: True)
     res = rb.snapshots("/repo")
     assert res.stdout == "[]"
+
+
+def test_passphrase_reaches_restic_via_env(monkeypatch):
+    """Regression (live, 2026-06-10): the passphrase never reached restic —
+    no RESTIC_PASSWORD in the child env, so real backups prompted/failed."""
+    fake = FakeRunner()
+    monkeypatch.setattr(backup, "restic_installed", lambda: True)
+
+    rb = ResticBackup(runner=fake, passphrase="hunter2")
+    rb.backup(["/x"], repo="/repo")
+    assert fake.envs[0] is not None and fake.envs[0]["RESTIC_PASSWORD"] == "hunter2"
+
+    # init's per-call passphrase wins and is injected too
+    rb2 = ResticBackup(runner=fake)
+    rb2.init("/repo", "callpw")
+    assert fake.envs[-1] is not None and fake.envs[-1]["RESTIC_PASSWORD"] == "callpw"
+
+    # ...and the secret still never appears on the argv
+    assert all("hunter2" not in " ".join(c) and "callpw" not in " ".join(c)
+               for c in fake.calls)
+
+
+def test_no_passphrase_calls_runner_without_env(monkeypatch):
+    fake = FakeRunner()
+    monkeypatch.setattr(backup, "restic_installed", lambda: True)
+    ResticBackup(runner=fake).check("/repo")
+    assert fake.envs == [None]
+
+
+def test_nonzero_exit_raises_restic_error(monkeypatch):
+    """Regression (live, 2026-06-10): rc was never checked — failed backups
+    logged backup_ok / printed 'backed up'. Non-zero must raise, with stderr."""
+    fake = FakeRunner(returncode=1, stderr="Fatal: wrong password")
+    monkeypatch.setattr(backup, "restic_installed", lambda: True)
+    rb = ResticBackup(runner=fake, passphrase="pw")
+    with pytest.raises(backup.ResticError, match="wrong password"):
+        rb.backup(["/x"], repo="/repo")
 
 
 def test_methods_raise_when_restic_absent(monkeypatch):

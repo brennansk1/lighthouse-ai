@@ -32,19 +32,25 @@ class _FakeRunner:
     def _ok_result(self) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
+    def init(self, repo: str, passphrase: str) -> subprocess.CompletedProcess[str]:
+        self.calls.append(("init", (repo,), {"passphrase": passphrase}))
+        return self._ok_result()
+
     def backup(
         self,
         paths: Sequence[Path],
         *,
         repo: str,
+        passphrase: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        self.calls.append(("backup", (list(paths),), {"repo": repo}))
+        self.calls.append(("backup", (list(paths),), {"repo": repo, "passphrase": passphrase}))
         if self.fail_backup:
             raise RuntimeError("backup simulated failure")
         return self._ok_result()
 
-    def check(self, repo: str) -> subprocess.CompletedProcess[str]:
-        self.calls.append(("check", (repo,), {}))
+    def check(self, repo: str, *, passphrase: str | None = None
+              ) -> subprocess.CompletedProcess[str]:
+        self.calls.append(("check", (repo,), {"passphrase": passphrase}))
         if self.fail_check:
             raise RuntimeError("check simulated failure")
         return self._ok_result()
@@ -74,21 +80,42 @@ def test_tick_invokes_backup_and_check_when_configured(migrated_paths):
     _backup_tick(migrated_paths, repo=repo, passphrase=passphrase, runner=fake)
 
     method_names = [c[0] for c in fake.calls]
-    assert method_names == ["backup", "check"], (
-        f"expected [backup, check] calls; got {method_names}"
+    assert method_names == ["init", "backup", "check"], (
+        f"expected [init, backup, check] calls (repo dir absent → turnkey init); "
+        f"got {method_names}"
     )
 
-    # backup was called with the right repo
-    backup_kwargs = fake.calls[0][2]
-    assert backup_kwargs["repo"] == repo
+    # init seeded the new repo with the configured passphrase
+    assert fake.calls[0][1] == (repo,)
+    assert fake.calls[0][2]["passphrase"] == passphrase
 
-    # check was called with the right repo
-    check_repo_arg = fake.calls[1][1][0]
-    assert check_repo_arg == repo
+    # backup was called with the right repo AND the passphrase — regression for
+    # the live finding where the passphrase never reached restic (it prompted /
+    # failed, and the rc was never checked, so failures logged backup_ok).
+    backup_kwargs = fake.calls[1][2]
+    assert backup_kwargs["repo"] == repo
+    assert backup_kwargs["passphrase"] == passphrase
+
+    # check was called with the right repo + passphrase
+    assert fake.calls[2][1][0] == repo
+    assert fake.calls[2][2]["passphrase"] == passphrase
 
     # backup paths include the databases
-    backup_paths = fake.calls[0][1][0]
+    backup_paths = fake.calls[1][1][0]
     assert len(backup_paths) > 0, "expected at least one DB path passed to backup"
+
+
+def test_tick_skips_init_when_repo_already_populated(migrated_paths):
+    """An existing non-empty repo dir must not be re-initialized."""
+    fake = _FakeRunner()
+    repo_dir = migrated_paths.data_dir / "backups" / "restic"
+    repo_dir.mkdir(parents=True)
+    (repo_dir / "config").write_text("existing")
+
+    _backup_tick(migrated_paths, repo=str(repo_dir), passphrase="s3cr3t", runner=fake)
+
+    method_names = [c[0] for c in fake.calls]
+    assert method_names == ["backup", "check"]
 
 
 # ---------------------------------------------------------------------------

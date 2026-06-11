@@ -102,7 +102,10 @@ real data and harden it. Grouped by priority.
   resolve + Brier update on the live box (needs `LIGHTHOUSE_REAL_BACKEND=1` + time).
 - 🔌 **Deep-tier resume** — serializable tree state exists; wire dispatcher-level checkpoint to
   `state.db` and prove a resumed multi-hour run.
-- 🟡 **Persistent vectors / replication** — Qdrant up; Litestream binary installed; restore drill.
+- ✅ **Persistent vectors / replication** — Qdrant validated live (2026-05-30). Litestream 0.5.12
+  installed + live restore drill passed (2026-06-10): replicate → restore to fresh path → integrity
+  `ok` (`test_litestream_end_to_end_round_trip` now runs un-skipped; `litestream restore` requires
+  `-config` — the no-config form in the runbook docs was broken and is fixed).
 - 🟡 **Packaging — clean-room install verified** (2026-05-29): `uv build` produces a wheel that bundles
   all package data (23 web/static files incl. index.html, model catalog yaml, 37 skill manifests + 37
   SKILL.md). Installed into a **fresh py3.11 venv with base deps only**: all 3 console scripts
@@ -158,9 +161,14 @@ real data and harden it. Grouped by priority.
 - ✅ Schema migrations (5 DBs: state, audit, intents, positions, hypotheses)
 - ✅ Outbox + Saga compensation + Effector (idempotent, retry/backoff, dead-letter)
 - ✅ Governor: hierarchical token buckets, degradation tiers, trip/reset, cost report
-- 🟡 Litestream replication — config + lag reporting + `LitestreamRunner` built; **binary not installed**, replication not started
-- ✅ restic backup + integrity job — wired: `lighthouse backup`, `lighthouse integrity` (§26.3/§26.5). 🟡 not yet on a cron/supervisor schedule.
-- ⬜ 24-hour soak test; cross-platform (Linux systemd) validation
+- ✅ Litestream replication — binary 0.5.12 installed (2026-06-10); live round trip passed:
+  replicate → restore to fresh path → integrity `ok` (`test_integration_dr` e2e un-skipped).
+- ✅ restic backup + integrity job — `lighthouse backup`, `lighthouse integrity` (§26.3/§26.5);
+  on the hourly supervisor backup loop with turnkey repo auto-init. Live drill (2026-06-10, restic
+  0.18): init → backup → check → snapshots rc=0, restore **RTO 0.71 s** (<1 min bar), integrity
+  `ok` 500/500 rows; wrong passphrase fails loudly (passphrase-env + rc-check bugs fixed).
+- 🟡 24-hour soak test (running 2026-06-10, `scripts/soak.py --hours 24 --load`); ⬜ cross-platform
+  (Linux systemd) validation
 
 ## Stage 1 — Hardware adaptation, models, RAG, sandbox
 
@@ -282,10 +290,10 @@ Test-type legend: **U** unit · **I** integration (real deps, skip-if-absent) ·
 | SQLite PRAGMA discipline | U: every `.db` opens with all §26.1 PRAGMAs; readback asserts | 100% of opens pass PRAGMA assertions; WAL on every on-disk db | ✅ |
 | Migrations | U: forward apply, idempotent re-run, CHECK constraints reject bad rows | re-run is a no-op; bad inserts raise | ✅ |
 | Outbox / saga | U+P+Chaos: idempotency by key; kill effector mid-drain | **zero** duplicate or orphaned writes after recovery | ✅ (chaos at 50 intents; ⬜ scale to 1000) |
-| Litestream replication | I: start replicate, write, restore to fresh path, integrity ok | replica lag **<10s** sustained; restore integrity `ok` | 🟡 binary not installed in CI |
-| restic backup | I: init → backup → check → snapshots | `restic check` clean; restore RTO **<1 min** for state.db | 🟡 wired, not yet I-tested with real restic |
-| Disaster recovery | E: kill supervisor mid-write → restore → schema intact | in-flight jobs marked `interrupted`; no corruption | 🟡 sqlite-backup variant ✅; full litestream drill ⬜ |
-| 24h soak | Perf: supervisor runs 24h under load | no OOM, no fd/conn leak, RSS stable | ⬜ |
+| Litestream replication | I: start replicate, write, restore to fresh path, integrity ok | replica lag **<10s** sustained; restore integrity `ok` | ✅ live 2026-06-10 (0.5.12; e2e test un-skipped locally; binary still absent in CI) |
+| restic backup | I: init → backup → check → snapshots | `restic check` clean; restore RTO **<1 min** for state.db | ✅ live 2026-06-10: all rc=0, restore RTO **0.71 s**, integrity ok; wrong-pass fails loudly |
+| Disaster recovery | E: kill supervisor mid-write → restore → schema intact | in-flight jobs marked `interrupted`; no corruption | ✅ sqlite-backup variant + litestream replicate→kill→restore→integrity-ok drill (2026-06-10) |
+| 24h soak | Perf: supervisor runs 24h under load | no OOM, no fd/conn leak, RSS stable | 🟡 running (started 2026-06-10 18:52 local) |
 
 ## 2. Hardware adaptation & model gateway
 

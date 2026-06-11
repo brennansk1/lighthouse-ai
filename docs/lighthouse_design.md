@@ -3808,7 +3808,7 @@ restic repo at `/var/lighthouse/backups/restic` with passphrase in Keychain.
 **state.db malformed:**
 ```bash
 lighthouse stop
-litestream restore -o ~/.lighthouse/state.db ~/.lighthouse/state.db
+litestream restore -config ~/.lighthouse/litestream.yml -o ~/.lighthouse/state.db ~/.lighthouse/state.db
 # OR fallback:
 sqlite3 ~/.lighthouse/state.db.bad ".recover" | sqlite3 ~/.lighthouse/state.db
 lighthouse start

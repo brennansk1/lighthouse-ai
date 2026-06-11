@@ -13,15 +13,17 @@ assert on the exact argv we build without spawning ``restic`` at all.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# A runner takes the argv list and returns something with .returncode/.stdout.
+# A runner takes the argv list (plus an optional ``env`` keyword carrying
+# RESTIC_PASSWORD) and returns something with .returncode/.stdout/.stderr.
 # subprocess.run matches this shape; tests pass a fake recording callable.
-Runner = Callable[[Sequence[str]], "subprocess.CompletedProcess[str]"]
+Runner = Callable[..., "subprocess.CompletedProcess[str]"]
 
 
 class ResticUnavailable(RuntimeError):
@@ -33,18 +35,33 @@ class ResticUnavailable(RuntimeError):
     """
 
 
+class ResticError(RuntimeError):
+    """Raised when a ``restic`` invocation exits non-zero.
+
+    Live finding (2026-06-10): the default runner used ``check=False`` and no
+    caller ever inspected ``returncode`` — a failing backup logged
+    ``backup.tick.backup_ok`` and the CLI printed "backed up". For a system
+    whose audit/intent records are "not regenerable", a backup that silently
+    fails is the worst possible outcome, so non-zero exits raise.
+    """
+
+
 def restic_installed() -> bool:
     """Probe whether the ``restic`` binary is resolvable on ``PATH``."""
     return shutil.which("restic") is not None
 
 
-def _default_runner(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+def _default_runner(
+    argv: Sequence[str], env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """Run ``restic`` for real, capturing output as text.
 
     Kept tiny and side-effecting so tests can replace it wholesale; production
-    code paths are the only ones that ever reach it.
+    code paths are the only ones that ever reach it. ``stdin`` is closed so a
+    misconfigured restic fails fast instead of prompting for a password.
     """
-    return subprocess.run(list(argv), capture_output=True, text=True, check=False)
+    return subprocess.run(list(argv), capture_output=True, text=True, check=False,
+                          env=env, stdin=subprocess.DEVNULL)
 
 
 @dataclass(frozen=True)
@@ -58,6 +75,7 @@ class ResticBackup:
     """
 
     runner: Runner = field(default=_default_runner)
+    passphrase: str | None = None
 
     @staticmethod
     def _base_argv(repo: str) -> list[str]:
@@ -70,13 +88,27 @@ class ResticBackup:
         """
         return ["restic", "--repo", repo]
 
-    def _run(self, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    def _run(self, argv: Sequence[str], *, passphrase: str | None = None
+             ) -> subprocess.CompletedProcess[str]:
         if not restic_installed():
             raise ResticUnavailable(
                 "restic binary not found on PATH; install restic to enable "
                 "the §26.3 backup matrix (e.g. `brew install restic`)."
             )
-        return self.runner(list(argv))
+        secret = passphrase or self.passphrase
+        if secret:
+            result = self.runner(
+                list(argv), env={**os.environ, "RESTIC_PASSWORD": secret})
+        else:
+            # No secret to inject — call with argv only so simple recording
+            # fakes (and pre-existing callers) keep working unchanged.
+            result = self.runner(list(argv))
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise ResticError(
+                f"restic exited {result.returncode}: {' '.join(argv[:4])}…"
+                + (f" — {detail}" if detail else ""))
+        return result
 
     def init_argv(self, repo: str) -> list[str]:
         """Build the argv to initialize a fresh repository."""
@@ -99,23 +131,25 @@ class ResticBackup:
     def init(self, repo: str, passphrase: str) -> subprocess.CompletedProcess[str]:
         """Initialize the restic repository.
 
-        ``passphrase`` is accepted to mirror the operational contract; it is
-        passed to restic via the environment by the real runner, never argv.
+        ``passphrase`` is injected into the child environment as
+        ``RESTIC_PASSWORD`` — never placed on the argv.
         """
-        return self._run(self.init_argv(repo))
+        return self._run(self.init_argv(repo), passphrase=passphrase)
 
-    def backup(self, paths: Sequence[str | Path], *, repo: str
-               ) -> subprocess.CompletedProcess[str]:
+    def backup(self, paths: Sequence[str | Path], *, repo: str,
+               passphrase: str | None = None) -> subprocess.CompletedProcess[str]:
         """Back up the given filesystem paths into ``repo``."""
-        return self._run(self.backup_argv(repo, paths))
+        return self._run(self.backup_argv(repo, paths), passphrase=passphrase)
 
-    def check(self, repo: str) -> subprocess.CompletedProcess[str]:
+    def check(self, repo: str, *, passphrase: str | None = None
+              ) -> subprocess.CompletedProcess[str]:
         """Run ``restic check`` to validate stored data integrity."""
-        return self._run(self.check_argv(repo))
+        return self._run(self.check_argv(repo), passphrase=passphrase)
 
-    def snapshots(self, repo: str) -> subprocess.CompletedProcess[str]:
+    def snapshots(self, repo: str, *, passphrase: str | None = None
+                  ) -> subprocess.CompletedProcess[str]:
         """List repository snapshots (JSON)."""
-        return self._run(self.snapshots_argv(repo))
+        return self._run(self.snapshots_argv(repo), passphrase=passphrase)
 
 
 def install_hint() -> str:

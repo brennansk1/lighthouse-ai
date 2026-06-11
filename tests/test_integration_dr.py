@@ -109,8 +109,11 @@ def test_litestream_end_to_end_round_trip(tmp_paths):
     target = tmp_paths.data_dir / "audit.restored.db"
     if target.exists():
         target.unlink()
+    # -config is required: without it litestream looks for /etc/litestream.yml
+    # (found live on litestream 0.5.12 — the no-config form errors out).
     subprocess.run(
-        ["litestream", "restore", "-o", str(target), str(tmp_paths.audit_db)],
+        ["litestream", "restore", "-config", str(cfg),
+         "-o", str(target), str(tmp_paths.audit_db)],
         check=True, capture_output=True,
     )
     assert target.exists()
