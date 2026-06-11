@@ -98,3 +98,36 @@ def test_chaos_random_failures_no_duplicates_no_orphans(migrated_paths):
 def test_effector_tick_on_empty_queue_returns_empty(migrated_paths):
     eff = Effector(migrated_paths.intents_db)
     assert eff.tick() == "empty"
+
+
+def test_chaos_1000_intents_mid_drain_restart_no_dupes_no_orphans(migrated_paths):
+    """The design-scale chaos drill (§ outbox acceptance: 1000 intents).
+
+    Drain half with one Effector, abandon it (kill semantics: state lives in
+    the intents DB, not the instance), finish with a fresh Effector. Every key
+    applied exactly once, outbox empty. Measured at ~2.4s live (2026-06-10).
+    """
+    import random
+    random.seed(11)
+    n = 1000
+    for i in range(n):
+        write_intent(migrated_paths.intents_db, target="test_target", op="upsert",
+                     payload={"i": i}, idempotency_key=f"chaos-{i}")
+        if random.random() < 0.3:
+            test_target.schedule_failures(f"chaos-{i}", random.randint(1, 2))
+
+    eff1 = Effector(migrated_paths.intents_db)
+    for _ in range(5_000):
+        if outbox_depth(migrated_paths.intents_db) <= n // 2:
+            break
+        eff1.tick()
+    assert outbox_depth(migrated_paths.intents_db) <= n // 2
+    del eff1  # simulated kill mid-drain
+
+    eff2 = Effector(migrated_paths.intents_db)
+    eff2.run_until_empty(max_iters=200_000)
+    applied = test_target.applied()
+    missing = [i for i in range(n) if applied.get(f"chaos-{i}") != {"i": i}]
+    assert not missing, f"{len(missing)} intents lost after restart"
+    assert len(applied) == n, "duplicate or stray applications detected"
+    assert outbox_depth(migrated_paths.intents_db) == 0
