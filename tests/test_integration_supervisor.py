@@ -134,3 +134,30 @@ def test_supervisor_handles_multiple_health_calls(tmp_paths):
     finally:
         server.should_exit = True
         thread.join(timeout=5)
+
+
+def test_dispatch_loop_offline_flag_never_builds_real_gateway(tmp_paths, monkeypatch):
+    """``offline=True`` must skip the real-gateway probe entirely.
+
+    The soak harness (scripts/soak.py) promises "stub models, no model load" —
+    but on a box where Ollama is reachable, build_runtime_gateway returns a real
+    gateway and the soak either dispatches real LLM jobs or starves behind the
+    runtime RAM gate. The offline flag pins the dispatch loop to the stub path.
+    """
+    from lighthouse_ai import dispatcher, supervisor
+
+    calls: list[object] = []
+
+    def _fake_build(paths):
+        calls.append(paths)
+        return object()
+
+    monkeypatch.setattr(dispatcher, "build_runtime_gateway", _fake_build)
+
+    t = supervisor._start_dispatch_loop(tmp_paths, interval_s=999.0, offline=True)
+    assert t.daemon
+    assert calls == [], "offline dispatch loop must not probe for a real gateway"
+
+    # Default (offline=False) still probes — the production path is unchanged.
+    supervisor._start_dispatch_loop(tmp_paths, interval_s=999.0)
+    assert len(calls) == 1

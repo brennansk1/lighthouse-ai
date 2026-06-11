@@ -29,7 +29,7 @@ def main() -> int:
     loops = [
         S._start_subconscious_loop(paths, interval_s=3.0),
         S._start_monitor_loop(paths, interval_s=3.0),
-        S._start_dispatch_loop(paths, interval_s=2.0),
+        S._start_dispatch_loop(paths, interval_s=2.0, offline=True),
         S._start_resolver_loop(paths, interval_s=5.0),
         S._start_backup_loop(paths),
     ]

@@ -286,13 +286,18 @@ def _start_monitor_loop(paths: Paths, *, interval_s: float = 60.0) -> threading.
 
 
 def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0,
-                         bus=None) -> threading.Thread:
+                         bus=None, offline: bool = False) -> threading.Thread:
     """Daemon thread that runs one queued job per tick.
 
     Mirrors the monitor loop: a single daemon thread, one job per tick, gated by
     the SchedulerGate so a paused host stops claiming work. RAM admission is
     inherited through ``Gateway.complete`` — no second queue here. Stuck
     ``running`` jobs from a previous process are re-queued once at startup.
+
+    ``offline=True`` pins the loop to the stub gateway without probing Ollama —
+    harnesses that promise "no model load" (soak, supervisor smoke) need stub
+    dispatch even on a box where Ollama is reachable; otherwise they either run
+    real models or starve behind the runtime RAM gate and never dispatch.
 
     ``bus`` is the FastAPI app's :class:`EventBus`; passing it through lets a job
     publish live ``job.step`` progress events to the dashboard's SSE stream as it
@@ -312,8 +317,10 @@ def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0,
     # Resolve a real Ollama gateway once (RAM-gated via Gateway.complete's
     # ollama_slot). Falls back to None — offline-deterministic stubs — when
     # Ollama is unreachable, so a paused/absent backend never fails jobs.
-    gateway = build_runtime_gateway(paths)
-    log.info("dispatch.gateway", backend="ollama" if gateway is not None else "offline")
+    gateway = None if offline else build_runtime_gateway(paths)
+    log.info("dispatch.gateway",
+             backend="offline-forced" if offline
+             else ("ollama" if gateway is not None else "offline"))
 
     try:
         requeued = reap_stuck_jobs(paths.state_db)

@@ -11,7 +11,10 @@ Usage:
     uv run python scripts/soak.py --hours 24 --load # the real overnight soak
     uv run python scripts/soak.py --seconds 600 --sample-every 30 --load
 
-Daemon threads die with the script. No real backend (stub models, no model load).
+Daemon threads die with the script. No real backend (stub models via the forced-
+offline dispatch loop, no model load) and no egress (LIGHTHOUSE_AIRGAP is set
+unless the caller already chose a value): the soak measures *our* leaks, not
+network noise, and a 24 h `--load` run must not hammer live feeds once a minute.
 For a production-faithful soak run the actual `lighthouse-supervisor` and point a
 process monitor at its PID; this harness is the turnkey, dependency-light version.
 """
@@ -20,6 +23,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+import os
 import sys
 import tempfile
 import time
@@ -45,17 +49,25 @@ def _enqueue_trivial_job(state_db, n: int) -> None:
         conn.close()
 
 
-def _is_monotonic_growth(series: list[float], *, min_frac: float) -> bool:
+def _is_monotonic_growth(series: list[float], *, min_frac: float,
+                         min_abs: float = 0.0, warmup_frac: float = 0.2) -> bool:
     """True if the series rises by > min_frac end-over-start AND mostly monotonically.
 
     A genuine leak grows steadily; transient bumps (GC, caches warming) are not
     monotonic. We require both a net rise and that ≥80% of steps are non-decreasing.
+
+    The first ``warmup_frac`` of samples is excluded: connection pools, kqueue
+    fds and caches settle during the first minutes of a run, and measured from
+    sample 0 that warmup reads as monotonic growth (observed live: fds 7→10,
+    plateau). ``min_abs`` additionally requires the post-warmup rise to be big
+    enough to matter — e.g. a 4-fd drift is noise, a 20-fd rise is a leak.
     """
-    if len(series) < 4 or series[0] <= 0:
+    s = series[int(len(series) * warmup_frac):]
+    if len(s) < 4 or s[0] <= 0:
         return False
-    net = (series[-1] - series[0]) / series[0]
-    ups = sum(1 for a, b in itertools.pairwise(series) if b >= a)
-    return net > min_frac and ups >= 0.8 * (len(series) - 1)
+    net = s[-1] - s[0]
+    ups = sum(1 for a, b in itertools.pairwise(s) if b >= a)
+    return net > min_frac * s[0] and net >= min_abs and ups >= 0.8 * (len(s) - 1)
 
 
 def main() -> int:
@@ -66,6 +78,7 @@ def main() -> int:
     ap.add_argument("--load", action="store_true", help="enqueue a job each minute")
     args = ap.parse_args()
     duration = int(args.hours * 3600) if args.hours else args.seconds
+    os.environ.setdefault("LIGHTHOUSE_AIRGAP", "1")
 
     tmp = tempfile.mkdtemp(prefix="lh-soak-")
     paths = make_paths(data_dir=tmp)
@@ -73,7 +86,7 @@ def main() -> int:
     loops = [
         S._start_subconscious_loop(paths, interval_s=10.0),
         S._start_monitor_loop(paths, interval_s=10.0),
-        S._start_dispatch_loop(paths, interval_s=5.0),
+        S._start_dispatch_loop(paths, interval_s=5.0, offline=True),
         S._start_resolver_loop(paths, interval_s=30.0),
         S._start_backup_loop(paths),
     ]
@@ -126,11 +139,11 @@ def main() -> int:
     _report("rss", rss, "MB")
     _report("fds", fds, "")
     _report("threads", threads, "")
-    if _is_monotonic_growth(rss, min_frac=0.5):
+    if _is_monotonic_growth(rss, min_frac=0.5, min_abs=50.0):
         findings.append(f"possible MEMORY leak: RSS rose {rss[0]:.0f}→{rss[-1]:.0f}MB monotonically")
-    if _is_monotonic_growth(fds, min_frac=0.5):
+    if _is_monotonic_growth(fds, min_frac=0.5, min_abs=20.0):
         findings.append(f"possible FD leak: fds rose {fds[0]:.0f}→{fds[-1]:.0f} monotonically")
-    if _is_monotonic_growth(threads, min_frac=0.5):
+    if _is_monotonic_growth(threads, min_frac=0.5, min_abs=4.0):
         findings.append(f"possible THREAD leak: {threads[0]:.0f}→{threads[-1]:.0f} monotonically")
     if findings:
         for f in findings:
