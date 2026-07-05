@@ -398,8 +398,10 @@ def test_init_pull_tag_scales_with_ram(cli_env, monkeypatch):
 
     small = _run(16.0, "T1")
     large = _run(64.0, "T4")
-    # 16 GB → an 8b-class tag; 64 GB → a 32b-class tag. Different picks.
-    assert "qwen3:8b" in small
+    # 16 GB → a 9b-class tag; 64 GB → a 32b-class tag. Different picks.
+    # (The ladder prefers qwen3.5:9b on small boxes since the 2026-06-10
+    # live-run resolver fix — see gateway._REASONING_PREFERENCE.)
+    assert "qwen3.5:9b" in small
     assert "qwen3:32b" in large
 
 
