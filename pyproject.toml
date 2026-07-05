@@ -2,14 +2,14 @@
 name = "lighthouse-ai"
 version = "0.1.0"
 description = "Lighthouse — local-first, hardware-adaptive 24/7 multi-agent research system."
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "Lighthouse Contributors" }]
 keywords = ["research", "rag", "agents", "local-first"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3.11",
