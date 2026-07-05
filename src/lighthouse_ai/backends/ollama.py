@@ -23,10 +23,36 @@ DEFAULT_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 DEFAULT_CONNECT_TIMEOUT = 60.0
 #: Deep-dive synthesis can take minutes on a 30B model; allow a generous read.
 DEFAULT_READ_TIMEOUT = 600.0
+#: Generation watchdog (incident 2026-06-10): max seconds a *streaming* chat
+#: may go with no bytes from the server before we call the backend stalled.
+#: Generous because prompt-eval on a big model is silent until the first
+#: token — but a healthy generation never pauses 5 minutes mid-stream, while
+#: a wedged-but-listening daemon stays silent forever.
+DEFAULT_STALL_TIMEOUT = float(os.environ.get("LIGHTHOUSE_STALL_TIMEOUT_S", "300"))
+#: Embeds finish in seconds; a dedicated short read timeout means a wedged
+#: daemon surfaces from /api/embed in ~2 minutes, not 10.
+DEFAULT_EMBED_READ_TIMEOUT = float(os.environ.get("LIGHTHOUSE_EMBED_TIMEOUT_S", "120"))
 
 
 class OllamaUnavailable(RuntimeError):
     """Raised when the Ollama daemon can't be reached or returns 5xx."""
+
+
+class BackendStalled(OllamaUnavailable):
+    """The daemon accepted the request but produced no bytes for too long.
+
+    A wedged-but-listening backend (TCP up, generation dead) must fail loudly
+    and quickly — it is the one failure the generic degrade-to-mock fallback
+    must never swallow, or an eternally-silent daemon looks like an
+    eternally-running job.
+    """
+
+    def __init__(self, message: str, *, model: str,
+                 stalled_after_s: float, call: str):
+        super().__init__(message)
+        self.model = model
+        self.stalled_after_s = stalled_after_s
+        self.call = call  # "chat" | "embed"
 
 
 @dataclass(frozen=True)
@@ -58,8 +84,13 @@ class OllamaBackend:
     def __init__(self, host: str = DEFAULT_HOST, *,
                  connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
                  read_timeout: float = DEFAULT_READ_TIMEOUT,
+                 stall_timeout: float = DEFAULT_STALL_TIMEOUT,
+                 embed_read_timeout: float = DEFAULT_EMBED_READ_TIMEOUT,
                  client: httpx.Client | None = None):
         self.host = host.rstrip("/")
+        self._connect_timeout = connect_timeout
+        self.stall_timeout = stall_timeout
+        self.embed_read_timeout = embed_read_timeout
         self._timeout = httpx.Timeout(connect=connect_timeout, read=read_timeout,
                                       write=read_timeout, pool=connect_timeout)
         self._owns_client = client is None
@@ -160,12 +191,18 @@ class OllamaBackend:
              on_token: Callable[[str], None] | None = None) -> ChatResponse:
         """Single-turn chat. Returns the full completion.
 
-        With ``on_token`` supplied the request streams: each content chunk is
-        handed to the callback as it arrives (a UI sink; its exceptions are
-        swallowed so a broken sink can never kill the model call) and the
-        chunks are assembled into the same :class:`ChatResponse` the
-        non-streaming path returns — callers see an identical result either
-        way, including the token counts from Ollama's final frame.
+        The request always streams (JSON-lines), whether or not ``on_token``
+        is supplied — streaming is what makes the generation watchdog possible:
+        each chunk is an observable progress tick, so a wedged-but-listening
+        daemon trips :class:`BackendStalled` after ``stall_timeout`` seconds of
+        silence instead of hiding behind the full read timeout. It also means
+        total generation time is bounded per-chunk, not overall — a legitimate
+        long synthesis is never killed just for taking more than the old
+        read-timeout total. With ``on_token`` supplied, each content chunk is
+        additionally handed to the callback (a UI sink; its exceptions are
+        swallowed so a broken sink can never kill the model call). Either way
+        the chunks are assembled into one :class:`ChatResponse`, including the
+        token counts from Ollama's final frame.
         """
         messages: list[dict[str, str]] = []
         if system:
@@ -174,39 +211,32 @@ class OllamaBackend:
         body = {
             "model": model,
             "messages": messages,
-            "stream": on_token is not None,
+            "stream": True,
             "options": _sampling_to_options(sampling or {}),
         }
-        if on_token is not None:
-            return self._chat_stream(model, body, on_token)
-        try:
-            r = self._client.post("/api/chat", json=body)
-        except httpx.HTTPError as exc:
-            raise OllamaUnavailable(f"POST /api/chat failed: {exc}") from exc
-        if r.status_code != 200:
-            raise OllamaUnavailable(
-                f"POST /api/chat → {r.status_code}: {r.text[:300]}"
-            )
-        data = r.json()
-        msg = data.get("message", {}) or {}
-        return ChatResponse(
-            text=msg.get("content", ""),
-            prompt_tokens=int(data.get("prompt_eval_count", 0)),
-            completion_tokens=int(data.get("eval_count", 0)),
-            model=str(data.get("model", model)),
-            done_reason=data.get("done_reason"),
-        )
+        return self._chat_stream(model, body, on_token)
 
     def _chat_stream(self, model: str, body: dict[str, Any],
-                     on_token: Callable[[str], None]) -> ChatResponse:
-        """Streaming twin of :meth:`chat` — JSON-lines, same shape as ``pull``."""
+                     on_token: Callable[[str], None] | None) -> ChatResponse:
+        """Streaming chat — JSON-lines, same shape as ``pull``.
+
+        The per-read timeout is ``stall_timeout``: on a streaming response
+        httpx applies it between chunks, which is exactly the generation
+        watchdog — silence longer than the deadline raises
+        :class:`BackendStalled`.
+        """
         parts: list[str] = []
         prompt_tokens = 0
         completion_tokens = 0
         model_name = model
         done_reason: str | None = None
+        stall = httpx.Timeout(connect=self._connect_timeout,
+                              read=self.stall_timeout,
+                              write=self.stall_timeout,
+                              pool=self._connect_timeout)
         try:
-            with self._client.stream("POST", "/api/chat", json=body) as r:
+            with self._client.stream("POST", "/api/chat", json=body,
+                                     timeout=stall) as r:
                 if r.status_code != 200:
                     detail = r.read().decode(errors="replace")[:300]
                     raise OllamaUnavailable(
@@ -222,15 +252,22 @@ class OllamaBackend:
                     tok = (chunk.get("message", {}) or {}).get("content", "")
                     if tok:
                         parts.append(tok)
-                        try:
-                            on_token(tok)
-                        except Exception:
-                            pass
+                        if on_token is not None:
+                            try:
+                                on_token(tok)
+                            except Exception:
+                                pass
                     if chunk.get("done"):
                         prompt_tokens = int(chunk.get("prompt_eval_count", 0))
                         completion_tokens = int(chunk.get("eval_count", 0))
                         model_name = str(chunk.get("model", model))
                         done_reason = chunk.get("done_reason")
+        except httpx.ReadTimeout as exc:
+            raise BackendStalled(
+                f"backend stalled: no progress for {self.stall_timeout:.0f}s "
+                f"on POST /api/chat model={model}",
+                model=model, stalled_after_s=self.stall_timeout,
+                call="chat") from exc
         except httpx.HTTPError as exc:
             raise OllamaUnavailable(f"POST /api/chat failed: {exc}") from exc
         return ChatResponse(
@@ -247,11 +284,22 @@ class OllamaBackend:
         texts_list = list(texts)
         if not texts_list:
             return EmbeddingResponse(vectors=[], model=model)
+        embed_to = httpx.Timeout(connect=self._connect_timeout,
+                                 read=self.embed_read_timeout,
+                                 write=self.embed_read_timeout,
+                                 pool=self._connect_timeout)
         try:
             r = self._client.post(
                 "/api/embed",
                 json={"model": model, "input": texts_list},
+                timeout=embed_to,
             )
+        except httpx.ReadTimeout as exc:
+            raise BackendStalled(
+                f"backend stalled: no response for {self.embed_read_timeout:.0f}s "
+                f"on POST /api/embed model={model}",
+                model=model, stalled_after_s=self.embed_read_timeout,
+                call="embed") from exc
         except httpx.HTTPError as exc:
             raise OllamaUnavailable(f"POST /api/embed failed: {exc}") from exc
         if r.status_code != 200:

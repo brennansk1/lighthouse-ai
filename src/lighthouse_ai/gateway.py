@@ -35,6 +35,7 @@ from typing import Any, Literal
 
 import yaml
 
+from .backends.ollama import BackendStalled
 from .governor import Governor
 from .governor.mock_provider import MockProvider
 from .hardware import HardwareProfile, probe
@@ -1047,6 +1048,12 @@ class Gateway:
                             prompt_tokens = chat_resp.prompt_tokens
                             completion_tokens = chat_resp.completion_tokens
                             chat_ok = True
+                        except BackendStalled:
+                            # A wedged-but-listening daemon must fail LOUDLY
+                            # (incident 2026-06-10) — degrading it to the mock
+                            # would turn a dead backend into a plausible-looking
+                            # artifact. Every other failure keeps the fallback.
+                            raise
                         except Exception:
                             backend_used = "mock"
             else:

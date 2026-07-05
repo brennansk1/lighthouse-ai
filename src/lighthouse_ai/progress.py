@@ -54,6 +54,10 @@ class ProgressEmitter:
         self.job_id = job_id
         self.paths = paths
         self.bus = bus
+        #: Last successfully-emitted phase/pct — lets a failure handler place
+        #: its event in the phase the job actually died in.
+        self.last_phase: str | None = None
+        self.last_pct: float = 0.0
 
     # ── core ────────────────────────────────────────────────────────────────
 
@@ -65,6 +69,8 @@ class ProgressEmitter:
             seq = self._insert_event(phase, kind, label, pct, payload)
             if seq is None:
                 return
+            self.last_phase = phase
+            self.last_pct = float(pct)
             self._update_progress(pct)
             if self.bus is not None:
                 try:

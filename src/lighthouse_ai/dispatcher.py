@@ -33,6 +33,7 @@ from typing import Any
 
 import structlog
 
+from .backends.ollama import BackendStalled
 from .gateway import Gateway
 from .governor.scheduler_gate import SchedulerGate
 from .modes.registry import canonical, load_engine, resolve
@@ -1271,6 +1272,20 @@ def run_job(paths: Paths, job: ClaimedJob, *,
             summary=summary, backends=backends, gateway=gateway)
     except Exception as exc:
         _set_status(paths.state_db, job.id, "failed")
+        # A wedged-but-listening backend is a distinct, user-facing failure:
+        # audit the cause and put a "stalled" step in the trace so the
+        # dashboard shows *why* the job died instead of an eternal spinner
+        # (incident 2026-06-10).
+        if isinstance(exc, BackendStalled):
+            _audit(paths, "backend.stalled",
+                   {"job_id": job.id, "error": str(exc), "model": exc.model,
+                    "stalled_after_s": exc.stalled_after_s, "call": exc.call})
+            progress.emit(progress.last_phase or "framing", "stalled",
+                          "Backend stalled — job aborted",
+                          progress.last_pct,
+                          {"model": exc.model,
+                           "stalled_after_s": exc.stalled_after_s,
+                           "call": exc.call})
         _audit(paths, "job.failed", {"job_id": job.id, "error": str(exc)})
         # A budget/loop guard stopping a run is a user-facing event: notify + emit.
         if _is_guard_trip(exc):
