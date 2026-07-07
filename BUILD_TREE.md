@@ -92,11 +92,28 @@ T  Lighthouse (trunk: cli.py · supervisor.py · dispatcher.py · gateway.py ·
 │   └── B6.3 ⬜ TUI: confirm stalled/resumed events pass through job status
 │            views without breakage (verify-only; change only if broken)
 │
-└── B7 🔒 NO_TOUCH (protected surfaces — see RECON.md §4)
-    egress guard/AIRGAP semantics · HMAC audit-chain format · grounding-gate
-    thresholds · public CLI surface · AGPL stays opt-in · legacy mode aliases ·
-    pyrate-limiter <4 pin · offline/no-daemon test posture
+├── B7 🔒 NO_TOUCH (protected surfaces — see RECON.md §4)
+│   egress guard/AIRGAP semantics · HMAC audit-chain format · grounding-gate
+│   thresholds · public CLI surface · AGPL stays opt-in · legacy mode aliases ·
+│   pyrate-limiter <4 pin · offline/no-daemon test posture
+│
+└── B8 ROADMAP — Frontier-parity program (NOT this effort's committed scope;
+    │            weighed in FUTURE_FEATURES.md §11; full leaf decomposition
+    │            deferred to Phase 2 when each epic is scheduled)
+    ├── R-A ⬜ [P0] Frontier-parity measurement harness — make LIVE_TEST_PLAN
+    │        §2.7 a repeatable blind grader; de-risks R-B/R-C/R-D. Low code
+    ├── R-B ⬜🖼️ [P1] Multimodal document understanding — hardware-gated local
+    │        VLM; figures/tables/scans become citable evidence. Staged:
+    │        (1) table/scanned-text OCR → (2) chart/figure VLM (Thorough/Deep)
+    ├── R-C ⬜ [P1] Local-model quality amplification — best-of-N judged by
+    │        existing gates + verifier-guided regeneration; depth+metric-gated,
+    │        sequenced behind R-A so the lift is measured
+    └── R-D ⬜🖼️ [P2] Report-grounded Ask follow-up — Ask on a finished
+             artifact's corpus+citations (refines FUTURE_FEATURES §6)
 ```
+
+Roadmap priority ≠ Manifest status: R-* are ⬜ NOT_STARTED backlog, ordered
+P0→P2. The immediate committed work remains B5 (watchdog, in flight) and B6.
 
 Frontend↔backend seam for this effort: the `job_events` row / SSE `job.step`
 payload (new `kind` values "stalled"/"resumed") and jobs.metadata_json —

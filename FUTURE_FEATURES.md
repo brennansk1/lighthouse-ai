@@ -228,3 +228,82 @@ both low-priority, are noted here rather than fixed under time pressure:
   see bytes) — a regex sniff-gate in `scan()` was tried and reverted because `<script>` appears in both
   the danger and sniff patterns, causing false positives on benign prose (violates the sandbox's no-FP
   bar). Defer until the broker passes a content sniff to `supports()`.
+
+---
+
+## 11. Frontier-parity program (2026-07 analysis)
+
+The prime directive is **on par with or better than Claude/Gemini deep research, on local
+LLMs mapped to the hardware**. A breadth/gap analysis (2026-07-06) found the feature *surface*
+is complete — arguably ahead of frontier — and that the gap to the directive is concentrated in
+one unproven claim, one capability hole, and one under-exploited wedge. Each candidate below is
+weighed (pro / con) and tagged with a priority; the tracked decomposition lives in
+`BUILD_TREE.md` / `BUILD_MANIFEST.md` (epics R-A … R-D). Items that already appear above are
+cross-referenced, not duplicated.
+
+**The honest baseline.** `eval/research_benchmark.py` proves the grounding gate catches a
+*planted* hallucination (real, shipped), but the head-to-head in `LIVE_TEST_PLAN.md` §2.7 —
+blind-grading Lighthouse Thorough/Deep vs. Claude vs. Gemini — is **defined but never run**. So
+"better than frontier" is today a *structural argument, not an empirical result*. That single
+fact sets the ordering below.
+
+### R-A. Frontier-parity measurement harness — **ADOPT, P0** (do first; de-risks the rest)
+Turn `LIVE_TEST_PLAN.md` §2.7 into a repeatable, versioned instrument: a rubric-scored blind
+grader, a drop-zone for frontier outputs (collected manually — pulling them programmatically is
+out of scope and ToS-fraught), and a report that tracks the gap over time on the honesty/
+verifiability columns Lighthouse should win and the breadth/narrative columns it may not.
+*Pro:* converts the core claim from assertion to measurement (the honesty invariant made
+operational); low new code — the scoring harness (`eval/research_benchmark.py`) and metrics
+(`eval/metrics.py`) already exist; and it tells us which of R-B/R-C/R-D actually move the number
+before we build them. *Con:* frontier outputs are collected by hand; the rubric must stay blind
+and multi-judge to avoid grading to our own strengths. **Highest leverage-to-cost item on the
+whole roadmap.**
+
+### R-B. Multimodal document understanding — **ADOPT, P1, staged** (promotes §7 "Multi-modal ingestion")
+The one *genuine capability gap* vs. frontier: there is no vision path anywhere in `src/`, and
+the extraction chain (trafilatura / pdfplumber / docling) is text-only — figures, charts, and
+scanned/image-only pages are silently dropped. The target corpora (legal exhibits, clinical
+charts, financial tables, scanned deal-room docs) are exactly the figure/table-heavy material
+frontier DR reads and Lighthouse currently can't. *Pro:* biggest single lever on **real-document**
+parity; composes with the existing chunk/citation/grounding machinery once a figure earns a
+citable chunk id. *Con:* a local VLM (qwen-VL / MiniCPM-V class) is heavy — on the 24 GB T2 floor
+it's a real admission-gate budget fight and likely won't co-reside with the reasoning model;
+grounding a *figure* claim needs an entailment-gate answer to "what does citing a chart mean?".
+**Stage it:** (1) table + scanned-text extraction (OCR-class, light, lands most of the value)
+→ (2) full chart/figure VLM reasoning (heavy, Thorough/Deep-gated, opt-in extra), so partial
+value ships without paying the full hardware cost up front. Everything tier-gated and routed
+through the admission gate like every other model.
+
+### R-C. Local-model quality amplification — **ADOPT, P1, metric-gated behind R-A** (new)
+Upgrade synthesis to squeeze frontier-grade output from a local model using the verification
+stack *as a judge*: best-of-N synthesis ranked by the reranker/entailment gate; **verifier-guided
+regeneration** when the discipline gate fails (regenerate the offending span instead of only
+WEP-downgrading it); an optional small cross-model ensemble for load-bearing claims (composes
+with Adjudicate). *Pro:* directly attacks the "on par" *quality* half — the wedge is
+process-beats-raw-model and this is the process; reuses shipped components (reranker, entailment,
+discipline, adversarial) with no new heavy dependency. *Con:* N× compute per synthesis — must be
+**depth-gated** (Thorough/Deep only) and **metric-gated** (an OPTIMIZE-discipline change: prove
+it raises faithfulness/quality on the R-A harness before it's kept, or it's just burning tokens).
+Gate it behind R-A so the improvement is *measured*, not assumed.
+
+### R-D. Report-grounded interactive follow-up — **ADOPT, P2** (refines §6 "Interactive Ask chat")
+Frontier DR's best UX is "ask a follow-up on the finished report." §6 already scopes the
+synchronous chat surface (a turn endpoint running `quc.ask` with a live gateway inside the web
+process, plus a continuation UI); this refines the target: ground each follow-up in the
+**completed artifact's** corpus + citation set, not the raw corpus, so drill-down inherits the
+same grounding gate and provenance. *Pro:* cheap parity win — `ask.py` + `ask_store.py` exist and
+the grounding gate already applies. *Con:* the live-gateway-in-web-process plumbing from §6 is the
+real work. **Adopt as the artifact-grounded specialization of §6, not a second chat feature.**
+
+### Reliability enablers (in flight / near-term) — keep
+The generation watchdog (`BackendStalled` through backend→gateway→dispatcher; committed, tests
+pending) and deep-tier checkpoint/resume (§6 bullet 1; `modes/exhaustive.py` state is
+serializable, dispatcher wiring + an observable resume lifecycle are the gap) are **P2 enablers**:
+plumbing, not capability, but they are what makes *unbounded depth* trustworthy over hours — the
+enabler of the depth wedge. Correctly prioritized; finish them.
+
+### Declined (scope discipline)
+More source skills (37 is sufficient), more research modes (7 covers the space), more notify
+channels, **cloud/SaaS anything** (forfeits the local-first moat — see §8), and **auto-engaged
+Tier-C** browsers. All either done-enough or directive-violating. Recorded here so the *decision*
+is visible, not just the omission.

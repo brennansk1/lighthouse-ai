@@ -43,8 +43,19 @@ here on.
 | N4 🔒 | Public CLI surface | no new/renamed commands this effort | — | 🔒 | |
 | N5 🔒 | AGPL opt-in posture · legacy aliases · pyrate-limiter <4 · offline/no-daemon test posture | must not change | — | 🔒 | |
 
-Progress: **3 ✔️ / 13 ⬜ / 0 🧩 / 0 🚫 / 5 🔒** (B3.1, B4.1 verified; B1/B2
-existing spines verified by baseline run, tracked in BUILD_TREE.md).
+### Roadmap backlog — Frontier-parity program (NOT_STARTED; weighed in FUTURE_FEATURES.md §11; not this effort's committed scope)
+
+| ID | Feature | Contract / Acceptance criteria (roadmap-level; full decomposition when scheduled) | Depends on | Status | Priority / Notes |
+|---|---|---|---|---|---|
+| R-A | Frontier-parity measurement harness | Repeatable blind grader over LIVE_TEST_PLAN §2.7: rubric (source count, claim accuracy, citation verifiability, contradiction honesty, open-question honesty), a drop-zone for manually-collected frontier outputs, and a tracked report. Acceptance: `LIGHTHOUSE_REAL_BACKEND=1` run produces a scored Lighthouse-vs-frontier report; offline unit tests cover the grader on fixtures | eval/research_benchmark.py, eval/metrics.py (exist) | ⬜ | **P0** — do first; de-risks R-B/R-C/R-D; low new code |
+| R-B 🖼️ | Multimodal document understanding | Hardware-gated local VLM path so figures/tables/scanned pages become citable chunks under the grounding gate; staged (1) table/scanned-text extraction → (2) chart/figure VLM reasoning; tier-gated (Thorough/Deep), routed through the admission gate; opt-in extra like `pdf-fast`. Acceptance per stage: a figure/table yields a citable chunk that the entailment gate can verify a claim against | admission gate, sandbox/ingest, grounding gate (NO_TOUCH thresholds) | ⬜ | **P1** — biggest real-document capability lever; largest build; needs its own contract + hardware budgeting |
+| R-C | Local-model quality amplification | Best-of-N synthesis ranked by reranker/entailment; verifier-guided regeneration on discipline-gate failure (regenerate span vs. WEP-downgrade); optional cross-model ensemble for load-bearing claims. Depth-gated (Thorough/Deep) + **metric-gated**: must show measured faithfulness/quality lift on the R-A harness or be reverted (OPTIMIZE discipline) | R-A (measurement), reranker/entailment/discipline (exist) | ⬜ | **P1** — attacks the "on par" quality half; sequenced behind R-A so the lift is proven not assumed |
+| R-D 🖼️ | Report-grounded Ask follow-up | Ask grounded in a *completed artifact's* corpus + citation set; synchronous turn endpoint with a live gateway in the web process + continuation UI (per FUTURE_FEATURES §6). Acceptance: a follow-up on a staged artifact returns a grounded turn whose citations resolve to that artifact's sources, gated identically to a fresh Ask | ask.py, ask_store.py (exist); web live-gateway plumbing | ⬜ | **P2** — cheap parity win; refines existing §6, not a second chat feature |
+
+Progress (this effort's committed scope): **4 ✔️ / 12 ⬜ / 0 🧩 / 0 🚫 / 5 🔒**
+(B3.1, B3.2, B3.3, B4.1, B4.2 verified — Stage 1 & 2 complete; Stage 3 watchdog
+B5.1.1–B5.1.4 implemented, tests pending; B1/B2 existing spines verified by
+baseline run). Plus **4 ⬜ roadmap backlog** (R-A…R-D) — planned, not scheduled.
 
 Frontend↔backend seam (locked): `job_events` rows / SSE `job.step` payload
 `{phase, kind, label, pct, data}` — this effort adds only new `kind` values
