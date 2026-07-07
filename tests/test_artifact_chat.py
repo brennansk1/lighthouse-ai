@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pytest
-
 from lighthouse_ai.modes.artifact_chat import (
     ChatTurnResult,
     chat_turn,

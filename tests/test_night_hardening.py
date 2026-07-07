@@ -12,7 +12,6 @@ import warnings
 
 import pytest
 
-
 # --- C3: no pynvml deprecation warning on macOS ------------------------------
 
 def test_detect_nvidia_returns_empty_on_darwin_without_warning(monkeypatch):
