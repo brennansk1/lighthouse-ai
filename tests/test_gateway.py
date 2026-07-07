@@ -103,6 +103,7 @@ def test_check_drift_raises_when_recorded_differs(tmp_path, stub_profile):
 def test_gateway_routes_role_and_records_audit(migrated_paths, stub_profile):
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
     gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile)
+    gw._get_ollama = lambda: None  # hermetic: force the mock path (no real ollama)
     resp = gw.complete("planner", "ping", job_id="j1")
     assert resp.role == "planner"
     assert resp.model
@@ -157,6 +158,59 @@ def test_gateway_with_chosen_models_uses_recorded_bindings(
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
     gw = Gateway(g, migrated_paths.audit_db, chosen_models_path=dest,
                  profile=stub_profile)
+    gw._get_ollama = lambda: None  # hermetic: don't serve via a real local ollama
     # The gateway resolves planner via the recorded (budget-aware) yaml.
     resp = gw.complete("planner", "ping")
     assert resp.model == recommend_models(stub_profile)["planner"].model
+
+
+def test_admission_refusal_degrades_to_smaller_real_model(migrated_paths, stub_profile):
+    """When the role's model can't fit live RAM, complete() serves the largest
+    INSTALLED model that DOES fit — a real answer, not a silent mock (the
+    mock-masquerade root-cause fix)."""
+    from lighthouse_ai.backends.ollama import ChatResponse
+
+    g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
+    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile)
+
+    class _FakeOllama:
+        def chat(self, model, prompt, **kw):
+            return ChatResponse(text=f"real answer from {model}", prompt_tokens=1,
+                                completion_tokens=1, model=model)
+
+        def loaded_models(self):
+            return []
+
+    gw._get_ollama = lambda: _FakeOllama()
+    primary = gw.binding("researcher").model
+    # primary can't fit (huge need); the smaller fallback reserves nothing (fits).
+    gw._need_gb = lambda ollama, m: 999.0 if m == primary else 0.0
+    gw._fallback_candidates = lambda ollama, p: ["small-real-model"]
+
+    resp = gw.complete("researcher", "hi", job_id="j1")
+    assert resp.model == "small-real-model"
+    assert "real answer" in resp.text
+    counts = gw.drain_backends()
+    assert counts.get("mock-lowmem", 0) == 0  # did NOT mock
+    assert counts.get("mock", 0) == 0
+
+
+def test_admission_mocks_only_when_nothing_fits(migrated_paths, stub_profile):
+    """If NO installed model fits, it still falls to the low-memory mock."""
+    g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
+    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile)
+
+    class _FakeOllama:
+        def chat(self, model, prompt, **kw):  # pragma: no cover - never admitted
+            raise AssertionError("should not be called when nothing fits")
+
+        def loaded_models(self):
+            return []
+
+    gw._get_ollama = lambda: _FakeOllama()
+    gw._need_gb = lambda ollama, m: 999.0            # nothing fits
+    gw._fallback_candidates = lambda ollama, p: ["also-too-big"]
+
+    resp = gw.complete("researcher", "hi", job_id="j1")
+    assert "[mock" in resp.text
+    assert gw.drain_backends().get("mock-lowmem", 0) == 1

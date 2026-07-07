@@ -1023,6 +1023,7 @@ class Gateway:
         # catalog-declared but not yet implemented — until they are, serving those
         # models via Ollama (still accelerated) beats silently mocking.
         backend_used = b.backend
+        served_model = b.model
         text: str
         prompt_tokens: int
         completion_tokens: int
@@ -1032,44 +1033,53 @@ class Gateway:
             if ollama is not None:
                 # Cross-process, RAM-aware admission: reserve the new resident
                 # RAM this call needs (0 if the model is already hot or pages
-                # from SSD) against live-available memory. Yields False if
-                # headroom never appears → fall back to the low-memory mock
-                # rather than force a swap.
+                # from SSD) against live-available memory. If the role's model
+                # can't fit, degrade to the largest INSTALLED model that DOES fit
+                # rather than silently mocking — a smaller real answer is still
+                # grounded and honest (the mock is not). Only mock if nothing fits.
                 from .governor.ollama_queue import ollama_slot
-                with ollama_slot(self._ollama_lock, b.model,
-                                 need_gb_fn=lambda m: self._need_gb(ollama, m),
-                                 cfg=self._admission) as admitted:
-                    if not admitted:
-                        backend_used = "mock-lowmem"
-                    else:
+                chat_kwargs: dict[str, Any] = {"sampling": effective_sampling}
+                if self.token_sink is not None:
+                    sink = self.token_sink
+
+                    def _on_token(tok: str, _role: str = role,
+                                  _job: str | None = job_id) -> None:
                         try:
-                            chat_kwargs: dict[str, Any] = {
-                                "sampling": effective_sampling,
-                            }
-                            if self.token_sink is not None:
-                                sink = self.token_sink
+                            sink(_role, _job, tok)
+                        except Exception:
+                            pass
 
-                                def _on_token(tok: str, _role: str = role,
-                                              _job: str | None = job_id) -> None:
-                                    try:
-                                        sink(_role, _job, tok)
-                                    except Exception:
-                                        pass
-
-                                chat_kwargs["on_token"] = _on_token
-                            chat_resp = ollama.chat(b.model, prompt, **chat_kwargs)
+                    chat_kwargs["on_token"] = _on_token
+                candidates = [b.model, *self._fallback_candidates(ollama, b.model)]
+                any_admitted = False
+                for cand in candidates:
+                    with ollama_slot(self._ollama_lock, cand,
+                                     need_gb_fn=lambda m: self._need_gb(ollama, m),
+                                     cfg=self._admission) as admitted:
+                        if not admitted:
+                            continue  # doesn't fit live RAM — try a smaller one
+                        any_admitted = True
+                        try:
+                            chat_resp = ollama.chat(cand, prompt, **chat_kwargs)
                             text = chat_resp.text
                             prompt_tokens = chat_resp.prompt_tokens
                             completion_tokens = chat_resp.completion_tokens
+                            served_model = cand
                             chat_ok = True
+                            break
                         except BackendStalled:
                             # A wedged-but-listening daemon must fail LOUDLY
                             # (incident 2026-06-10) — degrading it to the mock
                             # would turn a dead backend into a plausible-looking
-                            # artifact. Every other failure keeps the fallback.
+                            # artifact. Every other failure tries the next model.
                             raise
                         except Exception:
-                            backend_used = "mock"
+                            continue  # this model errored; try a smaller one
+                if not chat_ok:
+                    # Distinguish the two honest failure modes: a real model was
+                    # admitted but erred (backend problem) → "mock"; nothing fit
+                    # live RAM → "mock-lowmem".
+                    backend_used = "mock" if any_admitted else "mock-lowmem"
             else:
                 backend_used = "mock"
             if not chat_ok:
@@ -1083,12 +1093,20 @@ class Gateway:
                 mock_resp.text, mock_resp.prompt_tokens, mock_resp.completion_tokens,
             )
 
+        # Provenance records the model that ACTUALLY served the call — if we
+        # degraded to a smaller installed model, say so (and re-fingerprint it).
+        resp_fp = fp
+        if served_model != b.model:
+            try:
+                resp_fp = fingerprint(served_model, b.backend)
+            except Exception:
+                resp_fp = fp
         resp = CompletionResponse(
-            text=text, model=b.model, role=role,
+            text=text, model=served_model, role=role,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             usd=0.0,  # local calls are free; cloud pricing TBD when escalation lands
-            fingerprint=fp,
+            fingerprint=resp_fp,
         )
         self._backend_counts[backend_used] += 1
         self._record(resp, job_id=job_id, prompt=prompt, backend_used=backend_used,
@@ -1104,6 +1122,39 @@ class Gateway:
         counts = dict(self._backend_counts)
         self._backend_counts.clear()
         return counts
+
+    def _fallback_candidates(self, ollama, primary: str) -> list[str]:
+        """Installed reasoning models smaller than ``primary``, largest-first.
+
+        When the role's model can't fit live-free RAM, admission would otherwise
+        silently fall to the mock (the "mock masquerade"). Instead we degrade to
+        the biggest INSTALLED reasoning model that actually fits — a smaller real
+        answer is still grounded and honest; a mock one is not. Embedders /
+        rerankers are excluded, and only models genuinely smaller than the
+        primary are offered (anything ≥ primary that didn't fit won't either).
+        """
+        try:
+            installed = [m.name for m in ollama.list_models()]
+        except Exception:
+            return []
+        try:
+            primary_gb = estimate_resident_gb(primary)
+        except Exception:
+            return []
+        scored: list[tuple[float, str]] = []
+        for name in installed:
+            low = name.lower()
+            if name == primary or any(x in low for x in (
+                    "embed", "bge-", "nomic", "rerank")):
+                continue
+            try:
+                gb = estimate_resident_gb(name)
+            except Exception:
+                continue
+            if 0 < gb < primary_gb:
+                scored.append((gb, name))
+        scored.sort(reverse=True)  # largest-that-fits tried first
+        return [name for _gb, name in scored]
 
     def _need_gb(self, ollama, model: str) -> float:
         """New resident RAM ``model`` will add: 0 if already loaded or SSD-paging.
