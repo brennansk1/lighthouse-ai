@@ -1,11 +1,66 @@
 # Night sprint report — 2026-07-06 → 07
 
+> **Update (gap-closing follow-up, 2026-07-07).** After the overnight sprint I
+> closed the two highest-value gaps and proved both on your real Ollama. See
+> **§0 — Gap-closing follow-up** immediately below; the original overnight report
+> follows from §1.
+
 Good morning. Here's what changed while you slept, what you can do now, and the
-honest state of things. **Everything is committed on branch
-`claude/exciting-lamport-002bc3` (21 commits, not pushed).** Full test suite:
-**3222 passing, 0 failing** (was 3160 at the start — +62 new tests); ruff + mypy
-clean across 278 files. No real LLM work ran unattended beyond a couple of
-bounded, memory-monitored validation runs — your machine was never at risk.
+honest state of things. Everything is committed on branch
+`claude/exciting-lamport-002bc3`. The overnight suite was **3222 passing, 0
+failing** (was 3160 — +62 tests); ruff + mypy clean. No real LLM work ran
+unattended beyond bounded, memory-monitored validation runs — your machine was
+never at risk.
+
+---
+
+## 0. Gap-closing follow-up — the two biggest gaps, closed and proven
+
+**#1 Reliability — the mock-masquerade root cause is eliminated (not just
+labelled).** Before: on a busy box the model picker chose a model too big for
+live-free RAM, admission refused it, and the call silently fell to the mock.
+Now `gateway.complete()` **degrades to the largest INSTALLED model that actually
+fits** before ever mocking — a smaller real answer is grounded and honest; a
+mock one isn't. It only mocks when nothing fits (`mock-lowmem`) or an admitted
+model errors (`mock`), and provenance records the model that truly served.
+*Proven on your M4:* forcing `mistral-small:24b` (won't fit) **degraded to a real
+`qwen3.5:9b` answer**, `backends={ollama:1}`, not a mock. (2 regression tests;
+made 2 env-dependent tests hermetic.)
+
+**#2 Quality — the local model now cites its evidence reliably.** Before:
+`qwen3.5:9b` often dropped inline `[N]` markers even with numbered evidence in
+hand, so a genuinely grounded section scored 0% citation coverage and got
+WEP-downgraded. Now both the deep-dive synthesizer and the chat prompt carry an
+explicit citation instruction (concrete rule + example), plus a **one-shot retry**
+when the model still omits citations (honest: the model cites; we never fabricate
+markers). *Proven on your M4:* a section over real evidence produced
+`...improved insulin sensitivity by 18% [2]. ...no significant change when
+calories were matched [1].` — cited correctly on the **first** try, capturing the
+null result and the calorie-overlap caveat.
+
+**#3 Entailment gate — assessed, no change needed.** It's already honest: without
+a scorer installed it reports *"not checked"* (`None`), never a fabricated pass.
+Activating a real faithfulness model (HHEM/MiniCheck) is an **opt-in ~1.5 GB
+model install** — I deliberately did **not** download/wire it unattended on a
+memory-pressured, 94%-full-disk box, and I won't ship model code I can't verify.
+The primary grounding check (citations, now reliable) works without it.
+
+**One honest caveat from the real runs:** under memory pressure (my testing had
+loaded RAM), `qwen3.5:9b` synthesis was **slow** (~4 min/section), which is why a
+full deep-dive timed out at 10 min. That's a hardware/memory artifact, not a bug
+— a fresh box at ~68% free RAM is far faster, and the naturally-picked researcher
+model (`qwen3.5:4b`) is lighter. Close memory-hungry apps before a Deep run.
+
+### Next steps (proposed, not done)
+1. **Frontend-perfection pass** — I was honest that the UI is *not* verified-perfect
+   across all features: 6 of 9 tabs aren't vision-checked, no accessibility audit,
+   no responsive/dark-mode sweep, and the chat panel has 3 known limits (reopened
+   chats lose the rich per-turn badge/citation view; streaming is request-response
+   not incremental; escalation is arXiv-only). This is the top proposed task.
+2. **Activate the entailment gate** — `pip install` a faithfulness model, verify it,
+   wire it (adds a real second grounding layer).
+3. **Full deep-dive quality run + R-A grade** — run the 5 benchmark questions on a
+   freshly-booted box (more RAM) and record the frontier-parity numbers.
 
 ---
 
