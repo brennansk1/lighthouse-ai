@@ -29,7 +29,7 @@ KNOWN_EVENTS = {
     "audit.appended",
     "governor.tier", "governor.tripped",
     "doctor.changed", "intent.dead",
-    "control.status",
+    "control.status", "chat.token", "chat.turn",
 }
 
 #: Sentinel enqueued to a subscriber that overflowed its queue — the SSE stream

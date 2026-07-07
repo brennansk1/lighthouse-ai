@@ -1338,10 +1338,29 @@ def run_job(paths: Paths, job: ClaimedJob, *,
     meta["draft_id"] = draft_id
     # Record which backend actually served this job so a "mock masquerade" (a
     # real-gateway run that silently degraded to the mock) is visible downstream.
+    # A run is only honestly "ollama" if NO completion degraded — a single real
+    # call (e.g. framing) must not stamp "ollama" on a run whose synthesis
+    # actually mocked (that is the masquerade). If some calls degraded, the run
+    # is "degraded"; if none were real, "mock".
     if backends:
         real = backends.get("ollama", 0)
+        degraded = backends.get("mock", 0) + backends.get("mock-lowmem", 0)
         meta["backends"] = backends
-        meta["backend"] = "ollama" if real else "mock"
+        if real and not degraded:
+            meta["backend"] = "ollama"
+        elif real and degraded:
+            meta["backend"] = "degraded"
+        else:
+            meta["backend"] = "mock"
+        # Surface a degraded run so the dashboard shows it wasn't fully real,
+        # rather than the user discovering it only in provenance metadata.
+        if degraded:
+            progress.emit(progress.last_phase or "synthesis", "degraded",
+                          f"Ran partly on the fallback model "
+                          f"({degraded} call(s) degraded — answer may be less reliable)",
+                          progress.last_pct, {"real": real, "degraded": degraded})
+            _audit(paths, "backend.degraded",
+                   {"job_id": job.id, "real": real, "degraded": degraded})
     _set_status(paths.state_db, job.id, "review", meta=meta)
     _audit(paths, "job.review",
            {"job_id": job.id, "draft_id": draft_id, "mode": mode_key,

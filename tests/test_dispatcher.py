@@ -254,6 +254,35 @@ def test_deep_job_resumes_from_checkpoint_end_to_end(migrated_paths, monkeypatch
     assert "resumed" in json.loads(meta_json)
 
 
+def test_backend_label_honest_on_degraded_run(migrated_paths, monkeypatch):
+    """A run where some LLM calls fell back to the mock must be labelled
+    'degraded' (not 'ollama') — the mock-masquerade honesty fix."""
+    from lighthouse_ai import dispatcher as D
+
+    class _Gw:
+        # Some calls real, some degraded to the mock.
+        def drain_backends(self):
+            return {"ollama": 1, "mock": 1}
+
+    # A trivial adapter that produces a valid summary without touching the gw.
+    def _adapter(meta, *, gateway=None, gate=None, job_id=None, positions_db=None):
+        return {"title": "T", "body_html": "<p>x</p>",
+                "body_json": {"question": "q"}, "source_count": 1}
+
+    monkeypatch.setitem(D._ADAPTERS, "decide", _adapter)
+    _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
+    job = claim_one_job(migrated_paths.state_db)
+    run_job(migrated_paths, job, gateway=_Gw())
+
+    conn = open_db(migrated_paths.state_db)
+    try:
+        meta = json.loads(conn.execute(
+            "SELECT metadata_json FROM jobs WHERE id='j1'").fetchone()[0])
+    finally:
+        conn.close()
+    assert meta["backend"] == "degraded"
+
+
 def test_dispatch_once_end_to_end(migrated_paths):
     _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
     draft_id = dispatch_once(migrated_paths)

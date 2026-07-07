@@ -833,6 +833,14 @@ function traceKindChip(kind, data) {
         text: d.nodes_done != null
           ? `resumed — ${d.nodes_done} done, ${d.pending != null ? d.pending : '?'} to go`
           : 'resumed from checkpoint' };
+    case 'degraded':
+      // Some LLM calls fell back to the mock (RAM too tight / model too big) —
+      // the answer is partly synthetic. Amber, not red: the run completed, but
+      // the user must know it wasn't fully real.
+      return { icon: 'contradiction', tone: '#d97706',
+        text: d.degraded != null
+          ? `ran partly on the fallback (${d.degraded} call(s))`
+          : 'ran partly on the fallback model' };
     case 'stalled':
       // The local model stopped responding and the run was aborted. This must
       // read as a hard stop, never an eternally-running job (incident 2026-06-10).
