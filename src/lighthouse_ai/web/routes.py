@@ -64,11 +64,16 @@ def attach_web(app: FastAPI, paths: Paths, bus: EventBus | None = None) -> Event
         q = bus.subscribe()
 
         async def _stream():
+            from .events import _OVERFLOW
             try:
                 yield ": connected\n\n"
                 while True:
                     try:
                         msg = await asyncio.wait_for(q.get(), timeout=15.0)
+                        if msg is _OVERFLOW:
+                            # We fell behind and the bus signalled an overflow —
+                            # end the response so the client reconnects fresh.
+                            break
                         yield sse_format(msg)
                     except TimeoutError:
                         yield ": keepalive\n\n"

@@ -29,7 +29,13 @@ KNOWN_EVENTS = {
     "audit.appended",
     "governor.tier", "governor.tripped",
     "doctor.changed", "intent.dead",
+    "control.status",
 }
+
+#: Sentinel enqueued to a subscriber that overflowed its queue — the SSE stream
+#: generator recognizes it (by identity) and ends the response so the browser's
+#: EventSource reconnects with a fresh queue instead of hanging on a dead one.
+_OVERFLOW: dict[str, Any] = {"event": "__overflow__", "data": {}}
 
 
 @dataclass
@@ -59,14 +65,22 @@ class EventBus:
         msg = {"event": event, "data": data or {}}
 
         def _deliver() -> None:
-            dead: list[asyncio.Queue] = []
-            for q in self._subscribers:
+            for q in list(self._subscribers):
                 try:
                     q.put_nowait(msg)
                 except asyncio.QueueFull:
-                    dead.append(q)
-            for q in dead:
-                self._subscribers.discard(q)
+                    # The subscriber fell behind. Silently discarding it (the old
+                    # behavior) left its SSE generator blocked forever on an
+                    # orphaned queue — the connection never closed, so the browser
+                    # never fired onerror and never reconnected, and that tab
+                    # silently stopped receiving all live updates. Instead: make
+                    # room and enqueue a close sentinel the generator acts on, so
+                    # the response ends and the client reconnects with a fresh queue.
+                    try:
+                        q.get_nowait()          # drop the oldest queued message
+                        q.put_nowait(_OVERFLOW)
+                    except Exception:
+                        self._subscribers.discard(q)
 
         loop = self._loop
         if loop is not None and loop.is_running():

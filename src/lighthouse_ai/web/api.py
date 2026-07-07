@@ -1855,7 +1855,11 @@ def _artifact_to_csv(art: dict[str, Any], body: Any) -> str:
     import io
     out = io.StringIO()
     w = csv.writer(out)
-    if isinstance(body, dict) and body.get("rows") and isinstance(body["rows"], list):
+    # Dispatch by which structured key is PRESENT (as a list), not by
+    # truthiness — an artifact whose screening legitimately kept zero rows/
+    # cells/events (e.g. a survey where PRISMA excluded everything) must still
+    # export its headers, not silently fall through to a one-column title CSV.
+    if isinstance(body, dict) and isinstance(body.get("rows"), list):
         # Survey evidence table: one row per document, columns per attribute.
         attrs = [a["label"] if isinstance(a, dict) else str(a)
                  for a in body.get("attributes", [])]
@@ -1864,13 +1868,14 @@ def _artifact_to_csv(art: dict[str, Any], body: Any) -> str:
             cells = {c["attribute"]: c["value"] for c in row.get("cells", [])}
             w.writerow([row.get("doc_id", ""), row.get("title", ""),
                         *[cells.get(a, "") for a in attrs]])
-    elif isinstance(body, dict) and body.get("cells") and body.get("totals"):
+    elif isinstance(body, dict) and isinstance(body.get("cells"), list) \
+            and "totals" in body:
         # Decide matrix: option x criterion scores.
         w.writerow(["option", "criterion", "score", "contribution"])
         for c in body["cells"]:
             w.writerow([c.get("option"), c.get("criterion"),
                         c.get("score"), c.get("contribution")])
-    elif isinstance(body, dict) and body.get("events"):
+    elif isinstance(body, dict) and isinstance(body.get("events"), list):
         # Reconstruct timeline.
         w.writerow(["date", "action", "sources", "certainty"])
         for e in body["events"]:

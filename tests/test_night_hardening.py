@@ -98,3 +98,33 @@ def test_preflight_sizes_real_ollama_tags():
     assert preflight_pull("qwen3:14b-q4_K_M", free_disk_gb=12.0).ok is False
     # With ample room it proceeds.
     assert preflight_pull("qwen3:14b-q4_K_M", free_disk_gb=26.0).ok is True
+
+
+# --- W2: an empty-but-present table still exports its headers ----------------
+
+def test_empty_survey_table_csv_keeps_headers():
+    """A survey whose screening kept zero rows must still export the attribute
+    headers, not silently collapse to a one-column title CSV."""
+    from lighthouse_ai.web.api import _artifact_to_csv
+
+    body = {"rows": [], "attributes": [{"label": "sample size"},
+                                       {"label": "outcome"}]}
+    csv_text = _artifact_to_csv({"title": "Empty Survey"}, body)
+    header = csv_text.splitlines()[0]
+    assert "doc_id" in header and "sample size" in header and "outcome" in header
+    assert header != "title"
+
+
+# --- W4: an overflowed SSE subscriber gets a reconnect sentinel -------------
+
+def test_sse_overflow_enqueues_reconnect_sentinel():
+    """When a subscriber's queue fills, the bus must enqueue the overflow
+    sentinel (so the stream closes + client reconnects) rather than silently
+    orphaning the queue (which left the tab permanently without live updates)."""
+    from lighthouse_ai.web.events import _OVERFLOW, EventBus
+
+    bus = EventBus(max_queue=1)
+    q = bus.subscribe()               # no running loop → publish delivers inline
+    bus.publish("job.step", {"n": 1})  # fills the depth-1 queue
+    bus.publish("job.step", {"n": 2})  # overflow → drop oldest, enqueue sentinel
+    assert q.get_nowait() is _OVERFLOW
