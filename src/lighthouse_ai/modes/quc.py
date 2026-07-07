@@ -344,7 +344,12 @@ def ask(
             f"Conversation so far:\n{history}\n\n"
             f"{skill_hint}"
             f"Evidence:\n{evidence_block}\n\n"
-            f"USER: {user_text}\n\nDraft a concise answer with [N] citations."
+            f"USER: {user_text}\n\n"
+            "Answer concisely and ground it in the evidence: immediately after "
+            "each factual claim, cite the evidence number(s) in square brackets, "
+            "e.g. '...[1].' or '...[2,3].'. Use only the numbered evidence above; "
+            "never invent a citation number. If the evidence doesn't cover the "
+            "question, say so plainly rather than guessing."
         )
         with gate_ctx(gate):
             resp = gateway.complete("researcher", prompt, job_id=session.id)

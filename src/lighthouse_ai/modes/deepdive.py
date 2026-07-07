@@ -20,6 +20,7 @@ plug LangGraph in later if desired.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -37,6 +38,21 @@ from ._gate import gate_ctx
 # not supply one. NEVER datetime.now() at import — the epoch keeps offline runs
 # byte-reproducible; live dispatch passes a real `detected_at` through.
 DEFAULT_DETECTED_AT = datetime(1970, 1, 1, tzinfo=UTC)
+
+#: Detects an inline [N] or [N,M] citation marker.
+_HAS_CITATION = re.compile(r"\[\d+(?:\s*,\s*\d+)*\]")
+
+#: Explicit citation instruction. Small local models routinely drop inline
+#: citations when asked vaguely ("with [N] citations"); a concrete rule + an
+#: example gets them to cite reliably, which is what the discipline gate scores.
+_CITE_INSTRUCTION = (
+    "Write a concise, evidence-grounded answer of 1-2 short paragraphs. Cite the "
+    "evidence inline: immediately after each factual claim, put the number(s) of "
+    "the evidence it comes from in square brackets — e.g. '...improves insulin "
+    "sensitivity [1].' or '...seen in two trials [2,3].' EVERY factual sentence "
+    "must end with at least one [N] citation. Use only the numbered evidence "
+    "above; never invent a citation number."
+)
 
 # Imported at module level so tests can patch lighthouse_ai.modes.deepdive.run_debate
 try:
@@ -141,18 +157,39 @@ def _research_section(
                 f"- Ruled out: {ruled_out}\n\n"
                 f"Sub-question: {section.sub_question}\n\n"
                 f"Evidence:\n{evidence_lines}"
-                f"\n\nDraft a 2-paragraph answer with [N] citations."
+                f"\n\n{_CITE_INSTRUCTION}"
                 f" Build on the established facts above."
             )
         else:
             prompt = (
                 f"Sub-question: {section.sub_question}\n\n"
                 f"Evidence:\n" + evidence_lines
-                + "\n\nDraft a 2-paragraph answer with [N] citations."
+                + f"\n\n{_CITE_INSTRUCTION}"
             )
         with gate_ctx(gate):
             resp = gateway.complete("researcher", prompt, job_id=job_id)
         body = resp.text
+        # Small local models sometimes still omit inline [N] markers even with
+        # numbered evidence in hand — which makes a genuinely grounded section
+        # look ungrounded to the discipline gate. Retry ONCE with an explicit
+        # re-instruction (honest: the model does the citing; we never fabricate
+        # markers). If it still won't cite, the low coverage stands — that is the
+        # honest signal, not something to paper over.
+        if evidence and not _HAS_CITATION.search(body):
+            retry_prompt = (
+                f"{prompt}\n\nYour previous answer contained NO [N] citations. "
+                f"Rewrite it now, adding the correct evidence number in square "
+                f"brackets after every factual claim. The evidence is numbered "
+                f"1 to {len(evidence)}."
+            )
+            try:
+                with gate_ctx(gate):
+                    resp2 = gateway.complete("researcher", retry_prompt,
+                                             job_id=job_id)
+                if _HAS_CITATION.search(resp2.text):
+                    body = resp2.text
+            except Exception:
+                pass
     from dataclasses import replace
     return replace(section, body=body, citations=citations), evidence
 
