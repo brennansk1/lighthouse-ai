@@ -129,15 +129,16 @@ def init(
     # user still needs. Budget-aware via gateway.recommend_models / the tag
     # ladder, so a small box gets a small tag instead of a hardcoded qwen3:14b.
     try:
-        from .gateway import recommend_models, recommend_pull_tag
-        bindings = recommend_models(profile)
-        reasoning = bindings.get("synthesizer") or bindings.get("planner")
+        from .gateway import estimate_download_gb, recommend_pull_tag
+        # Show the ONE real, pullable Ollama tag sized to this machine's RAM —
+        # not the catalog's internal capability-class name, which isn't
+        # `ollama pull`-able and only confused first-run users.
         pull_tag = recommend_pull_tag(profile)
-        if reasoning is not None:
-            console.print(f"  recommended model (tier {profile.suggested_tier}): "
-                          f"[bold cyan]{reasoning.model}[/bold cyan] "
-                          f"→ pull [bold]{pull_tag}[/bold] "
-                          f"({profile.total_ram_gb} GB RAM)")
+        est = estimate_download_gb(pull_tag)
+        size_hint = f", ~{est:.0f} GB download" if est > 0 else ""
+        console.print(f"  recommended model for your hardware "
+                      f"(tier {profile.suggested_tier}, {profile.total_ram_gb} GB RAM): "
+                      f"[bold cyan]{pull_tag}[/bold cyan]{size_hint}")
         console.print(f"  [bold]ollama pull {pull_tag}[/bold]   "
                       "(the only model you need to start)")
     except Exception as exc:  # never let model selection break init
