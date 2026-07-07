@@ -826,6 +826,20 @@ function traceKindChip(kind, data) {
       return { icon: 'coverage', tone: 'var(--green-dark)', text: 'coverage check' };
     case 'checkpoint':
       return { icon: 'checkpoint', tone: 'var(--muted)', text: 'progress saved' };
+    case 'resumed':
+      // A crashed multi-hour run picked up from its last checkpoint — an
+      // info marker, not a fresh start.
+      return { icon: 'checkpoint', tone: 'var(--primary)',
+        text: d.nodes_done != null
+          ? `resumed — ${d.nodes_done} done, ${d.pending != null ? d.pending : '?'} to go`
+          : 'resumed from checkpoint' };
+    case 'stalled':
+      // The local model stopped responding and the run was aborted. This must
+      // read as a hard stop, never an eternally-running job (incident 2026-06-10).
+      // Failure red (#c62828) — matches .pill.failed; the coastal theme remaps
+      // --coral-2 to navy, which would wrongly read as an ordinary accent here.
+      return { icon: 'contradiction', tone: '#c62828',
+        text: d.call ? `backend stalled on ${d.call} — stopped` : 'backend stalled — stopped' };
     case 'node':
       return { icon: 'node', tone: 'var(--primary)',
         text: d.depth != null ? `explored (level ${d.depth})` : 'explored a question' };
@@ -859,10 +873,17 @@ function TraceStep({ ev, phaseIcon, active }) {
   const chip = traceKindChip(ev.kind, ev.data);
   const depth = ev.data && ev.data.depth != null ? Number(ev.data.depth) : null;
   const indent = depth != null && depth > 0 ? Math.min(depth, 6) * 14 : 0;
+  // A stalled step is a hard failure — give the whole row alert styling so it
+  // can never be mistaken for an in-progress step.
+  const isAlert = ev.kind === 'stalled';
   return (
     <div className="lh-slide-up"
-      style={{ display: 'flex', gap: 10, padding: '6px 0', alignItems: 'flex-start',
-        marginLeft: indent }}>
+      role={isAlert ? 'alert' : undefined}
+      style={{ display: 'flex', gap: 10, padding: isAlert ? '8px 10px' : '6px 0',
+        alignItems: 'flex-start', marginLeft: indent,
+        background: isAlert ? 'rgba(198,40,40,0.08)' : undefined,
+        borderLeft: isAlert ? '3px solid #c62828' : undefined,
+        borderRadius: isAlert ? 6 : undefined }}>
       <span
         className={active ? 'lh-trace-active-dot' : undefined}
         aria-hidden="true"
