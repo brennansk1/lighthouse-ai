@@ -401,14 +401,28 @@ class PullPreflight:
     is_large: bool
 
 
+#: Approx on-disk GB per billion params for Q4-class weights (the tags
+#: `recommend_pull_tag` hands users). Calibrated against real Ollama sizes:
+#: qwen3.5:9b=6.6GB (0.68), qwen3:14b=9.3GB (0.66), mistral-small:24b=14.3GB (0.60).
+_GB_PER_B_PARAM_Q4 = 0.65
+
+
 def estimate_download_gb(model: str) -> float:
     """Approx on-disk download size (GB). Weights only — a bit under the live
     footprint, which also counts KV cache + activations + runtime overhead.
-    Returns 0.0 for an unknown model (caller treats as 'size unknown')."""
+    Returns 0.0 only when even the parameter count can't be inferred."""
     fp = model_footprint_gb(model)
-    if fp <= 0:
-        return 0.0
-    return round(max(fp - 2.5, fp * 0.8), 1)
+    if fp > 0:
+        return round(max(fp - 2.5, fp * 0.8), 1)
+    # Not a known capability-class name (e.g. a real Ollama tag like
+    # "qwen3:14b-q4_K_M" — exactly what `recommend_pull_tag` returns). Estimate
+    # from the tag's parameter count so the disk preflight isn't blind to the
+    # tags the onboarding flow actually recommends (the bug: unknown size → the
+    # headroom check was silently bypassed for the model users are told to pull).
+    params = _tag_params_hint(model)
+    if params != float("inf") and params > 0:
+        return round(params * _GB_PER_B_PARAM_Q4, 1)
+    return 0.0
 
 
 def preflight_pull(model: str, *, free_disk_gb: float,

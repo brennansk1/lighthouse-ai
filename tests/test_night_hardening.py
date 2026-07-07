@@ -81,3 +81,20 @@ def test_json_field_degrades_malformed_row_to_empty():
     assert _json_field({"metadata_json": '{"a": 1}'}, "metadata_json") == {"a": 1}
     # A valid-but-non-object JSON (e.g. a bare list) also degrades to {}.
     assert _json_field({"metadata_json": "[1,2,3]"}, "metadata_json") == {}
+
+
+# --- C1: disk-pull preflight sizes real Ollama tags, not just class names ----
+
+def test_preflight_sizes_real_ollama_tags():
+    """The disk-safety preflight must estimate a size for the REAL tags
+    recommend_pull_tag hands users (e.g. 'qwen3:14b-q4_K_M'), not fall through
+    to the 'unknown size' branch that bypassed the headroom check."""
+    from lighthouse_ai.gateway import estimate_download_gb, preflight_pull
+
+    est = estimate_download_gb("qwen3:14b-q4_K_M")
+    assert 7.0 <= est <= 11.0, f"14B tag should size ~9 GB, got {est}"
+    # On a tight disk the recommended pull is now correctly REFUSED (the bug:
+    # it was allowed because size was treated as unknown).
+    assert preflight_pull("qwen3:14b-q4_K_M", free_disk_gb=12.0).ok is False
+    # With ample room it proceeds.
+    assert preflight_pull("qwen3:14b-q4_K_M", free_disk_gb=26.0).ok is True
