@@ -134,6 +134,7 @@ def test_gateway_unknown_role_raises(migrated_paths, stub_profile):
 def test_complete_structured_uses_aux_when_bound(migrated_paths, stub_profile):
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
     gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile)
+    gw._get_ollama = lambda: None  # hermetic: force the mock path (no real ollama)
     resp = gw.complete_structured("score this", job_id="j1")
     # aux_context is bound in the tier catalog → structured calls route to it,
     # keeping extraction/scoring off the heavy reasoner.
