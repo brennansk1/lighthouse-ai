@@ -1744,7 +1744,21 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
             return {"id": art["id"], "title": art["title"],
                     "artifact_type": art.get("artifact_type"), "body": body}
         if format == "md":
-            md = f"# {art['title']}\n\n{art.get('body_html', '')}"
+            # For structured artifacts (matrix/table/timeline/…) body_html is
+            # only a one-line stub — the real content lives in body_json. Render
+            # it with the same renderers the Logseq exporter uses, so a Markdown
+            # export isn't near-empty. Fall back to body_html when absent.
+            md_body = art.get("body_html", "")
+            if body:
+                try:
+                    from ..targets.logseq import _render_body
+                    lines = _render_body(art.get("artifact_type"), body,
+                                         art.get("body_html", ""))
+                    if lines:
+                        md_body = "\n".join(lines)
+                except Exception:
+                    pass
+            md = f"# {art['title']}\n\n{md_body}"
             return PlainTextResponse(md, media_type="text/markdown")
         if format == "csv":
             return PlainTextResponse(_artifact_to_csv(art, body),
