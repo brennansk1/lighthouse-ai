@@ -197,7 +197,9 @@ def test_empty_text_produces_empty_cell():
     row = r.rows[0]
     assert row.cells[0].value == ""
     assert row.cells[0].entailed is False
-    assert row.cells[0].entailment_score == 0.0
+    # A missing/never-extracted attribute is UNCHECKED, not a failed fact-check:
+    # score is None (neutral badge), not 0.0 (which renders as "✗ uncertain").
+    assert row.cells[0].entailment_score is None
 
 
 def test_missing_attrs_field_populated():

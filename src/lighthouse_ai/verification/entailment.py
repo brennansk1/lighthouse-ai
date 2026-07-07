@@ -55,8 +55,13 @@ def _get_scorer() -> tuple[object | None, str | None]:
                                     cache_dir=None)
                 _scorer_kind = "minicheck"
             except Exception:
+                # Importable but construction failed (missing weights, bad
+                # cache_dir, device error). Cache the failure with a sentinel so
+                # the guard above short-circuits — otherwise `available()` stays
+                # True and every subsequent claim re-attempts the expensive
+                # 770M-param load, turning one failure into O(claims) retries.
                 _scorer = None
-                _scorer_kind = None
+                _scorer_kind = "failed"
 
     return _scorer, _scorer_kind
 

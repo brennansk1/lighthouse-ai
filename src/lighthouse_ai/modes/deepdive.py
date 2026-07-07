@@ -104,8 +104,15 @@ def _research_section(
     stub when the gateway is absent so the orchestrator runs in tests."""
     evidence: list[HybridResult] = []
     if hybrid is not None:
-        evidence = hybrid.search(section.sub_question, top_k=top_k,
-                                 rerank_candidates=rerank_candidates)
+        try:
+            evidence = hybrid.search(section.sub_question, top_k=top_k,
+                                     rerank_candidates=rerank_candidates)
+        except Exception:
+            # A retrieval failure mid-run (Qdrant restart, embedder/dimension
+            # mismatch, transient store error) degrades THIS section to "no
+            # evidence" — consistent with how the rest of the pipeline handles
+            # backend failures — instead of failing the whole job.
+            evidence = []
     citations = [e.chunk.id for e in evidence]
     # `citations` mirrors the chunk ids of the evidence list above.
     if gateway is None:

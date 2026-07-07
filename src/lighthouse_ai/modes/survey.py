@@ -758,7 +758,10 @@ def run_survey(
                     attribute=attr.label,
                     value="",
                     citation_chunk_ids=(),
-                    entailment_score=0.0,
+                    # A *missing* attribute was never fact-checked — it must read
+                    # as "not found / N-A" (score None → neutral badge), not as a
+                    # failed entailment (0.0 → the red "✗ uncertain" badge).
+                    entailment_score=None,
                     entailed=False,
                 ))
         rows.append(EvidenceRow(

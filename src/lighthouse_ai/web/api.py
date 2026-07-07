@@ -260,7 +260,16 @@ def _rows(conn, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
 
 def _json_field(d: dict[str, Any], key: str) -> dict[str, Any]:
     raw = d.pop(key, None)
-    return json.loads(raw) if raw else {}
+    if not raw:
+        return {}
+    # A single row with malformed JSON (e.g. a truncated write during a crash)
+    # must not 500 an entire list endpoint — degrade that row to {} like every
+    # other JSON-parsing call site in this module does.
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 # ---- registration ---------------------------------------------------------

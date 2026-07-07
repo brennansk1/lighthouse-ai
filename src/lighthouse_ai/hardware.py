@@ -97,6 +97,11 @@ def _binary_exists(name: str) -> bool:
 
 def _detect_nvidia_gpus() -> list[GPUInfo]:
     """Try pynvml, then nvidia-smi, then give up."""
+    # macOS has no NVIDIA/CUDA path — importing pynvml there does nothing useful
+    # and (with recent pynvml) prints a deprecation FutureWarning on *every*
+    # command a Mac user runs. Skip it entirely on darwin.
+    if sys.platform == "darwin":
+        return []
     try:
         import pynvml  # type: ignore
     except ImportError:
