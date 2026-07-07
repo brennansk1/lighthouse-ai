@@ -9,6 +9,7 @@ import pytest
 import respx
 
 from lighthouse_ai.backends.ollama import (
+    BackendStalled,
     OllamaBackend,
     OllamaUnavailable,
     _sampling_to_options,
@@ -69,13 +70,15 @@ def test_list_models_raises_unavailable_on_non_200(mocked):
 
 
 def test_chat_parses_completion(mocked):
-    mocked.post("/api/chat").respond(200, json={
-        "model": "qwen3:8b",
-        "message": {"role": "assistant", "content": "Hello world."},
-        "prompt_eval_count": 5,
-        "eval_count": 3,
-        "done_reason": "stop",
-    })
+    # chat() always streams now (the generation watchdog needs a per-chunk
+    # progress signal); without on_token it still returns the identical
+    # ChatResponse, assembled from the JSON-lines frames.
+    mocked.post("/api/chat").respond(200, text=_stream_body(
+        {"message": {"role": "assistant", "content": "Hello world."},
+         "done": False},
+        {"message": {"content": ""}, "done": True, "model": "qwen3:8b",
+         "prompt_eval_count": 5, "eval_count": 3, "done_reason": "stop"},
+    ))
     resp = _backend(mocked).chat("qwen3:8b", "hi")
     assert resp.text == "Hello world."
     assert resp.prompt_tokens == 5
@@ -84,19 +87,17 @@ def test_chat_parses_completion(mocked):
 
 
 def test_chat_passes_sampling_options(mocked):
-    route = mocked.post("/api/chat").respond(200, json={
-        "model": "qwen3:8b",
-        "message": {"content": "ok"},
-        "prompt_eval_count": 1,
-        "eval_count": 1,
-    })
+    route = mocked.post("/api/chat").respond(200, text=_stream_body(
+        {"message": {"content": "ok"}, "done": True,
+         "model": "qwen3:8b", "prompt_eval_count": 1, "eval_count": 1},
+    ))
     _backend(mocked).chat(
         "qwen3:8b", "p",
         sampling={"temperature": 0.2, "top_p": 0.9, "max_tokens": 128, "seed": 42},
     )
     body = json.loads(route.calls.last.request.content)
     assert body["model"] == "qwen3:8b"
-    assert body["stream"] is False
+    assert body["stream"] is True
     assert body["options"]["temperature"] == 0.2
     assert body["options"]["num_predict"] == 128
     assert body["options"]["seed"] == 42
@@ -189,6 +190,48 @@ def test_chat_stream_raises_on_network_error(mocked):
     mocked.post("/api/chat").side_effect = httpx.ConnectError("down")
     with pytest.raises(OllamaUnavailable):
         _backend(mocked).chat("x", "p", on_token=lambda _t: None)
+
+
+# --- generation watchdog (BackendStalled) --------------------------------
+# A wedged-but-listening daemon accepts the request but never produces bytes;
+# httpx surfaces that as a ReadTimeout on the streaming read. The backend must
+# translate it into BackendStalled with the diagnostic attrs the dispatcher
+# audits — not the generic OllamaUnavailable, and never a silent hang.
+
+def test_chat_stall_raises_backend_stalled_with_attrs(mocked):
+    mocked.post("/api/chat").side_effect = httpx.ReadTimeout("no bytes")
+    b = OllamaBackend(HOST, stall_timeout=0.5)
+    with pytest.raises(BackendStalled) as ei:
+        b.chat("qwen3:8b", "hi")
+    assert ei.value.call == "chat"
+    assert ei.value.model == "qwen3:8b"
+    assert ei.value.stalled_after_s == 0.5
+    # It is-a OllamaUnavailable, so existing broad handlers still catch it.
+    assert isinstance(ei.value, OllamaUnavailable)
+
+
+def test_chat_stall_raises_even_with_on_token(mocked):
+    mocked.post("/api/chat").side_effect = httpx.ReadTimeout("no bytes")
+    with pytest.raises(BackendStalled):
+        OllamaBackend(HOST).chat("x", "p", on_token=lambda _t: None)
+
+
+def test_embed_stall_raises_backend_stalled(mocked):
+    mocked.post("/api/embed").side_effect = httpx.ReadTimeout("silent")
+    b = OllamaBackend(HOST, embed_read_timeout=0.25)
+    with pytest.raises(BackendStalled) as ei:
+        b.embed("bge-m3", ["a", "b"])
+    assert ei.value.call == "embed"
+    assert ei.value.stalled_after_s == 0.25
+
+
+def test_embed_non_timeout_error_stays_unavailable(mocked):
+    # A plain connection drop is NOT a stall — it must stay OllamaUnavailable
+    # (and specifically not the BackendStalled subclass the dispatcher escalates).
+    mocked.post("/api/embed").side_effect = httpx.ConnectError("refused")
+    with pytest.raises(OllamaUnavailable) as ei:
+        OllamaBackend(HOST).embed("bge-m3", ["a"])
+    assert not isinstance(ei.value, BackendStalled)
 
 
 def test_embed_returns_vectors(mocked):

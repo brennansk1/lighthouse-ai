@@ -131,6 +131,52 @@ def test_run_job_guard_trip_fires_notification(migrated_paths, monkeypatch):
     assert "cap reached" in captured.get("reason", "")
 
 
+def test_run_job_backend_stall_surfaces_loudly(migrated_paths, monkeypatch):
+    """A wedged-but-listening backend must fail the job LOUDLY (incident
+    2026-06-10): status failed, a `backend.stalled` audit event with the
+    diagnostic attrs, and a kind="stalled" step in the job trace — never an
+    eternally-running job or a silent degrade-to-mock."""
+    from lighthouse_ai import dispatcher as D
+    from lighthouse_ai.backends.ollama import BackendStalled
+
+    def _stall(*a, **k):
+        raise BackendStalled("no bytes for 300s", model="qwen3:32b",
+                             stalled_after_s=300.0, call="chat")
+
+    monkeypatch.setitem(D._ADAPTERS, "decide", _stall)
+
+    _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
+    job = claim_one_job(migrated_paths.state_db)
+    result = run_job(migrated_paths, job)
+
+    assert result is None
+    assert _job_status(migrated_paths.state_db, "j1") == "failed"
+
+    # backend.stalled audit event with the diagnostic payload.
+    conn = open_db(migrated_paths.audit_db)
+    try:
+        row = conn.execute(
+            "SELECT payload_json FROM audit_events "
+            "WHERE event_type='backend.stalled' ORDER BY seq DESC LIMIT 1"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None, "no backend.stalled audit event"
+    payload = json.loads(row[0])
+    assert payload["model"] == "qwen3:32b"
+    assert payload["stalled_after_s"] == 300.0
+    assert payload["call"] == "chat"
+
+    # kind="stalled" step in the job trace so the dashboard shows *why*.
+    conn = open_db(migrated_paths.state_db)
+    try:
+        kinds = [r[0] for r in conn.execute(
+            "SELECT kind FROM job_events WHERE job_id='j1'").fetchall()]
+    finally:
+        conn.close()
+    assert "stalled" in kinds
+
+
 def test_dispatch_once_end_to_end(migrated_paths):
     _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
     draft_id = dispatch_once(migrated_paths)
