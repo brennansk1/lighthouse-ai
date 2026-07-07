@@ -295,12 +295,13 @@ same grounding gate and provenance. *Pro:* cheap parity win — `ask.py` + `ask_
 the grounding gate already applies. *Con:* the live-gateway-in-web-process plumbing from §6 is the
 real work. **Adopt as the artifact-grounded specialization of §6, not a second chat feature.**
 
-### Reliability enablers (in flight / near-term) — keep
-The generation watchdog (`BackendStalled` through backend→gateway→dispatcher; committed, tests
-pending) and deep-tier checkpoint/resume (§6 bullet 1; `modes/exhaustive.py` state is
-serializable, dispatcher wiring + an observable resume lifecycle are the gap) are **P2 enablers**:
-plumbing, not capability, but they are what makes *unbounded depth* trustworthy over hours — the
-enabler of the depth wedge. Correctly prioritized; finish them.
+### Reliability enablers — **SHIPPED (2026-07)**
+The generation watchdog (`BackendStalled` through backend→gateway→dispatcher, dashboard alert step)
+and deep-tier checkpoint/resume (observable `job.resumed`/`job.requeued` lifecycle, offline E2E
+proof) are **done and verified** — see the ✅ rows in `docs/PRODUCTION_CHECKLIST.md`. They were the
+P2 enablers that make *unbounded depth* trustworthy over hours; the only remaining piece is the
+multi-*hour* live resume run (LIVE_TEST_PLAN, needs real hardware + time). This unblocks the
+frontier-parity items above from resting on a reliable long-run base.
 
 ### Declined (scope discipline)
 More source skills (37 is sufficient), more research modes (7 covers the space), more notify

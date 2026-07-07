@@ -100,8 +100,18 @@ real data and harden it. Grouped by priority.
   calibration (log score, Murphy decomposition, per-band reliability with shrinkage + credible
   intervals) + the human-resolution queue. ⬜ remaining: *observe* a real multi-day Position
   resolve + Brier update on the live box (needs `LIGHTHOUSE_REAL_BACKEND=1` + time).
-- 🔌 **Deep-tier resume** — serializable tree state exists; wire dispatcher-level checkpoint to
-  `state.db` and prove a resumed multi-hour run.
+- ✅ **Deep-tier resume** — serializable tree state + dispatcher checkpoint wiring shipped, and the
+  resume is now an *observable* lifecycle: a checkpoint hit audits `job.resumed` {nodes_done,
+  pending}, emits a `kind="resumed"` trace step, and marks `meta.resumed`; `reap_stuck_jobs` audits
+  `job.requeued` {checkpoint: bool}. Proven offline end-to-end (crash → reap → claim → run_job →
+  resume → review, checkpoint consumed, done-nodes not re-researched) by
+  `test_deep_job_resumes_from_checkpoint_end_to_end`. ⬜ remaining: the multi-*hour* live run
+  (needs `LIGHTHOUSE_REAL_BACKEND=1` + time) — tracked in LIVE_TEST_PLAN, not offline-provable.
+- ✅ **Generation watchdog** — a wedged-but-listening Ollama (incident 2026-06-10) now fails loudly
+  and fast: `chat()` streams with a per-chunk stall deadline (`LIGHTHOUSE_STALL_TIMEOUT_S`, 300s),
+  `embed()` a dedicated `LIGHTHOUSE_EMBED_TIMEOUT_S` (120s); a stall raises `BackendStalled`, which
+  the gateway never degrades to the mock and the dispatcher surfaces as a `backend.stalled` audit +
+  `kind="stalled"` alert step in the dashboard trace. Offline-tested; no eternally-running job.
 - ✅ **Persistent vectors / replication** — Qdrant validated live (2026-05-30). Litestream 0.5.12
   installed + live restore drill passed (2026-06-10): replicate → restore to fresh path → integrity
   `ok` (`test_litestream_end_to_end_round_trip` now runs un-skipped; `litestream restore` requires

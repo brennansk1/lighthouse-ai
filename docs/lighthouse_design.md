@@ -847,6 +847,15 @@ class LighthouseState(TypedDict):
 
 ### 8.3 Checkpointing
 
+> **Implementation note (2026-07):** this section is the original design intent; the
+> shipped implementation differs and `docs/PRODUCTION_CHECKLIST.md` carries the accurate
+> status. There is no LangGraph in the codebase — the Deep tier's `modes/exhaustive.py`
+> engine serializes its own `TreeState`, and the dispatcher persists checkpoints as
+> per-job JSON files under `<data_dir>/checkpoints/<job_id>.json` (not a `state.db`
+> checkpointer table). Resume is wired and observable (audited `job.resumed` /
+> `job.requeued`, `kind="resumed"` trace step); see the Deep-tier-resume row in the
+> production checklist.
+
 LangGraph SQLite checkpointer at `~/.lighthouse/state.db` (WAL mode). Every node commits on exit. Supervisor can pause mid-job; resume loads latest checkpoint. Critical for multi-day monitor/digest jobs, graceful pause across system sleep, and disaster recovery.
 
 **Pause semantics:**
