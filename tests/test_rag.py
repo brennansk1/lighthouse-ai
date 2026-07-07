@@ -23,6 +23,7 @@ from lighthouse_ai.rag.contextual import default_preamble
 
 # --- chunker ---
 
+
 def test_short_doc_produces_one_chunk():
     doc = Document(id="d1", text="A short doc. Two sentences.", metadata={})
     chunks = chunk_document(doc)
@@ -53,8 +54,9 @@ def test_code_block_preserved():
 
 
 def test_metadata_propagates_to_every_chunk():
-    doc = Document(id="d4", text="One sentence. Two sentence.",
-                   metadata={"grade": "A", "source": "Lighthouse"})
+    doc = Document(
+        id="d4", text="One sentence. Two sentence.", metadata={"grade": "A", "source": "Lighthouse"}
+    )
     chunks = chunk_document(doc)
     for c in chunks:
         assert c.metadata["grade"] == "A"
@@ -73,8 +75,7 @@ def test_buffered_text_not_lost_before_overlong_sentence():
     keep = "keep me please now"
     overlong = " ".join(["big"] * 60)
     text = keep + ". " + overlong + "."
-    chunks = chunk_document(Document(id="d", text=text), max_tokens=10,
-                            overlap_tokens=0)
+    chunks = chunk_document(Document(id="d", text=text), max_tokens=10, overlap_tokens=0)
     joined = " ".join(c.text for c in chunks)
     # Every word of the buffered sentence must survive somewhere.
     for w in keep.split():
@@ -82,6 +83,7 @@ def test_buffered_text_not_lost_before_overlong_sentence():
 
 
 # --- embedder ---
+
 
 def test_hash_embedder_is_deterministic():
     e = HashEmbedder(dim=32)
@@ -92,12 +94,14 @@ def test_hash_embedder_is_deterministic():
 
 def test_hash_embedder_overlap_yields_high_similarity():
     from lighthouse_ai.rag.embedder import cosine
+
     e = HashEmbedder(dim=128)
     a, b, c = e.embed(["cat dog fish", "cat dog bird", "rocket spaceship moon"])
     assert cosine(a, b) > cosine(a, c)
 
 
 # --- in-memory store ---
+
 
 def test_inmemory_store_upsert_and_search():
     e = HashEmbedder(dim=64)
@@ -119,8 +123,7 @@ def test_inmemory_store_filter():
     b = Document(id="b", text="apple banana cherry.", metadata={"grade": "B"})
     chunks_a = chunk_document(a)
     chunks_b = chunk_document(b)
-    store.upsert(chunks_a + chunks_b,
-                 e.embed([c.text for c in chunks_a + chunks_b]))
+    store.upsert(chunks_a + chunks_b, e.embed([c.text for c in chunks_a + chunks_b]))
     q = e.embed(["apple"])[0]
     res = store.search(q, k=10, filter={"grade": "A"})
     assert all(r.chunk.metadata["grade"] == "A" for r in res)
@@ -136,6 +139,7 @@ def test_inmemory_store_delete():
 
 
 # --- BM25 ---
+
 
 def test_bm25_returns_high_score_for_match():
     bm = BM25Index()
@@ -160,6 +164,7 @@ def test_bm25_readd_same_id_does_not_corrupt_df():
     """Regression: re-adding a chunk with an existing id is an update, not a
     second document. df must not exceed n_docs, otherwise idf/scores corrupt."""
     from lighthouse_ai.rag.chunker import Chunk
+
     bm = BM25Index()
     a = Chunk(id="x", document_id="d", text="alpha beta", position=0)
     b = Chunk(id="y", document_id="d", text="gamma delta", position=0)
@@ -179,6 +184,7 @@ def test_bm25_readd_same_id_does_not_corrupt_df():
 
 # --- RRF ---
 
+
 def test_rrf_higher_rank_yields_higher_score():
     rankings = [["a", "b", "c"], ["c", "a", "b"]]
     fused = reciprocal_rank_fusion(rankings, k=60)
@@ -192,6 +198,7 @@ def test_rrf_handles_disjoint_rankings():
 
 
 # --- Hybrid search ---
+
 
 def test_hybrid_search_returns_relevant_chunk():
     e = HashEmbedder(dim=128)
@@ -235,17 +242,21 @@ def test_hybrid_search_empty_query_no_crash():
 
 # --- Contextual retrieval ---
 
+
 def test_default_preamble_uses_metadata():
-    chunk = chunk_document(Document(id="d", text="body text",
-                                    metadata={"source": "NYT", "grade": "A",
-                                              "published_date": "2026-01-01"}))[0]
+    chunk = chunk_document(
+        Document(
+            id="d",
+            text="body text",
+            metadata={"source": "NYT", "grade": "A", "published_date": "2026-01-01"},
+        )
+    )[0]
     pre = default_preamble(chunk)
     assert "NYT" in pre and "grade A" in pre
 
 
 def test_prepend_context_adds_preamble():
-    chunks = chunk_document(Document(id="d", text="body",
-                                     metadata={"source": "X", "grade": "B"}))
+    chunks = chunk_document(Document(id="d", text="body", metadata={"source": "X", "grade": "B"}))
     out = prepend_context(chunks)
     assert out[0].text.startswith("[")
     assert "X" in out[0].text
@@ -259,6 +270,7 @@ def test_prepend_context_noop_without_metadata():
 
 # --- make_reranker export ---
 
+
 def test_make_reranker_exported_from_rag():
     """FlagReranker, RerankerUnavailable, and make_reranker are importable from
     the top-level rag package (Sprint 28 step 1 contract)."""
@@ -269,6 +281,7 @@ def test_make_reranker_exported_from_rag():
 
 
 # --- HybridSearch rerank_candidates cap ---
+
 
 def _length_scorer(query, texts):
     """Fake cross-encoder: scores by text length (deterministic, no model)."""
@@ -284,10 +297,7 @@ def test_hybrid_search_rerank_candidates_cap():
     hs = HybridSearch(InMemoryStore(), e, BM25Index(), reranker=reranker)
 
     # Add 6 distinct chunks so the fused pool is larger than the cap.
-    docs = [
-        Document(id=f"d{i}", text=f"chunk number {i} " + "word " * (i + 1))
-        for i in range(6)
-    ]
+    docs = [Document(id=f"d{i}", text=f"chunk number {i} " + "word " * (i + 1)) for i in range(6)]
     for d in docs:
         hs.add(chunk_document(d))
 
@@ -304,20 +314,19 @@ def test_hybrid_search_rerank_candidates_cap():
     res = hs.search("chunk number", top_k=2, rerank_candidates=3)
     # Reranker must have been called, and each call must have received ≤ 3 chunks.
     assert call_sizes, "scorer was never called — reranker was not invoked"
-    assert all(n <= 3 for n in call_sizes), (
-        f"scorer received more than 3 candidates: {call_sizes}"
-    )
+    assert all(n <= 3 for n in call_sizes), f"scorer received more than 3 candidates: {call_sizes}"
     # Final output is still capped to top_k.
     assert len(res) <= 2
 
 
 # --- Contextual retrieval (Sprint 30) ---
 
+
 def test_prepend_context_uses_preamble_fn():
     from lighthouse_ai.rag.chunker import Chunk
     from lighthouse_ai.rag.contextual import prepend_context
-    c = Chunk(id="d:0", document_id="d", text="quantum", position=0,
-              metadata={"source": "arxiv"})
+
+    c = Chunk(id="d:0", document_id="d", text="quantum", position=0, metadata={"source": "arxiv"})
     out = prepend_context([c])
     assert out[0].text.startswith("[Source: arxiv]")
     assert "quantum" in out[0].text
@@ -328,11 +337,11 @@ def test_llm_preamble_fn_falls_back_on_error():
 
     from lighthouse_ai.rag.chunker import Chunk
     from lighthouse_ai.rag.contextual import llm_preamble_fn
+
     gw = MagicMock()
     gw.complete.side_effect = RuntimeError("gateway down")
     fn = llm_preamble_fn(gw, document_text="some text")
-    c = Chunk(id="d:0", document_id="d", text="hello", position=0,
-              metadata={"source": "arxiv"})
+    c = Chunk(id="d:0", document_id="d", text="hello", position=0, metadata={"source": "arxiv"})
     result = fn(c)
     # Should fall back to default_preamble output
     assert "arxiv" in result or result == ""
@@ -341,7 +350,11 @@ def test_llm_preamble_fn_falls_back_on_error():
 def test_ingest_text_uses_contextual_retrieval(migrated_paths):
     """ingest_text always prepends contextual preamble via default_preamble."""
     from lighthouse_ai.pipeline import PipelineConfig, ResearchPipeline
+
     pipe = ResearchPipeline(migrated_paths, config=PipelineConfig(offline=True))
-    n = pipe.ingest_text("d1", "The treatment improved outcomes. Published 2023.",
-                          metadata={"source": "pubmed", "grade": "A"})
+    n = pipe.ingest_text(
+        "d1",
+        "The treatment improved outcomes. Published 2023.",
+        metadata={"source": "pubmed", "grade": "A"},
+    )
     assert n >= 1

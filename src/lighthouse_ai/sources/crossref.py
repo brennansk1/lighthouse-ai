@@ -76,18 +76,25 @@ def _parse(data: dict) -> list[Document]:
         doi = item.get("DOI") or ""
         url = item.get("URL") or (f"https://doi.org/{doi}" if doi else "")
         grade = "A" if item.get("type") in _GRADE_A_TYPES else "B"
-        out.append(Document(
-            id=f"crossref:{doi}" if doi else f"crossref:{title[:40]}",
-            text=f"{title}. {abstract}" if abstract else title,
-            metadata={"source": "crossref", "url": url, "grade": grade,
-                      "published_date": _published_date(item), "title": title},
-        ))
+        out.append(
+            Document(
+                id=f"crossref:{doi}" if doi else f"crossref:{title[:40]}",
+                text=f"{title}. {abstract}" if abstract else title,
+                metadata={
+                    "source": "crossref",
+                    "url": url,
+                    "grade": grade,
+                    "published_date": _published_date(item),
+                    "title": title,
+                },
+            )
+        )
     return out
 
 
-def search_crossref(query: str, *, max_results: int = 5,
-                    client: httpx.Client | None = None,
-                    timeout: float = 30.0) -> list[Document]:
+def search_crossref(
+    query: str, *, max_results: int = 5, client: httpx.Client | None = None, timeout: float = 30.0
+) -> list[Document]:
     """Search Crossref works and return up to ``max_results`` Documents.
 
     Pass ``client`` to reuse a connection (and to make the request mockable in
@@ -97,9 +104,13 @@ def search_crossref(query: str, *, max_results: int = 5,
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        r = guarded_get(_API, allowed_domains=_ALLOWED_HOSTS,
-                        headers=_HEADERS, client=client, params={
-            "query": query, "rows": max_results})
+        r = guarded_get(
+            _API,
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_HEADERS,
+            client=client,
+            params={"query": query, "rows": max_results},
+        )
         r.raise_for_status()
         return _parse(r.json())
     finally:

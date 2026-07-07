@@ -209,6 +209,7 @@ class EmailChannel:
         # Discord channels: an airgapped run must not emit mail (a digest could
         # otherwise leak query-derived content to the configured mail server).
         from ..governor.egress_proxy import airgap_enabled
+
         if airgap_enabled():
             return False
         message = self.build_message(title, body)

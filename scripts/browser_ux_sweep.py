@@ -6,6 +6,7 @@ errors + body length (white-screen check), and screenshots to /tmp/lh-ux-<tab>.p
 
 Run: uv run python scripts/browser_ux_sweep.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -16,8 +17,17 @@ from playwright.sync_api import sync_playwright
 from lighthouse_ai.paths import make_paths
 from lighthouse_ai.supervisor import serve_in_thread
 
-TABS = ["research", "library", "watch", "track", "activity",
-        "sandbox", "health", "info", "settings"]
+TABS = [
+    "research",
+    "library",
+    "watch",
+    "track",
+    "activity",
+    "sandbox",
+    "health",
+    "info",
+    "settings",
+]
 
 
 def main() -> int:
@@ -34,12 +44,15 @@ def main() -> int:
                 page = browser.new_page()
                 cerr: list[str] = []
                 perr: list[str] = []
-                page.on("console", lambda m, c=cerr: c.append(m.text) if m.type == "error" else None)
-                page.on("pageerror", lambda e, p=perr: p.append(str(e)))
+                page.on(
+                    "console", lambda m, c=cerr: c.append(m.text) if m.type == "error" else None  # type: ignore
+                )
+                page.on("pageerror", lambda e, p=perr: p.append(str(e)))  # type: ignore
                 page.goto(f"{base}/#{tab}", wait_until="domcontentloaded", timeout=20000)
                 page.wait_for_timeout(2000)
                 body_len = page.evaluate(
-                    "() => (document.querySelector('#root')||document.body).innerText.trim().length")
+                    "() => (document.querySelector('#root')||document.body).innerText.trim().length"
+                )
                 page.screenshot(path=f"/tmp/lh-ux-{tab}.png", full_page=True)
                 status = "ok"
                 if cerr or perr:

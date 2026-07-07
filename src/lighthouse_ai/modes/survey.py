@@ -39,6 +39,7 @@ from ._gate import complete_structured_or
 # via ``dataclasses.asdict`` and the frontend reads the resulting keys.
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class Document:
     """A single document to be screened and (if included) mined for attributes.
@@ -249,6 +250,7 @@ class SurveyReport:
 # Input coercion helpers
 # ---------------------------------------------------------------------------
 
+
 def _coerce_documents(documents: Sequence[Document | dict]) -> list[Document]:
     """Normalise a mixed sequence of ``Document`` objects and plain dicts.
 
@@ -280,11 +282,13 @@ def _coerce_criteria(criteria: Sequence[ScreeningCriterion | dict]) -> list[Scre
         if isinstance(c, ScreeningCriterion):
             out.append(c)
         else:
-            out.append(ScreeningCriterion(
-                label=str(c["label"]),
-                keywords=tuple(str(k) for k in c.get("keywords", ())),
-                exclude=bool(c.get("exclude", False)),
-            ))
+            out.append(
+                ScreeningCriterion(
+                    label=str(c["label"]),
+                    keywords=tuple(str(k) for k in c.get("keywords", ())),
+                    exclude=bool(c.get("exclude", False)),
+                )
+            )
     return out
 
 
@@ -295,16 +299,19 @@ def _coerce_attributes(attributes: Sequence[AttributeSpec | dict]) -> list[Attri
         if isinstance(a, AttributeSpec):
             out.append(a)
         else:
-            out.append(AttributeSpec(
-                label=str(a["label"]),
-                keywords=tuple(str(k) for k in a.get("keywords", ())),
-            ))
+            out.append(
+                AttributeSpec(
+                    label=str(a["label"]),
+                    keywords=tuple(str(k) for k in a.get("keywords", ())),
+                )
+            )
     return out
 
 
 # ---------------------------------------------------------------------------
 # Offline (stub) screening and extraction
 # ---------------------------------------------------------------------------
+
 
 def _normalize(text: str) -> str:
     """Collapse runs of whitespace and lowercase for robust keyword matching."""
@@ -336,12 +343,12 @@ def _stub_screen(doc: Document, criteria: list[ScreeningCriterion]) -> ScreenDec
         hit = any(n in haystack for n in needles)
         if c.exclude and hit:
             return ScreenDecision(
-                doc.doc_id, included=False,
-                reason=f"excluded by '{c.label}': keyword matched")
+                doc.doc_id, included=False, reason=f"excluded by '{c.label}': keyword matched"
+            )
         if not c.exclude and not hit:
             return ScreenDecision(
-                doc.doc_id, included=False,
-                reason=f"missing '{c.label}': no keyword matched")
+                doc.doc_id, included=False, reason=f"missing '{c.label}': no keyword matched"
+            )
     return ScreenDecision(doc.doc_id, included=True, reason="meets all criteria")
 
 
@@ -387,6 +394,7 @@ def _stub_extract(doc: Document, attr: AttributeSpec) -> str:
 # ---------------------------------------------------------------------------
 # Contested-cell detection (cross-document disagreement, §6.2 Survey)
 # ---------------------------------------------------------------------------
+
 
 def _mark_contested(rows: list[EvidenceRow]) -> list[EvidenceRow]:
     """Return new EvidenceRow list with contested cells flagged.
@@ -440,29 +448,33 @@ def _mark_contested(rows: list[EvidenceRow]) -> list[EvidenceRow]:
             if cell.attribute in contested_attrs and cell.value:
                 # This doc has a value for a contested attribute.
                 others = sorted(
-                    doc_id for doc_id in contested_attrs[cell.attribute]
+                    doc_id
+                    for doc_id in contested_attrs[cell.attribute]
                     if doc_id != row.doc_id
-                    and _norm(attr_values[cell.attribute].get(doc_id, ""))
-                    != _norm(cell.value)
+                    and _norm(attr_values[cell.attribute].get(doc_id, "")) != _norm(cell.value)
                 )
                 if others:
-                    new_cells.append(EvidenceCell(
-                        attribute=cell.attribute,
-                        value=cell.value,
-                        citation_chunk_ids=cell.citation_chunk_ids,
-                        entailment_score=cell.entailment_score,
-                        entailed=cell.entailed,
-                        contested=True,
-                        contested_by=tuple(others),
-                    ))
+                    new_cells.append(
+                        EvidenceCell(
+                            attribute=cell.attribute,
+                            value=cell.value,
+                            citation_chunk_ids=cell.citation_chunk_ids,
+                            entailment_score=cell.entailment_score,
+                            entailed=cell.entailed,
+                            contested=True,
+                            contested_by=tuple(others),
+                        )
+                    )
                     continue
             new_cells.append(cell)
-        new_rows.append(EvidenceRow(
-            doc_id=row.doc_id,
-            title=row.title,
-            cells=new_cells,
-            missing_attrs=row.missing_attrs,
-        ))
+        new_rows.append(
+            EvidenceRow(
+                doc_id=row.doc_id,
+                title=row.title,
+                cells=new_cells,
+                missing_attrs=row.missing_attrs,
+            )
+        )
     return new_rows
 
 
@@ -499,8 +511,7 @@ def _stub_synthesis(rows: list[EvidenceRow], discordant: dict[str, list[str]]) -
     if not discordant:
         if all_attrs:
             notes.append(
-                f"All included documents agree on extracted attributes: "
-                f"{', '.join(all_attrs)}."
+                f"All included documents agree on extracted attributes: {', '.join(all_attrs)}."
             )
         return notes
 
@@ -516,8 +527,7 @@ def _stub_synthesis(rows: list[EvidenceRow], discordant: dict[str, list[str]]) -
     agreed = sorted(a for a in all_attrs if a not in discordant)
     if agreed:
         notes.append(
-            f"Attributes with consistent findings across all sources: "
-            f"{', '.join(agreed)}."
+            f"Attributes with consistent findings across all sources: {', '.join(agreed)}."
         )
     return notes
 
@@ -553,18 +563,21 @@ def _llm_synthesis(
         lines.append(f"\nContested attributes: {', '.join(sorted(discordant))}")
 
     prompt = (
-        "\n".join(lines)
-        + "\n\nIdentify key trends, patterns, and cross-document contradictions. "
+        "\n".join(lines) + "\n\nIdentify key trends, patterns, and cross-document contradictions. "
         "Do NOT arbitrate contested values. Reply with one observation per line."
     )
+
     def _parse(text: str) -> list[str] | None:
         notes = [ln.strip(" -•*") for ln in text.splitlines() if ln.strip()]
         return notes or None
 
     return complete_structured_or(
-        gateway, prompt, parse=_parse,
+        gateway,
+        prompt,
+        parse=_parse,
         fallback=lambda: _stub_synthesis(rows, discordant),
-        gate=gate, job_id=job_id,
+        gate=gate,
+        job_id=job_id,
     )
 
 
@@ -572,17 +585,24 @@ def _llm_synthesis(
 # LLM-backed screening and extraction
 # ---------------------------------------------------------------------------
 
-def _llm_screen(gateway: Gateway, question: str, doc: Document,
-                criteria: list[ScreeningCriterion], *, job_id: str | None,
-                gate: SchedulerGate | None) -> ScreenDecision:
+
+def _llm_screen(
+    gateway: Gateway,
+    question: str,
+    doc: Document,
+    criteria: list[ScreeningCriterion],
+    *,
+    job_id: str | None,
+    gate: SchedulerGate | None,
+) -> ScreenDecision:
     """Ask the LLM to make an inclusion/exclusion decision.
 
     Falls back to ``_stub_screen`` on any exception so a transient model
     failure never silently drops a document without a recorded reason.
     """
     crit_lines = "\n".join(
-        f"- {c.label}" + (" (EXCLUDE if present)" if c.exclude else "")
-        for c in criteria)
+        f"- {c.label}" + (" (EXCLUDE if present)" if c.exclude else "") for c in criteria
+    )
     prompt = (
         f"Survey question: {question}\n"
         f"Document title: {doc.title}\n"
@@ -591,6 +611,7 @@ def _llm_screen(gateway: Gateway, question: str, doc: Document,
         "Should this document be INCLUDED in the survey? "
         "Reply 'INCLUDE' or 'EXCLUDE' followed by a one-line reason."
     )
+
     def _parse(raw: str) -> ScreenDecision:
         text = raw.strip()
         included = text.upper().lstrip().startswith("INCLUDE")
@@ -598,14 +619,23 @@ def _llm_screen(gateway: Gateway, question: str, doc: Document,
         return ScreenDecision(doc.doc_id, included=included, reason=reason)
 
     return complete_structured_or(
-        gateway, prompt, parse=_parse,
+        gateway,
+        prompt,
+        parse=_parse,
         fallback=lambda: _stub_screen(doc, criteria),
-        gate=gate, job_id=job_id,
+        gate=gate,
+        job_id=job_id,
     )
 
 
-def _llm_extract(gateway: Gateway, doc: Document, attr: AttributeSpec, *,
-                 job_id: str | None, gate: SchedulerGate | None) -> str:
+def _llm_extract(
+    gateway: Gateway,
+    doc: Document,
+    attr: AttributeSpec,
+    *,
+    job_id: str | None,
+    gate: SchedulerGate | None,
+) -> str:
     """Ask the LLM to extract a single attribute value.
 
     Falls back to ``_stub_extract`` on any exception so a transient model
@@ -617,20 +647,25 @@ def _llm_extract(gateway: Gateway, doc: Document, attr: AttributeSpec, *,
         "Reply with only the value, grounded in the document. "
         "If absent, reply 'N/A'."
     )
+
     def _parse(raw: str) -> str:
         val = raw.strip()
         return "" if val.upper() in {"N/A", "NONE", ""} else val
 
     return complete_structured_or(
-        gateway, prompt, parse=_parse,
+        gateway,
+        prompt,
+        parse=_parse,
         fallback=lambda: _stub_extract(doc, attr),
-        gate=gate, job_id=job_id,
+        gate=gate,
+        job_id=job_id,
     )
 
 
 # ---------------------------------------------------------------------------
 # Public entrypoint
 # ---------------------------------------------------------------------------
+
 
 def run_survey(
     question: str,
@@ -688,30 +723,29 @@ def run_survey(
     """
     question = question.strip() if isinstance(question, str) else str(question)
     if not question:
-        raise ValueError(
-            "Survey 'question' must be a non-empty string; got an empty value.")
+        raise ValueError("Survey 'question' must be a non-empty string; got an empty value.")
 
     docs = _coerce_documents(documents)
     crits = _coerce_criteria(criteria)
     attrs = _coerce_attributes(attributes)
 
     if not docs:
-        raise ValueError(
-            "Survey needs at least one document; 'documents' was empty.")
+        raise ValueError("Survey needs at least one document; 'documents' was empty.")
     if not attrs:
-        raise ValueError(
-            "Survey needs at least one attribute to extract; 'attributes' was empty.")
+        raise ValueError("Survey needs at least one attribute to extract; 'attributes' was empty.")
 
     # ------------------------------------------------------------------
     # Wire screening and extraction functions (offline vs LLM path).
     # ------------------------------------------------------------------
     if gateway is None:
+
         def screen_fn(d: Document) -> ScreenDecision:
             return _stub_screen(d, crits)
 
         def extract_fn(d: Document, a: AttributeSpec) -> str:
             return _stub_extract(d, a)
     else:
+
         def screen_fn(d: Document) -> ScreenDecision:
             return _llm_screen(gateway, question, d, crits, job_id=job_id, gate=gate)
 
@@ -723,9 +757,7 @@ def run_survey(
     # ------------------------------------------------------------------
     decisions = [screen_fn(d) for d in docs]
     included_ids = {dec.doc_id for dec in decisions if dec.included}
-    excluded_reasons = {
-        dec.doc_id: dec.reason for dec in decisions if not dec.included
-    }
+    excluded_reasons = {dec.doc_id: dec.reason for dec in decisions if not dec.included}
 
     # ------------------------------------------------------------------
     # Extraction + entailment pass (included documents only).
@@ -742,34 +774,38 @@ def run_survey(
                 score = _entailment.score_claim(value, doc.text)
                 # ``score`` is None when no real scorer is available
                 # ("unchecked"): an unchecked cell must NOT be marked entailed.
-                entailed = (
-                    score is not None and score >= _entailment.MINICHECK_THRESHOLD
+                entailed = score is not None and score >= _entailment.MINICHECK_THRESHOLD
+                cells.append(
+                    EvidenceCell(
+                        attribute=attr.label,
+                        value=value,
+                        citation_chunk_ids=(doc.doc_id,),
+                        entailment_score=round(score, 3) if score is not None else None,
+                        entailed=entailed,
+                    )
                 )
-                cells.append(EvidenceCell(
-                    attribute=attr.label,
-                    value=value,
-                    citation_chunk_ids=(doc.doc_id,),
-                    entailment_score=round(score, 3) if score is not None else None,
-                    entailed=entailed,
-                ))
             else:
                 missing.append(attr.label)
-                cells.append(EvidenceCell(
-                    attribute=attr.label,
-                    value="",
-                    citation_chunk_ids=(),
-                    # A *missing* attribute was never fact-checked — it must read
-                    # as "not found / N-A" (score None → neutral badge), not as a
-                    # failed entailment (0.0 → the red "✗ uncertain" badge).
-                    entailment_score=None,
-                    entailed=False,
-                ))
-        rows.append(EvidenceRow(
-            doc_id=doc.doc_id,
-            title=doc.title,
-            cells=cells,
-            missing_attrs=missing,
-        ))
+                cells.append(
+                    EvidenceCell(
+                        attribute=attr.label,
+                        value="",
+                        citation_chunk_ids=(),
+                        # A *missing* attribute was never fact-checked — it must read
+                        # as "not found / N-A" (score None → neutral badge), not as a
+                        # failed entailment (0.0 → the red "✗ uncertain" badge).
+                        entailment_score=None,
+                        entailed=False,
+                    )
+                )
+        rows.append(
+            EvidenceRow(
+                doc_id=doc.doc_id,
+                title=doc.title,
+                cells=cells,
+                missing_attrs=missing,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Contested-cell detection — cross-document disagreement (§6.2).
@@ -778,9 +814,7 @@ def run_survey(
     # ------------------------------------------------------------------
     rows = _mark_contested(rows)
     discordant = _build_discordant_findings(rows)
-    discordant_count = sum(
-        1 for row in rows for cell in row.cells if cell.contested
-    )
+    discordant_count = sum(1 for row in rows for cell in row.cells if cell.contested)
 
     # ------------------------------------------------------------------
     # PRISMA accounting — internally consistent by construction.
@@ -789,7 +823,7 @@ def run_survey(
     n_included = len(included_ids)
     prisma = PrismaFlow(
         identified=n_identified,
-        screened=n_identified,       # offline path screens every document
+        screened=n_identified,  # offline path screens every document
         included=n_included,
         excluded=n_identified - n_included,
         excluded_reasons=excluded_reasons,
@@ -808,24 +842,28 @@ def run_survey(
             gateway, question, rows, discordant, job_id=job_id, gate=gate
         )
 
-    claims = [
-        f"{n_included} of {n_identified} documents met the criteria "
-        f"for: {question}"
-    ]
+    claims = [f"{n_included} of {n_identified} documents met the criteria for: {question}"]
     if positions_db is not None:
         try:
             from ..verification.calibration import probability_from_evidence
             from ..verification.positions import record_position
             from ..verification.resolver import default_criterion
+
             # Evidence = the included documents; discordant findings lower agreement.
             agreement = (1.0 - discordant_count / n_included) if n_included else None
             prob = probability_from_evidence(
-                n_sources=n_included, entailment=agreement,
-                contradicted=discordant_count > 0 and n_included > 0
+                n_sources=n_included,
+                entailment=agreement,
+                contradicted=discordant_count > 0
+                and n_included > 0
                 and discordant_count >= n_included / 2,
             )
-            record_position(positions_db, claim=claims[0], probability=prob,
-                            resolution_criterion=default_criterion(claims[0]))
+            record_position(
+                positions_db,
+                claim=claims[0],
+                probability=prob,
+                resolution_criterion=default_criterion(claims[0]),
+            )
         except Exception:
             pass
 

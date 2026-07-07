@@ -20,18 +20,27 @@ from lighthouse_ai.rag.embedder import HashEmbedder
 
 def _items() -> list[MonitorItem]:
     return [
-        MonitorItem(source="src1", url="https://a/1",
-                    title="Breaking news on AI policy",
-                    body="A major breaking development. " * 30,
-                    published_at="2026-05-27T10:00:00Z"),
-        MonitorItem(source="src1", url="https://a/2",
-                    title="Quiet update on tax code",
-                    body="Minor update; nothing urgent.",
-                    published_at="2026-05-27T10:01:00Z"),
-        MonitorItem(source="src2", url="https://a/3",
-                    title="Rumor about quantum chip",
-                    body="Alleged speculation about quantum.",
-                    published_at="2026-05-27T10:02:00Z"),
+        MonitorItem(
+            source="src1",
+            url="https://a/1",
+            title="Breaking news on AI policy",
+            body="A major breaking development. " * 30,
+            published_at="2026-05-27T10:00:00Z",
+        ),
+        MonitorItem(
+            source="src1",
+            url="https://a/2",
+            title="Quiet update on tax code",
+            body="Minor update; nothing urgent.",
+            published_at="2026-05-27T10:01:00Z",
+        ),
+        MonitorItem(
+            source="src2",
+            url="https://a/3",
+            title="Rumor about quantum chip",
+            body="Alleged speculation about quantum.",
+            published_at="2026-05-27T10:02:00Z",
+        ),
     ]
 
 
@@ -54,15 +63,13 @@ def test_monitor_dedups_repeated_urls_across_runs():
 
 
 def test_default_salience_boosts_for_breaking_words():
-    item = MonitorItem(source="s", url="u", title="x",
-                       body="breaking " + "word " * 10)
+    item = MonitorItem(source="s", url="u", title="x", body="breaking " + "word " * 10)
     s, cat = default_salience(item)
     assert cat in {"alert", "informational"}
 
 
 def test_default_salience_penalizes_speculation():
-    item = MonitorItem(source="s", url="u", title="x",
-                       body="rumor about speculation alleged")
+    item = MonitorItem(source="s", url="u", title="x", body="rumor about speculation alleged")
     s, cat = default_salience(item)
     assert cat == "noise"
 
@@ -70,20 +77,26 @@ def test_default_salience_penalizes_speculation():
 def test_monitor_semantic_dedup_via_embedder():
     e = HashEmbedder(dim=128)
     items = [
-        MonitorItem(source="s1", url="https://x/1",
-                    title="Quantum breakthrough at MIT lab",
-                    body="Long body. " * 30),
+        MonitorItem(
+            source="s1",
+            url="https://x/1",
+            title="Quantum breakthrough at MIT lab",
+            body="Long body. " * 30,
+        ),
         # Different URL, almost-identical title — should be suppressed by semantic dedup.
-        MonitorItem(source="s2", url="https://x/2",
-                    title="Quantum breakthrough at MIT lab",
-                    body="Long body. " * 30),
+        MonitorItem(
+            source="s2",
+            url="https://x/2",
+            title="Quantum breakthrough at MIT lab",
+            body="Long body. " * 30,
+        ),
     ]
-    report = run_monitor("quantum", items,
-                         embed_titles=lambda ts: e.embed(ts))
+    report = run_monitor("quantum", items, embed_titles=lambda ts: e.embed(ts))
     assert report.suppressed_duplicates >= 1
 
 
 # --- HTML output -------------------------------------------------
+
 
 def test_render_monitor_html_contains_topic_and_items():
     report = run_monitor("Test Topic", _items())
@@ -101,9 +114,11 @@ def test_render_html_document_escapes_input():
 
 
 def test_render_claims_with_wep_and_citations():
-    c1 = Claim("The sky is blue.", wep="almost_certain",
-               citations=[Citation("NOAA", "https://noaa.gov", grade="A",
-                                   published="2024-01-01")])
+    c1 = Claim(
+        "The sky is blue.",
+        wep="almost_certain",
+        citations=[Citation("NOAA", "https://noaa.gov", grade="A", published="2024-01-01")],
+    )
     html = render_claims([c1])
     assert "almost certain" in html
     assert "NOAA" in html
@@ -112,8 +127,10 @@ def test_render_claims_with_wep_and_citations():
 
 def test_render_monitor_html_handles_empty_report():
     from lighthouse_ai.modes.monitor import MonitorReport
-    report = MonitorReport(topic="empty", generated_at="t", alerts=[],
-                           digest=[], suppressed_duplicates=0, total_seen=0)
+
+    report = MonitorReport(
+        topic="empty", generated_at="t", alerts=[], digest=[], suppressed_duplicates=0, total_seen=0
+    )
     html = render_monitor_html(report)
     assert "(none)" in html
 
@@ -124,13 +141,23 @@ def test_suppressed_near_duplicate_still_recorded_in_ledger():
     has to be caught too. Regression: suppressed items were never recorded."""
     e = HashEmbedder(dim=128)
     st = MonitorState()
-    first = [MonitorItem(source="s1", url="https://x/1",
-                         title="Quantum breakthrough at MIT lab",
-                         body="Long body. " * 30)]
+    first = [
+        MonitorItem(
+            source="s1",
+            url="https://x/1",
+            title="Quantum breakthrough at MIT lab",
+            body="Long body. " * 30,
+        )
+    ]
     run_monitor("q", first, state=st, embed_titles=lambda ts: e.embed(ts))
-    dup = [MonitorItem(source="s2", url="https://x/2",
-                       title="Quantum breakthrough at MIT lab",
-                       body="Long body. " * 30)]
+    dup = [
+        MonitorItem(
+            source="s2",
+            url="https://x/2",
+            title="Quantum breakthrough at MIT lab",
+            body="Long body. " * 30,
+        )
+    ]
     r2 = run_monitor("q", dup, state=st, embed_titles=lambda ts: e.embed(ts))
     assert r2.suppressed_duplicates >= 1
     # The suppressed item is in the ledger (two entries: keeper + suppressed).
@@ -142,8 +169,14 @@ def test_seen_titles_ledger_is_bounded():
 
     e = HashEmbedder(dim=8)
     st = MonitorState()
-    items = [MonitorItem(source="s", url=f"https://x/{i}",
-                         title=f"Completely distinct headline number {i} {i*7}",
-                         body="b") for i in range(MAX_SEEN_TITLE_EMBEDDINGS + 50)]
+    items = [
+        MonitorItem(
+            source="s",
+            url=f"https://x/{i}",
+            title=f"Completely distinct headline number {i} {i * 7}",
+            body="b",
+        )
+        for i in range(MAX_SEEN_TITLE_EMBEDDINGS + 50)
+    ]
     run_monitor("q", items, state=st, embed_titles=lambda ts: e.embed(ts))
     assert len(st.seen_titles) <= MAX_SEEN_TITLE_EMBEDDINGS

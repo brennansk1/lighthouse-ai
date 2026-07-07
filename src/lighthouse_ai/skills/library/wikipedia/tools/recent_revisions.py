@@ -67,10 +67,9 @@ def recent_revisions(
 
     # Filter to changes whose title is relevant to the query.
     query_terms = set(query.lower().split())
-    relevant = [
-        ch for ch in changes
-        if any(t in ch.get("title", "").lower() for t in query_terms)
-    ][:max_results]
+    relevant = [ch for ch in changes if any(t in ch.get("title", "").lower() for t in query_terms)][
+        :max_results
+    ]
 
     docs: list[Document] = []
     for ch in relevant:
@@ -123,6 +122,7 @@ def _format_since(since: datetime | None) -> str:
     """
     if since is None:
         from datetime import timedelta
+
         since = datetime.now(UTC) - timedelta(hours=24)
     if since.tzinfo is None:
         since = since.replace(tzinfo=UTC)

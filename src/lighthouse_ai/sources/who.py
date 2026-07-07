@@ -54,17 +54,19 @@ def _parse_indicators(data: dict, query: str) -> list[Document]:
         if query_lower and not any(w in name.lower() for w in query_lower.split()):
             continue
         url = f"https://ghoapi.azureedge.net/api/{code}" if code else ""
-        out.append(Document(
-            id=f"who:{code}" if code else f"who:{name[:40]}",
-            text=name,
-            metadata={
-                "source": "who",
-                "url": url,
-                "grade": "A",
-                "title": name,
-                "indicator_code": code,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"who:{code}" if code else f"who:{name[:40]}",
+                text=name,
+                metadata={
+                    "source": "who",
+                    "url": url,
+                    "grade": "A",
+                    "title": name,
+                    "indicator_code": code,
+                },
+            )
+        )
     return out
 
 
@@ -92,18 +94,20 @@ def _parse_data_values(data: dict, code: str) -> list[Document]:
     for country, entries in by_country.items():
         summary = "; ".join(entries[:5])  # max 5 observations per country
         text = f"{code} — {country}: {summary}"
-        out.append(Document(
-            id=f"who:{code}:{country}",
-            text=text,
-            metadata={
-                "source": "who",
-                "url": f"https://ghoapi.azureedge.net/api/{code}",
-                "grade": "A",
-                "title": f"{code} — {country}",
-                "indicator_code": code,
-                "country": country,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"who:{code}:{country}",
+                text=text,
+                metadata={
+                    "source": "who",
+                    "url": f"https://ghoapi.azureedge.net/api/{code}",
+                    "grade": "A",
+                    "title": f"{code} — {country}",
+                    "indicator_code": code,
+                    "country": country,
+                },
+            )
+        )
     return out
 
 

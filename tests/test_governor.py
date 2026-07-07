@@ -24,19 +24,29 @@ def gov(migrated_paths) -> Governor:
 
 # --- degradation tier (pure function) ---
 
-@pytest.mark.parametrize("pct,expected", [
-    (100, "green"), (50, "green"),
-    (49, "warn"), (30, "warn"),
-    (29, "degrade"), (15, "degrade"),
-    (14, "local_only"), (5, "local_only"),
-    (4.9, "drain"), (0.1, "drain"),
-    (0, "tripped"),
-])
+
+@pytest.mark.parametrize(
+    "pct,expected",
+    [
+        (100, "green"),
+        (50, "green"),
+        (49, "warn"),
+        (30, "warn"),
+        (29, "degrade"),
+        (15, "degrade"),
+        (14, "local_only"),
+        (5, "local_only"),
+        (4.9, "drain"),
+        (0.1, "drain"),
+        (0, "tripped"),
+    ],
+)
 def test_degradation_tier_thresholds(pct, expected):
     assert degradation_tier(pct) == expected
 
 
 # --- single-thread bucket math ---
+
 
 def test_initial_remaining_matches_ceiling(gov):
     rem = gov.remaining()
@@ -112,6 +122,7 @@ def test_no_op_spend_returns_allowed(gov):
 
 # --- concurrency: many workers, math still correct ---
 
+
 def test_concurrent_spend_math_correct(gov):
     """5 threads × 20 spends of $0.01 → daily reduced by exactly $1.00.
 
@@ -140,6 +151,7 @@ def test_concurrent_spend_math_correct(gov):
 
 # --- mock provider integration ---
 
+
 def test_mock_provider_records_spend(gov):
     p = MockProvider(gov, usd_per_1k_tokens=0.001, completion_tokens=4)
     before = gov.remaining()["tool_calls"]["daily"]
@@ -159,15 +171,22 @@ def test_mock_provider_raises_when_tripped(gov):
 
 # --- property: bucket sum never goes negative ---
 
+
 @settings(max_examples=30, deadline=None)
-@given(st.lists(st.floats(min_value=0.0, max_value=0.1, allow_nan=False,
-                          allow_infinity=False), min_size=1, max_size=50))
+@given(
+    st.lists(
+        st.floats(min_value=0.0, max_value=0.1, allow_nan=False, allow_infinity=False),
+        min_size=1,
+        max_size=50,
+    )
+)
 def test_property_remaining_never_negative(amounts):
     """Hypothesis: random USD spends never push the remaining below zero."""
     import tempfile
 
     from lighthouse_ai.paths import make_paths
     from lighthouse_ai.schema import kinds_for, migrate_all
+
     td = tempfile.mkdtemp()
     paths = make_paths(td)
     paths.ensure()

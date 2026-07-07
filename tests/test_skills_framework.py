@@ -91,8 +91,13 @@ def test_manifest_watchable_requires_tools():
 
 def test_manifest_supported_question_types_alias():
     m = manifest_from_dict(
-        {"id": "f", "name": "F", "description": "", "category": "c",
-         "supported_question_types": ["comparative", "factual_lookup"]}
+        {
+            "id": "f",
+            "name": "F",
+            "description": "",
+            "category": "c",
+            "supported_question_types": ["comparative", "factual_lookup"],
+        }
     )
     assert m.question_types == ("comparative", "factual_lookup")
 
@@ -115,8 +120,12 @@ def test_discover_skips_malformed_manifest(tmp_path):
     _write_skill(lib, "good")
     bad = lib / "bad"
     bad.mkdir()
-    (bad / "manifest.toml").write_text('id = "bad"\ntier = "C"\n', encoding="utf-8")  # C w/o escalation
-    (bad / "skill.py").write_text("def run(ctx, q, *, max_results=5): return []\n", encoding="utf-8")
+    (bad / "manifest.toml").write_text(
+        'id = "bad"\ntier = "C"\n', encoding="utf-8"
+    )  # C w/o escalation
+    (bad / "skill.py").write_text(
+        "def run(ctx, q, *, max_results=5): return []\n", encoding="utf-8"
+    )
     found = discover_skills(lib)
     assert "good" in found and "bad" not in found
 
@@ -159,9 +168,7 @@ def test_import_guard_blocks_dunder_import(tmp_path):
         lib,
         "dunder",
         skill_py=(
-            "def run(ctx, q, *, max_results=5):\n"
-            "    sock = __import__('socket')\n"
-            "    return []\n"
+            "def run(ctx, q, *, max_results=5):\n    sock = __import__('socket')\n    return []\n"
         ),
     )
     with pytest.raises(SkillLoadError):
@@ -198,8 +205,9 @@ def test_import_guard_scans_all_py_files(tmp_path):
 def test_import_guard_blocks_filesystem_process_modules(tmp_path, mod):
     """os/pathlib/sys/io/builtins are containment escapes — refuse them."""
     lib = tmp_path / "library"
-    _write_skill(lib, f"fs_{mod}",
-                 skill_py=f"import {mod}\ndef run(ctx, q, *, max_results=5): return []\n")
+    _write_skill(
+        lib, f"fs_{mod}", skill_py=f"import {mod}\ndef run(ctx, q, *, max_results=5): return []\n"
+    )
     with pytest.raises(SkillLoadError):
         load_skill(f"fs_{mod}", library_dir=lib)
 
@@ -208,8 +216,9 @@ def test_import_guard_blocks_filesystem_process_modules(tmp_path, mod):
 def test_import_guard_blocks_exec_and_file_calls(tmp_path, call):
     """Bare open/eval/exec/compile calls are forbidden (code-exec / file access)."""
     lib = tmp_path / "library"
-    _write_skill(lib, "evilcall",
-                 skill_py=f"def run(ctx, q, *, max_results=5):\n    {call}\n    return []\n")
+    _write_skill(
+        lib, "evilcall", skill_py=f"def run(ctx, q, *, max_results=5):\n    {call}\n    return []\n"
+    )
     with pytest.raises(SkillLoadError):
         load_skill("evilcall", library_dir=lib)
 
@@ -217,9 +226,11 @@ def test_import_guard_blocks_exec_and_file_calls(tmp_path, call):
 def test_import_guard_allows_re_compile(tmp_path):
     """re.compile (an attribute call) must NOT be a false positive."""
     lib = tmp_path / "library"
-    _write_skill(lib, "usesre",
-                 skill_py="import re\n_R = re.compile(r'x')\n"
-                          "def run(ctx, q, *, max_results=5): return []\n")
+    _write_skill(
+        lib,
+        "usesre",
+        skill_py="import re\n_R = re.compile(r'x')\ndef run(ctx, q, *, max_results=5): return []\n",
+    )
     skill = load_skill("usesre", library_dir=lib)  # must not raise
     assert skill.manifest.id == "usesre"
 
@@ -303,7 +314,7 @@ def test_community_flag_cannot_be_suppressed_by_skill(tmp_path):
 
 def test_signed_skill_not_community(tmp_path):
     lib = tmp_path / "library"
-    _write_skill(lib, "official", manifest_extra="signed = true\ndefault_grade = \"A\"")
+    _write_skill(lib, "official", manifest_extra='signed = true\ndefault_grade = "A"')
     skill = load_skill("official", library_dir=lib)
     broker = build_default_broker(tmp_path)
     run = run_skill(skill, "q", broker=broker)

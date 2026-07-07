@@ -42,13 +42,20 @@ def test_tree_state_round_trips_through_checkpoint_file(tmp_path):
     rep = run_exhaustive(
         "Compare A versus B on the evidence that could change it",
         research_fn=lambda q: (f"body {q}", [1, 2], True),
-        max_nodes=10, max_depth=2)
+        max_nodes=10,
+        max_depth=2,
+    )
     frontier = [rep.root]
     if rep.root.children:
         frontier.append(rep.root.children[0])
-    state = TreeState(root=rep.root, pending=frontier,
-                      seen={"a", "b", "compare a versus b"},
-                      done=3, truncated=rep.truncated, pruned=rep.pruned)
+    state = TreeState(
+        root=rep.root,
+        pending=frontier,
+        seen={"a", "b", "compare a versus b"},
+        done=3,
+        truncated=rep.truncated,
+        pruned=rep.pruned,
+    )
 
     paths = make_paths(tmp_path / "data")
     _write_checkpoint(paths, "job-1", state)
@@ -96,6 +103,7 @@ def test_resume_does_not_revisit_already_done_nodes():
     # hook after K successful nodes — simulating a process crash between nodes.
     crashed = False
     try:
+
         def on_checkpoint_crash(state: TreeState) -> None:
             checkpoints.append(tree_state_to_dict(state))
             if len(checkpoints) >= K:
@@ -103,8 +111,11 @@ def test_resume_does_not_revisit_already_done_nodes():
 
         run_exhaustive(
             "Compare option A versus option B for the migration decision",
-            research_fn=lambda q: (visited_first.append(q) or (f"a {q}", [1], True)),
-            max_nodes=12, max_depth=2, on_checkpoint=on_checkpoint_crash)
+            research_fn=lambda q: visited_first.append(q) or (f"a {q}", [1], True),
+            max_nodes=12,
+            max_depth=2,
+            on_checkpoint=on_checkpoint_crash,
+        )
     except KeyboardInterrupt:
         crashed = True
 
@@ -121,8 +132,11 @@ def test_resume_does_not_revisit_already_done_nodes():
 
     rep = run_exhaustive(
         "Compare option A versus option B for the migration decision",
-        research_fn=research2, max_nodes=12, max_depth=2,
-        resume_state=checkpoints[-1])
+        research_fn=research2,
+        max_nodes=12,
+        max_depth=2,
+        resume_state=checkpoints[-1],
+    )
 
     # No node is visited twice across the two runs.
     overlap = set(visited_first) & set(visited_second)
@@ -143,11 +157,16 @@ def test_resume_does_not_revisit_already_done_nodes():
 
 def test_resume_completion_equivalent_to_uninterrupted_run():
     """Crash+resume yields the same final tree as one uninterrupted run."""
+
     def research(q: str):
         return (f"answer {q}", [1], True)
 
-    full = run_exhaustive("Compare A versus B for the team decision today",
-                          research_fn=research, max_nodes=10, max_depth=2)
+    full = run_exhaustive(
+        "Compare A versus B for the team decision today",
+        research_fn=research,
+        max_nodes=10,
+        max_depth=2,
+    )
 
     # Interrupt after 2 checkpoints, then resume.
     snaps: list[dict] = []
@@ -158,20 +177,27 @@ def test_resume_completion_equivalent_to_uninterrupted_run():
             raise KeyboardInterrupt
 
     try:
-        run_exhaustive("Compare A versus B for the team decision today",
-                       research_fn=research, max_nodes=10, max_depth=2,
-                       on_checkpoint=hook)
+        run_exhaustive(
+            "Compare A versus B for the team decision today",
+            research_fn=research,
+            max_nodes=10,
+            max_depth=2,
+            on_checkpoint=hook,
+        )
     except KeyboardInterrupt:
         pass
 
-    resumed = run_exhaustive("Compare A versus B for the team decision today",
-                             research_fn=research, max_nodes=10, max_depth=2,
-                             resume_state=snaps[-1])
+    resumed = run_exhaustive(
+        "Compare A versus B for the team decision today",
+        research_fn=research,
+        max_nodes=10,
+        max_depth=2,
+        resume_state=snaps[-1],
+    )
 
     assert resumed.total_nodes == full.total_nodes
     assert resumed.grounded == full.grounded
-    assert {n.question for n in _all(resumed.root)} == \
-        {n.question for n in _all(full.root)}
+    assert {n.question for n in _all(resumed.root)} == {n.question for n in _all(full.root)}
 
 
 # --- (3) a completed dispatcher run deletes its checkpoint ------------------
@@ -192,16 +218,13 @@ def test_completed_deep_run_deletes_checkpoint(tmp_path, monkeypatch):
         def __init__(self, q):
             self.sections = [_Sec(q)]
 
-    monkeypatch.setattr(deepdive, "run_deepdive",
-                        lambda q, **kw: _Rep(q), raising=True)
+    monkeypatch.setattr(deepdive, "run_deepdive", lambda q, **kw: _Rep(q), raising=True)
 
     paths = make_paths(tmp_path / "data")
-    meta = {"topic": "Compare A versus B", "depth": "deep",
-            "budget": "30m", _PATHS_META_KEY: paths}
+    meta = {"topic": "Compare A versus B", "depth": "deep", "budget": "30m", _PATHS_META_KEY: paths}
     knobs = {"top_k": 4}
 
-    out = _adapt_investigate_deep(meta, knobs, gateway=None, gate=None,
-                                  job_id="deep-1")
+    out = _adapt_investigate_deep(meta, knobs, gateway=None, gate=None, job_id="deep-1")
     assert out["body_json"]["engine"] == "exhaustive"
     # Checkpoint was written during the run but removed on completion.
     assert not _checkpoint_path(paths, "deep-1").exists()
@@ -221,8 +244,7 @@ def test_failed_deep_run_leaves_checkpoint_for_resume(tmp_path, monkeypatch):
         def __init__(self, q):
             self.sections = [_Sec(q)]
 
-    monkeypatch.setattr(deepdive, "run_deepdive",
-                        lambda q, **kw: _Rep(q), raising=True)
+    monkeypatch.setattr(deepdive, "run_deepdive", lambda q, **kw: _Rep(q), raising=True)
 
     # Force a hard crash after the first node is researched + checkpointed by
     # making framing raise *after* a checkpoint exists. Simpler: wrap the engine
@@ -234,6 +256,7 @@ def test_failed_deep_run_leaves_checkpoint_for_resume(tmp_path, monkeypatch):
             if on_checkpoint:
                 on_checkpoint(state)
             raise KeyboardInterrupt
+
         return real_run(*a, on_checkpoint=wrapped, **kw)
 
     monkeypatch.setattr(dispatcher, "run_exhaustive", boom_run, raising=False)
@@ -241,11 +264,9 @@ def test_failed_deep_run_leaves_checkpoint_for_resume(tmp_path, monkeypatch):
     monkeypatch.setattr(exhaustive, "run_exhaustive", boom_run, raising=True)
 
     paths = make_paths(tmp_path / "data")
-    meta = {"topic": "Compare A versus B", "depth": "deep",
-            "budget": "30m", _PATHS_META_KEY: paths}
+    meta = {"topic": "Compare A versus B", "depth": "deep", "budget": "30m", _PATHS_META_KEY: paths}
     try:
-        _adapt_investigate_deep(meta, {"top_k": 4}, gateway=None, gate=None,
-                                job_id="deep-2")
+        _adapt_investigate_deep(meta, {"top_k": 4}, gateway=None, gate=None, job_id="deep-2")
     except KeyboardInterrupt:
         pass
     # The checkpoint persists (run never completed → not deleted).
@@ -258,14 +279,21 @@ def test_failed_deep_run_leaves_checkpoint_for_resume(tmp_path, monkeypatch):
 def test_no_checkpoint_path_is_unchanged_fresh_run():
     """run_exhaustive with neither resume_state nor on_checkpoint is identical to
     a plain call (full back-compat)."""
+
     def research(q: str):
         return ("body", [1], True)
 
-    a = run_exhaustive("Stable question on the evidence", research_fn=research,
-                       max_nodes=10, max_depth=2)
-    b = run_exhaustive("Stable question on the evidence", research_fn=research,
-                       max_nodes=10, max_depth=2,
-                       resume_state=None, on_checkpoint=None)
+    a = run_exhaustive(
+        "Stable question on the evidence", research_fn=research, max_nodes=10, max_depth=2
+    )
+    b = run_exhaustive(
+        "Stable question on the evidence",
+        research_fn=research,
+        max_nodes=10,
+        max_depth=2,
+        resume_state=None,
+        on_checkpoint=None,
+    )
     assert a.to_state() == b.to_state()
 
 
@@ -273,8 +301,10 @@ def test_dispatcher_deep_run_without_paths_still_works():
     """Absent the private _paths meta key the Deep adapter degrades to a plain
     run (no checkpointing) and still produces a tree."""
     import lighthouse_ai.modes.deepdive as deepdive
+
     orig = deepdive.run_deepdive
     try:
+
         class _Rep:
             def __init__(self, q):
                 self.sections = []
@@ -282,7 +312,11 @@ def test_dispatcher_deep_run_without_paths_still_works():
         deepdive.run_deepdive = lambda q, **kw: _Rep(q)  # type: ignore
         out = _adapt_investigate_deep(
             {"topic": "No paths here", "depth": "deep", "budget": "30m"},
-            {"top_k": 4}, gateway=None, gate=None, job_id="nopaths")
+            {"top_k": 4},
+            gateway=None,
+            gate=None,
+            job_id="nopaths",
+        )
         assert out["body_json"]["engine"] == "exhaustive"
     finally:
         deepdive.run_deepdive = orig

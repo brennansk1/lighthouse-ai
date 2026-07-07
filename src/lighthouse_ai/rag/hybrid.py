@@ -31,8 +31,13 @@ class HybridResult:
 
 
 class HybridSearch:
-    def __init__(self, store: VectorStore, embedder: Embedder, bm25: BM25Index,
-                 reranker: Reranker | None = None):
+    def __init__(
+        self,
+        store: VectorStore,
+        embedder: Embedder,
+        bm25: BM25Index,
+        reranker: Reranker | None = None,
+    ):
         self.store = store
         self.embedder = embedder
         self.bm25 = bm25
@@ -49,10 +54,17 @@ class HybridSearch:
         for c in chunks_list:
             self._chunks_by_id[c.id] = c
 
-    def search(self, query: str, *, top_k: int = 5, dense_k: int = 100,
-               sparse_k: int = 100, filter: dict[str, Any] | None = None,
-               min_quality_class: int | None = None,
-               rerank_candidates: int | None = None) -> list[HybridResult]:
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        dense_k: int = 100,
+        sparse_k: int = 100,
+        filter: dict[str, Any] | None = None,
+        min_quality_class: int | None = None,
+        rerank_candidates: int | None = None,
+    ) -> list[HybridResult]:
         q_vec = self.embedder.embed([query])[0]
         dense = self.store.search(q_vec, k=dense_k, filter=filter)
         sparse = self.bm25.search(query, k=sparse_k)
@@ -73,24 +85,33 @@ class HybridSearch:
                 continue
             if filter and not all(chunk.metadata.get(k) == v for k, v in filter.items()):
                 continue
-            if (min_quality_class is not None
-                and int(chunk.metadata.get("quality_class", 0)) < min_quality_class):
+            if (
+                min_quality_class is not None
+                and int(chunk.metadata.get("quality_class", 0)) < min_quality_class
+            ):
                 continue
-            candidates.append(HybridResult(
-                chunk=chunk, score=score,
-                dense_rank=dense_rank.get(cid),
-                sparse_rank=sparse_rank.get(cid),
-            ))
+            candidates.append(
+                HybridResult(
+                    chunk=chunk,
+                    score=score,
+                    dense_rank=dense_rank.get(cid),
+                    sparse_rank=sparse_rank.get(cid),
+                )
+            )
 
         # Reranker on top of fused candidates. Cap the pool fed to the (costly)
         # cross-encoder to `rerank_candidates` by fusion order — the canonical
         # "retrieve N → rerank → top_k" shape (e.g. 50 → rerank → 8).
         if self.reranker is not None and candidates:
             pool = candidates[:rerank_candidates] if rerank_candidates else candidates
-            reranked = self.reranker.rerank(query, [c.chunk for c in pool],
-                                            top_k=top_k)
-            return [HybridResult(chunk=ch, score=sc,
-                                 dense_rank=dense_rank.get(ch.id),
-                                 sparse_rank=sparse_rank.get(ch.id))
-                    for ch, sc in reranked]
+            reranked = self.reranker.rerank(query, [c.chunk for c in pool], top_k=top_k)
+            return [
+                HybridResult(
+                    chunk=ch,
+                    score=sc,
+                    dense_rank=dense_rank.get(ch.id),
+                    sparse_rank=sparse_rank.get(ch.id),
+                )
+                for ch, sc in reranked
+            ]
         return candidates[:top_k]

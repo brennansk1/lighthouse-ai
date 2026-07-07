@@ -295,9 +295,7 @@ class TestPipelineSidecarEmission:
     def test_sidecar_written_after_research(self, migrated_paths: Paths) -> None:
         result, _ = _run_offline(migrated_paths)
         sidecar_path = migrated_paths.staging_dir / f"{result.draft_id}.prov.json"
-        assert sidecar_path.exists(), (
-            f"Expected sidecar at {sidecar_path}, but it was not created."
-        )
+        assert sidecar_path.exists(), f"Expected sidecar at {sidecar_path}, but it was not created."
 
     def test_sidecar_is_valid_json(self, migrated_paths: Paths) -> None:
         result, _ = _run_offline(migrated_paths)
@@ -372,9 +370,7 @@ class TestPipelineSidecarEmission:
         doc = load_run_sidecar(sidecar_path)
         assert len(doc["sourceEntities"]) == doc["lighthouse:sourceCount"]
 
-    def test_sidecar_round_trips_through_load_run_sidecar(
-        self, migrated_paths: Paths
-    ) -> None:
+    def test_sidecar_round_trips_through_load_run_sidecar(self, migrated_paths: Paths) -> None:
         result, _ = _run_offline(migrated_paths)
         sidecar_path = migrated_paths.staging_dir / f"{result.draft_id}.prov.json"
         doc = load_run_sidecar(sidecar_path)
@@ -383,9 +379,7 @@ class TestPipelineSidecarEmission:
         assert reparsed["lighthouse:draftId"] == result.draft_id
         assert reparsed["activity"]["lighthouse:jobId"] is not None
 
-    def test_sidecar_write_failure_does_not_crash_run(
-        self, migrated_paths: Paths
-    ) -> None:
+    def test_sidecar_write_failure_does_not_crash_run(self, migrated_paths: Paths) -> None:
         """If writing the sidecar fails, the research run must still succeed.
 
         ``write_run_sidecar`` is imported inside the function body, so we patch

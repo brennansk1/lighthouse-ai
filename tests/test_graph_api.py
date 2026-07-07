@@ -21,6 +21,7 @@ def client(migrated_paths):
 
 # ---- helpers ----------------------------------------------------------------
 
+
 def _insert_draft(paths, draft_id: str, body_json: dict, *, status: str = "staged") -> None:
     conn = open_db(paths.state_db)
     try:
@@ -143,12 +144,14 @@ def test_graph_top_entities_cap(client, migrated_paths):
 
 # ---- 404 when draft doesn't exist ------------------------------------------
 
+
 def test_graph_404_for_missing_draft(client):
     r = client.get("/api/graph/draft/nonexistent-id")
     assert r.status_code == 404
 
 
 # ---- empty body → 200 + empty entities/graph --------------------------------
+
 
 def test_graph_empty_body_returns_empty(client, migrated_paths):
     """A draft with no body_json and no body_html → 200, empty entities/graph."""
@@ -185,6 +188,7 @@ def test_graph_short_body_html_fallback(client, migrated_paths):
 
 # ---- survey/table body_json shape ------------------------------------------
 
+
 def test_graph_survey_body(client, migrated_paths):
     """Survey table rows are correctly harvested into chunks."""
     body = {
@@ -217,6 +221,7 @@ def test_graph_survey_body(client, migrated_paths):
 
 
 # ---- transcript body_json shape ---------------------------------------------
+
 
 def test_graph_transcript_body(client, migrated_paths):
     """Ask transcript turns are harvested; shared entities across turns appear."""

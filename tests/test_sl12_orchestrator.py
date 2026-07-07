@@ -87,6 +87,7 @@ def _make_ctx(broker, skill_id: str = SKILL_ID, rss_bytes: bytes = _RSS_BYTES):
 # 1. Skill loads correctly
 # ---------------------------------------------------------------------------
 
+
 def test_orchestrator_loads():
     """Manifest parses, import guard passes, entrypoints are callable."""
     s = load_skill(SKILL_ID)
@@ -134,9 +135,11 @@ def test_manifest_domains():
 # 2. Import guard passes (no forbidden imports in skill.py)
 # ---------------------------------------------------------------------------
 
+
 def test_import_guard_passes():
     """Registry import guard must not raise SkillLoadError for news_orchestrator."""
     from lighthouse_ai.skills.registry import LIBRARY_DIR, _audit_skill_imports
+
     skill_dir = LIBRARY_DIR / SKILL_ID
     # Should NOT raise
     _audit_skill_imports(skill_dir)
@@ -146,16 +149,16 @@ def test_import_guard_passes():
 # 3. discover_skills includes news_orchestrator
 # ---------------------------------------------------------------------------
 
+
 def test_discover_skills_includes_orchestrator():
     manifests = discover_skills()
-    assert SKILL_ID in manifests, (
-        f"discover_skills() missing '{SKILL_ID}'"
-    )
+    assert SKILL_ID in manifests, f"discover_skills() missing '{SKILL_ID}'"
 
 
 # ---------------------------------------------------------------------------
 # 4. search_news aggregates across outlets with bias tags
 # ---------------------------------------------------------------------------
+
 
 def test_search_news_returns_documents(monkeypatch, broker):
     """search_news fans out and returns Documents from multiple outlets."""
@@ -222,14 +225,13 @@ def test_search_news_multiple_outlets_represented(monkeypatch, broker):
     docs = _orch.search_news(ctx, "climate", max_results=2)
 
     outlets_seen = {doc.metadata.get("outlet") or doc.metadata.get("source") for doc in docs}
-    assert len(outlets_seen) >= 2, (
-        f"Expected docs from ≥2 outlets, got: {outlets_seen}"
-    )
+    assert len(outlets_seen) >= 2, f"Expected docs from ≥2 outlets, got: {outlets_seen}"
 
 
 # ---------------------------------------------------------------------------
 # 5. compare_coverage returns per-outlet grouping
 # ---------------------------------------------------------------------------
+
 
 def test_compare_coverage_structure(monkeypatch, broker):
     """compare_coverage returns the expected dict shape."""
@@ -296,6 +298,7 @@ def test_compare_coverage_bias_overlay_completeness(monkeypatch, broker):
 # 6. get_bias_overlay returns the AllSides map
 # ---------------------------------------------------------------------------
 
+
 def test_get_bias_overlay_returns_all_outlets():
     from lighthouse_ai.skills.library.news_orchestrator.skill import get_bias_overlay
 
@@ -319,6 +322,7 @@ def test_get_bias_overlay_returns_all_outlets():
 # 7. One outlet EgressBlocked is skipped without failing the rest
 # ---------------------------------------------------------------------------
 
+
 def test_egress_blocked_one_outlet_skipped(monkeypatch, broker):
     """When one outlet raises EgressBlocked the rest still return docs."""
     from lighthouse_ai.skills.library.news_orchestrator import skill as _orch
@@ -339,9 +343,7 @@ def test_egress_blocked_one_outlet_skipped(monkeypatch, broker):
     docs = _orch.search_news(ctx, "climate", max_results=3)
 
     # Should still get docs from the other 5 outlets
-    assert len(docs) > 0, (
-        "search_news returned no docs even though 5/6 outlets are accessible"
-    )
+    assert len(docs) > 0, "search_news returned no docs even though 5/6 outlets are accessible"
     # Reuters outlet should not appear (it was blocked)
     reuters_docs = [d for d in docs if d.metadata.get("outlet") == "reuters"]
     assert reuters_docs == [], f"Reuters docs appeared despite EgressBlocked: {reuters_docs}"
@@ -382,6 +384,7 @@ def test_run_degrades_on_egress_blocked(monkeypatch, broker):
 # ---------------------------------------------------------------------------
 # 8. run_watchable since-filtering
 # ---------------------------------------------------------------------------
+
 
 def test_run_watchable_filters_old_items(monkeypatch, broker):
     """run_watchable(since=cutoff) excludes items published before the cutoff."""
@@ -426,6 +429,7 @@ def test_run_watchable_since_none_returns_all(monkeypatch, broker):
 # 9. register_custom_outlet adds an ephemeral outlet
 # ---------------------------------------------------------------------------
 
+
 def test_register_custom_outlet(monkeypatch, broker):
     """register_custom_outlet registers an outlet that appears in searches."""
     from lighthouse_ai.skills.library.news_orchestrator import skill as _orch
@@ -454,14 +458,13 @@ def test_register_custom_outlet(monkeypatch, broker):
     assert overlay["custom_test_outlet"] == "center"
 
     # Clean up — remove the custom outlet to avoid polluting other tests
-    _orch._custom_outlets[:] = [
-        o for o in _orch._custom_outlets if o.id != "custom_test_outlet"
-    ]
+    _orch._custom_outlets[:] = [o for o in _orch._custom_outlets if o.id != "custom_test_outlet"]
 
 
 # ---------------------------------------------------------------------------
 # 10. validate_outlet_access runs without raising
 # ---------------------------------------------------------------------------
+
 
 def test_validate_outlet_access_returns_status_list(monkeypatch, broker):
     """validate_outlet_access returns a list of status dicts."""
@@ -491,6 +494,7 @@ def test_validate_outlet_access_returns_status_list(monkeypatch, broker):
 # ---------------------------------------------------------------------------
 # 11. run() entrypoint via load_skill works end-to-end
 # ---------------------------------------------------------------------------
+
 
 def test_run_entrypoint_returns_documents(monkeypatch, broker):
     """load_skill('news_orchestrator').entrypoint returns Documents."""

@@ -62,22 +62,24 @@ def _parse_series_search(data: dict) -> list[Document]:
         if notes:
             text = f"{title}. {notes[:300]}"
 
-        out.append(Document(
-            id=f"fred:{series_id}" if series_id else f"fred:{title[:40]}",
-            text=text,
-            metadata={
-                "source": "fred",
-                "url": url,
-                "grade": "A",
-                "title": title,
-                "series_id": series_id,
-                "frequency": frequency,
-                "units": units,
-                "seasonal_adjustment": seasonal_adjustment,
-                "observation_start": observation_start,
-                "observation_end": observation_end,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"fred:{series_id}" if series_id else f"fred:{title[:40]}",
+                text=text,
+                metadata={
+                    "source": "fred",
+                    "url": url,
+                    "grade": "A",
+                    "title": title,
+                    "series_id": series_id,
+                    "frequency": frequency,
+                    "units": units,
+                    "seasonal_adjustment": seasonal_adjustment,
+                    "observation_start": observation_start,
+                    "observation_end": observation_end,
+                },
+            )
+        )
     return out
 
 
@@ -88,26 +90,26 @@ def _parse_observations(data: dict, series_id: str) -> list[Document]:
         return []
     # Build a concise text representation: last 10 observations
     recent = observations[-10:]
-    obs_text = "; ".join(
-        f"{o.get('date', '')}: {o.get('value', '')}" for o in recent
-    )
+    obs_text = "; ".join(f"{o.get('date', '')}: {o.get('value', '')}" for o in recent)
     title = f"FRED {series_id} observations"
     text = f"{title}. Recent values — {obs_text}"
     url = f"https://fred.stlouisfed.org/series/{series_id}"
-    return [Document(
-        id=f"fred:{series_id}:observations",
-        text=text,
-        metadata={
-            "source": "fred",
-            "url": url,
-            "grade": "A",
-            "title": title,
-            "series_id": series_id,
-            "observation_count": len(observations),
-            "observation_start": observations[0].get("date", "") if observations else "",
-            "observation_end": observations[-1].get("date", "") if observations else "",
-        },
-    )]
+    return [
+        Document(
+            id=f"fred:{series_id}:observations",
+            text=text,
+            metadata={
+                "source": "fred",
+                "url": url,
+                "grade": "A",
+                "title": title,
+                "series_id": series_id,
+                "observation_count": len(observations),
+                "observation_start": observations[0].get("date", "") if observations else "",
+                "observation_end": observations[-1].get("date", "") if observations else "",
+            },
+        )
+    ]
 
 
 def _parse_releases(data: dict) -> list[Document]:
@@ -122,18 +124,20 @@ def _parse_releases(data: dict) -> list[Document]:
         press_release = r.get("press_release", False)
         link = (r.get("link") or "").strip()
         url = link or f"https://fred.stlouisfed.org/release?release_id={release_id}"
-        out.append(Document(
-            id=f"fred:release:{release_id}" if release_id else f"fred:release:{name[:40]}",
-            text=name,
-            metadata={
-                "source": "fred",
-                "url": url,
-                "grade": "A",
-                "title": name,
-                "release_id": release_id,
-                "press_release": press_release,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"fred:release:{release_id}" if release_id else f"fred:release:{name[:40]}",
+                text=name,
+                metadata={
+                    "source": "fred",
+                    "url": url,
+                    "grade": "A",
+                    "title": name,
+                    "release_id": release_id,
+                    "press_release": press_release,
+                },
+            )
+        )
     return out
 
 
@@ -288,20 +292,22 @@ def get_revisions(
             f"Vintage dates (most recent): {', '.join(recent_vintages)}"
         )
         url = f"https://fred.stlouisfed.org/series/{series_id}"
-        return [Document(
-            id=f"fred:{series_id}:revisions",
-            text=text,
-            metadata={
-                "source": "fred",
-                "url": url,
-                "grade": "A",
-                "title": f"FRED {series_id} revision history",
-                "series_id": series_id,
-                "vintage_count": len(vintage_dates),
-                "latest_vintage": vintage_dates[-1] if vintage_dates else "",
-                "earliest_vintage": vintage_dates[0] if vintage_dates else "",
-            },
-        )]
+        return [
+            Document(
+                id=f"fred:{series_id}:revisions",
+                text=text,
+                metadata={
+                    "source": "fred",
+                    "url": url,
+                    "grade": "A",
+                    "title": f"FRED {series_id} revision history",
+                    "series_id": series_id,
+                    "vintage_count": len(vintage_dates),
+                    "latest_vintage": vintage_dates[-1] if vintage_dates else "",
+                    "earliest_vintage": vintage_dates[0] if vintage_dates else "",
+                },
+            )
+        ]
     finally:
         if owns_client:
             client.close()
@@ -351,20 +357,22 @@ def compare_series(
                 obs_end = (s.get("observation_end") or "").strip()
                 url = f"https://fred.stlouisfed.org/series/{sid}"
                 text = f"{title} ({units}, {frequency}, through {obs_end})"
-                docs.append(Document(
-                    id=f"fred:{sid}",
-                    text=text,
-                    metadata={
-                        "source": "fred",
-                        "url": url,
-                        "grade": "A",
-                        "title": title,
-                        "series_id": sid,
-                        "units": units,
-                        "frequency": frequency,
-                        "observation_end": obs_end,
-                    },
-                ))
+                docs.append(
+                    Document(
+                        id=f"fred:{sid}",
+                        text=text,
+                        metadata={
+                            "source": "fred",
+                            "url": url,
+                            "grade": "A",
+                            "title": title,
+                            "series_id": sid,
+                            "units": units,
+                            "frequency": frequency,
+                            "observation_end": obs_end,
+                        },
+                    )
+                )
         return docs
     finally:
         if owns_client:

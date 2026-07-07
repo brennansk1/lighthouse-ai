@@ -25,6 +25,7 @@ from lighthouse_ai.sources.searxng import SearXNGUnavailable, SearxResult
 # Fake SearXNG results
 # ---------------------------------------------------------------------------
 
+
 def _fake_results(n: int = 3, *, category: str = "general") -> list[SearxResult]:
     return [
         SearxResult(
@@ -38,9 +39,15 @@ def _fake_results(n: int = 3, *, category: str = "general") -> list[SearxResult]
     ]
 
 
-def _fake_search(query: str, *, max_results: int = 10, scholarly: bool = False,
-                 categories: str = "general", url: str | None = None,
-                 timeout: float = 10.0) -> list[SearxResult]:
+def _fake_search(
+    query: str,
+    *,
+    max_results: int = 10,
+    scholarly: bool = False,
+    categories: str = "general",
+    url: str | None = None,
+    timeout: float = 10.0,
+) -> list[SearxResult]:
     """Drop-in replacement for lighthouse_ai.sources.searxng.search."""
     return _fake_results(min(max_results, 3), category=categories)
 
@@ -65,6 +72,7 @@ def _broker(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # Import guard / manifest
 # ---------------------------------------------------------------------------
+
 
 def test_skill_loads_without_import_guard_error():
     """The skill passes the static import guard (no forbidden imports)."""
@@ -100,6 +108,7 @@ def test_watchable_entrypoint_present():
 # ---------------------------------------------------------------------------
 # run() — happy path with snippet fallback
 # ---------------------------------------------------------------------------
+
 
 def test_run_returns_snippet_fallback_documents(tmp_path):
     """When fetch_and_document fails (egress-blocked), run() returns snippet documents."""
@@ -151,6 +160,7 @@ def test_run_respects_max_results(tmp_path):
 # run() — SearXNGUnavailable degrades gracefully
 # ---------------------------------------------------------------------------
 
+
 def test_run_returns_empty_when_searxng_unavailable(tmp_path):
     """SearXNGUnavailable is caught; run() returns [] rather than raising."""
     skill = load_skill(SKILL_ID)
@@ -170,6 +180,7 @@ def test_run_returns_empty_when_searxng_unavailable(tmp_path):
 # ---------------------------------------------------------------------------
 # run_watchable() — news category, since= support
 # ---------------------------------------------------------------------------
+
 
 def test_run_watchable_returns_documents(tmp_path):
     skill = load_skill(SKILL_ID)
@@ -238,6 +249,7 @@ def test_run_watchable_empty_when_unavailable(tmp_path):
 # Tool imports (verify tools/ package is importable)
 # ---------------------------------------------------------------------------
 
+
 def test_tools_importable():
     """All nine tools are importable without triggering the import guard."""
     from lighthouse_ai.skills.library.general_web.tools import (  # noqa: F401
@@ -257,8 +269,10 @@ def test_tools_importable():
 # expand_query tool
 # ---------------------------------------------------------------------------
 
+
 def test_expand_query_returns_original_first(tmp_path):
     from lighthouse_ai.skills.library.general_web.tools.expand_query import expand_query
+
     skill = load_skill(SKILL_ID)
     broker = _broker(tmp_path)
     ctx = build_context(skill.manifest, broker=broker)
@@ -272,6 +286,7 @@ def test_expand_query_returns_original_first(tmp_path):
 
 def test_expand_query_graceful_on_unavailable(tmp_path):
     from lighthouse_ai.skills.library.general_web.tools.expand_query import expand_query
+
     skill = load_skill(SKILL_ID)
     broker = _broker(tmp_path)
     ctx = build_context(skill.manifest, broker=broker)
@@ -289,9 +304,11 @@ def test_expand_query_graceful_on_unavailable(tmp_path):
 # fetch_url tool
 # ---------------------------------------------------------------------------
 
+
 def test_fetch_url_returns_none_on_blocked_host(tmp_path):
     """fetch_url returns None when host is egress-blocked (not on platform allowlist)."""
     from lighthouse_ai.skills.library.general_web.tools.fetch_url import fetch_url
+
     skill = load_skill(SKILL_ID)
     broker = _broker(tmp_path)
     ctx = build_context(skill.manifest, broker=broker)
@@ -304,6 +321,7 @@ def test_fetch_url_returns_none_on_blocked_host(tmp_path):
 # ---------------------------------------------------------------------------
 # Live backend gate
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.skipif(
     not os.environ.get("LIGHTHOUSE_REAL_BACKEND"),

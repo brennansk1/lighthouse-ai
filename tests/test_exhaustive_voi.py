@@ -52,7 +52,10 @@ def test_voi_researches_high_impact_branch_before_low_impact():
 
     rep = run_exhaustive(
         "Compare option A versus option B for the migration",
-        research_fn=research, max_nodes=12, max_depth=2, on_node=on_node,
+        research_fn=research,
+        max_nodes=12,
+        max_depth=2,
+        on_node=on_node,
     )
 
     # The tree must actually span multiple VOI levels for the test to bite.
@@ -71,11 +74,15 @@ def test_voi_researches_high_impact_branch_before_low_impact():
 
 def test_voi_ordering_is_deterministic_without_gateway():
     """Same inputs, gateway=None → identical visit order across runs."""
+
     def make_run():
         order: list[str] = []
-        run_exhaustive("Compare X versus Y on the evidence",
-                       research_fn=lambda q: (order.append(q) or ("b", [], True)),
-                       max_nodes=10, max_depth=2)
+        run_exhaustive(
+            "Compare X versus Y on the evidence",
+            research_fn=lambda q: order.append(q) or ("b", [], True),
+            max_nodes=10,
+            max_depth=2,
+        )
         return order
 
     assert make_run() == make_run()
@@ -98,14 +105,16 @@ def test_low_voi_nodes_pruned_below_floor():
     # always researched. Pruned nodes are NOT passed to research_fn.
     rep = run_exhaustive(
         "What is the current state of the field today",
-        research_fn=research, max_nodes=12, max_depth=1, voi_floor=0.5,
+        research_fn=research,
+        max_nodes=12,
+        max_depth=1,
+        voi_floor=0.5,
     )
 
     assert rep.pruned >= 1, "expected at least one low-VOI node pruned"
     # No pruned node body was produced by research(); pruned ones carry the
     # pruned marker and were never passed to research_fn.
-    pruned_nodes = [c for c in rep.root.children
-                    if c.body.startswith("[pruned")]
+    pruned_nodes = [c for c in rep.root.children if c.body.startswith("[pruned")]
     assert len(pruned_nodes) == rep.pruned
     for n in pruned_nodes:
         assert n.question not in researched
@@ -115,9 +124,13 @@ def test_low_voi_nodes_pruned_below_floor():
 
 
 def test_voi_floor_zero_prunes_nothing():
-    rep = run_exhaustive("Compare A versus B on evidence",
-                         research_fn=lambda q: ("x", [1], True),
-                         max_nodes=10, max_depth=2, voi_floor=0.0)
+    rep = run_exhaustive(
+        "Compare A versus B on evidence",
+        research_fn=lambda q: ("x", [1], True),
+        max_nodes=10,
+        max_depth=2,
+        voi_floor=0.0,
+    )
     assert rep.pruned == 0
 
 
@@ -125,9 +138,12 @@ def test_voi_floor_zero_prunes_nothing():
 
 
 def test_synthesis_deterministic_non_empty_offline():
-    rep = run_exhaustive("What is the state of local-first research tools?",
-                         research_fn=lambda q: (f"finding for {q}", [7], True),
-                         max_nodes=8, max_depth=1)
+    rep = run_exhaustive(
+        "What is the state of local-first research tools?",
+        research_fn=lambda q: (f"finding for {q}", [7], True),
+        max_nodes=8,
+        max_depth=1,
+    )
     assert rep.synthesis  # non-empty
     assert "Synthesis:" in rep.synthesis
     assert "Coverage:" in rep.synthesis
@@ -138,9 +154,13 @@ def test_synthesis_deterministic_non_empty_offline():
 
 def test_synthesis_is_reproducible_offline():
     def build():
-        return run_exhaustive("Stable synthesis question on evidence",
-                              research_fn=lambda q: ("body", [1], True),
-                              max_nodes=8, max_depth=2).synthesis
+        return run_exhaustive(
+            "Stable synthesis question on evidence",
+            research_fn=lambda q: ("body", [1], True),
+            max_nodes=8,
+            max_depth=2,
+        ).synthesis
+
     assert build() == build()
 
 
@@ -162,8 +182,14 @@ def test_synthesis_uses_gateway_when_provided():
             return type("R", (), {"text": "0.5"})()
 
     gw = FakeGateway()
-    root = TreeNode(question="Root", depth=0, status="grounded",
-                    body="root body", citations=[1], load_bearing=True)
+    root = TreeNode(
+        question="Root",
+        depth=0,
+        status="grounded",
+        body="root body",
+        citations=[1],
+        load_bearing=True,
+    )
     out = synthesize_tree(root, gateway=gw)
     assert out == "WOVEN-NARRATIVE: a single coherent report [1]."
     # The synthesizer role was used.
@@ -175,8 +201,7 @@ def test_synthesis_falls_back_to_digest_on_gateway_error():
         def complete(self, role, prompt, *, job_id=None, allow_drift=True):
             raise RuntimeError("model down")
 
-    root = TreeNode(question="Root", depth=0, status="grounded",
-                    body="root body", citations=[1])
+    root = TreeNode(question="Root", depth=0, status="grounded", body="root body", citations=[1])
     out = synthesize_tree(root, gateway=BoomGateway())
     assert "Synthesis: Root" in out  # deterministic digest, not a crash
 
@@ -185,9 +210,12 @@ def test_synthesis_falls_back_to_digest_on_gateway_error():
 
 
 def test_tree_state_round_trips():
-    rep = run_exhaustive("Compare A versus B on the evidence that could change it",
-                         research_fn=lambda q: (f"body {q}", [1, 2], True),
-                         max_nodes=10, max_depth=2)
+    rep = run_exhaustive(
+        "Compare A versus B on the evidence that could change it",
+        research_fn=lambda q: (f"body {q}", [1, 2], True),
+        max_nodes=10,
+        max_depth=2,
+    )
     # Build an in-progress-style state: the finished tree, a frontier of two of
     # its real nodes, a seen-set, and counters.
     frontier_nodes = [rep.root]
@@ -205,6 +233,7 @@ def test_tree_state_round_trips():
     data = tree_state_to_dict(state)
     # JSON-serializable.
     import json
+
     json.loads(json.dumps(data))
 
     restored = tree_state_from_dict(data)
@@ -225,8 +254,15 @@ def test_tree_state_round_trips():
 
 
 def test_tree_state_dataclass_helpers_match_module_fns():
-    root = TreeNode(question="Q", depth=0, status="grounded", body="b",
-                    citations=[9], load_bearing=True, voi=0.9)
+    root = TreeNode(
+        question="Q",
+        depth=0,
+        status="grounded",
+        body="b",
+        citations=[9],
+        load_bearing=True,
+        voi=0.9,
+    )
     state = TreeState(root=root, pending=[root], seen={"q"}, done=1)
     assert state.to_dict() == tree_state_to_dict(state)
     restored = TreeState.from_dict(state.to_dict())
@@ -249,8 +285,12 @@ def test_voi_gateway_nudge_called_at_most_once_per_node(monkeypatch):
 
     monkeypatch.setattr(ex, "_voi_gateway_nudge", _fake_nudge)
     report = ex.run_exhaustive(
-        "root question?", gateway=object(),  # non-None → nudge path active
-        max_nodes=10, max_depth=2, synthesize=False)
+        "root question?",
+        gateway=object(),  # non-None → nudge path active
+        max_nodes=10,
+        max_depth=2,
+        synthesize=False,
+    )
     assert report.total_nodes >= 3  # the stub fans out sub-questions
     # Every nudge target is distinct — no node was ever re-scored.
     assert len(nudged) == len(set(nudged))

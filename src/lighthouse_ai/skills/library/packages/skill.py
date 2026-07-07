@@ -54,7 +54,7 @@ def _parse_prefix(question: str) -> tuple[str | None, str]:
     """Return (registry, query) from a prefixed or plain query string."""
     for reg in _REGISTRIES:
         if question.startswith(f"{reg}:"):
-            return reg, question[len(reg) + 1:]
+            return reg, question[len(reg) + 1 :]
     return None, question
 
 
@@ -92,17 +92,11 @@ def run(
     for reg in registries_to_try:
         try:
             if reg == "pypi":
-                raw_docs.extend(
-                    _packages.pypi_search_package(query, max_results=max_results)
-                )
+                raw_docs.extend(_packages.pypi_search_package(query, max_results=max_results))
             elif reg == "npm":
-                raw_docs.extend(
-                    _packages.npm_search_package(query, max_results=max_results)
-                )
+                raw_docs.extend(_packages.npm_search_package(query, max_results=max_results))
             elif reg == "crates":
-                raw_docs.extend(
-                    _packages.crates_search_package(query, max_results=max_results)
-                )
+                raw_docs.extend(_packages.crates_search_package(query, max_results=max_results))
         except Exception as exc:
             log.info(
                 "packages.skill.error",

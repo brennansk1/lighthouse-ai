@@ -264,9 +264,7 @@ def verify_scrapable(
     crawl_delay = robots.crawl_delay(host)
 
     # --- 2. reachability (egress allowlist) --------------------------------
-    proxy = EgressProxy(
-        frozenset(allowlist) if allowlist is not None else DEFAULT_ALLOWED_DOMAINS
-    )
+    proxy = EgressProxy(frozenset(allowlist) if allowlist is not None else DEFAULT_ALLOWED_DOMAINS)
     reachable = bool(host) and proxy.is_allowed_host(host)
     trust_hint = "" if reachable else host
 

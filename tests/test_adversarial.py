@@ -30,6 +30,7 @@ class _FakeGateway:
 
 # --- offline (deterministic) ---
 
+
 def test_offline_uncited_claim_is_contested():
     v = refute_claim("Remote work boosts output.", "evidence", gateway=None)
     assert v.status == "contested"
@@ -50,6 +51,7 @@ def test_offline_never_refutes():
 
 # --- real-ish (fake gateway) ---
 
+
 def test_gateway_refuted_verdict():
     gw = _FakeGateway(["REFUTED\nThe evidence shows the opposite."])
     v = refute_claim("X causes Y [1].", "ev", gateway=gw)
@@ -67,6 +69,7 @@ def test_gateway_error_is_contested():
     class _Boom:
         def complete(self, *a, **k):
             raise RuntimeError("down")
+
     v = refute_claim("X [1].", "ev", gateway=_Boom())
     assert v.status == "contested"
 
@@ -76,5 +79,10 @@ def test_refute_claims_preserves_order_and_summarize():
     vs = refute_claims(["a [1].", "b [1].", "c [1]."], "ev", gateway=gw)
     assert [v.status for v in vs] == ["stands", "refuted", "contested"]
     s = summarize(vs)
-    assert s == {"checked": 3, "stands": 1, "contested": 1, "refuted": 1,
-                 "survival_rate": round(1 / 3, 3)}
+    assert s == {
+        "checked": 3,
+        "stands": 1,
+        "contested": 1,
+        "refuted": 1,
+        "survival_rate": round(1 / 3, 3),
+    }

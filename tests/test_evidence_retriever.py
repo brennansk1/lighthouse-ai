@@ -3,6 +3,7 @@
 Covers ``resolver.default_criterion`` (machine vs human) and
 ``evidence.build_evidence_retriever`` (graceful None paths + joined evidence).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -23,8 +24,7 @@ def test_retriever_none_without_gateway(migrated_paths):
 
 
 def test_retriever_none_without_broker(migrated_paths, monkeypatch):
-    monkeypatch.setattr("lighthouse_ai.sandbox.broker.build_default_broker",
-                        lambda *a, **k: None)
+    monkeypatch.setattr("lighthouse_ai.sandbox.broker.build_default_broker", lambda *a, **k: None)
     assert E.build_evidence_retriever(migrated_paths, gateway=object()) is None
 
 
@@ -42,16 +42,18 @@ class _Run:
 
 
 def _patch_broker_and_skill(monkeypatch, run_result):
-    monkeypatch.setattr("lighthouse_ai.sandbox.broker.build_default_broker",
-                        lambda *a, **k: object())  # any non-None broker
+    monkeypatch.setattr(
+        "lighthouse_ai.sandbox.broker.build_default_broker", lambda *a, **k: object()
+    )  # any non-None broker
     monkeypatch.setattr("lighthouse_ai.skills.load_skill", lambda sid: object())
-    monkeypatch.setattr("lighthouse_ai.skills.run_skill",
-                        lambda *a, **k: run_result)
+    monkeypatch.setattr("lighthouse_ai.skills.run_skill", lambda *a, **k: run_result)
 
 
 def test_retriever_joins_evidence_and_picks_source(migrated_paths, monkeypatch):
-    docs = [_Doc("d1", "First evidence.", {"url": "https://ex/1"}),
-            _Doc("d2", "Second evidence.", {})]
+    docs = [
+        _Doc("d1", "First evidence.", {"url": "https://ex/1"}),
+        _Doc("d2", "Second evidence.", {}),
+    ]
     _patch_broker_and_skill(monkeypatch, _Run(docs))
     retr = E.build_evidence_retriever(migrated_paths, gateway=object())
     assert retr is not None
@@ -75,8 +77,9 @@ def test_retriever_none_when_all_docs_empty(migrated_paths, monkeypatch):
 
 
 def test_retriever_swallows_fetch_errors(migrated_paths, monkeypatch):
-    monkeypatch.setattr("lighthouse_ai.sandbox.broker.build_default_broker",
-                        lambda *a, **k: object())
+    monkeypatch.setattr(
+        "lighthouse_ai.sandbox.broker.build_default_broker", lambda *a, **k: object()
+    )
 
     def _boom(_sid):
         raise RuntimeError("network down")

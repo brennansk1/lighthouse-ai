@@ -99,6 +99,7 @@ def ensure_schema(state_db: Path) -> None:
 
 # --- period keys ---
 
+
 def _now_utc() -> _dt.datetime:
     return _dt.datetime.now(_dt.UTC)
 
@@ -116,6 +117,7 @@ def _period_key(period: str, now: _dt.datetime | None = None) -> str:
 
 
 # --- degradation tier (pure function for testability) ---
+
 
 def degradation_tier(remaining_pct: float) -> str:
     """Map remaining-monthly-budget percentage → tier name.
@@ -155,7 +157,8 @@ class Governor:
                     pk = _period_key(period, now)
                     row = conn.execute(
                         "SELECT period_key, remaining FROM governor_buckets "
-                        "WHERE dimension = ? AND period = ?", (dim, period),
+                        "WHERE dimension = ? AND period = ?",
+                        (dim, period),
                     ).fetchone()
                     if not row or row[0] != pk:
                         out[dim][period] = self.config.ceiling(dim, period)
@@ -172,8 +175,9 @@ class Governor:
         return degradation_tier(pct)
 
     # --- atomic spend ---
-    def try_spend(self, *, usd: float = 0.0, tool_calls: int = 0,
-                  tokens: int = 0, job_id: str | None = None) -> GovernorDecision:
+    def try_spend(
+        self, *, usd: float = 0.0, tool_calls: int = 0, tokens: int = 0, job_id: str | None = None
+    ) -> GovernorDecision:
         """Attempt to debit all four buckets. All-or-nothing."""
         amounts = {"usd": usd, "tool_calls": tool_calls, "tokens": tokens}
         if all(v <= 0 for v in amounts.values()):
@@ -194,7 +198,8 @@ class Governor:
                         pk = _period_key(period, now)
                         row = conn.execute(
                             "SELECT period_key, remaining FROM governor_buckets "
-                            "WHERE dimension = ? AND period = ?", (dim, period),
+                            "WHERE dimension = ? AND period = ?",
+                            (dim, period),
                         ).fetchone()
                         ceiling = self.config.ceiling(dim, period)
                         if not row or row[0] != pk:
@@ -244,16 +249,18 @@ class Governor:
         rem = self.remaining()
         return GovernorDecision(True, "", self._flatten(rem), self.tier())
 
-    def spend(self, *, usd: float = 0.0, tool_calls: int = 0,
-              tokens: int = 0, job_id: str | None = None) -> GovernorDecision:
+    def spend(
+        self, *, usd: float = 0.0, tool_calls: int = 0, tokens: int = 0, job_id: str | None = None
+    ) -> GovernorDecision:
         decision = self.try_spend(usd=usd, tool_calls=tool_calls, tokens=tokens, job_id=job_id)
         if not decision.allowed:
             raise BudgetTripped(decision.reason)
         return decision
 
     # --- manual reset ---
-    def reset(self, *, dimensions: Iterable[str] | None = None,
-              periods: Iterable[str] | None = None) -> int:
+    def reset(
+        self, *, dimensions: Iterable[str] | None = None, periods: Iterable[str] | None = None
+    ) -> int:
         """Manual ``lighthouse budget reset`` — clears bucket rows so the
         next read returns the ceiling. Returns # rows cleared."""
         dims = tuple(dimensions) if dimensions else DIMENSIONS
@@ -284,8 +291,9 @@ class Governor:
         }
 
     # --- internals ---
-    def _log_trip(self, dim: str, period: str, spend: float, current: float,
-                  job_id: str | None) -> None:
+    def _log_trip(
+        self, dim: str, period: str, spend: float, current: float, job_id: str | None
+    ) -> None:
         conn = open_db(self.state_db)
         try:
             conn.execute(
@@ -307,6 +315,8 @@ class Governor:
 
 # --- internal json helper (json import deferred so the module is lean) ---
 
+
 def _json(obj: object) -> str:
     import json
+
     return json.dumps(obj, sort_keys=True, default=str)

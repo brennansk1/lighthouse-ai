@@ -15,8 +15,13 @@ from lighthouse_ai.litestream import (
 
 def test_render_includes_all_five_dbs(tmp_paths):
     yml = render_litestream_config(tmp_paths)
-    for db in (tmp_paths.state_db, tmp_paths.audit_db, tmp_paths.intents_db,
-               tmp_paths.positions_db, tmp_paths.hypotheses_db):
+    for db in (
+        tmp_paths.state_db,
+        tmp_paths.audit_db,
+        tmp_paths.intents_db,
+        tmp_paths.positions_db,
+        tmp_paths.hypotheses_db,
+    ):
         assert str(db) in yml
     assert str(tmp_paths.replicas_dir) in yml
 
@@ -35,6 +40,7 @@ def test_write_litestream_config_writes_file(tmp_paths):
 
 def test_replica_lags_empty_when_no_replicas_dir(tmp_path):
     from lighthouse_ai.paths import make_paths
+
     paths = make_paths(tmp_path, tmp_path / "does_not_exist")
     assert replica_lags(paths) == []
 

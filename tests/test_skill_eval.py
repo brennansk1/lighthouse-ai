@@ -67,11 +67,15 @@ class TestRunSkillEval:
     def test_returns_dict_with_required_keys(self):
         result = run_skill_eval(recommend=_stub_recommend_always_empty)
         required_keys = {
-            "per_skill", "macro_recall", "k", "n_cases", "n_scored", "per_case", "note"
+            "per_skill",
+            "macro_recall",
+            "k",
+            "n_cases",
+            "n_scored",
+            "per_case",
+            "note",
         }
-        assert required_keys <= result.keys(), (
-            f"Missing keys: {required_keys - result.keys()}"
-        )
+        assert required_keys <= result.keys(), f"Missing keys: {required_keys - result.keys()}"
 
     def test_macro_recall_in_range(self):
         result = run_skill_eval(recommend=_stub_recommend_always_empty)
@@ -99,9 +103,7 @@ class TestRunSkillEval:
         result = run_skill_eval(recommend=_stub_recommend_always_empty)
         for skill_id, info in result["per_skill"].items():
             r = info["recall_at_k"]
-            assert 0.0 <= r <= 1.0, (
-                f"recall_at_k out of range for {skill_id}: {r}"
-            )
+            assert 0.0 <= r <= 1.0, f"recall_at_k out of range for {skill_id}: {r}"
 
     def test_empty_recommend_returns_zero_recall(self):
         result = run_skill_eval(recommend=_stub_recommend_always_empty)
@@ -123,9 +125,7 @@ class TestRunSkillEval:
         result = run_skill_eval(recommend=_stub_recommend_always_empty)
         required = {"question", "mode", "gold_id", "recall_at_k", "ranked_ids", "note"}
         for case in result["per_case"]:
-            assert required <= case.keys(), (
-                f"Missing case keys: {required - case.keys()}"
-            )
+            assert required <= case.keys(), f"Missing case keys: {required - case.keys()}"
 
     def test_tolerates_recommend_raising(self):
         """run_skill_eval must not raise even if recommend raises."""
@@ -392,8 +392,15 @@ class TestSkillEvalCases:
         assert "news_orchestrator" in gold_ids
 
     def test_valid_modes_used(self):
-        valid_modes = {"investigate", "survey", "reconstruct", "decide",
-                       "adjudicate", "watch", "ask"}
+        valid_modes = {
+            "investigate",
+            "survey",
+            "reconstruct",
+            "decide",
+            "adjudicate",
+            "watch",
+            "ask",
+        }
         for question, mode, gold_id in SKILL_EVAL_CASES:
             assert mode in valid_modes, (
                 f"Unknown mode '{mode}' in case ({question[:40]!r}, {gold_id!r})"

@@ -43,7 +43,11 @@ def litestream_version() -> str | None:
         return None
     try:
         out = subprocess.run(
-            ["litestream", "version"], capture_output=True, text=True, timeout=5, check=False,
+            ["litestream", "version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
         )
         return (out.stdout or out.stderr).strip() or None
     except Exception:

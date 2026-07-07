@@ -16,8 +16,9 @@ from .chunker import Chunk
 
 
 class Reranker(Protocol):
-    def rerank(self, query: str, chunks: Iterable[Chunk], *,
-               top_k: int | None = None) -> list[tuple[Chunk, float]]: ...
+    def rerank(
+        self, query: str, chunks: Iterable[Chunk], *, top_k: int | None = None
+    ) -> list[tuple[Chunk, float]]: ...
 
 
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
@@ -41,8 +42,9 @@ class ScoreReranker:
         d = df.get(term, 0)
         return math.log(1 + (n_docs - d + 0.5) / (d + 0.5)) if d else 1.0
 
-    def rerank(self, query: str, chunks: Iterable[Chunk], *,
-               top_k: int | None = None) -> list[tuple[Chunk, float]]:
+    def rerank(
+        self, query: str, chunks: Iterable[Chunk], *, top_k: int | None = None
+    ) -> list[tuple[Chunk, float]]:
         chunks_list = list(chunks)
         if not chunks_list:
             return []

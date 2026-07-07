@@ -19,8 +19,7 @@ SKILL_ID = "web_monitor"
 # Import the skill module directly so we can call run / run_watchable with a
 # fake ctx without going through the dispatcher's real SkillContext.
 _SKILL_PY = (
-    Path(__file__).resolve().parents[1]
-    / "src/lighthouse_ai/skills/library/web_monitor/skill.py"
+    Path(__file__).resolve().parents[1] / "src/lighthouse_ai/skills/library/web_monitor/skill.py"
 )
 _spec = importlib.util.spec_from_file_location("_web_monitor_skill", _SKILL_PY)
 assert _spec and _spec.loader

@@ -20,8 +20,7 @@ def cli_env(tmp_path: Path, monkeypatch):
 def test_init_creates_directory_tree(cli_env, monkeypatch):
     # Don't try to write into the real ~/Library/LaunchAgents during tests.
     runner = CliRunner()
-    result = runner.invoke(app, ["init", "--data-dir", str(cli_env),
-                                 "--no-install-service"])
+    result = runner.invoke(app, ["init", "--data-dir", str(cli_env), "--no-install-service"])
     assert result.exit_code == 0, result.stdout
     assert (cli_env / "config.toml").exists()
     assert (cli_env / "litestream.yml").exists()
@@ -65,6 +64,7 @@ def test_pause_and_resume_toggle_state(cli_env):
     assert r1.exit_code == 0, r1.stdout
     # Verify state.db reflects the change.
     from lighthouse_ai.persistence import open_db
+
     conn = open_db(cli_env / "state.db")
     try:
         status = conn.execute("SELECT status FROM supervisor_state").fetchone()[0]

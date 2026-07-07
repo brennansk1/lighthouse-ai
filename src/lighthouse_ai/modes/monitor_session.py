@@ -45,6 +45,7 @@ FetchFn = Callable[["MonitorSession"], list[MonitorItem]]
 @dataclass(frozen=True)
 class AutoStopConfig:
     """When a session may end itself rather than running to ``ends_at``."""
+
     quiet_cycles: int = 3
     salience_floor: float = 0.5
     max_duration_s: int = 86400  # 24h hard cap
@@ -53,6 +54,7 @@ class AutoStopConfig:
 @dataclass(frozen=True)
 class SessionSpec:
     """User-supplied parameters for a new monitor session."""
+
     label: str
     source_urls: list[str] = field(default_factory=list)
     starts_at: str | None = None
@@ -85,6 +87,7 @@ class MonitorSession:
 
 # --- time helpers -----------------------------------------------------------
 
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -111,6 +114,7 @@ def _parse_dt(ts: str | None) -> datetime | None:
 
 
 # --- row mapping ------------------------------------------------------------
+
 
 def _row_to_session(row: sqlite3.Row) -> MonitorSession:
     return MonitorSession(
@@ -142,6 +146,7 @@ def _conn(db: Path) -> sqlite3.Connection:
 
 # --- CRUD -------------------------------------------------------------------
 
+
 def create_session(db: Path, spec: SessionSpec) -> MonitorSession:
     sid = uuid.uuid4().hex[:8]
     conn = _conn(db)
@@ -153,10 +158,18 @@ def create_session(db: Path, spec: SessionSpec) -> MonitorSession:
                quiet_cycles, salience_floor, max_duration_s, poll_interval_s)
             VALUES (?,?,?,?,?,?,?,?,?,?)
             """,
-            (sid, spec.label, json.dumps(spec.source_urls),
-             spec.starts_at, spec.ends_at, 1 if spec.auto_stop else 0,
-             spec.auto.quiet_cycles, spec.auto.salience_floor,
-             spec.auto.max_duration_s, spec.poll_interval_s),
+            (
+                sid,
+                spec.label,
+                json.dumps(spec.source_urls),
+                spec.starts_at,
+                spec.ends_at,
+                1 if spec.auto_stop else 0,
+                spec.auto.quiet_cycles,
+                spec.auto.salience_floor,
+                spec.auto.max_duration_s,
+                spec.poll_interval_s,
+            ),
         )
         row = conn.execute("SELECT * FROM monitor_sessions WHERE id=?", (sid,)).fetchone()
     finally:
@@ -169,11 +182,12 @@ def list_sessions(db: Path, *, status: str | None = None) -> list[MonitorSession
     try:
         if status:
             rows = conn.execute(
-                "SELECT * FROM monitor_sessions WHERE status=? ORDER BY created_at DESC",
-                (status,)).fetchall()
+                "SELECT * FROM monitor_sessions WHERE status=? ORDER BY created_at DESC", (status,)
+            ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM monitor_sessions ORDER BY created_at DESC").fetchall()
+                "SELECT * FROM monitor_sessions ORDER BY created_at DESC"
+            ).fetchall()
     finally:
         conn.close()
     return [_row_to_session(r) for r in rows]
@@ -182,8 +196,7 @@ def list_sessions(db: Path, *, status: str | None = None) -> list[MonitorSession
 def get_session(db: Path, session_id: str) -> MonitorSession | None:
     conn = _conn(db)
     try:
-        row = conn.execute("SELECT * FROM monitor_sessions WHERE id=?",
-                           (session_id,)).fetchone()
+        row = conn.execute("SELECT * FROM monitor_sessions WHERE id=?", (session_id,)).fetchone()
     finally:
         conn.close()
     return _row_to_session(row) if row else None
@@ -197,26 +210,27 @@ def get_session_results(db: Path, session_id: str) -> list[dict]:
                       cycle, created_at
                FROM monitor_items WHERE session_id=?
                ORDER BY salience DESC, id DESC""",
-            (session_id,)).fetchall()
+            (session_id,),
+        ).fetchall()
     finally:
         conn.close()
     return [dict(r) for r in rows]
 
 
-def stop_session(db: Path, session_id: str, *, reason: str = "manual"
-                 ) -> MonitorSession | None:
+def stop_session(db: Path, session_id: str, *, reason: str = "manual") -> MonitorSession | None:
     conn = _conn(db)
     try:
         cur = conn.execute(
             """UPDATE monitor_sessions SET status='ended', ended_reason=?
                WHERE id=? AND status != 'ended'""",
-            (reason, session_id))
+            (reason, session_id),
+        )
         if cur.rowcount == 0:
-            row = conn.execute("SELECT * FROM monitor_sessions WHERE id=?",
-                               (session_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM monitor_sessions WHERE id=?", (session_id,)
+            ).fetchone()
             return _row_to_session(row) if row else None
-        row = conn.execute("SELECT * FROM monitor_sessions WHERE id=?",
-                           (session_id,)).fetchone()
+        row = conn.execute("SELECT * FROM monitor_sessions WHERE id=?", (session_id,)).fetchone()
     finally:
         conn.close()
     return _row_to_session(row)
@@ -239,9 +253,11 @@ def due_sessions(db: Path, *, now: datetime | None = None) -> list[MonitorSessio
 
 # --- default fetcher --------------------------------------------------------
 
+
 def _default_fetch(session: MonitorSession) -> list[MonitorItem]:
     """Production fetcher: pull + parse each source URL as an RSS/Atom feed."""
     from ..sources.rss import fetch_feed
+
     items: list[MonitorItem] = []
     for url in session.source_urls:
         try:
@@ -252,6 +268,7 @@ def _default_fetch(session: MonitorSession) -> list[MonitorItem]:
 
 
 # --- the cycle --------------------------------------------------------------
+
 
 def run_session_cycle(
     db: Path,
@@ -276,9 +293,12 @@ def run_session_cycle(
 
     conn = _conn(db)
     try:
-        seen = {r["dedup_key"] for r in conn.execute(
-            "SELECT dedup_key FROM monitor_items WHERE session_id=?",
-            (session_id,)).fetchall()}
+        seen = {
+            r["dedup_key"]
+            for r in conn.execute(
+                "SELECT dedup_key FROM monitor_items WHERE session_id=?", (session_id,)
+            ).fetchall()
+        }
         st = MonitorState(seen_keys=set(seen))
         report = run_monitor(session.label, items, state=st, salience_fn=salience_fn)
 
@@ -290,8 +310,17 @@ def run_session_cycle(
                      (session_id, dedup_key, url, title, salience, category,
                       is_alert, cycle)
                    VALUES (?,?,?,?,?,?,?,?)""",
-                (session_id, c.item.dedup_key(), c.item.url, c.item.title,
-                 c.salience, c.category, 1 if c.is_alert else 0, cycle_no))
+                (
+                    session_id,
+                    c.item.dedup_key(),
+                    c.item.url,
+                    c.item.title,
+                    c.salience,
+                    c.category,
+                    1 if c.is_alert else 0,
+                    cycle_no,
+                ),
+            )
 
         max_salience = max((c.salience for c in classified), default=0.0)
         quiet = max_salience < session.salience_floor
@@ -305,15 +334,22 @@ def run_session_cycle(
                SET cycles=?, consecutive_quiet=?, last_salience=?,
                    last_polled_at=?, status=?, ended_reason=?
                WHERE id=?""",
-            (cycle_no, consecutive_quiet, max_salience, now.isoformat(timespec="seconds"),
-             new_status, ended_reason, session_id))
+            (
+                cycle_no,
+                consecutive_quiet,
+                max_salience,
+                now.isoformat(timespec="seconds"),
+                new_status,
+                ended_reason,
+                session_id,
+            ),
+        )
     finally:
         conn.close()
     return report
 
 
-def _stop_reason(session: MonitorSession, now: datetime,
-                 consecutive_quiet: int) -> str | None:
+def _stop_reason(session: MonitorSession, now: datetime, consecutive_quiet: int) -> str | None:
     """Which stop condition (if any) ends the session this cycle."""
     ends = _parse_dt(session.ends_at)
     if ends is not None and now >= ends:

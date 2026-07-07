@@ -28,12 +28,7 @@ REPLAY_BASE = "https://web.archive.org/web/{timestamp}/{url}"
 
 def _pct_encode(s: str) -> str:
     """Percent-encode a string for use as a URL query parameter value (stdlib only)."""
-    safe = (
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789"
-        "-_.~"
-    )
+    safe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"
     out: list[str] = []
     for ch in s.encode("utf-8"):
         c = chr(ch)

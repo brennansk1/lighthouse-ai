@@ -427,9 +427,7 @@ def test_fr_watchable_degrades_on_egress_block(monkeypatch, fr_skill, broker):
     def _blocked(*a, **kw):
         raise EgressBlocked("federalregister.gov not in allowlist")
 
-    monkeypatch.setattr(
-        "lighthouse_ai.sources.federal_register.list_recent_in_agency", _blocked
-    )
+    monkeypatch.setattr("lighthouse_ai.sources.federal_register.list_recent_in_agency", _blocked)
     result = run_watchable(fr_skill, "epa", since=None, broker=broker)
     assert result.documents == []
 
@@ -439,6 +437,7 @@ def test_fr_watchable_degrades_on_egress_block(monkeypatch, fr_skill, broker):
 
 def test_fr_import_guard_passes(fr_skill):
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(fr_skill.path)
 
 
@@ -569,9 +568,7 @@ def test_regs_watchable_swallows_exception(monkeypatch, regs_skill, broker):
     def _raise(*a, **kw):
         raise ConnectionError("timeout")
 
-    monkeypatch.setattr(
-        "lighthouse_ai.sources.regulations_gov.track_docket_activity", _raise
-    )
+    monkeypatch.setattr("lighthouse_ai.sources.regulations_gov.track_docket_activity", _raise)
     result = run_watchable(regs_skill, "EPA-HQ-OAR-2022-0873", since=None, broker=broker)
     assert result.documents == []
 
@@ -582,9 +579,7 @@ def test_regs_watchable_degrades_on_egress_block(monkeypatch, regs_skill, broker
     def _blocked(*a, **kw):
         raise EgressBlocked("api.regulations.gov not in allowlist")
 
-    monkeypatch.setattr(
-        "lighthouse_ai.sources.regulations_gov.track_docket_activity", _blocked
-    )
+    monkeypatch.setattr("lighthouse_ai.sources.regulations_gov.track_docket_activity", _blocked)
     result = run_watchable(regs_skill, "EPA-HQ-OAR-2022-0873", since=None, broker=broker)
     assert result.documents == []
 
@@ -594,6 +589,7 @@ def test_regs_watchable_degrades_on_egress_block(monkeypatch, regs_skill, broker
 
 def test_regs_import_guard_passes(regs_skill):
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(regs_skill.path)
 
 
@@ -730,9 +726,7 @@ def test_govinfo_watchable_swallows_exception(monkeypatch, govinfo_skill, broker
     def _raise(*a, **kw):
         raise ConnectionError("timeout")
 
-    monkeypatch.setattr(
-        "lighthouse_ai.sources.govinfo.list_recent_in_collection", _raise
-    )
+    monkeypatch.setattr("lighthouse_ai.sources.govinfo.list_recent_in_collection", _raise)
     result = run_watchable(govinfo_skill, "CREC", since=None, broker=broker)
     assert result.documents == []
 
@@ -743,9 +737,7 @@ def test_govinfo_watchable_degrades_on_egress_block(monkeypatch, govinfo_skill, 
     def _blocked(*a, **kw):
         raise EgressBlocked("api.govinfo.gov not in allowlist")
 
-    monkeypatch.setattr(
-        "lighthouse_ai.sources.govinfo.list_recent_in_collection", _blocked
-    )
+    monkeypatch.setattr("lighthouse_ai.sources.govinfo.list_recent_in_collection", _blocked)
     result = run_watchable(govinfo_skill, "CREC", since=None, broker=broker)
     assert result.documents == []
 
@@ -755,6 +747,7 @@ def test_govinfo_watchable_degrades_on_egress_block(monkeypatch, govinfo_skill, 
 
 def test_govinfo_import_guard_passes(govinfo_skill):
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(govinfo_skill.path)
 
 
@@ -923,6 +916,7 @@ def test_congress_watchable_degrades_on_egress_block(monkeypatch, congress_skill
 
 def test_congress_import_guard_passes(congress_skill):
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(congress_skill.path)
 
 

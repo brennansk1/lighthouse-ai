@@ -133,6 +133,7 @@ const SSE_EVENTS = [
   'draft.staged', 'draft.approved',
   'draft.rejected', 'position.resolved', 'audit.appended',
   'governor.tier', 'governor.tripped',
+  'chat.token', 'chat.turn',
 ];
 function useEvents(onEvent) {
   const cb = useRef(onEvent);

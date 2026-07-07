@@ -23,6 +23,7 @@ Usage:
 No real network calls and no model load happen unless ``LIGHTHOUSE_REAL_BACKEND``
 is set and MiniCheck is installed; the retrieval pass is a pure offline harness.
 """
+
 from __future__ import annotations
 
 import json

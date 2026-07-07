@@ -115,8 +115,12 @@ def test_apply_pragmas_idempotent(tmp_path: Path):
 def test_open_db_with_custom_spec_writes_values(tmp_path: Path):
     p = tmp_path / "c.db"
     spec = PragmaSpec(
-        journal_mode="wal", busy_timeout_ms=10000, synchronous="normal",
-        foreign_keys=True, cache_size_pages=-32000, temp_store="memory",
+        journal_mode="wal",
+        busy_timeout_ms=10000,
+        synchronous="normal",
+        foreign_keys=True,
+        cache_size_pages=-32000,
+        temp_store="memory",
         wal_autocheckpoint=500,
     )
     conn = open_db(p, spec=spec)

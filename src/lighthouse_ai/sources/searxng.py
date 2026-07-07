@@ -148,15 +148,11 @@ def search(
         )
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        raise SearXNGUnavailable(
-            f"SearXNG at {base} returned error: {exc}"
-        ) from exc
+        raise SearXNGUnavailable(f"SearXNG at {base} returned error: {exc}") from exc
     except httpx.ConnectError as exc:
         raise SearXNGUnavailable(f"SearXNG not reachable at {base}") from exc
     except httpx.HTTPError as exc:
-        raise SearXNGUnavailable(
-            f"SearXNG at {base} returned error: {exc}"
-        ) from exc
+        raise SearXNGUnavailable(f"SearXNG at {base} returned error: {exc}") from exc
     finally:
         if owns_client and client is not None:
             client.close()

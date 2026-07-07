@@ -61,13 +61,19 @@ def test_record_position_default_resolve_by_uses_injected_now(migrated_paths):
 def test_resolve_positions_resolves_past_leaves_future_and_human(migrated_paths):
     db = migrated_paths.positions_db
 
-    past = record_position(db, claim="Will drug X be approved by 2024?",
-                           probability=0.8, resolve_by=PAST,
-                           resolution_criterion="FDA approval granted")
-    future = record_position(db, claim="Will drug Y be approved by 2030?",
-                             probability=0.6, resolve_by=FUTURE)
-    human = record_position(db, claim="Should we prioritize economic growth?",
-                            probability=0.9, resolve_by=PAST)
+    past = record_position(
+        db,
+        claim="Will drug X be approved by 2024?",
+        probability=0.8,
+        resolve_by=PAST,
+        resolution_criterion="FDA approval granted",
+    )
+    future = record_position(
+        db, claim="Will drug Y be approved by 2030?", probability=0.6, resolve_by=FUTURE
+    )
+    human = record_position(
+        db, claim="Should we prioritize economic growth?", probability=0.9, resolve_by=PAST
+    )
 
     calls: list[tuple[str, str | None]] = []
 
@@ -96,8 +102,9 @@ def test_resolve_positions_resolves_past_leaves_future_and_human(migrated_paths)
 
 def test_resolve_positions_defers_ambiguous(migrated_paths):
     db = migrated_paths.positions_db
-    pos = record_position(db, claim="Will the merger close by 2024?",
-                          probability=0.7, resolve_by=PAST)
+    pos = record_position(
+        db, claim="Will the merger close by 2024?", probability=0.7, resolve_by=PAST
+    )
 
     def ambiguous_research(claim: str, criterion: str | None):
         return None, 0.0, "Conflicting reports; cannot determine."
@@ -113,8 +120,9 @@ def test_resolve_positions_defers_ambiguous(migrated_paths):
 
 def test_resolve_positions_defers_low_confidence(migrated_paths):
     db = migrated_paths.positions_db
-    pos = record_position(db, claim="Will the satellite launch by 2024?",
-                          probability=0.7, resolve_by=PAST)
+    pos = record_position(
+        db, claim="Will the satellite launch by 2024?", probability=0.7, resolve_by=PAST
+    )
 
     def low_conf_research(claim: str, criterion: str | None):
         return True, 0.4, "Weak signal."  # below default threshold 0.7
@@ -149,9 +157,13 @@ def test_is_past_deadline_tz_aware_now_vs_naive_resolve_by():
 
 def test_resolve_positions_resolves_tz_aware_deadline(migrated_paths):
     db = migrated_paths.positions_db
-    pos = record_position(db, claim="Will drug Z be approved by 2024?",
-                          probability=0.8, resolve_by=PAST_AWARE,
-                          resolution_criterion="FDA approval granted")
+    pos = record_position(
+        db,
+        claim="Will drug Z be approved by 2024?",
+        probability=0.8,
+        resolve_by=PAST_AWARE,
+        resolution_criterion="FDA approval granted",
+    )
 
     def fake_research(claim: str, criterion: str | None):
         return True, 0.92, "Approved per the registry."

@@ -183,9 +183,7 @@ def evaluate_trigger(
     )
 
 
-def _eval_any_change(
-    old: Snapshot | None, new: Snapshot
-) -> TriggerResult:
+def _eval_any_change(old: Snapshot | None, new: Snapshot) -> TriggerResult:
     if old is None:
         return TriggerResult(
             matched=False,
@@ -202,25 +200,19 @@ def _eval_any_change(
     )
 
 
-def _eval_keyword(
-    old: Snapshot | None, new: Snapshot, criteria: dict[str, Any]
-) -> TriggerResult:
+def _eval_keyword(old: Snapshot | None, new: Snapshot, criteria: dict[str, Any]) -> TriggerResult:
     terms_raw = criteria.get("terms") or criteria.get("term") or []
     if isinstance(terms_raw, str):
         terms = [terms_raw]
     else:
         terms = [str(t) for t in terms_raw]
     if not terms:
-        return TriggerResult(
-            matched=False, kind="keyword", reason="no terms supplied"
-        )
+        return TriggerResult(matched=False, kind="keyword", reason="no terms supplied")
     require_new = bool(criteria.get("require_new", True))
     case_sensitive = bool(criteria.get("case_sensitive", False))
 
     new_text = new.text if case_sensitive else new.text.lower()
-    old_text = (
-        (old.text if case_sensitive else old.text.lower()) if old is not None else ""
-    )
+    old_text = (old.text if case_sensitive else old.text.lower()) if old is not None else ""
 
     hits: list[str] = []
     for term in terms:
@@ -325,9 +317,7 @@ def _eval_selector_text(
         matched=changed,
         kind="selector_text",
         reason=(
-            f"selector {name!r} text changed"
-            if changed
-            else f"selector {name!r} text unchanged"
+            f"selector {name!r} text changed" if changed else f"selector {name!r} text unchanged"
         ),
         details={"selector": name, "old": old_norm, "new": new_region},
     )
@@ -336,9 +326,7 @@ def _eval_selector_text(
 _NUMBER_RE = re.compile(r"[-+]?\d[\d,]*(?:\.\d+)?")
 
 
-def _parse_number(
-    text: str, *, label: str = "", pattern: str = ""
-) -> float | None:
+def _parse_number(text: str, *, label: str = "", pattern: str = "") -> float | None:
     """Parse a numeric value from *text*.
 
     With ``pattern`` (a regex with one capture group) the captured group is
@@ -370,9 +358,7 @@ def _to_float(raw: str) -> float | None:
         return None
 
 
-def _eval_threshold(
-    old: Snapshot | None, new: Snapshot, criteria: dict[str, Any]
-) -> TriggerResult:
+def _eval_threshold(old: Snapshot | None, new: Snapshot, criteria: dict[str, Any]) -> TriggerResult:
     label = str(criteria.get("label", ""))
     pattern = str(criteria.get("pattern", ""))
     new_val = _parse_number(new.text, label=label, pattern=pattern)
@@ -443,9 +429,7 @@ def _eval_threshold(
         matched=matched,
         kind="threshold",
         reason=(
-            f"value changed {old_val} → {new_val}"
-            if matched
-            else f"value unchanged ({new_val})"
+            f"value changed {old_val} → {new_val}" if matched else f"value unchanged ({new_val})"
         ),
         details={**details, "old": old_val, "op": "changed"},
     )

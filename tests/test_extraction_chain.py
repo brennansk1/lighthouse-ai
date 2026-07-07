@@ -122,8 +122,9 @@ def test_pdf_unavailable_flag_surfaces_through_ingest(tmp_path, monkeypatch):
         monkeypatch.setitem(sys.modules, name, None)
     monkeypatch.delenv("LIGHTHOUSE_PDF_FAST", raising=False)
     broker = build_default_broker(tmp_path)
-    doc = ingest.ingest_bytes(b"%PDF-1.4 fake", filename="x.pdf",
-                              content_type="application/pdf", broker=broker)
+    doc = ingest.ingest_bytes(
+        b"%PDF-1.4 fake", filename="x.pdf", content_type="application/pdf", broker=broker
+    )
     assert doc is not None
     assert doc.metadata.get(PDF_UNAVAILABLE_FLAG) is True
 

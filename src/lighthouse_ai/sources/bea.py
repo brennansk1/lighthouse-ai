@@ -54,17 +54,19 @@ def _parse_dataset_list(data: dict, query: str) -> list[Document]:
             continue
         text = description if description else name
         url = f"https://apps.bea.gov/api/data/?&UserID=KEY&method=GetData&DataSetName={name}"
-        out.append(Document(
-            id=f"bea:dataset:{name}",
-            text=text,
-            metadata={
-                "source": "bea",
-                "url": url,
-                "grade": "A",
-                "title": description or name,
-                "dataset_name": name,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"bea:dataset:{name}",
+                text=text,
+                metadata={
+                    "source": "bea",
+                    "url": url,
+                    "grade": "A",
+                    "title": description or name,
+                    "dataset_name": name,
+                },
+            )
+        )
     return out
 
 
@@ -89,19 +91,21 @@ def _parse_nipa_data(data: dict, table_name: str) -> list[Document]:
     for line_desc, values in list(by_line.items())[:5]:
         recent = values[-5:]
         text = f"BEA NIPA {table_name} — {line_desc}: {'; '.join(recent)}"
-        out.append(Document(
-            id=f"bea:nipa:{table_name}:{line_desc[:30]}",
-            text=text,
-            metadata={
-                "source": "bea",
-                "url": f"https://apps.bea.gov/iTable/?reqid=19&step=2&isuri=1&TableID={table_name}",
-                "grade": "A",
-                "title": f"BEA NIPA {table_name} — {line_desc}",
-                "dataset": "NIPA",
-                "table_name": table_name,
-                "line_description": line_desc,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"bea:nipa:{table_name}:{line_desc[:30]}",
+                text=text,
+                metadata={
+                    "source": "bea",
+                    "url": f"https://apps.bea.gov/iTable/?reqid=19&step=2&isuri=1&TableID={table_name}",
+                    "grade": "A",
+                    "title": f"BEA NIPA {table_name} — {line_desc}",
+                    "dataset": "NIPA",
+                    "table_name": table_name,
+                    "line_description": line_desc,
+                },
+            )
+        )
     return out
 
 
@@ -225,19 +229,25 @@ def list_nipa_tables(
             description = " ".join((pv.get("Desc") or pv.get("Value") or "").split())
             if not table_name:
                 continue
-            text = f"NIPA table {table_name}: {description}" if description else f"NIPA table {table_name}"
-            out.append(Document(
-                id=f"bea:nipa:table:{table_name}",
-                text=text,
-                metadata={
-                    "source": "bea",
-                    "url": f"https://apps.bea.gov/iTable/?reqid=19&step=2&isuri=1&TableID={table_name}",
-                    "grade": "A",
-                    "title": text,
-                    "dataset": "NIPA",
-                    "table_name": table_name,
-                },
-            ))
+            text = (
+                f"NIPA table {table_name}: {description}"
+                if description
+                else f"NIPA table {table_name}"
+            )
+            out.append(
+                Document(
+                    id=f"bea:nipa:table:{table_name}",
+                    text=text,
+                    metadata={
+                        "source": "bea",
+                        "url": f"https://apps.bea.gov/iTable/?reqid=19&step=2&isuri=1&TableID={table_name}",
+                        "grade": "A",
+                        "title": text,
+                        "dataset": "NIPA",
+                        "table_name": table_name,
+                    },
+                )
+            )
         return out
     finally:
         if owns_client:
@@ -292,18 +302,20 @@ def get_industry_account(
         out: list[Document] = []
         for desc, vals in list(by_desc.items())[:max_results]:
             text = f"BEA GDP by industry — {desc}: {'; '.join(vals[-5:])}"
-            out.append(Document(
-                id=f"bea:gdpbyindustry:{desc[:40]}",
-                text=text,
-                metadata={
-                    "source": "bea",
-                    "url": "https://apps.bea.gov/iTable/?reqid=52&step=2",
-                    "grade": "A",
-                    "title": f"GDP by Industry — {desc}",
-                    "dataset": "GDPbyIndustry",
-                    "industry": industry,
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"bea:gdpbyindustry:{desc[:40]}",
+                    text=text,
+                    metadata={
+                        "source": "bea",
+                        "url": "https://apps.bea.gov/iTable/?reqid=52&step=2",
+                        "grade": "A",
+                        "title": f"GDP by Industry — {desc}",
+                        "dataset": "GDPbyIndustry",
+                        "industry": industry,
+                    },
+                )
+            )
         return out
     finally:
         if owns_client:

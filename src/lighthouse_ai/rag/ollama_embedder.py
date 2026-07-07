@@ -21,8 +21,9 @@ from ..backends.ollama import OllamaBackend, OllamaUnavailable
 class OllamaEmbedder:
     """``Embedder`` Protocol implementation backed by Ollama."""
 
-    def __init__(self, backend: OllamaBackend | None = None,
-                 model: str = "nomic-embed-text", dim: int = 768):
+    def __init__(
+        self, backend: OllamaBackend | None = None, model: str = "nomic-embed-text", dim: int = 768
+    ):
         self._backend = backend or OllamaBackend()
         self.model = model
         self.dim = dim

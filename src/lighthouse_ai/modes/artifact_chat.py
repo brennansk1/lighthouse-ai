@@ -44,6 +44,7 @@ def session_id_for(draft_id: str) -> str:
 
 # --- evidence snapshot -------------------------------------------------------
 
+
 def snapshot_evidence(state_db, draft_id: str, evidence: list) -> int:
     """Persist the artifact's evidence chunks for later grounded chat.
 
@@ -59,8 +60,15 @@ def snapshot_evidence(state_db, draft_id: str, evidence: list) -> int:
         if not cid or not text:
             continue
         meta = getattr(chunk, "metadata", {}) or {}
-        rows.append((draft_id, str(cid), str(text),
-                     str(meta.get("source", "")), json.dumps(meta, default=str)))
+        rows.append(
+            (
+                draft_id,
+                str(cid),
+                str(text),
+                str(meta.get("source", "")),
+                json.dumps(meta, default=str),
+            )
+        )
     if not rows:
         return 0
     try:
@@ -69,7 +77,9 @@ def snapshot_evidence(state_db, draft_id: str, evidence: list) -> int:
             conn.executemany(
                 "INSERT OR REPLACE INTO artifact_evidence "
                 "(draft_id, chunk_id, text, source, metadata_json) "
-                "VALUES (?, ?, ?, ?, ?)", rows)
+                "VALUES (?, ?, ?, ?, ?)",
+                rows,
+            )
         finally:
             conn.close()
     except Exception:
@@ -84,7 +94,9 @@ def load_evidence_chunks(state_db, draft_id: str) -> list[Chunk]:
         try:
             cur = conn.execute(
                 "SELECT chunk_id, text, source, metadata_json FROM "
-                "artifact_evidence WHERE draft_id=?", (draft_id,))
+                "artifact_evidence WHERE draft_id=?",
+                (draft_id,),
+            )
             out: list[Chunk] = []
             for i, (cid, text, source, meta_json) in enumerate(cur.fetchall()):
                 try:
@@ -93,8 +105,15 @@ def load_evidence_chunks(state_db, draft_id: str) -> list[Chunk]:
                     meta = {}
                 if source and "source" not in meta:
                     meta["source"] = source
-                out.append(Chunk(id=cid, document_id=meta.get("document_id", cid),
-                                 text=text, position=i, metadata=meta))
+                out.append(
+                    Chunk(
+                        id=cid,
+                        document_id=meta.get("document_id", cid),
+                        text=text,
+                        position=i,
+                        metadata=meta,
+                    )
+                )
             return out
         finally:
             conn.close()
@@ -102,8 +121,9 @@ def load_evidence_chunks(state_db, draft_id: str) -> list[Chunk]:
         return []
 
 
-def build_grounded_hybrid(chunks: list[Chunk],
-                          embedder: Embedder | None = None) -> HybridSearch | None:
+def build_grounded_hybrid(
+    chunks: list[Chunk], embedder: Embedder | None = None
+) -> HybridSearch | None:
     """Build a small in-memory retriever over the artifact's evidence.
 
     Uses the deterministic :class:`HashEmbedder` by default so grounding works
@@ -119,30 +139,33 @@ def build_grounded_hybrid(chunks: list[Chunk],
 
 # --- suggestions -------------------------------------------------------------
 
+
 def suggestions_for(artifact: dict[str, Any] | None) -> list[str]:
     """Starter prompts derived from the artifact — its open questions and
     contested claims make the best follow-ups. Falls back to generic probes."""
     if not artifact:
-        return ["What are the main findings?", "What sources support this?",
-                "What did this miss?"]
+        return ["What are the main findings?", "What sources support this?", "What did this miss?"]
     out: list[str] = []
     for q in (artifact.get("open_questions") or [])[:2]:
         out.append(f"Dig into: {q}")
     for c in (artifact.get("contested_claims") or [])[:1]:
         out.append(f"Is this actually true? — {str(c)[:80]}")
     if not out:
-        out = ["What are the main findings?",
-               "Which claims are best supported by the sources?",
-               "What would change the conclusion?"]
+        out = [
+            "What are the main findings?",
+            "Which claims are best supported by the sources?",
+            "What would change the conclusion?",
+        ]
     return out[:3]
 
 
 # --- the turn ----------------------------------------------------------------
 
+
 @dataclass
 class ChatTurnResult:
     turn: Turn
-    backend: str                       # "ollama" | "mock" | "offline"
+    backend: str  # "ollama" | "mock" | "offline"
     researched: bool = False
     research_note: str | None = None
     citations: list[dict] = field(default_factory=list)
@@ -150,9 +173,12 @@ class ChatTurnResult:
 
     def as_dict(self) -> dict:
         return {
-            "role": self.turn.role, "text": self.turn.text,
-            "citations": self.citations, "backend": self.backend,
-            "researched": self.researched, "research_note": self.research_note,
+            "role": self.turn.role,
+            "text": self.turn.text,
+            "citations": self.citations,
+            "backend": self.backend,
+            "researched": self.researched,
+            "research_note": self.research_note,
             "wep_band": self.wep_band,
         }
 
@@ -172,9 +198,9 @@ def _citation_view(ids: list[str], chunks: list[Chunk]) -> list[dict]:
         c = by_id.get(cid)
         if c is None:
             continue
-        view.append({"id": cid,
-                     "source": (c.metadata or {}).get("source", ""),
-                     "snippet": c.text[:200]})
+        view.append(
+            {"id": cid, "source": (c.metadata or {}).get("source", ""), "snippet": c.text[:200]}
+        )
     return view
 
 
@@ -224,14 +250,33 @@ def chat_turn(
     try:
         from ..verification.discipline import check as _dcheck
         from ..verification.discipline import downgrade_wep
+
         rep = _dcheck(turn.text, evidence_chunks=all_chunks or None)
         wep_band = downgrade_wep(0.75, rep).name
     except Exception:
         pass
 
-    return ChatTurnResult(
-        turn=turn, backend=backend, researched=researched,
+    citations_rich = _citation_view(turn.citations, all_chunks)
+    enriched_turn = Turn(
+        role=turn.role,
+        text=turn.text,
+        citations=turn.citations,
+        skill_ids_used=turn.skill_ids_used,
+        adjudicate_flag=turn.adjudicate_flag,
+        backend=backend,
+        researched=researched,
         research_note=research_note,
-        citations=_citation_view(turn.citations, all_chunks),
+        wep_band=wep_band,
+        citations_rich=citations_rich,
+    )
+    if session.history and session.history[-1] == turn:
+        session.history[-1] = enriched_turn
+
+    return ChatTurnResult(
+        turn=enriched_turn,
+        backend=backend,
+        researched=researched,
+        research_note=research_note,
+        citations=citations_rich,
         wep_band=wep_band,
     )

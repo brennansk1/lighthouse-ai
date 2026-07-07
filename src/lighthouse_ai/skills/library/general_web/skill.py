@@ -55,9 +55,7 @@ def run(
         May be empty if SearXNG is unavailable or all fetches fail.
     """
     try:
-        results = _searxng.search(
-            question, max_results=max_results * 2, categories="general"
-        )
+        results = _searxng.search(question, max_results=max_results * 2, categories="general")
     except SearXNGUnavailable:
         return []
 
@@ -139,9 +137,7 @@ def run_watchable(
         effective_query = f"{query} after:{date_hint}"
 
     try:
-        results = _searxng.search(
-            effective_query, max_results=max_results * 2, categories="news"
-        )
+        results = _searxng.search(effective_query, max_results=max_results * 2, categories="news")
     except SearXNGUnavailable:
         return []
 

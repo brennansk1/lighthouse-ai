@@ -16,7 +16,9 @@ from lighthouse_ai.sources.scrapability import (
 # A small body that extracts to well over the default token floor.
 RICH_HTML = (
     b"<html><body><article>"
-    + b"<p>" + (b"lorem ipsum dolor sit amet " * 40) + b"</p>"
+    + b"<p>"
+    + (b"lorem ipsum dolor sit amet " * 40)
+    + b"</p>"
     + b"</article></body></html>"
 )
 
@@ -28,8 +30,10 @@ ALLOW = frozenset({"example.com"})
 
 def _fetch_for(body: bytes, *, status: int = 200, headers: dict | None = None):
     def fetch(url: str) -> FetchResult:
-        return FetchResult(status=status, headers=headers or {}, body=body,
-                           content_type="text/html")
+        return FetchResult(
+            status=status, headers=headers or {}, body=body, content_type="text/html"
+        )
+
     return fetch
 
 
@@ -80,9 +84,7 @@ def test_feed_link_detected_is_good():
         b"<html><head>"
         b"<link rel='alternate' type='application/rss+xml' "
         b"href='/feed.xml' title='Feed'>"
-        b"</head><body>"
-        + RICH_HTML
-        + b"</body></html>"
+        b"</head><body>" + RICH_HTML + b"</body></html>"
     )
     v = verify_scrapable(
         "https://example.com/page",
@@ -183,6 +185,13 @@ def test_verdict_as_dict_roundtrips_fields():
     )
     d = v.as_dict()
     assert set(d) >= {
-        "robots_ok", "crawl_delay", "reachable", "extract_tier",
-        "change_method", "verdict", "reason", "trust_add_hint", "feed_url",
+        "robots_ok",
+        "crawl_delay",
+        "reachable",
+        "extract_tier",
+        "change_method",
+        "verdict",
+        "reason",
+        "trust_add_hint",
+        "feed_url",
     }

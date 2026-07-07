@@ -40,8 +40,9 @@ from .governor import Governor
 from .governor.mock_provider import MockProvider
 from .hardware import HardwareProfile, probe
 
-Role = Literal["planner", "researcher", "synthesizer", "aux_context",
-               "embedding", "reranker", "escalation"]
+Role = Literal[
+    "planner", "researcher", "synthesizer", "aux_context", "embedding", "reranker", "escalation"
+]
 
 
 @dataclass(frozen=True)
@@ -143,6 +144,7 @@ class LoopTripped(RuntimeError):
 
 # --- catalog loading ---
 
+
 def load_catalog() -> dict[str, Any]:
     """Load the packaged ``catalog/models.yaml``."""
     raw = (resources.files("lighthouse_ai.catalog") / "models.yaml").read_text()
@@ -158,8 +160,9 @@ def bindings_for_tier(tier: str, catalog: dict[str, Any] | None = None) -> dict[
     out: dict[str, ModelBinding] = {}
     inference = cat["tiers"][tier]["inference"]
     for role, model in roles_map.items():
-        out[role] = ModelBinding(role=role, model=model, backend=inference,
-                                 sampling=dict(samp.get(role, {})))
+        out[role] = ModelBinding(
+            role=role, model=model, backend=inference, sampling=dict(samp.get(role, {}))
+        )
     # Fixed roles (embedding, reranker) keep their "native" backend marker.
     for role, model in cat.get("fixed_roles", {}).items():
         out[role] = ModelBinding(role=role, model=model, backend="native")
@@ -185,14 +188,14 @@ MODEL_FOOTPRINTS_GB: dict[str, float] = {
     "qwen3.5-4b": 3.5,
     "qwen3.5-9b": 7.0,
     "gemma4-26b-a4b": 16.0,
-    "qwen3.6-27b": 17.0,            # Q4; Q6≈24, Q8≈30
-    "qwen3.6-35b-a3b": 20.0,        # full weights resident; pages if tight
+    "qwen3.6-27b": 17.0,  # Q4; Q6≈24, Q8≈30
+    "qwen3.6-35b-a3b": 20.0,  # full weights resident; pages if tight
     "glm-5.1": 70.0,
     "qwen3.5-122b-a10b": 70.0,
-    "deepseek-v4-flash": 160.0,     # 284B / 13B active
+    "deepseek-v4-flash": 160.0,  # 284B / 13B active
     "qwen3.5-397b-a17b": 220.0,
     "kimi-k2.6": 600.0,
-    "deepseek-v4-pro": 900.0,       # 1.6T / 49B active (datacenter)
+    "deepseek-v4-pro": 900.0,  # 1.6T / 49B active (datacenter)
 }
 
 # Fine-grained MoE models page experts from SSD (mmap), so they run in less
@@ -206,8 +209,14 @@ MODEL_FOOTPRINTS_GB: dict[str, float] = {
 _OLLAMA_SERVED_BACKENDS = frozenset({"ollama", "mlx", "metal", "llamacpp"})
 
 PAGEABLE_MOE: set[str] = {
-    "gemma4-26b-a4b", "qwen3.6-35b-a3b", "glm-5.1", "qwen3.5-122b-a10b",
-    "deepseek-v4-flash", "qwen3.5-397b-a17b", "kimi-k2.6", "deepseek-v4-pro",
+    "gemma4-26b-a4b",
+    "qwen3.6-35b-a3b",
+    "glm-5.1",
+    "qwen3.5-122b-a10b",
+    "deepseek-v4-flash",
+    "qwen3.5-397b-a17b",
+    "kimi-k2.6",
+    "deepseek-v4-pro",
 }
 
 # At run time roles are rebound from these capability-class names to *real
@@ -290,6 +299,7 @@ def estimate_weights_gb(model: str) -> float:
     if fp > 0:
         return max(fp - 2.0, fp * 0.7)  # weights ≈ footprint minus baked-in pad
     import re
+
     m = re.search(r"(\d+)\s*b", model.lower())
     if m:
         return int(m.group(1)) * 0.6  # ~0.6 GB/B at Q4
@@ -311,8 +321,7 @@ def estimate_resident_gb(model: str) -> float:
     return round(weights + _kv_context_headroom_gb(weights), 2)
 
 
-def smallest_reasoning_resident_gb(installed: list[str], *,
-                                   default_gb: float = 4.0) -> float:
+def smallest_reasoning_resident_gb(installed: list[str], *, default_gb: float = 4.0) -> float:
     """Resident RAM (GB) of the *smallest installed* reasoning model.
 
     This is the real RAM floor for a given box: a machine whose smallest model
@@ -336,8 +345,9 @@ def smallest_reasoning_resident_gb(installed: list[str], *,
     return min(sizes) if sizes else default_gb
 
 
-def enough_ram_for(model: str, *, available_gb: float | None = None,
-                   margin_gb: float = RUNTIME_RAM_MARGIN_GB) -> bool:
+def enough_ram_for(
+    model: str, *, available_gb: float | None = None, margin_gb: float = RUNTIME_RAM_MARGIN_GB
+) -> bool:
     """True if ``model`` can load without exhausting available RAM.
 
     MoE models page from SSD so they're always allowed. If a model is already
@@ -351,13 +361,15 @@ def enough_ram_for(model: str, *, available_gb: float | None = None,
     if available_gb is None:
         try:
             import psutil
+
             available_gb = psutil.virtual_memory().available / 1e9
         except Exception:
             return True  # can't measure → don't block
     return need + margin_gb <= available_gb
 
-FLOOR_MODEL = "qwen3.5-9b"   # T1 reasoning floor
-AUX_MODEL = "qwen3.5-9b"     # default small/fast aux (phi-4-mini at T1)
+
+FLOOR_MODEL = "qwen3.5-9b"  # T1 reasoning floor
+AUX_MODEL = "qwen3.5-9b"  # default small/fast aux (phi-4-mini at T1)
 
 
 def model_footprint_gb(model: str) -> float:
@@ -393,7 +405,7 @@ LARGE_PULL_GB = 15.0
 @dataclass(frozen=True)
 class PullPreflight:
     model: str
-    estimated_download_gb: float   # 0.0 ⇒ size unknown
+    estimated_download_gb: float  # 0.0 ⇒ size unknown
     free_disk_gb: float
     headroom_after_gb: float
     ok: bool
@@ -425,8 +437,9 @@ def estimate_download_gb(model: str) -> float:
     return 0.0
 
 
-def preflight_pull(model: str, *, free_disk_gb: float,
-                   min_headroom_gb: float = MIN_DISK_HEADROOM_GB) -> PullPreflight:
+def preflight_pull(
+    model: str, *, free_disk_gb: float, min_headroom_gb: float = MIN_DISK_HEADROOM_GB
+) -> PullPreflight:
     """Decide whether ``model`` can be safely pulled given free disk.
 
     Refuses when the download would leave less than ``min_headroom_gb`` free,
@@ -437,26 +450,40 @@ def preflight_pull(model: str, *, free_disk_gb: float,
         # Unknown size — allow only if there's comfortable headroom, and say so.
         ok = free_disk_gb >= (min_headroom_gb + 5.0)
         return PullPreflight(
-            model=model, estimated_download_gb=0.0, free_disk_gb=round(free_disk_gb, 1),
-            headroom_after_gb=round(free_disk_gb, 1), ok=ok,
-            reason=("size unknown — proceeding (ample free disk)" if ok
-                    else f"size unknown and only {free_disk_gb:.1f} GB free; refusing"),
+            model=model,
+            estimated_download_gb=0.0,
+            free_disk_gb=round(free_disk_gb, 1),
+            headroom_after_gb=round(free_disk_gb, 1),
+            ok=ok,
+            reason=(
+                "size unknown — proceeding (ample free disk)"
+                if ok
+                else f"size unknown and only {free_disk_gb:.1f} GB free; refusing"
+            ),
             is_large=False,
         )
     headroom = round(free_disk_gb - est, 1)
     ok = headroom >= min_headroom_gb
-    reason = ("ok" if ok else
-              f"would leave {headroom:.1f} GB free, under the {min_headroom_gb:.0f} GB "
-              f"safety margin (need ~{est:.1f} GB, have {free_disk_gb:.1f} GB)")
+    reason = (
+        "ok"
+        if ok
+        else f"would leave {headroom:.1f} GB free, under the {min_headroom_gb:.0f} GB "
+        f"safety margin (need ~{est:.1f} GB, have {free_disk_gb:.1f} GB)"
+    )
     return PullPreflight(
-        model=model, estimated_download_gb=est, free_disk_gb=round(free_disk_gb, 1),
-        headroom_after_gb=headroom, ok=ok, reason=reason,
+        model=model,
+        estimated_download_gb=est,
+        free_disk_gb=round(free_disk_gb, 1),
+        headroom_after_gb=headroom,
+        ok=ok,
+        reason=reason,
         is_large=est >= LARGE_PULL_GB,
     )
 
 
-def recommend_models(profile: HardwareProfile,
-                     catalog: dict[str, Any] | None = None) -> dict[str, ModelBinding]:
+def recommend_models(
+    profile: HardwareProfile, catalog: dict[str, Any] | None = None
+) -> dict[str, ModelBinding]:
     """Per-role model bindings for this machine.
 
     The per-tier table in the catalog is authoritative — it was hand-tuned
@@ -470,14 +497,16 @@ def recommend_models(profile: HardwareProfile,
     return bindings_for_tier(profile.suggested_tier, cat)
 
 
-def budget_report(profile: HardwareProfile,
-                  catalog: dict[str, Any] | None = None) -> dict[str, Any]:
+def budget_report(
+    profile: HardwareProfile, catalog: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Advisory: for each role's model, does it fit resident or page from SSD?
 
     Surfaced in chosen_models.yaml and `lighthouse doctor` so the user knows
     when a tier's default will run slower on their specific RAM.
     """
     from .hardware import llm_budget_gb
+
     budget = llm_budget_gb(profile)
     bindings = recommend_models(profile, catalog)
     roles: dict[str, dict[str, Any]] = {}
@@ -495,6 +524,7 @@ def budget_report(profile: HardwareProfile,
 
 # --- fingerprinting ---
 
+
 def fingerprint_ollama(model: str) -> ModelFingerprint | None:
     """Run ``ollama show --modelfile MODEL`` and parse the digest line."""
     if not shutil.which("ollama"):
@@ -502,7 +532,10 @@ def fingerprint_ollama(model: str) -> ModelFingerprint | None:
     try:
         out = subprocess.run(
             ["ollama", "show", "--modelfile", model],
-            capture_output=True, text=True, timeout=5, check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
         )
     except Exception:
         return None
@@ -518,13 +551,15 @@ def fingerprint_ollama(model: str) -> ModelFingerprint | None:
         digest = hashlib.sha256(out.stdout.encode("utf-8")).hexdigest()
     version = None
     try:
-        v = subprocess.run(["ollama", "--version"], capture_output=True,
-                           text=True, timeout=2, check=False)
+        v = subprocess.run(
+            ["ollama", "--version"], capture_output=True, text=True, timeout=2, check=False
+        )
         version = v.stdout.strip() or v.stderr.strip() or None
     except Exception:
         pass
-    return ModelFingerprint(model_string=model, registry_digest_sha256=digest,
-                            backend="ollama", runtime_version=version)
+    return ModelFingerprint(
+        model_string=model, registry_digest_sha256=digest, backend="ollama", runtime_version=version
+    )
 
 
 def fingerprint_unknown(model: str, backend: str) -> ModelFingerprint:
@@ -535,8 +570,9 @@ def fingerprint_unknown(model: str, backend: str) -> ModelFingerprint:
     correctly flags this as "unknown" so replay logic refuses byte-exact.
     """
     digest = hashlib.sha256(f"{backend}:{model}".encode()).hexdigest()
-    return ModelFingerprint(model_string=model, registry_digest_sha256=digest,
-                            backend=backend, runtime_version=None)
+    return ModelFingerprint(
+        model_string=model, registry_digest_sha256=digest, backend=backend, runtime_version=None
+    )
 
 
 def fingerprint(model: str, backend: str) -> ModelFingerprint:
@@ -556,24 +592,43 @@ def fingerprint(model: str, backend: str) -> ModelFingerprint:
 #: Preference order (best→smallest) of real Ollama tags we know how to use
 #: for the reasoning roles. First installed match wins.
 _REASONING_PREFERENCE = [
-    "qwen3.6:35b-a3b", "qwen3:32b", "qwen3:30b-a3b", "mistral-small:24b",
+    "qwen3.6:35b-a3b",
+    "qwen3:32b",
+    "qwen3:30b-a3b",
+    "mistral-small:24b",
     "gemma2:27b",
-    "qwen3:14b-q4_K_M", "qwen3:14b", "qwen2.5:14b",
+    "qwen3:14b-q4_K_M",
+    "qwen3:14b",
+    "qwen2.5:14b",
     # The newer-generation general 9B outranks a CODER tag of any size for
     # research roles (live finding 2026-06-10: this ladder predated qwen3.5,
     # so the documented T1 pick was invisible and a 24 GB box bound all
     # reasoning roles to qwen2.5-coder:14b).
-    "qwen3.5:9b", "qwen2.5-coder:14b",
-    "qwen3:8b", "llama3.1:8b",
+    "qwen3.5:9b",
+    "qwen2.5-coder:14b",
+    "qwen3:8b",
+    "llama3.1:8b",
     # Small-RAM rung: lets a 4-8 GB box step down to a tiny model instead of
     # degrading straight to the mock. Footprints come from the param-count hint
     # in the tag, so admission stays honest for these too.
-    "qwen3.5:4b", "qwen3:4b", "qwen2.5:3b", "llama3.2:3b", "gemma2:2b",
-    "qwen3:1.7b", "llama3.2:1b", "qwen2.5:0.5b",
+    "qwen3.5:4b",
+    "qwen3:4b",
+    "qwen2.5:3b",
+    "llama3.2:3b",
+    "gemma2:2b",
+    "qwen3:1.7b",
+    "llama3.2:1b",
+    "qwen2.5:0.5b",
 ]
 #: Smaller/faster tags for the aux role.
-_AUX_PREFERENCE = ["qwen3:8b", "llama3.1:8b", "qwen3.5:4b", "qwen3.5:9b",
-                   "qwen2.5:14b", "qwen3:14b-q4_K_M"]
+_AUX_PREFERENCE = [
+    "qwen3:8b",
+    "llama3.1:8b",
+    "qwen3.5:4b",
+    "qwen3.5:9b",
+    "qwen2.5:14b",
+    "qwen3:14b-q4_K_M",
+]
 #: Embedding tags Ollama can serve.
 _EMBED_PREFERENCE = ["bge-m3", "bge-m3:latest", "nomic-embed-text", "mxbai-embed-large"]
 
@@ -597,10 +652,13 @@ def _first_installed(prefs: list[str], installed: list[str]) -> str | None:
     return None
 
 
-def resolve_against_installed(profile: HardwareProfile, installed: list[str],
-                              catalog: dict[str, Any] | None = None,
-                              *, budget_gb: float | None = None
-                              ) -> dict[str, str]:
+def resolve_against_installed(
+    profile: HardwareProfile,
+    installed: list[str],
+    catalog: dict[str, Any] | None = None,
+    *,
+    budget_gb: float | None = None,
+) -> dict[str, str]:
     """Map each role to a real installed Ollama tag, fitting the RAM budget.
 
     Returns role→tag for roles we could satisfy from ``installed``. Roles with
@@ -616,6 +674,7 @@ def resolve_against_installed(profile: HardwareProfile, installed: list[str],
     import os
 
     from .hardware import llm_budget_gb
+
     budget = llm_budget_gb(profile) if budget_gb is None else budget_gb
     out: dict[str, str] = {}
 
@@ -667,8 +726,7 @@ def resolve_against_installed(profile: HardwareProfile, installed: list[str],
     return out
 
 
-def recommend_pull_tag(profile: HardwareProfile,
-                       *, budget_gb: float | None = None) -> str:
+def recommend_pull_tag(profile: HardwareProfile, *, budget_gb: float | None = None) -> str:
     """Best *pullable* Ollama reasoning tag for this machine's RAM budget.
 
     Unlike :func:`recommend_models` (which returns the catalog's capability-class
@@ -685,6 +743,7 @@ def recommend_pull_tag(profile: HardwareProfile,
     tag instead of a hardcoded 14b.
     """
     from .hardware import llm_budget_gb
+
     budget = llm_budget_gb(profile) if budget_gb is None else budget_gb
     # First pass: a dense tag that genuinely fits resident (no SSD paging).
     for tag in _REASONING_PREFERENCE:
@@ -705,6 +764,7 @@ def _tag_params_hint(tag: str) -> float:
     budget — an unknown-size tag must never win that comparison.
     """
     import re
+
     m = re.search(r"(\d+)\s*b", tag.lower())
     return float(m.group(1)) if m else float("inf")
 
@@ -726,6 +786,7 @@ def _tag_fits(tag: str, budget_gb: float) -> bool:
     if is_pageable_moe(tag):
         return True
     import re
+
     m = re.search(r"(\d+)\s*b", tag.lower())
     if not m:
         return True
@@ -737,9 +798,13 @@ def _tag_fits(tag: str, budget_gb: float) -> bool:
 
 # --- chosen_models.yaml ---
 
-def write_chosen_models(dest: Path, profile: HardwareProfile,
-                        catalog: dict[str, Any] | None = None,
-                        budget_aware: bool = True) -> dict[str, Any]:
+
+def write_chosen_models(
+    dest: Path,
+    profile: HardwareProfile,
+    catalog: dict[str, Any] | None = None,
+    budget_aware: bool = True,
+) -> dict[str, Any]:
     """Render and write the per-install ``chosen_models.yaml``.
 
     Uses :func:`recommend_models` (budget-aware, fits the *measured* RAM) by
@@ -749,6 +814,7 @@ def write_chosen_models(dest: Path, profile: HardwareProfile,
     Returns the dict that was written, for callers who want to log/verify.
     """
     from .hardware import llm_budget_gb
+
     cat = catalog or load_catalog()
     if budget_aware:
         bindings = recommend_models(profile, cat)
@@ -763,8 +829,7 @@ def write_chosen_models(dest: Path, profile: HardwareProfile,
             seen[b.model] = fingerprint(b.model, b.backend)
         fp = seen[b.model]
         fingerprints[b.model] = {**fp.to_dict(), "pulled_at": now}
-        roles_out[role] = {"model": b.model, "backend": b.backend,
-                           "sampling": b.sampling}
+        roles_out[role] = {"model": b.model, "backend": b.backend, "sampling": b.sampling}
     report = budget_report(profile, cat)
     doc = {
         "version": 1,
@@ -794,18 +859,20 @@ def check_drift(src: Path, *, allow_drift: bool = False) -> list[dict[str, Any]]
     for model, fp_rec in doc.get("fingerprints", {}).items():
         installed = fingerprint(model, fp_rec.get("backend", "unknown"))
         if installed.registry_digest_sha256 != fp_rec.get("registry_digest_sha256"):
-            drift.append({
-                "model": model,
-                "recorded": fp_rec.get("registry_digest_sha256"),
-                "installed": installed.registry_digest_sha256,
-            })
+            drift.append(
+                {
+                    "model": model,
+                    "recorded": fp_rec.get("registry_digest_sha256"),
+                    "installed": installed.registry_digest_sha256,
+                }
+            )
     if drift and not allow_drift:
-        raise DriftDetected(f"{len(drift)} model(s) drifted: "
-                            f"{[d['model'] for d in drift]}")
+        raise DriftDetected(f"{len(drift)} model(s) drifted: {[d['model'] for d in drift]}")
     return drift
 
 
 # --- gateway proper ---
+
 
 @dataclass(frozen=True)
 class CompletionResponse:
@@ -831,17 +898,21 @@ class Gateway:
     Callers can inject pre-built backends via the constructor for tests.
     """
 
-    def __init__(self, governor: Governor, audit_db: Path,
-                 chosen_models_path: Path | None = None,
-                 profile: HardwareProfile | None = None,
-                 ollama=None,
-                 prefer_real_backends: bool = True,
-                 overrides: dict[str, str] | None = None,
-                 *,
-                 sampling: dict[str, SamplingParams] | None = None,
-                 default_sampling: SamplingParams | None = None,
-                 locked: bool = False,
-                 token_sink: Callable[[str, str | None, str], None] | None = None):
+    def __init__(
+        self,
+        governor: Governor,
+        audit_db: Path,
+        chosen_models_path: Path | None = None,
+        profile: HardwareProfile | None = None,
+        ollama=None,
+        prefer_real_backends: bool = True,
+        overrides: dict[str, str] | None = None,
+        *,
+        sampling: dict[str, SamplingParams] | None = None,
+        default_sampling: SamplingParams | None = None,
+        locked: bool = False,
+        token_sink: Callable[[str, str | None, str], None] | None = None,
+    ):
         self.governor = governor
         self.audit_db = audit_db
         self.profile = profile or probe()
@@ -856,8 +927,12 @@ class Gateway:
             self._bindings = bindings_for_tier(self.profile.suggested_tier)
         else:
             self._bindings = {
-                role: ModelBinding(role=role, model=cfg["model"], backend=cfg["backend"],
-                                   sampling=cfg.get("sampling", {}))
+                role: ModelBinding(
+                    role=role,
+                    model=cfg["model"],
+                    backend=cfg["backend"],
+                    sampling=cfg.get("sampling", {}),
+                )
                 for role, cfg in self._chosen["roles"].items()
             }
         # Overrides (role→real tag) take precedence — used to bind capability
@@ -875,17 +950,20 @@ class Gateway:
                 # marker; otherwise T3/T4/T5 boxes (catalog inference=mlx/vllm)
                 # would hit complete()'s else-branch and silently fall to the mock.
                 backend = "native" if role in ("embedding", "reranker") else "ollama"
-                self._bindings[role] = ModelBinding(role=role, model=tag,
-                                                    backend=backend, sampling=sampling)
+                self._bindings[role] = ModelBinding(
+                    role=role, model=tag, backend=backend, sampling=sampling
+                )
         self._mock = MockProvider(governor, usd_per_1k_tokens=0.0)
         self._ollama = ollama
         self._prefer_real = prefer_real_backends
         from .governor import LoopDetector
+
         self._loop_detector = LoopDetector()
         # Cross-process, RAM-aware admission for real Ollama calls: serialise
         # model calls across all Lighthouse processes so two of them can't both
         # load a model and exhaust RAM. The lock lives beside the audit DB.
         from .governor.ollama_queue import AdmissionConfig
+
         self._ollama_lock = self.audit_db.parent / "ollama.lock"
         self._admission = AdmissionConfig.from_env()
         # Per-instance tally of which backend actually served each completion
@@ -893,6 +971,7 @@ class Gateway:
         # this per job to detect a "mock masquerade" — a real-gateway run that
         # silently degraded to the mock because RAM was tight.
         from collections import Counter
+
         self._backend_counts: Counter = Counter()
         # Granular generation steerability (§6 + §27). Three overlays, applied
         # over each binding's catalog sampling dict in increasing precedence:
@@ -928,6 +1007,7 @@ class Gateway:
             return None
         try:
             from .backends.ollama import OllamaBackend
+
             backend = OllamaBackend()
             if not backend.available():
                 return None
@@ -941,8 +1021,9 @@ class Gateway:
             raise KeyError(f"no model bound for role {role!r}")
         return self._bindings[role]
 
-    def effective_sampling(self, role: str,
-                           override: SamplingParams | None = None) -> dict[str, Any]:
+    def effective_sampling(
+        self, role: str, override: SamplingParams | None = None
+    ) -> dict[str, Any]:
         """Resolve the sampling dict that *would* be sent to the backend for ``role``.
 
         Precedence (lowest → highest), each only touching its set fields:
@@ -975,12 +1056,12 @@ class Gateway:
         """
         return {
             "locked": self._locked,
-            "roles": {role: self.effective_sampling(role)
-                      for role in self._bindings},
+            "roles": {role: self.effective_sampling(role) for role in self._bindings},
         }
 
-    def complete_structured(self, prompt: str, *, job_id: str | None = None,
-                            allow_drift: bool = True) -> CompletionResponse:
+    def complete_structured(
+        self, prompt: str, *, job_id: str | None = None, allow_drift: bool = True
+    ) -> CompletionResponse:
         """Complete a low-creativity *structured* task (scoring, extraction,
         date/field parsing) on the fast ``aux_context`` model when one is bound,
         falling back to ``researcher``. This keeps extraction/scoring off the
@@ -990,9 +1071,15 @@ class Gateway:
         role = "aux_context" if "aux_context" in self._bindings else "researcher"
         return self.complete(role, prompt, job_id=job_id, allow_drift=allow_drift)
 
-    def complete(self, role: str, prompt: str, *, job_id: str | None = None,
-                 allow_drift: bool = True,
-                 sampling: SamplingParams | None = None) -> CompletionResponse:
+    def complete(
+        self,
+        role: str,
+        prompt: str,
+        *,
+        job_id: str | None = None,
+        allow_drift: bool = True,
+        sampling: SamplingParams | None = None,
+    ) -> CompletionResponse:
         b = self.binding(role)
         # Resolve the effective sampling overlay once (catalog base + configured
         # default/locked/per-role overlays + this call's optional override). When
@@ -1038,12 +1125,12 @@ class Gateway:
                 # rather than silently mocking — a smaller real answer is still
                 # grounded and honest (the mock is not). Only mock if nothing fits.
                 from .governor.ollama_queue import ollama_slot
+
                 chat_kwargs: dict[str, Any] = {"sampling": effective_sampling}
                 if self.token_sink is not None:
                     sink = self.token_sink
 
-                    def _on_token(tok: str, _role: str = role,
-                                  _job: str | None = job_id) -> None:
+                    def _on_token(tok: str, _role: str = role, _job: str | None = job_id) -> None:
                         try:
                             sink(_role, _job, tok)
                         except Exception:
@@ -1053,9 +1140,12 @@ class Gateway:
                 candidates = [b.model, *self._fallback_candidates(ollama, b.model)]
                 any_admitted = False
                 for cand in candidates:
-                    with ollama_slot(self._ollama_lock, cand,
-                                     need_gb_fn=lambda m: self._need_gb(ollama, m),
-                                     cfg=self._admission) as admitted:
+                    with ollama_slot(
+                        self._ollama_lock,
+                        cand,
+                        need_gb_fn=lambda m: self._need_gb(ollama, m),
+                        cfg=self._admission,
+                    ) as admitted:
                         if not admitted:
                             continue  # doesn't fit live RAM — try a smaller one
                         any_admitted = True
@@ -1085,12 +1175,16 @@ class Gateway:
             if not chat_ok:
                 mock_resp = self._mock.complete(prompt, job_id=job_id)
                 text, prompt_tokens, completion_tokens = (
-                    mock_resp.text, mock_resp.prompt_tokens, mock_resp.completion_tokens,
+                    mock_resp.text,
+                    mock_resp.prompt_tokens,
+                    mock_resp.completion_tokens,
                 )
         else:
             mock_resp = self._mock.complete(prompt, job_id=job_id)
             text, prompt_tokens, completion_tokens = (
-                mock_resp.text, mock_resp.prompt_tokens, mock_resp.completion_tokens,
+                mock_resp.text,
+                mock_resp.prompt_tokens,
+                mock_resp.completion_tokens,
             )
 
         # Provenance records the model that ACTUALLY served the call — if we
@@ -1102,15 +1196,22 @@ class Gateway:
             except Exception:
                 resp_fp = fp
         resp = CompletionResponse(
-            text=text, model=served_model, role=role,
+            text=text,
+            model=served_model,
+            role=role,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             usd=0.0,  # local calls are free; cloud pricing TBD when escalation lands
             fingerprint=resp_fp,
         )
         self._backend_counts[backend_used] += 1
-        self._record(resp, job_id=job_id, prompt=prompt, backend_used=backend_used,
-                     sampling=effective_sampling)
+        self._record(
+            resp,
+            job_id=job_id,
+            prompt=prompt,
+            backend_used=backend_used,
+            sampling=effective_sampling,
+        )
         return resp
 
     def drain_backends(self) -> dict[str, int]:
@@ -1144,8 +1245,7 @@ class Gateway:
         scored: list[tuple[float, str]] = []
         for name in installed:
             low = name.lower()
-            if name == primary or any(x in low for x in (
-                    "embed", "bge-", "nomic", "rerank")):
+            if name == primary or any(x in low for x in ("embed", "bge-", "nomic", "rerank")):
                 continue
             try:
                 gb = estimate_resident_gb(name)
@@ -1174,9 +1274,15 @@ class Gateway:
             return 0.0
         return estimate_resident_gb(model)
 
-    def _record(self, resp: CompletionResponse, *, job_id: str | None, prompt: str,
-                backend_used: str | None = None,
-                sampling: dict[str, Any] | None = None) -> None:
+    def _record(
+        self,
+        resp: CompletionResponse,
+        *,
+        job_id: str | None,
+        prompt: str,
+        backend_used: str | None = None,
+        sampling: dict[str, Any] | None = None,
+    ) -> None:
         payload = {
             "role": resp.role,
             "model": resp.model,
@@ -1190,6 +1296,11 @@ class Gateway:
             "sampling": sampling or {},
         }
         from .verification.audit_chain import append_event
-        append_event(self.audit_db, actor=f"gateway:{resp.role}",
-                     event_type="model_call", payload=payload,
-                     data_dir=self.audit_db.parent)
+
+        append_event(
+            self.audit_db,
+            actor=f"gateway:{resp.role}",
+            event_type="model_call",
+            payload=payload,
+            data_dir=self.audit_db.parent,
+        )

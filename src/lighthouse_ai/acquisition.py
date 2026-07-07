@@ -46,6 +46,7 @@ _log = structlog.get_logger(__name__)
 # Per-tier acquisition policy
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class AcquisitionPolicy:
     """How much new evidence a run may pull in while it researches.
@@ -66,20 +67,36 @@ class AcquisitionPolicy:
 _POLICIES: dict[str, AcquisitionPolicy] = {
     "quick": AcquisitionPolicy(iterative=False),
     "standard": AcquisitionPolicy(
-        iterative=True, skills_per_query=2, results_per_skill=5,
-        query_variants=1, link_follow_budget=0, max_total_docs=60),
+        iterative=True,
+        skills_per_query=2,
+        results_per_skill=5,
+        query_variants=1,
+        link_follow_budget=0,
+        max_total_docs=60,
+    ),
     "thorough": AcquisitionPolicy(
-        iterative=True, skills_per_query=3, results_per_skill=5,
-        query_variants=2, link_follow_budget=0, max_total_docs=150),
+        iterative=True,
+        skills_per_query=3,
+        results_per_skill=5,
+        query_variants=2,
+        link_follow_budget=0,
+        max_total_docs=150,
+    ),
     "deep": AcquisitionPolicy(
-        iterative=True, skills_per_query=3, results_per_skill=8,
-        query_variants=3, link_follow_budget=5, max_total_docs=400),
+        iterative=True,
+        skills_per_query=3,
+        results_per_skill=8,
+        query_variants=3,
+        link_follow_budget=5,
+        max_total_docs=400,
+    ),
 }
 
 
 def policy_for_tier(depth: str | None) -> AcquisitionPolicy:
     """Acquisition policy for a depth label (same aliases as the engine knobs)."""
     from .modes.depth import canonical_tier
+
     return _POLICIES[canonical_tier(depth)]
 
 
@@ -106,12 +123,17 @@ def screen_and_chunk(docs: list[dict]) -> tuple[list[Chunk], int]:
         text = str(d.get("text", ""))
         if not text.strip():
             continue
-        chunks = chunk_document(Document(
-            id=doc_id, text=text,
-            metadata={"source": str(d.get("title", doc_id)),
-                      **({"skill_id": d["skill_id"]} if d.get("skill_id") else {}),
-                      **({"url": d["url"]} if d.get("url") else {})},
-        ))
+        chunks = chunk_document(
+            Document(
+                id=doc_id,
+                text=text,
+                metadata={
+                    "source": str(d.get("title", doc_id)),
+                    **({"skill_id": d["skill_id"]} if d.get("skill_id") else {}),
+                    **({"url": d["url"]} if d.get("url") else {}),
+                },
+            )
+        )
         for c in chunks:
             if _GATE.score(c.text).blocked:
                 blocked += 1
@@ -123,6 +145,7 @@ def screen_and_chunk(docs: list[dict]) -> tuple[list[Chunk], int]:
 # ---------------------------------------------------------------------------
 # Query fan-out
 # ---------------------------------------------------------------------------
+
 
 def query_variants(sub_question: str, k: int, gateway: Any | None) -> list[str]:
     """Up to ``k`` diverse search formulations of *sub_question*.
@@ -168,6 +191,7 @@ def extract_links(texts: list[str], *, limit: int) -> list[str]:
 # The Acquirer
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Acquirer:
     """Per-job iterative acquisition engine (online runs only).
@@ -212,8 +236,7 @@ class Acquirer:
         try:
             return self._acquire(sub_question)
         except Exception as exc:  # never let acquisition crash a run
-            _log.warning("acquisition.error", error=repr(exc),
-                         sub_question=sub_question[:80])
+            _log.warning("acquisition.error", error=repr(exc), sub_question=sub_question[:80])
             return 0
 
     def _acquire(self, sub_question: str) -> int:
@@ -222,16 +245,14 @@ class Acquirer:
 
         skill_ids: list[str] = []
         try:
-            recs = recommend(sub_question, self.mode, self.depth,
-                             gateway=self.gateway)
+            recs = recommend(sub_question, self.mode, self.depth, gateway=self.gateway)
             skill_ids = [r.skill_id for r in recs[: self.policy.skills_per_query]]
         except Exception:
             skill_ids = []
         if not skill_ids:
             skill_ids = ["general_web"]
 
-        queries = query_variants(sub_question, self.policy.query_variants,
-                                 self.gateway)
+        queries = query_variants(sub_question, self.policy.query_variants, self.gateway)
 
         new_docs: list = []
         sources_hit: set[str] = set()
@@ -243,9 +264,13 @@ class Acquirer:
             for q in queries:
                 if self.total_docs + len(new_docs) >= self.policy.max_total_docs:
                     break
-                run = run_skill(skill, q, broker=self.broker,
-                                gateway=self.gateway,
-                                max_results=self.policy.results_per_skill)
+                run = run_skill(
+                    skill,
+                    q,
+                    broker=self.broker,
+                    gateway=self.gateway,
+                    max_results=self.policy.results_per_skill,
+                )
                 for doc in run.documents:
                     key = self._doc_key(doc)
                     if key in self._seen:
@@ -279,15 +304,16 @@ class Acquirer:
         from .skills.capabilities import build_context
 
         texts = [str(d.get("text", "")) for d in self.meta.get("documents") or []]
-        candidates = [u for u in extract_links(
-            texts, limit=self.policy.link_follow_budget * 4)
-            if u not in self._followed and u not in self._seen]
+        candidates = [
+            u
+            for u in extract_links(texts, limit=self.policy.link_follow_budget * 4)
+            if u not in self._followed and u not in self._seen
+        ]
         if not candidates:
             return 0
         try:
             gw = load_skill("general_web")
-            ctx = build_context(gw.manifest, broker=self.broker,
-                                gateway=self.gateway)
+            ctx = build_context(gw.manifest, broker=self.broker, gateway=self.gateway)
         except Exception:
             return 0
         new_docs: list = []
@@ -314,8 +340,7 @@ class Acquirer:
     @staticmethod
     def _doc_key(doc: Any) -> str:
         meta = getattr(doc, "metadata", {}) or {}
-        return str(meta.get("url") or meta.get("source")
-                   or getattr(doc, "id", "") or id(doc))
+        return str(meta.get("url") or meta.get("source") or getattr(doc, "id", "") or id(doc))
 
     def _ingest(self, docs: list, sources: set[str], label: str) -> int:
         """Screen, index, and register newly acquired documents."""
@@ -338,14 +363,25 @@ class Acquirer:
         if self.progress is not None:
             try:
                 self.progress.emit(
-                    "sources", "acquired",
+                    "sources",
+                    "acquired",
                     f"+{len(docs)} documents from {max(len(sources), 1)} "
                     f"source(s) for: {label[:80]}",
                     30.0,
-                    {"new_documents": len(docs), "total_acquired": self.total_docs,
-                     "blocked_chunks": blocked, "sources": sorted(sources)})
+                    {
+                        "new_documents": len(docs),
+                        "total_acquired": self.total_docs,
+                        "blocked_chunks": blocked,
+                        "sources": sorted(sources),
+                    },
+                )
             except Exception:
                 pass
-        _log.info("acquisition.ingested", new=len(docs),
-                  total=self.total_docs, blocked=blocked, label=label[:80])
+        _log.info(
+            "acquisition.ingested",
+            new=len(docs),
+            total=self.total_docs,
+            blocked=blocked,
+            label=label[:80],
+        )
         return len(docs)

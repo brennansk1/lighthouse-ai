@@ -316,9 +316,7 @@ def test_max_nodes_cap():
 
 def test_max_entities_per_chunk_caps_pairs():
     text = " ".join(f"Thing{i}" for i in range(20))
-    g = build_corpus_graph(
-        [{"id": "c", "text": text}], max_entities_per_chunk=3
-    )
+    g = build_corpus_graph([{"id": "c", "text": text}], max_entities_per_chunk=3)
     # At most 3 entities considered → at most C(3,2)=3 edges.
     assert g.edge_count <= 3
     assert g.node_count <= 3

@@ -7,6 +7,7 @@ Two contracts:
      (every gold id exists; contradiction cases are well-formed), and the
      real ``evaluate()`` runs over it offline and reports sane metrics.
 """
+
 from __future__ import annotations
 
 import json
@@ -112,15 +113,11 @@ def test_round_trip_legal_gold(tmp_path: Path) -> None:
     save_golden_to_json(golden, out, name="legal-gold")
     again = load_golden_from_json(out)
 
-    assert {d.id: d.text for d in again.documents} == {
-        d.id: d.text for d in golden.documents
-    }
+    assert {d.id: d.text for d in again.documents} == {d.id: d.text for d in golden.documents}
     assert {c.query: c.relevant_doc_ids for c in again.cases} == {
         c.query: c.relevant_doc_ids for c in golden.cases
     }
-    assert [c.claim for c in again.contradictions] == [
-        c.claim for c in golden.contradictions
-    ]
+    assert [c.claim for c in again.contradictions] == [c.claim for c in golden.contradictions]
 
 
 def test_round_trip_synthetic(tmp_path: Path) -> None:
@@ -129,9 +126,7 @@ def test_round_trip_synthetic(tmp_path: Path) -> None:
             Document(id="d1", text="alpha beta", metadata={"k": "v"}),
             Document(id="d2", text="gamma delta"),
         ),
-        cases=(
-            GoldenCase(query="alpha beta", relevant_doc_ids=frozenset({"d1"})),
-        ),
+        cases=(GoldenCase(query="alpha beta", relevant_doc_ids=frozenset({"d1"})),),
         contradictions=(
             ContradictionCase(
                 claim="the sky is blue",

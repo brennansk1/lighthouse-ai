@@ -13,6 +13,7 @@ the loops simply see empty tables on their next tick).
 Destructive + irreversible. The API/CLI callers gate it behind an explicit
 confirmation.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -54,9 +55,8 @@ def _wipe_db_rows(db_path: Path, summary: ResetSummary) -> None:
     conn = open_db(db_path)
     try:
         tables = [
-            r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             if not r[0].startswith(_INTERNAL_TABLE_PREFIX)
         ]
         # Defer FK enforcement so order-independent deletes don't trip references.
@@ -84,8 +84,7 @@ def factory_reset(paths: Paths, *, include_models: bool = False) -> ResetSummary
     flag is recorded in the summary so the caller can act on it separately.
     """
     summary = ResetSummary(kept_models=not include_models)
-    log.warning("factory_reset.start", data_dir=str(paths.data_dir),
-                include_models=include_models)
+    log.warning("factory_reset.start", data_dir=str(paths.data_dir), include_models=include_models)
 
     # 1. Clear every row from every core database (schema preserved).
     for db in paths.all_dbs():
@@ -102,7 +101,7 @@ def factory_reset(paths: Paths, *, include_models: bool = False) -> ResetSummary
         paths.staging_dir,
         paths.quarantine_dir,
         paths.worm_dir,
-        paths.skills_dir,   # user-added skills only; the packaged library is in the wheel
+        paths.skills_dir,  # user-added skills only; the packaged library is in the wheel
     ):
         if d.exists():
             shutil.rmtree(d, ignore_errors=True)

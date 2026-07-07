@@ -37,6 +37,7 @@ from lighthouse_ai.governor.loop_detector import (
 # Loop detection (§24.6)
 # --------------------------------------------------------------------------- #
 
+
 def test_normalize_query_folds_case_and_whitespace():
     assert normalize_query("  Foo   BAR\nbaz ") == "foo bar baz"
 
@@ -178,6 +179,7 @@ def test_loop_defaults_match_design():
 # Injection gate (§24.8)
 # --------------------------------------------------------------------------- #
 
+
 def test_clean_text_not_blocked():
     gate = InjectionGate()
     verdict = gate.score("The mitochondria is the powerhouse of the cell.")
@@ -269,6 +271,7 @@ def test_is_spotlit_false_for_unwrapped():
 # --------------------------------------------------------------------------- #
 # Egress proxy (§24.9, §15.11)
 # --------------------------------------------------------------------------- #
+
 
 def test_extract_host_from_url_and_bare():
     assert extract_host("https://arxiv.org/abs/1234") == "arxiv.org"

@@ -248,9 +248,9 @@ def test_fr_skips_items_without_title(mocked_http):
 
 
 def test_fr_respects_max_results(mocked_http):
-    route = mocked_http.get(
-        "https://www.federalregister.gov/api/v1/documents.json"
-    ).respond(200, json=FR_RESULTS_JSON)
+    route = mocked_http.get("https://www.federalregister.gov/api/v1/documents.json").respond(
+        200, json=FR_RESULTS_JSON
+    )
     search_rules("air quality", max_results=3)
     assert route.calls.last.request.url.params["per_page"] == "3"
 
@@ -272,37 +272,35 @@ def test_fr_uses_injected_client(mocked_http):
 
 
 def test_fr_fetch_rule(mocked_http):
-    mocked_http.get(
-        "https://www.federalregister.gov/api/v1/documents/2024-05678.json"
-    ).respond(200, json=FR_SINGLE_DOC_JSON)
+    mocked_http.get("https://www.federalregister.gov/api/v1/documents/2024-05678.json").respond(
+        200, json=FR_SINGLE_DOC_JSON
+    )
     docs = fetch_rule("2024-05678")
     assert len(docs) == 1
     assert docs[0].metadata["document_number"] == "2024-05678"
 
 
 def test_fr_list_recent_in_agency_passes_agency_param(mocked_http):
-    route = mocked_http.get(
-        "https://www.federalregister.gov/api/v1/documents.json"
-    ).respond(200, json=FR_RESULTS_JSON)
-    list_recent_in_agency("epa")
-    assert "epa" in route.calls.last.request.url.params.get(
-        "conditions[agencies][]", ""
+    route = mocked_http.get("https://www.federalregister.gov/api/v1/documents.json").respond(
+        200, json=FR_RESULTS_JSON
     )
+    list_recent_in_agency("epa")
+    assert "epa" in route.calls.last.request.url.params.get("conditions[agencies][]", "")
 
 
 def test_fr_get_executive_orders_passes_type_filter(mocked_http):
-    route = mocked_http.get(
-        "https://www.federalregister.gov/api/v1/documents.json"
-    ).respond(200, json=FR_RESULTS_JSON)
+    route = mocked_http.get("https://www.federalregister.gov/api/v1/documents.json").respond(
+        200, json=FR_RESULTS_JSON
+    )
     get_executive_orders()
     params = route.calls.last.request.url.params
     assert "PRESDOCU" in params.get("conditions[type][]", "")
 
 
 def test_fr_track_rulemaking_passes_rule_types(mocked_http):
-    route = mocked_http.get(
-        "https://www.federalregister.gov/api/v1/documents.json"
-    ).respond(200, json=FR_RESULTS_JSON)
+    route = mocked_http.get("https://www.federalregister.gov/api/v1/documents.json").respond(
+        200, json=FR_RESULTS_JSON
+    )
     track_rulemaking("clean air")
     # httpx QueryParams serializes multi-value params as repeated keys;
     # decode raw query string to check for both type values.
@@ -391,44 +389,34 @@ REGS_EMPTY_JSON = {"data": []}
 
 
 def test_regs_returns_documents(mocked_http):
-    mocked_http.get("https://api.regulations.gov/v4/dockets").respond(
-        200, json=REGS_DOCKETS_JSON
-    )
+    mocked_http.get("https://api.regulations.gov/v4/dockets").respond(200, json=REGS_DOCKETS_JSON)
     docs = search_dockets("particulate matter")
     assert len(docs) == 2
     assert all(isinstance(d, Document) for d in docs)
 
 
 def test_regs_extracts_docket_id(mocked_http):
-    mocked_http.get("https://api.regulations.gov/v4/dockets").respond(
-        200, json=REGS_DOCKETS_JSON
-    )
+    mocked_http.get("https://api.regulations.gov/v4/dockets").respond(200, json=REGS_DOCKETS_JSON)
     docs = search_dockets("air quality")
     assert docs[0].metadata["docket_id"] == "EPA-HQ-OAR-2022-0873"
     assert docs[0].id == "regs:EPA-HQ-OAR-2022-0873"
 
 
 def test_regs_metadata_grade_and_source(mocked_http):
-    mocked_http.get("https://api.regulations.gov/v4/dockets").respond(
-        200, json=REGS_DOCKETS_JSON
-    )
+    mocked_http.get("https://api.regulations.gov/v4/dockets").respond(200, json=REGS_DOCKETS_JSON)
     doc = search_dockets("air quality")[0]
     assert doc.metadata["source"] == "regulations_gov"
     assert doc.metadata["grade"] == "A"
 
 
 def test_regs_url_contains_docket_id(mocked_http):
-    mocked_http.get("https://api.regulations.gov/v4/dockets").respond(
-        200, json=REGS_DOCKETS_JSON
-    )
+    mocked_http.get("https://api.regulations.gov/v4/dockets").respond(200, json=REGS_DOCKETS_JSON)
     doc = search_dockets("air quality")[0]
     assert "EPA-HQ-OAR-2022-0873" in doc.metadata["url"]
 
 
 def test_regs_empty_results(mocked_http):
-    mocked_http.get("https://api.regulations.gov/v4/dockets").respond(
-        200, json=REGS_EMPTY_JSON
-    )
+    mocked_http.get("https://api.regulations.gov/v4/dockets").respond(200, json=REGS_EMPTY_JSON)
     assert search_dockets("nothing") == []
 
 
@@ -439,9 +427,7 @@ def test_regs_raises_on_http_error(mocked_http):
 
 
 def test_regs_uses_injected_client(mocked_http):
-    mocked_http.get("https://api.regulations.gov/v4/dockets").respond(
-        200, json=REGS_DOCKETS_JSON
-    )
+    mocked_http.get("https://api.regulations.gov/v4/dockets").respond(200, json=REGS_DOCKETS_JSON)
     with httpx.Client() as client:
         docs = search_dockets("air quality", client=client)
         assert len(docs) == 2
@@ -449,18 +435,16 @@ def test_regs_uses_injected_client(mocked_http):
 
 
 def test_regs_fetch_docket(mocked_http):
-    mocked_http.get(
-        "https://api.regulations.gov/v4/dockets/EPA-HQ-OAR-2022-0873"
-    ).respond(200, json=REGS_DOCKET_SINGLE_JSON)
+    mocked_http.get("https://api.regulations.gov/v4/dockets/EPA-HQ-OAR-2022-0873").respond(
+        200, json=REGS_DOCKET_SINGLE_JSON
+    )
     docs = fetch_docket("EPA-HQ-OAR-2022-0873")
     assert len(docs) == 1
     assert docs[0].metadata["docket_id"] == "EPA-HQ-OAR-2022-0873"
 
 
 def test_regs_list_comments_grade_b(mocked_http):
-    mocked_http.get("https://api.regulations.gov/v4/comments").respond(
-        200, json=REGS_COMMENTS_JSON
-    )
+    mocked_http.get("https://api.regulations.gov/v4/comments").respond(200, json=REGS_COMMENTS_JSON)
     docs = list_comments("EPA-HQ-OAR-2022-0873")
     assert len(docs) == 2
     for doc in docs:
@@ -469,9 +453,7 @@ def test_regs_list_comments_grade_b(mocked_http):
 
 
 def test_regs_list_comments_extracts_text(mocked_http):
-    mocked_http.get("https://api.regulations.gov/v4/comments").respond(
-        200, json=REGS_COMMENTS_JSON
-    )
+    mocked_http.get("https://api.regulations.gov/v4/comments").respond(200, json=REGS_COMMENTS_JSON)
     docs = list_comments("EPA-HQ-OAR-2022-0873")
     assert "PM2.5" in docs[0].text
 
@@ -536,53 +518,41 @@ GOVINFO_COLLECTION_JSON = {
 
 
 def test_govinfo_returns_documents(mocked_http):
-    mocked_http.get("https://api.govinfo.gov/search").respond(
-        200, json=GOVINFO_SEARCH_JSON
-    )
+    mocked_http.get("https://api.govinfo.gov/search").respond(200, json=GOVINFO_SEARCH_JSON)
     docs = search_collection("clean air")
     assert len(docs) == 2
     assert all(isinstance(d, Document) for d in docs)
 
 
 def test_govinfo_extracts_package_id(mocked_http):
-    mocked_http.get("https://api.govinfo.gov/search").respond(
-        200, json=GOVINFO_SEARCH_JSON
-    )
+    mocked_http.get("https://api.govinfo.gov/search").respond(200, json=GOVINFO_SEARCH_JSON)
     docs = search_collection("clean air")
     assert docs[0].metadata["package_id"] == "CFR-2024-title40-vol6"
     assert docs[0].id == "govinfo:CFR-2024-title40-vol6"
 
 
 def test_govinfo_extracts_collection_code(mocked_http):
-    mocked_http.get("https://api.govinfo.gov/search").respond(
-        200, json=GOVINFO_SEARCH_JSON
-    )
+    mocked_http.get("https://api.govinfo.gov/search").respond(200, json=GOVINFO_SEARCH_JSON)
     docs = search_collection("clean air")
     assert docs[0].metadata["collection_code"] == "CFR"
     assert docs[1].metadata["collection_code"] == "GAOREPORTS"
 
 
 def test_govinfo_metadata_grade_and_source(mocked_http):
-    mocked_http.get("https://api.govinfo.gov/search").respond(
-        200, json=GOVINFO_SEARCH_JSON
-    )
+    mocked_http.get("https://api.govinfo.gov/search").respond(200, json=GOVINFO_SEARCH_JSON)
     doc = search_collection("clean air")[0]
     assert doc.metadata["source"] == "govinfo"
     assert doc.metadata["grade"] == "A"
 
 
 def test_govinfo_passes_collection_param(mocked_http):
-    route = mocked_http.get("https://api.govinfo.gov/search").respond(
-        200, json=GOVINFO_SEARCH_JSON
-    )
+    route = mocked_http.get("https://api.govinfo.gov/search").respond(200, json=GOVINFO_SEARCH_JSON)
     search_collection("clean air", collection="CFR")
     assert route.calls.last.request.url.params.get("collection") == "CFR"
 
 
 def test_govinfo_empty_results(mocked_http):
-    mocked_http.get("https://api.govinfo.gov/search").respond(
-        200, json=GOVINFO_EMPTY_JSON
-    )
+    mocked_http.get("https://api.govinfo.gov/search").respond(200, json=GOVINFO_EMPTY_JSON)
     assert search_collection("nothing") == []
 
 
@@ -593,9 +563,7 @@ def test_govinfo_raises_on_http_error(mocked_http):
 
 
 def test_govinfo_uses_injected_client(mocked_http):
-    mocked_http.get("https://api.govinfo.gov/search").respond(
-        200, json=GOVINFO_SEARCH_JSON
-    )
+    mocked_http.get("https://api.govinfo.gov/search").respond(200, json=GOVINFO_SEARCH_JSON)
     with httpx.Client() as client:
         docs = search_collection("clean air", client=client)
         assert len(docs) == 2
@@ -603,9 +571,9 @@ def test_govinfo_uses_injected_client(mocked_http):
 
 
 def test_govinfo_fetch_document(mocked_http):
-    mocked_http.get(
-        "https://api.govinfo.gov/packages/CFR-2024-title40-vol6/summary"
-    ).respond(200, json=GOVINFO_SUMMARY_JSON)
+    mocked_http.get("https://api.govinfo.gov/packages/CFR-2024-title40-vol6/summary").respond(
+        200, json=GOVINFO_SUMMARY_JSON
+    )
     docs = fetch_document("CFR-2024-title40-vol6")
     assert len(docs) == 1
     assert docs[0].metadata["package_id"] == "CFR-2024-title40-vol6"
@@ -613,17 +581,13 @@ def test_govinfo_fetch_document(mocked_http):
 
 
 def test_govinfo_get_cfr_section_passes_collection(mocked_http):
-    route = mocked_http.get("https://api.govinfo.gov/search").respond(
-        200, json=GOVINFO_SEARCH_JSON
-    )
+    route = mocked_http.get("https://api.govinfo.gov/search").respond(200, json=GOVINFO_SEARCH_JSON)
     get_cfr_section(40, "50")
     assert route.calls.last.request.url.params.get("collection") == "CFR"
 
 
 def test_govinfo_get_cfr_section_query_contains_title(mocked_http):
-    route = mocked_http.get("https://api.govinfo.gov/search").respond(
-        200, json=GOVINFO_SEARCH_JSON
-    )
+    route = mocked_http.get("https://api.govinfo.gov/search").respond(200, json=GOVINFO_SEARCH_JSON)
     get_cfr_section(40, "50")
     query = route.calls.last.request.url.params.get("query", "")
     assert "40" in query
@@ -631,9 +595,7 @@ def test_govinfo_get_cfr_section_query_contains_title(mocked_http):
 
 
 def test_govinfo_get_uscode_section_passes_collection(mocked_http):
-    route = mocked_http.get("https://api.govinfo.gov/search").respond(
-        200, json=GOVINFO_SEARCH_JSON
-    )
+    route = mocked_http.get("https://api.govinfo.gov/search").respond(200, json=GOVINFO_SEARCH_JSON)
     get_uscode_section(42, "7401")
     assert route.calls.last.request.url.params.get("collection") == "USCODE"
 
@@ -736,62 +698,48 @@ CONGRESS_EMPTY_JSON = {"bills": []}
 
 
 def test_congress_returns_documents(mocked_http):
-    mocked_http.get("https://api.congress.gov/v3/bill").respond(
-        200, json=CONGRESS_BILLS_JSON
-    )
+    mocked_http.get("https://api.congress.gov/v3/bill").respond(200, json=CONGRESS_BILLS_JSON)
     docs = search_bills("clean energy")
     assert len(docs) == 2
     assert all(isinstance(d, Document) for d in docs)
 
 
 def test_congress_extracts_bill_number(mocked_http):
-    mocked_http.get("https://api.congress.gov/v3/bill").respond(
-        200, json=CONGRESS_BILLS_JSON
-    )
+    mocked_http.get("https://api.congress.gov/v3/bill").respond(200, json=CONGRESS_BILLS_JSON)
     docs = search_bills("clean energy")
     assert docs[0].metadata["bill_number"] == "5376"
     assert docs[0].id == "congress:117-HR-5376"
 
 
 def test_congress_extracts_title(mocked_http):
-    mocked_http.get("https://api.congress.gov/v3/bill").respond(
-        200, json=CONGRESS_BILLS_JSON
-    )
+    mocked_http.get("https://api.congress.gov/v3/bill").respond(200, json=CONGRESS_BILLS_JSON)
     docs = search_bills("clean energy")
     assert "Inflation Reduction Act" in docs[0].metadata["title"]
     assert docs[0].metadata["title"] in docs[0].text
 
 
 def test_congress_text_includes_latest_action(mocked_http):
-    mocked_http.get("https://api.congress.gov/v3/bill").respond(
-        200, json=CONGRESS_BILLS_JSON
-    )
+    mocked_http.get("https://api.congress.gov/v3/bill").respond(200, json=CONGRESS_BILLS_JSON)
     docs = search_bills("clean energy")
     assert "Public Law" in docs[0].text
 
 
 def test_congress_extracts_congress_number(mocked_http):
-    mocked_http.get("https://api.congress.gov/v3/bill").respond(
-        200, json=CONGRESS_BILLS_JSON
-    )
+    mocked_http.get("https://api.congress.gov/v3/bill").respond(200, json=CONGRESS_BILLS_JSON)
     docs = search_bills("clean energy")
     assert docs[0].metadata["congress"] == "117"
     assert docs[1].metadata["congress"] == "118"
 
 
 def test_congress_metadata_grade_and_source(mocked_http):
-    mocked_http.get("https://api.congress.gov/v3/bill").respond(
-        200, json=CONGRESS_BILLS_JSON
-    )
+    mocked_http.get("https://api.congress.gov/v3/bill").respond(200, json=CONGRESS_BILLS_JSON)
     doc = search_bills("clean energy")[0]
     assert doc.metadata["source"] == "congress_gov"
     assert doc.metadata["grade"] == "A"
 
 
 def test_congress_empty_results(mocked_http):
-    mocked_http.get("https://api.congress.gov/v3/bill").respond(
-        200, json=CONGRESS_EMPTY_JSON
-    )
+    mocked_http.get("https://api.congress.gov/v3/bill").respond(200, json=CONGRESS_EMPTY_JSON)
     assert search_bills("nothing") == []
 
 
@@ -802,9 +750,7 @@ def test_congress_raises_on_http_error(mocked_http):
 
 
 def test_congress_uses_injected_client(mocked_http):
-    mocked_http.get("https://api.congress.gov/v3/bill").respond(
-        200, json=CONGRESS_BILLS_JSON
-    )
+    mocked_http.get("https://api.congress.gov/v3/bill").respond(200, json=CONGRESS_BILLS_JSON)
     with httpx.Client() as client:
         docs = search_bills("clean energy", client=client)
         assert len(docs) == 2

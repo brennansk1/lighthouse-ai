@@ -72,14 +72,14 @@ class PDFJavaScriptScanner:
 
     def scan(self, payload: bytes, *, filename: str | None = None) -> ScanResult:
         if not payload.startswith(b"%PDF"):
-            return ScanResult(self.name, "quarantine",
-                              "missing %PDF header — not a valid PDF")
+            return ScanResult(self.name, "quarantine", "missing %PDF header — not a valid PDF")
         hits = [p for p in _PDF_JS_PATTERNS if p in payload]
         if hits:
             return ScanResult(
-                self.name, "quarantine",
+                self.name,
+                "quarantine",
                 f"active-content markers: {[h.decode(errors='replace') for h in hits]}",
-                {"hits": [h.decode(errors='replace') for h in hits]},
+                {"hits": [h.decode(errors="replace") for h in hits]},
             )
         return ScanResult(self.name, "clean")
 
@@ -117,12 +117,14 @@ class HTMLScriptScanner:
         # which let an .html document beginning with <svg> smuggle event
         # handlers through.)
         if _HTML_DANGER_RE.search(payload):
-            return ScanResult(self.name, "quarantine",
-                              "active content (script / event handler / javascript:)")
+            return ScanResult(
+                self.name, "quarantine", "active content (script / event handler / javascript:)"
+            )
         return ScanResult(self.name, "clean")
 
 
 # --- Archive bomb scanner ------------------------------------------------
+
 
 class ArchiveBombScanner:
     """Reject zip archives whose declared size exceeds a compression ratio.
@@ -140,7 +142,7 @@ class ArchiveBombScanner:
 
     name = "archive_bomb"
 
-    _NESTED_DEPTH_CAP: int = 3   # max recursion depth for nested zips
+    _NESTED_DEPTH_CAP: int = 3  # max recursion depth for nested zips
     _NESTED_ENTRY_CAP: int = 500  # max total entries examined across all levels
     # Never decompress a nested archive larger than this to recurse into it:
     # its *declared* size already counts toward the bomb total, and actually
@@ -163,9 +165,7 @@ class ArchiveBombScanner:
             return True
         return False
 
-    def _sum_uncompressed(
-        self, data: bytes, depth: int, entry_counter: list[int]
-    ) -> int:
+    def _sum_uncompressed(self, data: bytes, depth: int, entry_counter: list[int]) -> int:
         """Recursively sum declared uncompressed sizes for *data* (a zip blob).
 
         Parameters
@@ -213,9 +213,7 @@ class ArchiveBombScanner:
                                 continue  # real content exceeded cap; don't recurse
                         except Exception:
                             continue
-                        nested = self._sum_uncompressed(
-                            nested_data, depth + 1, entry_counter
-                        )
+                        nested = self._sum_uncompressed(nested_data, depth + 1, entry_counter)
                         total += nested
         except zipfile.BadZipFile:
             pass
@@ -223,6 +221,7 @@ class ArchiveBombScanner:
 
     def scan(self, payload: bytes, *, filename: str | None = None) -> ScanResult:
         import io
+
         compressed_size = max(len(payload), 1)
         # Validate the outer zip first.
         try:
@@ -232,20 +231,25 @@ class ArchiveBombScanner:
             return ScanResult(self.name, "reject", "not a valid zip archive")
 
         entry_counter: list[int] = [0]
-        uncompressed = self._sum_uncompressed(payload, depth=0,
-                                              entry_counter=entry_counter)
+        uncompressed = self._sum_uncompressed(payload, depth=0, entry_counter=entry_counter)
 
         ratio = uncompressed / compressed_size
         if uncompressed > self.max_uncompressed_mb * 1024 * 1024:
-            return ScanResult(self.name, "reject",
-                              f"declared {uncompressed} bytes exceeds "
-                              f"{self.max_uncompressed_mb}MB cap")
+            return ScanResult(
+                self.name,
+                "reject",
+                f"declared {uncompressed} bytes exceeds {self.max_uncompressed_mb}MB cap",
+            )
         if ratio > self.max_ratio:
-            return ScanResult(self.name, "reject",
-                              f"compression ratio {ratio:.1f} > {self.max_ratio}",
-                              {"ratio": ratio, "uncompressed": uncompressed})
-        return ScanResult(self.name, "clean",
-                          details={"ratio": ratio, "uncompressed": uncompressed})
+            return ScanResult(
+                self.name,
+                "reject",
+                f"compression ratio {ratio:.1f} > {self.max_ratio}",
+                {"ratio": ratio, "uncompressed": uncompressed},
+            )
+        return ScanResult(
+            self.name, "clean", details={"ratio": ratio, "uncompressed": uncompressed}
+        )
 
 
 # --- EICAR test scanner (proves wiring) ---------------------------------
@@ -331,6 +335,7 @@ def _yara_available() -> bool:
     """Return True if yara-python can be imported."""
     try:
         import yara  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -380,6 +385,7 @@ class YaraScanner:
             return None
         try:
             import yara
+
             self._compiled = yara.compile(source=self._rules_source)
             return self._compiled
         except ImportError:
@@ -392,14 +398,14 @@ class YaraScanner:
         rules = self._get_rules()
         if rules is None:
             return ScanResult(
-                self.name, "clean",
+                self.name,
+                "clean",
                 "yara-python not installed; install sandbox-hardening extra to enable",
             )
         try:
             matches = rules.match(data=payload)
         except Exception as exc:
-            return ScanResult(self.name, "quarantine",
-                              f"YARA match error: {exc!r}")
+            return ScanResult(self.name, "quarantine", f"YARA match error: {exc!r}")
 
         if not matches:
             return ScanResult(self.name, "clean")
@@ -414,7 +420,8 @@ class YaraScanner:
                 severity = "reject"
 
         return ScanResult(
-            self.name, severity,
+            self.name,
+            severity,
             f"YARA rules matched: {', '.join(names)}",
             {"matched_rules": names},
         )
@@ -424,9 +431,11 @@ class YaraScanner:
 # PikePdfScanner
 # ---------------------------------------------------------------------------
 
+
 def _pikepdf_available() -> bool:
     try:
         import pikepdf  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -451,11 +460,17 @@ class PikePdfScanner:
     name = "pikepdf"
 
     # Action sub-types considered dangerous
-    _DANGEROUS_ACTION_S = frozenset([
-        "/Launch", "/JavaScript", "/JS",
-        "/SubmitForm", "/ImportData", "/GoToR",
-        "/URI",  # URI actions can invoke shell handlers on some viewers
-    ])
+    _DANGEROUS_ACTION_S = frozenset(
+        [
+            "/Launch",
+            "/JavaScript",
+            "/JS",
+            "/SubmitForm",
+            "/ImportData",
+            "/GoToR",
+            "/URI",  # URI actions can invoke shell handlers on some viewers
+        ]
+    )
 
     def supports(self, *, content_type: str, filename: str | None = None) -> bool:
         if not _pikepdf_available():
@@ -469,7 +484,8 @@ class PikePdfScanner:
     def scan(self, payload: bytes, *, filename: str | None = None) -> ScanResult:
         if not _pikepdf_available():
             return ScanResult(
-                self.name, "clean",
+                self.name,
+                "clean",
                 "pikepdf not installed; install sandbox-hardening extra to enable",
             )
 
@@ -480,14 +496,11 @@ class PikePdfScanner:
         try:
             pdf = pikepdf.open(_io.BytesIO(payload))
         except pikepdf.PasswordError:
-            return ScanResult(self.name, "quarantine",
-                              "PDF is password-protected — cannot inspect")
+            return ScanResult(self.name, "quarantine", "PDF is password-protected — cannot inspect")
         except pikepdf.PdfError as exc:
-            return ScanResult(self.name, "quarantine",
-                              f"malformed PDF (pikepdf): {exc}")
+            return ScanResult(self.name, "quarantine", f"malformed PDF (pikepdf): {exc}")
         except Exception as exc:
-            return ScanResult(self.name, "quarantine",
-                              f"unexpected PDF parse error: {exc!r}")
+            return ScanResult(self.name, "quarantine", f"unexpected PDF parse error: {exc!r}")
 
         findings: list[str] = []
 
@@ -551,7 +564,8 @@ class PikePdfScanner:
             return ScanResult(self.name, "clean")
 
         return ScanResult(
-            self.name, "quarantine",
+            self.name,
+            "quarantine",
             f"suspicious PDF structure: {'; '.join(findings)}",
             {"findings": findings},
         )
@@ -573,6 +587,7 @@ class PikePdfScanner:
 # ---------------------------------------------------------------------------
 # hardened_scanners() factory
 # ---------------------------------------------------------------------------
+
 
 def hardened_scanners() -> list[Scanner]:
     """Return the Zone H hardened scanner instances.

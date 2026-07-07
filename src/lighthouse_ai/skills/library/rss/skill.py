@@ -53,7 +53,11 @@ def _items_to_documents(ctx: SkillContext, items, *, feed_url: str) -> list[Docu
             text = f"{text}\n\n{item.body}" if text else item.body
         if not text:
             continue
-        doc_id = f"rss:{hash(item.url) & 0xFFFFFFFF:08x}" if item.url else f"rss:{hash(text) & 0xFFFFFFFF:08x}"
+        doc_id = (
+            f"rss:{hash(item.url) & 0xFFFFFFFF:08x}"
+            if item.url
+            else f"rss:{hash(text) & 0xFFFFFFFF:08x}"
+        )
         doc = ctx.make_document(
             doc_id=doc_id,
             text=text,
@@ -167,6 +171,7 @@ def run_watchable(
 
 # ---- helpers ---------------------------------------------------------------
 
+
 def _parse_iso(ts: str) -> datetime | None:
     """Parse an ISO-8601 or RFC-2822-like timestamp string to a naive UTC datetime.
 
@@ -178,7 +183,7 @@ def _parse_iso(ts: str) -> datetime | None:
     # Try ISO format variants first (Atom).
     for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S+00:00", "%Y-%m-%d"):
         try:
-            return datetime.strptime(ts[:len(fmt) + 2].strip(), fmt)
+            return datetime.strptime(ts[: len(fmt) + 2].strip(), fmt)
         except ValueError:
             pass
     # Try RFC-2822 (RSS pubDate: "Thu, 01 Jan 2026 00:00:00 +0000").

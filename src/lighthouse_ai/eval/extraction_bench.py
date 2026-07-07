@@ -28,20 +28,45 @@ __all__ = ["EXTRACTION_CASES", "run_extraction_bench"]
 _TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
 _STOP = frozenset(
     {
-        "a", "an", "the", "and", "or", "but", "if", "of", "to", "in", "on",
-        "at", "by", "for", "with", "as", "is", "are", "was", "were", "it",
-        "its", "this", "that", "from", "into", "be", "been", "has", "have",
-        "had", "not", "so",
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "but",
+        "if",
+        "of",
+        "to",
+        "in",
+        "on",
+        "at",
+        "by",
+        "for",
+        "with",
+        "as",
+        "is",
+        "are",
+        "was",
+        "were",
+        "it",
+        "its",
+        "this",
+        "that",
+        "from",
+        "into",
+        "be",
+        "been",
+        "has",
+        "have",
+        "had",
+        "not",
+        "so",
     }
 )
 
 
 def _tokens(text: str) -> list[str]:
-    return [
-        t
-        for t in (m.lower() for m in _TOKEN_RE.findall(text))
-        if t not in _STOP
-    ]
+    return [t for t in (m.lower() for m in _TOKEN_RE.findall(text)) if t not in _STOP]
 
 
 def _token_f1(hypothesis: str, reference: str) -> float:
@@ -119,9 +144,7 @@ _PLAIN_MULTILINE_EXPECTED = (
 )
 
 # Each tuple: (payload, content_type, filename, expected_text)
-EXTRACTION_CASES: tuple[
-    tuple[bytes, str | None, str | None, str], ...
-] = (
+EXTRACTION_CASES: tuple[tuple[bytes, str | None, str | None, str], ...] = (
     (_PLAIN_PAYLOAD, "text/plain", "solar.txt", _PLAIN_EXPECTED),
     (_HTML_PAYLOAD, "text/html", "solar.html", _HTML_EXPECTED),
     (_HTML_ENTITIES_PAYLOAD, "text/html", "entities.html", _HTML_ENTITIES_EXPECTED),
@@ -149,6 +172,7 @@ def run_extraction_bench(
 
     try:
         import trafilatura  # type: ignore  # noqa: F401
+
         active_extractor = "trafilatura"
     except ImportError:
         active_extractor = "stdlib"

@@ -14,6 +14,7 @@ to the human-resolution queue** rather than guess. Offline runs never touch the
 network (the supervisor's resolver loop is itself a no-op unless
 ``LIGHTHOUSE_REAL_BACKEND=1``).
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -54,6 +55,7 @@ def build_evidence_retriever(
     if broker is None:
         try:
             from ..sandbox.broker import build_default_broker
+
             broker = build_default_broker(paths.data_dir)
         except Exception as exc:  # pragma: no cover - defensive
             _log.warning("resolver.evidence.broker_failed", error=repr(exc))
@@ -64,11 +66,11 @@ def build_evidence_retriever(
     def _retrieve(claim: str, criterion: str | None, cutoff: str) -> tuple[str, str] | None:
         try:
             from ..skills import load_skill, run_skill
+
             skill = load_skill(source_id)
             # Target the search at the claim (and its criterion when present).
             query = f"{claim} {criterion}".strip() if criterion else claim
-            run = run_skill(skill, query, broker=broker, gateway=gateway,
-                            max_results=max_results)
+            run = run_skill(skill, query, broker=broker, gateway=gateway, max_results=max_results)
         except Exception as exc:  # pragma: no cover - defensive
             _log.warning("resolver.evidence.fetch_error", error=repr(exc))
             return None

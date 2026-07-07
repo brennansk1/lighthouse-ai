@@ -26,6 +26,7 @@ from lighthouse_ai.framing.pipeline import _run_framing_deterministic
 
 # --- helpers ----------------------------------------------------------------
 
+
 def _planner_gw(payload: dict) -> MagicMock:
     """Fake gateway whose planner call returns ``payload`` as JSON text."""
     gw = MagicMock()
@@ -37,9 +38,12 @@ def _full_payload(**over) -> dict:
     base = {
         "question_type": "comparative",
         "critique": {
-            "well_formed": True, "is_compound": False,
-            "has_presupposition": False, "is_underspecified": False,
-            "implicit_utility": False, "notes": ["LLM note"],
+            "well_formed": True,
+            "is_compound": False,
+            "has_presupposition": False,
+            "is_underspecified": False,
+            "implicit_utility": False,
+            "notes": ["LLM note"],
         },
         "framings": [
             {"label": "L1", "statement": "frame one", "rationale": "r1"},
@@ -84,6 +88,7 @@ def test_classify_question_none_is_keyword():
 
 # --- (2) canned planner JSON drives the whole frame -------------------------
 
+
 def test_planner_drives_typing_frames_subs_and_load_bearing():
     payload = _full_payload()
     gw = _planner_gw(payload)
@@ -119,8 +124,7 @@ def test_classify_question_uses_llm_when_gateway_present():
     gw = MagicMock()
     gw.complete.return_value = MagicMock(text="causal_explanation")
     # keyword would say FACTUAL_LOOKUP; LLM wins
-    assert classify_question("Tell me about widgets", gateway=gw) == \
-        QuestionType.CAUSAL_EXPLANATION
+    assert classify_question("Tell me about widgets", gateway=gw) == QuestionType.CAUSAL_EXPLANATION
     assert gw.complete.call_args[0][0] == "planner"
 
 
@@ -140,6 +144,7 @@ def test_planner_load_bearing_falls_back_to_heuristic_when_omitted():
 
 
 # --- (3) malformed / failed LLM output -> graceful fallback -----------------
+
 
 def test_malformed_json_falls_back_to_heuristic():
     gw = MagicMock()
@@ -181,6 +186,7 @@ def test_classify_question_bad_llm_token_falls_back():
 
 
 # --- (4) router: LLM primary, rules fallback --------------------------------
+
 
 def test_router_uses_llm_route_when_gateway_present():
     gw = MagicMock()

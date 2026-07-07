@@ -110,9 +110,7 @@ def _render_verdict(title_md: str, body: dict) -> str:
     # explicit crux). Prefer an explicit crux, else the first named dispute.
     verdict = _truncate(_first_nonempty(body.get("judge_summary")), 220)
     disputes = _as_list(body.get("disputes"))
-    crux = _truncate(
-        _first_nonempty(body.get("crux"), disputes[0] if disputes else ""), 200
-    )
+    crux = _truncate(_first_nonempty(body.get("crux"), disputes[0] if disputes else ""), 200)
     n = len(_as_list(body.get("responses")))
     lines = [f"*Verdict:* {title_md}"]
     if verdict:
@@ -181,7 +179,8 @@ def _render_table(title_md: str, body: dict) -> str:
 def _render_timeline(title_md: str, body: dict) -> str:
     events = _as_list(body.get("events"))
     dates: list[str] = sorted(
-        str(e.get("date")) for e in events
+        str(e.get("date"))
+        for e in events
         if isinstance(e, dict) and e.get("date") is not None and e.get("date") != ""
     )
     lines = [
@@ -200,8 +199,7 @@ def _render_transcript(title_md: str, body: dict) -> str:
         _first_nonempty(
             body.get("topic"),
             next(
-                (t.get("text") for t in turns
-                 if isinstance(t, dict) and t.get("role") == "user"),
+                (t.get("text") for t in turns if isinstance(t, dict) and t.get("role") == "user"),
                 "",
             ),
         ),
@@ -210,7 +208,8 @@ def _render_transcript(title_md: str, body: dict) -> str:
     answer = _truncate(
         _first_nonempty(
             *[
-                t.get("text") for t in reversed(turns)
+                t.get("text")
+                for t in reversed(turns)
                 if isinstance(t, dict) and t.get("role") in ("assistant", "agent")
             ]
         ),

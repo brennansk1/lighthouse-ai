@@ -186,12 +186,10 @@ def fetch_transcript(video_id: str, *, languages: list[str] | None = None) -> st
         if callable(get_transcript):
             rows: Any = get_transcript(video_id, languages=langs)  # 0.x
         else:
-            fetched = api().fetch(video_id, languages=langs)       # 1.x
-            rows = fetched.to_raw_data() if hasattr(fetched, "to_raw_data") \
-                else list(fetched)
+            fetched = api().fetch(video_id, languages=langs)  # 1.x
+            rows = fetched.to_raw_data() if hasattr(fetched, "to_raw_data") else list(fetched)
         return " ".join(
-            (r.get("text", "") if isinstance(r, dict) else getattr(r, "text", ""))
-            for r in rows
+            (r.get("text", "") if isinstance(r, dict) else getattr(r, "text", "")) for r in rows
         ).strip()
     except (NoTranscriptFound, TranscriptsDisabled):
         return ""
@@ -243,7 +241,7 @@ def search_videos(
         return []
 
     out: list[dict[str, Any]] = []
-    for entry in (results["entries"] or []):
+    for entry in results["entries"] or []:
         if not entry:
             continue
         video_id = entry.get("id", "")

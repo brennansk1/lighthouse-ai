@@ -27,15 +27,13 @@ OUTCOME_ATTR = AttributeSpec("outcome", keywords=("outcome",))
 
 
 def _make_docs(*texts: str, prefix: str = "d") -> list[Document]:
-    return [
-        Document(f"{prefix}{i}", f"Title {i}", text)
-        for i, text in enumerate(texts, start=1)
-    ]
+    return [Document(f"{prefix}{i}", f"Title {i}", text) for i, text in enumerate(texts, start=1)]
 
 
 # ---------------------------------------------------------------------------
 # Contested cell detection
 # ---------------------------------------------------------------------------
+
 
 class TestContestedCells:
     """Two included documents disagree on the same attribute → contested flag."""
@@ -127,20 +125,20 @@ class TestContestedCells:
         """Only the attribute that actually differs should be marked contested."""
         docs = [
             Document(
-                "a", "A",
+                "a",
+                "A",
                 "This trial enrolled 200 patients sample size was 200. The outcome was positive.",
             ),
             Document(
-                "b", "B",
+                "b",
+                "B",
                 "This trial enrolled 50 patients sample size was 50. The outcome was positive.",
             ),
         ]
         attrs = [SAMPLE_ATTR, OUTCOME_ATTR]
         r = run_survey("q", docs, criteria=[], attributes=attrs)
         cells_by_doc_attr = {
-            (row.doc_id, cell.attribute): cell
-            for row in r.rows
-            for cell in row.cells
+            (row.doc_id, cell.attribute): cell for row in r.rows for cell in row.cells
         }
         # sample size differs → contested
         assert cells_by_doc_attr[("a", "sample size")].contested is True
@@ -175,6 +173,7 @@ class TestContestedCells:
 # ---------------------------------------------------------------------------
 # PRISMA discordant_findings annotation
 # ---------------------------------------------------------------------------
+
 
 class TestPrismaDiscordantFindings:
     """PRISMA.discordant_findings is populated when docs disagree (§6.2)."""
@@ -247,6 +246,7 @@ class TestPrismaDiscordantFindings:
 # ---------------------------------------------------------------------------
 # Synthesis notes (deterministic offline pass, gap #20)
 # ---------------------------------------------------------------------------
+
 
 class TestSynthesisNotes:
     """synthesis_notes are populated offline and surface cross-doc patterns."""
@@ -322,6 +322,7 @@ class TestSynthesisNotes:
 # Backward-compatibility: existing fields still work
 # ---------------------------------------------------------------------------
 
+
 class TestBackwardCompatibility:
     """Existing SurveyReport, EvidenceCell, PrismaFlow fields must still work."""
 
@@ -350,6 +351,7 @@ class TestBackwardCompatibility:
         import inspect
 
         from lighthouse_ai.modes.survey import run_survey as _rs
+
         sig = inspect.signature(_rs)
         params = list(sig.parameters)
         assert "question" in params

@@ -56,17 +56,11 @@ def _validate_skill_id(skill_id: str) -> None:
             f"(e.g. {skill_id.replace('-', '_')!r})"
         )
     if " " in skill_id:
-        raise ScaffoldError(
-            f"skill_id {skill_id!r} contains spaces — use underscores instead"
-        )
+        raise ScaffoldError(f"skill_id {skill_id!r} contains spaces — use underscores instead")
     if not skill_id.isidentifier():
-        raise ScaffoldError(
-            f"skill_id {skill_id!r} is not a valid Python identifier"
-        )
+        raise ScaffoldError(f"skill_id {skill_id!r} is not a valid Python identifier")
     if keyword.iskeyword(skill_id):
-        raise ScaffoldError(
-            f"skill_id {skill_id!r} is a Python keyword — choose a different name"
-        )
+        raise ScaffoldError(f"skill_id {skill_id!r} is a Python keyword — choose a different name")
 
 
 # ---------------------------------------------------------------------------
@@ -368,8 +362,7 @@ def scaffold_skill(
     skill_dir = dest_dir / skill_id
     if skill_dir.exists():
         raise ScaffoldError(
-            f"skill folder already exists at {skill_dir} — "
-            "delete it first or choose a different id"
+            f"skill folder already exists at {skill_dir} — delete it first or choose a different id"
         )
 
     # Create the directory tree

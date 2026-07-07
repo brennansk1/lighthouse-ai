@@ -45,13 +45,8 @@ def _ollama_reachable() -> bool:
         return False
 
 
-_REAL_BACKEND_OK = (
-    os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1"
-    and _ollama_reachable()
-)
-_SKIP_REASON = (
-    "set LIGHTHOUSE_REAL_BACKEND=1 and have ollama running on 127.0.0.1:11434"
-)
+_REAL_BACKEND_OK = os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1" and _ollama_reachable()
+_SKIP_REASON = "set LIGHTHOUSE_REAL_BACKEND=1 and have ollama running on 127.0.0.1:11434"
 
 pytestmark = pytest.mark.skipif(not _REAL_BACKEND_OK, reason=_SKIP_REASON)
 
@@ -77,7 +72,7 @@ _GRACEFUL_MARKERS = (
     "rate limit",
     "unavailable",
     "connection",
-    "No module named",   # optional dep absent — degrades cleanly
+    "No module named",  # optional dep absent — degrades cleanly
     "not installed",
     "not configured",
     "API key",
@@ -200,9 +195,7 @@ def test_skill_live_fetch(skill_id: str, tmp_path: pathlib.Path) -> None:
         from lighthouse_ai.rag.chunker import Document
 
         for doc in result.documents:
-            assert isinstance(doc, Document), (
-                f"[{skill_id}] run returned non-Document: {type(doc)}"
-            )
+            assert isinstance(doc, Document), f"[{skill_id}] run returned non-Document: {type(doc)}"
             assert isinstance(doc.text, str), (
                 f"[{skill_id}] document.text is not str: {type(doc.text)}"
             )
@@ -219,6 +212,4 @@ def test_skill_live_fetch(skill_id: str, tmp_path: pathlib.Path) -> None:
         return  # acceptable graceful degradation
 
     # Hard failure: an unexpected exception from the skill.
-    pytest.fail(
-        f"[{skill_id}] SkillRun.error contains unexpected failure: {result.error!r}"
-    )
+    pytest.fail(f"[{skill_id}] SkillRun.error contains unexpected failure: {result.error!r}")

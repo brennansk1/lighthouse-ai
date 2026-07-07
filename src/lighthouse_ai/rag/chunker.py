@@ -47,7 +47,7 @@ def _split_protected(text: str) -> list[tuple[str, bool]]:
     pos = 0
     for m in _CODE_FENCE.finditer(text):
         if m.start() > pos:
-            out.append((text[pos:m.start()], False))
+            out.append((text[pos : m.start()], False))
         out.append((m.group(0), True))
         pos = m.end()
     if pos < len(text):
@@ -75,8 +75,7 @@ def _split_sentences(text: str) -> list[str]:
     return sentences
 
 
-def _pack_sentences(sentences: list[str], max_tokens: int,
-                    overlap_tokens: int) -> list[str]:
+def _pack_sentences(sentences: list[str], max_tokens: int, overlap_tokens: int) -> list[str]:
     """Greedy pack sentences into chunks ≤ max_tokens with overlap."""
     chunks: list[str] = []
     current: list[str] = []
@@ -90,7 +89,7 @@ def _pack_sentences(sentences: list[str], max_tokens: int,
                 chunks.append(" ".join(current))
             words = s.split()
             for i in range(0, len(words), max_tokens):
-                chunks.append(" ".join(words[i:i + max_tokens]))
+                chunks.append(" ".join(words[i : i + max_tokens]))
             current = []
             current_tokens = 0
             continue
@@ -118,8 +117,12 @@ def _pack_sentences(sentences: list[str], max_tokens: int,
     return chunks
 
 
-def chunk_document(doc: Document, *, max_tokens: int = DEFAULT_CHUNK_TOKENS,
-                   overlap_tokens: int = DEFAULT_OVERLAP_TOKENS) -> list[Chunk]:
+def chunk_document(
+    doc: Document,
+    *,
+    max_tokens: int = DEFAULT_CHUNK_TOKENS,
+    overlap_tokens: int = DEFAULT_OVERLAP_TOKENS,
+) -> list[Chunk]:
     """Chunk a document. Code blocks are preserved whole."""
     if max_tokens <= 0:
         raise ValueError("max_tokens must be positive")
@@ -136,6 +139,7 @@ def chunk_document(doc: Document, *, max_tokens: int = DEFAULT_CHUNK_TOKENS,
     chunks: list[Chunk] = []
     for i, txt in enumerate(all_chunks):
         cid = f"{doc.id}:{i:04d}:{uuid.uuid5(uuid.NAMESPACE_URL, txt).hex[:8]}"
-        chunks.append(Chunk(id=cid, document_id=doc.id, text=txt, position=i,
-                            metadata=dict(doc.metadata)))
+        chunks.append(
+            Chunk(id=cid, document_id=doc.id, text=txt, position=i, metadata=dict(doc.metadata))
+        )
     return chunks

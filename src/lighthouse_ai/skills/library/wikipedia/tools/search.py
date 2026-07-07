@@ -52,12 +52,7 @@ def _url_encode(text: str) -> str:
     """Percent-encode a string for use in a URL query param (stdlib only)."""
     # Build a percent-encoded string without importing urllib.
     # We only need to encode characters that are unsafe in a query string.
-    safe = (
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789"
-        "-_.~"
-    )
+    safe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"
     encoded = []
     for ch in text.encode("utf-8"):
         c = chr(ch)

@@ -28,6 +28,7 @@ import re
 
 # ---- public API ------------------------------------------------------------
 
+
 def parse_infobox(wikitext: str) -> dict[str, str]:
     """Extract the first infobox from ``wikitext`` and return its fields.
 

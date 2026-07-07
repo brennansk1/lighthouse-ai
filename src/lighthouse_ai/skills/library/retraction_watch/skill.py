@@ -59,9 +59,9 @@ def _extract_doi(identifier: str) -> str:
     """
     s = identifier.strip()
     if s.startswith("https://doi.org/"):
-        return s[len("https://doi.org/"):]
+        return s[len("https://doi.org/") :]
     if s.startswith("http://doi.org/"):
-        return s[len("http://doi.org/"):]
+        return s[len("http://doi.org/") :]
     if s.startswith("doi:"):
         return s[4:]
     if s.startswith(("pmid:", "pubmed:")):
@@ -74,6 +74,7 @@ def _extract_doi(identifier: str) -> str:
         return f"10.48550/arXiv.{arxiv_id}"
     # Raw arXiv ID pattern: YYMM.NNNNN or YYMM.NNNNNN (v1/v2 optional)
     import re as _re
+
     if _re.match(r"^\d{4}\.\d{4,6}(v\d+)?$", s):
         return f"10.48550/arXiv.{s.split('v')[0]}"
     # Assume it's already a bare DOI
@@ -147,7 +148,8 @@ def run(
                     "retraction_doi": retraction_doi,
                     "retraction_date": dep_date,
                     "retraction_reason": item.get("update-to", [{}])[0].get("type", "unknown")
-                    if item.get("update-to") else "retraction",
+                    if item.get("update-to")
+                    else "retraction",
                     "title": title,
                     "url": f"https://doi.org/{retraction_doi}" if retraction_doi else "",
                 },

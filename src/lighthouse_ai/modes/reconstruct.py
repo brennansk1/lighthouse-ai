@@ -52,18 +52,30 @@ _ISO_DATE_RE = re.compile(r"\b(\d{4}(?:-\d{2}(?:-\d{2})?)?)\b")
 
 # Month names → zero-padded month number
 _MONTH_MAP: dict[str, str] = {
-    "january": "01", "jan": "01",
-    "february": "02", "feb": "02",
-    "march": "03", "mar": "03",
-    "april": "04", "apr": "04",
+    "january": "01",
+    "jan": "01",
+    "february": "02",
+    "feb": "02",
+    "march": "03",
+    "mar": "03",
+    "april": "04",
+    "apr": "04",
     "may": "05",
-    "june": "06", "jun": "06",
-    "july": "07", "jul": "07",
-    "august": "08", "aug": "08",
-    "september": "09", "sep": "09", "sept": "09",
-    "october": "10", "oct": "10",
-    "november": "11", "nov": "11",
-    "december": "12", "dec": "12",
+    "june": "06",
+    "jun": "06",
+    "july": "07",
+    "jul": "07",
+    "august": "08",
+    "aug": "08",
+    "september": "09",
+    "sep": "09",
+    "sept": "09",
+    "october": "10",
+    "oct": "10",
+    "november": "11",
+    "nov": "11",
+    "december": "12",
+    "dec": "12",
 }
 
 _MONTH_NAMES = "|".join(_MONTH_MAP)
@@ -101,10 +113,27 @@ _DATE_STRIP_RE = re.compile(
 _ACTOR_RE = re.compile(r"\b([A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,}){0,3})\b")
 
 # Words that look like proper nouns but are sentence starters / filler
-_ACTOR_STOPWORDS = frozenset({
-    "In", "On", "At", "The", "A", "An", "By", "For", "Of", "To",
-    "And", "But", "Or", "From", "With", "Its", "Their",
-})
+_ACTOR_STOPWORDS = frozenset(
+    {
+        "In",
+        "On",
+        "At",
+        "The",
+        "A",
+        "An",
+        "By",
+        "For",
+        "Of",
+        "To",
+        "And",
+        "But",
+        "Or",
+        "From",
+        "With",
+        "Its",
+        "Their",
+    }
+)
 
 
 def _parse_written_date(text: str) -> tuple[str, int] | None:
@@ -160,6 +189,7 @@ def _find_date(text: str) -> str | None:
 # Dataclasses
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class Document:
     doc_id: str
@@ -181,11 +211,11 @@ _DISPUTED_DATE_THRESHOLD: float = 0.6
 @dataclass(frozen=True)
 class TimelineEvent:
     event_id: str
-    date: str               # resolved (winning) normalized date
+    date: str  # resolved (winning) normalized date
     actors: tuple[str, ...]
     action: str
     sources: tuple[str, ...]
-    certainty: float        # see module docstring for formula
+    certainty: float  # see module docstring for formula
     inferred: bool
     date_conflicts: tuple[SourcedDate, ...] = ()
     # Additive: number of distinct sources that agree on the winning date.
@@ -217,17 +247,20 @@ class ReconstructReport:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _coerce_documents(documents: Sequence[Document | dict]) -> list[Document]:
     out: list[Document] = []
     for i, d in enumerate(documents):
         if isinstance(d, Document):
             out.append(d)
         else:
-            out.append(Document(
-                doc_id=str(d.get("doc_id") or d.get("id") or f"doc{i}"),
-                title=str(d.get("title", "")),
-                text=str(d.get("text", "")),
-            ))
+            out.append(
+                Document(
+                    doc_id=str(d.get("doc_id") or d.get("id") or f"doc{i}"),
+                    title=str(d.get("title", "")),
+                    text=str(d.get("text", "")),
+                )
+            )
     return out
 
 
@@ -282,6 +315,7 @@ def _extract_actors(action: str) -> tuple[str, ...]:
 # Extraction
 # ---------------------------------------------------------------------------
 
+
 def _stub_extract(doc: Document) -> list[tuple[str, str]]:
     """Return (normalized_date, action) pairs for each sentence carrying a date.
 
@@ -289,8 +323,7 @@ def _stub_extract(doc: Document) -> list[tuple[str, str]]:
     "In March 2019 the treaty was signed." are captured.
     """
     pairs: list[tuple[str, str]] = []
-    sentences = [s.strip() for s in doc.text.replace("\n", " ").split(".")
-                 if s.strip()]
+    sentences = [s.strip() for s in doc.text.replace("\n", " ").split(".") if s.strip()]
     for s in sentences:
         date = _find_date(s)
         if date is not None:
@@ -298,9 +331,14 @@ def _stub_extract(doc: Document) -> list[tuple[str, str]]:
     return pairs
 
 
-def _llm_extract(gateway: Gateway, question: str, doc: Document, *,
-                 job_id: str | None, gate: SchedulerGate | None
-                 ) -> list[tuple[str, str]]:
+def _llm_extract(
+    gateway: Gateway,
+    question: str,
+    doc: Document,
+    *,
+    job_id: str | None,
+    gate: SchedulerGate | None,
+) -> list[tuple[str, str]]:
     """Extract (date, action) pairs from *doc* via the LLM gateway.
 
     Falls back to ``_stub_extract`` when the gateway returns nothing parseable
@@ -312,6 +350,7 @@ def _llm_extract(gateway: Gateway, question: str, doc: Document, *,
         "List the dated events as lines of the form 'DATE | what happened'. "
         "Use ISO dates (YYYY-MM-DD). One event per line."
     )
+
     def _parse(text: str) -> list[tuple[str, str]] | None:
         pairs: list[tuple[str, str]] = []
         for line in text.splitlines():
@@ -323,14 +362,19 @@ def _llm_extract(gateway: Gateway, question: str, doc: Document, *,
         return pairs or None
 
     return complete_structured_or(
-        gateway, prompt, parse=_parse, fallback=lambda: _stub_extract(doc),
-        gate=gate, job_id=job_id,
+        gateway,
+        prompt,
+        parse=_parse,
+        fallback=lambda: _stub_extract(doc),
+        gate=gate,
+        job_id=job_id,
     )
 
 
 # ---------------------------------------------------------------------------
 # Synthesis pass (gap #20) — trend / pattern detection across events
 # ---------------------------------------------------------------------------
+
 
 def _stub_synthesis_reconstruct(events: list[TimelineEvent]) -> list[str]:
     """Deterministic offline synthesis: surface patterns without an LLM.
@@ -351,7 +395,8 @@ def _stub_synthesis_reconstruct(events: list[TimelineEvent]) -> list[str]:
         notes.append(
             f"{len(disputed)} event(s) carry a disputed-date badge "
             f"(certainty < {_DISPUTED_DATE_THRESHOLD}): "
-            + ", ".join(e.event_id for e in disputed) + "."
+            + ", ".join(e.event_id for e in disputed)
+            + "."
         )
     if splits:
         pairs: set[frozenset[str]] = set()
@@ -365,10 +410,7 @@ def _stub_synthesis_reconstruct(events: list[TimelineEvent]) -> list[str]:
 
     dates = sorted(e.date for e in events)
     if len(dates) >= 2:
-        notes.append(
-            f"Timeline spans {dates[0]} to {dates[-1]} "
-            f"across {len(events)} event(s)."
-        )
+        notes.append(f"Timeline spans {dates[0]} to {dates[-1]} across {len(events)} event(s).")
 
     return notes
 
@@ -395,25 +437,29 @@ def _llm_synthesis_reconstruct(
         lines.append(f"  {e.date}{badge}{split}: {e.action[:120]}")
 
     prompt = (
-        "\n".join(lines)
-        + "\n\nIdentify key trends, patterns, and recurring actors across this "
+        "\n".join(lines) + "\n\nIdentify key trends, patterns, and recurring actors across this "
         "timeline. Note any disputed dates or factual contradictions. "
         "Reply with one observation per line."
     )
+
     def _parse(text: str) -> list[str] | None:
         raw = [ln.strip(" -•*") for ln in text.splitlines() if ln.strip()]
         return raw or None
 
     return complete_structured_or(
-        gateway, prompt, parse=_parse,
+        gateway,
+        prompt,
+        parse=_parse,
         fallback=lambda: _stub_synthesis_reconstruct(events),
-        gate=gate, job_id=job_id,
+        gate=gate,
+        job_id=job_id,
     )
 
 
 # ---------------------------------------------------------------------------
 # Factual-split helper (§6.2 — split different actor/action contradictions)
 # ---------------------------------------------------------------------------
+
 
 def _actor_overlap(actors_a: tuple[str, ...], actors_b: tuple[str, ...]) -> bool:
     """True when two actor sets share at least one actor (same event core)."""
@@ -470,21 +516,23 @@ def _split_factual_contradictions(
     for ev in events:
         ref = splits.get(ev.event_id)
         if ref is not None:
-            out.append(TimelineEvent(
-                event_id=ev.event_id,
-                date=ev.date,
-                actors=ev.actors,
-                action=ev.action,
-                sources=ev.sources,
-                certainty=ev.certainty,
-                inferred=ev.inferred,
-                date_conflicts=ev.date_conflicts,
-                winning_source_count=ev.winning_source_count,
-                total_source_count=ev.total_source_count,
-                disputed_date=ev.disputed_date,
-                alternate_dates=ev.alternate_dates,
-                factual_split_ref=ref,
-            ))
+            out.append(
+                TimelineEvent(
+                    event_id=ev.event_id,
+                    date=ev.date,
+                    actors=ev.actors,
+                    action=ev.action,
+                    sources=ev.sources,
+                    certainty=ev.certainty,
+                    inferred=ev.inferred,
+                    date_conflicts=ev.date_conflicts,
+                    winning_source_count=ev.winning_source_count,
+                    total_source_count=ev.total_source_count,
+                    disputed_date=ev.disputed_date,
+                    alternate_dates=ev.alternate_dates,
+                    factual_split_ref=ref,
+                )
+            )
         else:
             out.append(ev)
     return out
@@ -493,6 +541,7 @@ def _split_factual_contradictions(
 # ---------------------------------------------------------------------------
 # Main entrypoint
 # ---------------------------------------------------------------------------
+
 
 def run_reconstruct(
     question: str,
@@ -548,14 +597,15 @@ def run_reconstruct(
     docs = _coerce_documents(documents)
     if not docs:
         raise ValueError(
-            "run_reconstruct requires at least one document; "
-            "received an empty documents list."
+            "run_reconstruct requires at least one document; received an empty documents list."
         )
 
     if gateway is None:
+
         def extract_fn(d: Document) -> list[tuple[str, str]]:
             return _stub_extract(d)
     else:
+
         def extract_fn(d: Document) -> list[tuple[str, str]]:
             return _llm_extract(gateway, question, d, job_id=job_id, gate=gate)
 
@@ -568,10 +618,13 @@ def run_reconstruct(
     for doc in docs:
         for normalized_date, action in extract_fn(doc):
             key = _event_key(action)
-            slot = grouped.setdefault(key, {
-                "action": action,
-                "dates_by_source": defaultdict(list),
-            })
+            slot = grouped.setdefault(
+                key,
+                {
+                    "action": action,
+                    "dates_by_source": defaultdict(list),
+                },
+            )
             slot["dates_by_source"][doc.doc_id].append(normalized_date)
 
     # ------------------------------------------------------------------
@@ -612,9 +665,7 @@ def run_reconstruct(
 
         max_weight = max(weighted_votes.values())
         # Deterministic tiebreak: chronologically earliest winning date.
-        winning_candidates = sorted(
-            d for d, w in weighted_votes.items() if w >= max_weight - 1e-9
-        )
+        winning_candidates = sorted(d for d, w in weighted_votes.items() if w >= max_weight - 1e-9)
         winning = winning_candidates[0]
 
         total_sources = list(source_votes)  # in insertion order (Python 3.7+)
@@ -633,9 +684,13 @@ def run_reconstruct(
             reported = source_votes[src]
             raw_counter = Counter(dates_by_source[src])
             raw_modal = max(raw_counter, key=lambda x: (raw_counter[x], x))
-            conflicts.append(SourcedDate(
-                raw=raw_modal, normalized=reported, source_id=src,
-            ))
+            conflicts.append(
+                SourcedDate(
+                    raw=raw_modal,
+                    normalized=reported,
+                    source_id=src,
+                )
+            )
 
         # Alternate dates — one entry per distinct losing date cluster,
         # sorted by their weighted vote count descending, then date ascending.
@@ -652,20 +707,22 @@ def run_reconstruct(
 
         actors = _extract_actors(slot["action"])
 
-        events.append(TimelineEvent(
-            event_id=key,
-            date=winning,
-            actors=actors,
-            action=slot["action"],
-            sources=tuple(total_sources),
-            certainty=certainty,
-            inferred=False,
-            date_conflicts=tuple(conflicts),
-            winning_source_count=len(winning_sources),
-            total_source_count=len(total_sources),
-            disputed_date=is_disputed,
-            alternate_dates=alternate_dates,
-        ))
+        events.append(
+            TimelineEvent(
+                event_id=key,
+                date=winning,
+                actors=actors,
+                action=slot["action"],
+                sources=tuple(total_sources),
+                certainty=certainty,
+                inferred=False,
+                date_conflicts=tuple(conflicts),
+                winning_source_count=len(winning_sources),
+                total_source_count=len(total_sources),
+                disputed_date=is_disputed,
+                alternate_dates=alternate_dates,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Step 3 — split factual contradictions (different actor/action at
@@ -690,6 +747,7 @@ def run_reconstruct(
     if positions_db is not None:
         try:
             from ..verification.positions import record_position
+
             record_position(positions_db, claim=claims[0], probability=0.7)
         except Exception:
             pass

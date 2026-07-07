@@ -37,12 +37,14 @@ def test_governor_stub_returns_zero_depth(migrated_paths):
 
 def test_governor_outbox_depth_reflects_intents(migrated_paths):
     from lighthouse_ai.persistence import open_db
+
     conn = open_db(migrated_paths.intents_db)
     try:
         for i in range(3):
             conn.execute(
                 "INSERT INTO intents (idempotency_key,target,op,payload_json) "
-                "VALUES (?, 't', 'o', '{}')", (f"k{i}",),
+                "VALUES (?, 't', 'o', '{}')",
+                (f"k{i}",),
             )
     finally:
         conn.close()

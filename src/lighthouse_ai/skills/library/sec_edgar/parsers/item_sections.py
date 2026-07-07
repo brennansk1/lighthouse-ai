@@ -141,6 +141,7 @@ def _find_section(text: str, start_token: str, end_tokens: list[str]) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def parse_10k_item_1a(filing_text: str) -> str:
     """Extract Item 1A — Risk Factors from a 10-K filing.
 

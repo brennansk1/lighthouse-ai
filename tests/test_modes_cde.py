@@ -21,6 +21,7 @@ from lighthouse_ai.rag import (
 
 # --- QUC ---
 
+
 def test_quc_session_records_turns():
     s = QUCSession(id="s1")
     turn = ask(s, "Hello")
@@ -47,10 +48,12 @@ def test_quc_render_history_respects_budget():
 
 # --- Digest ---
 
+
 def test_digest_aggregates_topics():
-    items = [MonitorItem(source="s1", url=f"https://x/{i}",
-                         title=f"Title {i}", body="word " * 50)
-             for i in range(5)]
+    items = [
+        MonitorItem(source="s1", url=f"https://x/{i}", title=f"Title {i}", body="word " * 50)
+        for i in range(5)
+    ]
     r1 = run_monitor("AI", items)
     r2 = run_monitor("Bio", items)
     d = aggregate_digest([r1, r2], period_label="2026-W21")
@@ -60,16 +63,28 @@ def test_digest_aggregates_topics():
 
 
 def test_digest_sections_sorted_by_alert_count():
-    a = MonitorReport(topic="A", generated_at="t", alerts=[None] * 0,
-                      digest=[], suppressed_duplicates=0, total_seen=0)
-    b = MonitorReport(topic="B", generated_at="t",
-                      alerts=[None, None, None],
-                      digest=[], suppressed_duplicates=0, total_seen=0)
+    a = MonitorReport(
+        topic="A",
+        generated_at="t",
+        alerts=[None] * 0,
+        digest=[],
+        suppressed_duplicates=0,
+        total_seen=0,
+    )
+    b = MonitorReport(
+        topic="B",
+        generated_at="t",
+        alerts=[None, None, None],
+        digest=[],
+        suppressed_duplicates=0,
+        total_seen=0,
+    )
     d = aggregate_digest([a, b])
     assert d.sections[0].topic == "B"
 
 
 # --- Debate ---
+
 
 def test_debate_runs_every_perspective():
     result = run_debate("X causes Y.", "Draft text here.")
@@ -86,10 +101,8 @@ def test_debate_summary_reports_counts():
 
 def test_debate_with_custom_perspectives():
     custom = (
-        Perspective("foo", "always agrees",
-                    "Argue '{claim}' is true (agree, proceed)."),
-        Perspective("bar", "always refutes",
-                    "Refute '{claim}' completely (fails, wrong)."),
+        Perspective("foo", "always agrees", "Argue '{claim}' is true (agree, proceed)."),
+        Perspective("bar", "always refutes", "Refute '{claim}' completely (fails, wrong)."),
     )
     res = run_debate("Hot is cold.", "Draft.", perspectives=custom)
     # The deterministic _heuristic_response uses perspective.stance which
@@ -100,7 +113,6 @@ def test_debate_with_custom_perspectives():
 
 
 def test_debate_agree_predicate_swappable():
-    res = run_debate("X.", "Draft.",
-                     agree_predicate=lambda c: True)
+    res = run_debate("X.", "Draft.", agree_predicate=lambda c: True)
     assert all(r.agrees for r in res.responses)
     assert not res.disputes

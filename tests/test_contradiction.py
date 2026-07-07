@@ -26,11 +26,11 @@ FIXED_TS = datetime(2026, 5, 29, 12, 0, 0)
 # Fakes
 # --------------------------------------------------------------------------- #
 
+
 class _Chunk:
     """Minimal stand-in for a Chunk with metadata.skill_id + entailment."""
 
-    def __init__(self, cid, *, skill_id=None, source="doc", entailment=None,
-                 text="evidence"):
+    def __init__(self, cid, *, skill_id=None, source="doc", entailment=None, text="evidence"):
         self.id = cid
         self.document_id = cid
         self.text = text
@@ -50,6 +50,7 @@ def _ev(cid, skill_id, source, entailment):
 # Dataclass shape
 # --------------------------------------------------------------------------- #
 
+
 def test_contradiction_dataclass_fields():
     c = Contradiction(
         contradiction_id="x",
@@ -61,7 +62,7 @@ def test_contradiction_dataclass_fields():
         detected_at=FIXED_TS,
         detected_in_job="job-1",
     )
-    assert c.resolution_status == "unresolved"   # defaults
+    assert c.resolution_status == "unresolved"  # defaults
     assert c.resolution_ref is None
 
 
@@ -86,6 +87,7 @@ def test_no_clock_call_in_code():
 # Detection layers
 # --------------------------------------------------------------------------- #
 
+
 def test_cross_skill_disagreement_elevated_vs_intra_skill():
     claim = "Remote work increases team productivity"
 
@@ -93,8 +95,8 @@ def test_cross_skill_disagreement_elevated_vs_intra_skill():
     cross = detect(
         [claim],
         [
-            _ev("c1", "skill-a", "arxiv", 0.9),    # supports
-            _ev("c2", "skill-b", "pubmed", 0.1),   # opposes
+            _ev("c1", "skill-a", "arxiv", 0.9),  # supports
+            _ev("c2", "skill-b", "pubmed", 0.1),  # opposes
         ],
         job_id="job-x",
         detected_at=FIXED_TS,
@@ -102,7 +104,7 @@ def test_cross_skill_disagreement_elevated_vs_intra_skill():
     )
     assert len(cross) == 1
     assert cross[0].detection_layer == "cross_skill"
-    assert cross[0].severity == "high"   # balanced + load-bearing + cross-skill
+    assert cross[0].severity == "high"  # balanced + load-bearing + cross-skill
 
     # Intra-skill: both chunks from the SAME skill → claim layer, not elevated.
     intra = detect(
@@ -122,14 +124,20 @@ def test_cross_skill_disagreement_elevated_vs_intra_skill():
     order = {"low": 0, "medium": 1, "high": 2}
     # intra here is also high (balanced+load_bearing), but a NON-load-bearing
     # cross-skill still outranks a non-load-bearing intra-skill:
-    cross_nlb = detect([claim],
-                       [_ev("c1", "skill-a", "arxiv", 0.9),
-                        _ev("c2", "skill-b", "pubmed", 0.1)],
-                       job_id="j", detected_at=FIXED_TS, load_bearing=False)
-    intra_nlb = detect([claim],
-                       [_ev("c1", "skill-a", "arxiv", 0.9),
-                        _ev("c2", "skill-a", "pubmed", 0.1)],
-                       job_id="j", detected_at=FIXED_TS, load_bearing=False)
+    cross_nlb = detect(
+        [claim],
+        [_ev("c1", "skill-a", "arxiv", 0.9), _ev("c2", "skill-b", "pubmed", 0.1)],
+        job_id="j",
+        detected_at=FIXED_TS,
+        load_bearing=False,
+    )
+    intra_nlb = detect(
+        [claim],
+        [_ev("c1", "skill-a", "arxiv", 0.9), _ev("c2", "skill-a", "pubmed", 0.1)],
+        job_id="j",
+        detected_at=FIXED_TS,
+        load_bearing=False,
+    )
     assert order[cross_nlb[0].severity] > order[intra_nlb[0].severity]
 
 
@@ -137,7 +145,8 @@ def test_no_contradiction_when_evidence_agrees():
     out = detect(
         ["Vaccine is effective"],
         [_ev("c1", "skill-a", "arxiv", 0.9), _ev("c2", "skill-b", "pubmed", 0.8)],
-        job_id="j", detected_at=FIXED_TS,
+        job_id="j",
+        detected_at=FIXED_TS,
     )
     assert out == []
 
@@ -191,11 +200,14 @@ def test_chunk_layer_flags_multitoken_antonym_upheld_struck_down():
 
 def test_layer_hint_restricts_detection():
     claim = "Remote work increases team productivity"
-    out = detect([claim],
-                 [_ev("c1", "skill-a", "arxiv", 0.9),
-                  _ev("c2", "skill-b", "pubmed", 0.1)],
-                 job_id="j", detected_at=FIXED_TS, load_bearing=True,
-                 layer_hint="claim")
+    out = detect(
+        [claim],
+        [_ev("c1", "skill-a", "arxiv", 0.9), _ev("c2", "skill-b", "pubmed", 0.1)],
+        job_id="j",
+        detected_at=FIXED_TS,
+        load_bearing=True,
+        layer_hint="claim",
+    )
     # cross_skill suppressed by the hint → falls to claim layer
     assert len(out) == 1
     assert out[0].detection_layer == "claim"
@@ -205,13 +217,17 @@ def test_layer_hint_restricts_detection():
 # Auto-Adjudicate (§6.4) — true only under all five conditions
 # --------------------------------------------------------------------------- #
 
+
 def _high_cross_skill() -> Contradiction:
     return Contradiction(
-        contradiction_id="x", claim="c",
+        contradiction_id="x",
+        claim="c",
         supporting_chunks=[ChunkRef("c1", "a", 0.9, "t")],
         opposing_chunks=[ChunkRef("c2", "b", 0.1, "t")],
-        detection_layer="cross_skill", severity="high",
-        detected_at=FIXED_TS, detected_in_job="job",
+        detection_layer="cross_skill",
+        severity="high",
+        detected_at=FIXED_TS,
+        detected_in_job="job",
     )
 
 
@@ -248,7 +264,9 @@ def test_non_load_bearing_cross_skill_does_not_auto_adjudicate():
     out = detect(
         ["Remote work increases team productivity"],
         [_ev("c1", "skill-a", "arxiv", 0.9), _ev("c2", "skill-b", "pubmed", 0.1)],
-        job_id="j", detected_at=FIXED_TS, load_bearing=False,
+        job_id="j",
+        detected_at=FIXED_TS,
+        load_bearing=False,
     )
     assert len(out) == 1
     assert out[0].detection_layer == "cross_skill"
@@ -275,6 +293,7 @@ def test_flagged_chunk_contradiction_is_at_least_medium():
 # Audit record
 # --------------------------------------------------------------------------- #
 
+
 def test_to_audit_record_is_json_serializable():
     c = _high_cross_skill()
     rec = to_audit_record(c)
@@ -291,11 +310,12 @@ def test_to_audit_record_is_json_serializable():
 # distinct_skills — counts skill_id, not domain
 # --------------------------------------------------------------------------- #
 
+
 def test_distinct_skills_counts_skill_id_not_domain():
     chunks = [
         _ev("c1", "skill-a", "arxiv", None),
-        _ev("c2", "skill-a", "pubmed", None),   # same skill, different domain
-        _ev("c3", "skill-b", "arxiv", None),     # different skill, same domain as c1
+        _ev("c2", "skill-a", "pubmed", None),  # same skill, different domain
+        _ev("c3", "skill-b", "arxiv", None),  # different skill, same domain as c1
     ]
     assert distinct_skills(chunks) == 2
 
@@ -309,15 +329,13 @@ def test_same_skill_two_domains_not_triangulated():
     # Both cited chunks share skill_id → not independent even though domains
     # differ. Triangulation must NOT count this claim.
     ev = [_ev("c1", "skill-a", "doc-a", None), _ev("c2", "skill-a", "doc-b", None)]
-    rep = check("The finding replicates [1,2].", evidence_chunks=ev,
-                min_coverage=0.0)
+    rep = check("The finding replicates [1,2].", evidence_chunks=ev, min_coverage=0.0)
     assert rep.triangulated == 0
     assert rep.distinct_skills == 1
 
 
 def test_distinct_skills_surfaced_on_report():
     ev = [_ev("c1", "skill-a", "doc-a", None), _ev("c2", "skill-b", "doc-b", None)]
-    rep = check("The finding replicates [1,2].", evidence_chunks=ev,
-                min_coverage=0.0)
+    rep = check("The finding replicates [1,2].", evidence_chunks=ev, min_coverage=0.0)
     assert rep.distinct_skills == 2
-    assert rep.triangulated == 1   # distinct domains AND distinct skills
+    assert rep.triangulated == 1  # distinct domains AND distinct skills

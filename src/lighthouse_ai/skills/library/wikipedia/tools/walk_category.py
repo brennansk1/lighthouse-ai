@@ -49,9 +49,7 @@ def walk_category(
     """
     cmtype = "page|subcat" if include_subcategories else "page"
     encoded_cat = _url_encode(category)
-    url = _CATMEMBERS_URL.format(
-        category=encoded_cat, cmtype=cmtype, limit=min(limit, 500)
-    )
+    url = _CATMEMBERS_URL.format(category=encoded_cat, cmtype=cmtype, limit=min(limit, 500))
     resp = ctx.fetch(url)
     try:
         data = json.loads(resp.content)
@@ -77,12 +75,7 @@ def walk_category(
 
 
 def _url_encode(text: str) -> str:
-    safe = (
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789"
-        "-_.~:@!$&'()*+,;="
-    )
+    safe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~:@!$&'()*+,;="
     encoded = []
     for ch in text.encode("utf-8"):
         c = chr(ch)

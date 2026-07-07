@@ -49,26 +49,26 @@ PAGES = [
 # themes so the whole TUI can flip light/dark from one place.
 COASTAL_LIGHT = Theme(
     name="coastal-light",
-    primary="#0e3a5f",      # navy
-    secondary="#2d7a9e",    # mid-sea teal
-    accent="#c9a050",       # beam / sand-gold
-    foreground="#0b2335",   # deep navy ink
-    background="#f4f1ea",   # warm cream paper
-    surface="#ede7d8",      # sand tint
-    panel="#fbfaf7",        # near-white card
-    success="#4a8a6e",      # algae
-    warning="#d97742",      # very-likely orange
-    error="#c44536",        # beacon red
+    primary="#0e3a5f",  # navy
+    secondary="#2d7a9e",  # mid-sea teal
+    accent="#c9a050",  # beam / sand-gold
+    foreground="#0b2335",  # deep navy ink
+    background="#f4f1ea",  # warm cream paper
+    surface="#ede7d8",  # sand tint
+    panel="#fbfaf7",  # near-white card
+    success="#4a8a6e",  # algae
+    warning="#d97742",  # very-likely orange
+    error="#c44536",  # beacon red
     dark=False,
 )
 
 COASTAL_DARK = Theme(
     name="coastal-dark",
-    primary="#7ab5c9",      # sky
-    secondary="#2d7a9e",    # mid-sea teal
-    accent="#f0c75e",       # warm beam
+    primary="#7ab5c9",  # sky
+    secondary="#2d7a9e",  # mid-sea teal
+    accent="#f0c75e",  # warm beam
     foreground="#e7eef3",
-    background="#081a28",    # deep ocean night
+    background="#081a28",  # deep ocean night
     surface="#0e2a3d",
     panel="#11334a",
     success="#4a8a6e",
@@ -161,8 +161,7 @@ class LighthouseTUI(App):
         self.push_screen(HelpModal())
 
     def action_toggle_theme(self) -> None:
-        self.theme = ("coastal-light" if self.theme == "coastal-dark"
-                      else "coastal-dark")
+        self.theme = "coastal-light" if self.theme == "coastal-dark" else "coastal-dark"
 
     # ─────────────────────────── status bar ───────────────────────────
     def refresh_status(self) -> None:
@@ -187,8 +186,7 @@ class LighthouseTUI(App):
             pass
         try:
             escs = self.client.get("/api/escalations", status="open")
-            sidebar.set_counter(
-                "intelligence", len(escs.get("escalations", [])))
+            sidebar.set_counter("intelligence", len(escs.get("escalations", [])))
         except Exception:
             pass
 

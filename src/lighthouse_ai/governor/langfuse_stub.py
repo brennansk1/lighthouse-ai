@@ -32,9 +32,12 @@ class LangfuseClient:
         if self.config.url and self.config.api_key:
             try:  # pragma: no cover - optional dep
                 from langfuse import Langfuse  # type: ignore
-                self._client = Langfuse(host=self.config.url,
-                                        public_key=self.config.api_key,
-                                        secret_key=self.config.api_key)
+
+                self._client = Langfuse(
+                    host=self.config.url,
+                    public_key=self.config.api_key,
+                    secret_key=self.config.api_key,
+                )
             except ImportError:
                 self._client = None
 
@@ -42,8 +45,15 @@ class LangfuseClient:
     def enabled(self) -> bool:
         return self._client is not None
 
-    def record_call(self, *, model: str, prompt_tokens: int, completion_tokens: int,
-                    usd: float, metadata: dict | None = None) -> None:
+    def record_call(
+        self,
+        *,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        usd: float,
+        metadata: dict | None = None,
+    ) -> None:
         if self._client is None:
             return
         try:  # pragma: no cover - optional dep

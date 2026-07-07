@@ -92,12 +92,30 @@ def test_project_rule_overrides_user_overrides_builtin(tmp_path) -> None:
     user.mkdir()
     project.mkdir()
     # Same id "dedupe-lines" as a builtin; user then project override its transform.
-    (user / "r.json").write_text(json.dumps(
-        [{"id": "dedupe-lines", "match": "*", "transform": "regex_sub",
-          "params": {"pattern": "USER", "repl": "u"}}]))
-    (project / "r.json").write_text(json.dumps(
-        [{"id": "dedupe-lines", "match": "*", "transform": "regex_sub",
-          "params": {"pattern": "PROJECT", "repl": "p"}}]))
+    (user / "r.json").write_text(
+        json.dumps(
+            [
+                {
+                    "id": "dedupe-lines",
+                    "match": "*",
+                    "transform": "regex_sub",
+                    "params": {"pattern": "USER", "repl": "u"},
+                }
+            ]
+        )
+    )
+    (project / "r.json").write_text(
+        json.dumps(
+            [
+                {
+                    "id": "dedupe-lines",
+                    "match": "*",
+                    "transform": "regex_sub",
+                    "params": {"pattern": "PROJECT", "repl": "p"},
+                }
+            ]
+        )
+    )
     rules = load_rules(user_dir=user, project_dir=project)
     by_id = {r.id: r for r in rules}
     assert by_id["dedupe-lines"].params["pattern"] == "PROJECT"  # project wins
@@ -114,8 +132,9 @@ def test_load_rules_ignores_missing_dirs(tmp_path) -> None:
 
 
 def test_rule_match_glob_on_source() -> None:
-    rule = CompactionRule("pubmed-strip", "*.nih.gov", "regex_sub",
-                          {"pattern": "BOILER", "repl": ""})
+    rule = CompactionRule(
+        "pubmed-strip", "*.nih.gov", "regex_sub", {"pattern": "BOILER", "repl": ""}
+    )
     out, _ = compact("keep BOILER", source="pubmed.ncbi.nlm.nih.gov", rules=[rule])
     assert out == "keep "
     # Non-matching source leaves it untouched.

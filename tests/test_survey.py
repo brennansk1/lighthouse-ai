@@ -21,13 +21,14 @@ from lighthouse_ai.modes.survey import (
 # ---------------------------------------------------------------------------
 
 DOCS = [
-    Document("d1", "RCT of drug A",
-             "This randomized controlled trial enrolled 200 patients. "
-             "The sample size was 200. Outcome was positive."),
-    Document("d2", "Opinion piece",
-             "This editorial argues a point. No trial was run here."),
-    Document("d3", "Cohort study",
-             "A randomized study of 50 patients. The sample size was 50."),
+    Document(
+        "d1",
+        "RCT of drug A",
+        "This randomized controlled trial enrolled 200 patients. "
+        "The sample size was 200. Outcome was positive.",
+    ),
+    Document("d2", "Opinion piece", "This editorial argues a point. No trial was run here."),
+    Document("d3", "Cohort study", "A randomized study of 50 patients. The sample size was 50."),
 ]
 
 CRITERIA = [
@@ -41,6 +42,7 @@ ATTRS = [AttributeSpec("sample size", keywords=("sample size", "patients"))]
 # ---------------------------------------------------------------------------
 # Guard-rail validation
 # ---------------------------------------------------------------------------
+
 
 def test_requires_documents():
     with pytest.raises(ValueError, match="document"):
@@ -67,11 +69,12 @@ def test_requires_nonempty_question_whitespace():
 # Core screening logic
 # ---------------------------------------------------------------------------
 
+
 def test_screening_includes_and_excludes():
     r = run_survey("Which trials?", DOCS, CRITERIA, ATTRS)
     decided = {d.doc_id: d.included for d in r.decisions}
     assert decided["d1"] is True
-    assert decided["d2"] is False   # editorial excluded
+    assert decided["d2"] is False  # editorial excluded
     assert decided["d3"] is True
 
 
@@ -140,6 +143,7 @@ def test_screening_reason_recorded():
 # PRISMA accounting
 # ---------------------------------------------------------------------------
 
+
 def test_prisma_counts_consistent():
     r = run_survey("Which trials?", DOCS, CRITERIA, ATTRS)
     assert r.prisma.identified == 3
@@ -171,6 +175,7 @@ def test_prisma_no_false_exclusions_in_reasons():
 # ---------------------------------------------------------------------------
 # Evidence rows and cells
 # ---------------------------------------------------------------------------
+
 
 def test_rows_only_for_included_docs():
     r = run_survey("Which trials?", DOCS, CRITERIA, ATTRS)
@@ -249,6 +254,7 @@ def test_cells_count_equals_attrs_count():
 # Duplicate document handling
 # ---------------------------------------------------------------------------
 
+
 def test_duplicate_doc_ids_deduplicated():
     """Duplicate doc_ids are silently deduplicated; only the first is kept."""
     docs = [
@@ -279,6 +285,7 @@ def test_duplicate_docs_same_as_single():
 # Dict input coercion
 # ---------------------------------------------------------------------------
 
+
 def test_dict_inputs_coerced():
     r = run_survey(
         "q",
@@ -293,8 +300,9 @@ def test_dict_doc_prefers_doc_id_over_id():
     """When both 'doc_id' and 'id' are present, 'doc_id' wins."""
     r = run_survey(
         "q",
-        documents=[{"doc_id": "preferred", "id": "fallback",
-                    "title": "T", "text": "randomized trial."}],
+        documents=[
+            {"doc_id": "preferred", "id": "fallback", "title": "T", "text": "randomized trial."}
+        ],
         criteria=[],
         attributes=[{"label": "x", "keywords": ["trial"]}],
     )
@@ -329,12 +337,14 @@ def test_dict_exclude_criterion_coerced():
 # Determinism
 # ---------------------------------------------------------------------------
 
+
 def test_deterministic():
     r1 = run_survey("Which trials?", DOCS, CRITERIA, ATTRS)
     r2 = run_survey("Which trials?", DOCS, CRITERIA, ATTRS)
     assert [d.included for d in r1.decisions] == [d.included for d in r2.decisions]
-    assert [c.value for row in r1.rows for c in row.cells] == \
-           [c.value for row in r2.rows for c in row.cells]
+    assert [c.value for row in r1.rows for c in row.cells] == [
+        c.value for row in r2.rows for c in row.cells
+    ]
 
 
 def test_deterministic_with_dict_inputs():
@@ -353,6 +363,7 @@ def test_deterministic_with_dict_inputs():
 # ---------------------------------------------------------------------------
 # Report-level invariants
 # ---------------------------------------------------------------------------
+
 
 def test_claims_non_empty():
     r = run_survey("Which trials?", DOCS, CRITERIA, ATTRS)

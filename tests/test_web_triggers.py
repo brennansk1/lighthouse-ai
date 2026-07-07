@@ -100,8 +100,7 @@ def test_keyword_no_terms_no_fire():
 
 
 def test_selector_region_change_fires():
-    crit = {"kind": "selector_text", "name": "price",
-            "before": "Price:", "after": "USD"}
+    crit = {"kind": "selector_text", "name": "price", "before": "Price:", "after": "USD"}
     old = snap("Price: 100 USD trailing")
     new = snap("Price: 120 USD trailing")
     r = evaluate_trigger(old, new, crit)
@@ -111,22 +110,25 @@ def test_selector_region_change_fires():
 
 
 def test_selector_region_unchanged_no_fire():
-    crit = {"kind": "selector_text", "name": "price",
-            "before": "Price:", "after": "USD"}
+    crit = {"kind": "selector_text", "name": "price", "before": "Price:", "after": "USD"}
     r = evaluate_trigger(snap("Price: 100 USD"), snap("Price: 100 USD here"), crit)
     assert r.matched is False
 
 
 def test_selector_contains_fires():
-    crit = {"kind": "selector_text", "name": "status",
-            "before": "Status:", "after": ".", "contains": "shipped"}
+    crit = {
+        "kind": "selector_text",
+        "name": "status",
+        "before": "Status:",
+        "after": ".",
+        "contains": "shipped",
+    }
     r = evaluate_trigger(snap("Status: pending."), snap("Status: shipped."), crit)
     assert r.matched is True
 
 
 def test_selector_broken_self_reports():
-    crit = {"kind": "selector_text", "name": "price",
-            "before": "Price:", "after": "USD"}
+    crit = {"kind": "selector_text", "name": "price", "before": "Price:", "after": "USD"}
     r = evaluate_trigger(snap("Price: 100 USD"), snap("no anchor here"), crit)
     assert r.matched is False
     assert r.details.get("broken") is True
@@ -134,8 +136,7 @@ def test_selector_broken_self_reports():
 
 
 def test_selector_first_tick_baseline():
-    crit = {"kind": "selector_text", "name": "price",
-            "before": "Price:", "after": "USD"}
+    crit = {"kind": "selector_text", "name": "price", "before": "Price:", "after": "USD"}
     r = evaluate_trigger(None, snap("Price: 100 USD"), crit)
     assert r.matched is False
     assert "baseline" in r.reason

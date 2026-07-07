@@ -127,6 +127,7 @@ class Contradiction:
 # Chunk introspection helpers (mirror discipline.py's duck-typed access)
 # --------------------------------------------------------------------------- #
 
+
 def _chunk_of(r: object) -> object:
     """Unwrap a HybridResult (.chunk) or return the raw Chunk/dict as-is."""
     if isinstance(r, dict):
@@ -169,8 +170,11 @@ def _entailment_of(chunk: object) -> float | None:
 
 
 def _chunk_id_of(chunk: object, fallback_idx: int) -> str:
-    cid = _attr(chunk, "id", None) or _attr(chunk, "chunk_id", None) \
+    cid = (
+        _attr(chunk, "id", None)
+        or _attr(chunk, "chunk_id", None)
         or _attr(chunk, "document_id", None)
+    )
     return str(cid) if cid is not None else f"chunk{fallback_idx}"
 
 
@@ -194,6 +198,7 @@ def _to_ref(r: object, idx: int) -> ChunkRef:
 # --------------------------------------------------------------------------- #
 # Severity + id derivation
 # --------------------------------------------------------------------------- #
+
 
 def _contradiction_id(claim: str, layer: str, job_id: str) -> str:
     """Stable, deterministic id (no randomness, no clock)."""
@@ -247,6 +252,7 @@ def derive_severity(
 # --------------------------------------------------------------------------- #
 # Detection
 # --------------------------------------------------------------------------- #
+
 
 def _detect_extra_antonym_pairs(claim_texts: list[str]) -> list[tuple[str, str]]:
     """Chunk-layer polarity pass over :data:`_ANTONYM_PAIRS`.
@@ -336,8 +342,7 @@ def detect(
         if isinstance(load_bearing, bool):
             return load_bearing
         if isinstance(load_bearing, dict):
-            return bool(load_bearing.get(_claim_text(c),
-                                         load_bearing.get(idx, False)))
+            return bool(load_bearing.get(_claim_text(c), load_bearing.get(idx, False)))
         try:
             return bool(load_bearing[idx])
         except (IndexError, KeyError, TypeError):
@@ -346,9 +351,15 @@ def detect(
     out: list[Contradiction] = []
     seen_ids: set[str] = set()
 
-    def _emit(claim_text: str, layer: DetectionLayer,
-              support: list[ChunkRef], oppose: list[ChunkRef],
-              lb: bool, *, balance: tuple[int, int] | None = None) -> None:
+    def _emit(
+        claim_text: str,
+        layer: DetectionLayer,
+        support: list[ChunkRef],
+        oppose: list[ChunkRef],
+        lb: bool,
+        *,
+        balance: tuple[int, int] | None = None,
+    ) -> None:
         cid = _contradiction_id(claim_text, layer, job_id)
         if cid in seen_ids:
             return
@@ -356,18 +367,19 @@ def detect(
         # ``balance`` overrides the count used for severity when the layer has no
         # per-chunk refs of its own (e.g. the chunk-level polarity heuristic).
         n_sup, n_opp = balance if balance is not None else (len(support), len(oppose))
-        sev = derive_severity(n_support=n_sup, n_oppose=n_opp,
-                              layer=layer, load_bearing=lb)
-        out.append(Contradiction(
-            contradiction_id=cid,
-            claim=claim_text,
-            supporting_chunks=support,
-            opposing_chunks=oppose,
-            detection_layer=layer,
-            severity=sev,
-            detected_at=detected_at,
-            detected_in_job=job_id,
-        ))
+        sev = derive_severity(n_support=n_sup, n_oppose=n_opp, layer=layer, load_bearing=lb)
+        out.append(
+            Contradiction(
+                contradiction_id=cid,
+                claim=claim_text,
+                supporting_chunks=support,
+                opposing_chunks=oppose,
+                detection_layer=layer,
+                severity=sev,
+                detected_at=detected_at,
+                detected_in_job=job_id,
+            )
+        )
 
     want = {layer_hint} if layer_hint else {"chunk", "claim", "cross_skill"}
 
@@ -375,18 +387,17 @@ def detect(
     if "chunk" in want:
         # discipline.detect_contradictions wants Claim objects with .text.
         from .discipline import Claim as _Claim
-        polarity_claims = [c if hasattr(c, "text") else _Claim(text=_claim_text(c))
-                           for c in claim_list]
+
+        polarity_claims = [
+            c if hasattr(c, "text") else _Claim(text=_claim_text(c)) for c in claim_list
+        ]
         # Discipline's general scientific lexicon + our legal/temporal/causal/
         # quantity pairs. ``_emit`` dedupes by id, so overlapping hits collapse.
         polarity_hits = list(discipline.detect_contradictions(polarity_claims))
-        polarity_hits += _detect_extra_antonym_pairs(
-            [_claim_text(c) for c in claim_list]
-        )
+        polarity_hits += _detect_extra_antonym_pairs([_claim_text(c) for c in claim_list])
         for raw_i, _raw_j in polarity_hits:
             # Match the surfaced claim back to its index for load-bearing.
-            idx = next((k for k, c in enumerate(claim_list)
-                        if _claim_text(c) == raw_i), 0)
+            idx = next((k for k, c in enumerate(claim_list) if _claim_text(c) == raw_i), 0)
             lb = _is_load_bearing(idx, claim_list[idx] if claim_list else raw_i)
             # No per-chunk balance available at this layer; treat the two sides
             # symmetrically (1 vs 1) so a flagged pair is at least 'medium'.
@@ -404,8 +415,7 @@ def detect(
             opposing_skills = {r.skill_id for r in oppose if r.skill_id}
             supporting_skills = {r.skill_id for r in support if r.skill_id}
             cross_skill = bool(
-                opposing_skills and supporting_skills
-                and opposing_skills != supporting_skills
+                opposing_skills and supporting_skills and opposing_skills != supporting_skills
             )
 
             if cross_skill and "cross_skill" in want:
@@ -450,6 +460,7 @@ def should_auto_adjudicate(
 # --------------------------------------------------------------------------- #
 # Audit hook
 # --------------------------------------------------------------------------- #
+
 
 def to_audit_record(contradiction: Contradiction) -> dict:
     """JSON-serializable record for the HMAC audit chain.

@@ -23,8 +23,7 @@ def _provenance_section(sidecar: dict[str, Any]) -> list[str]:
     """Summarize the PROV-O sidecar (build_run_sidecar shape), then embed it."""
     lines: list[str] = ["", "## Provenance", ""]
     agents = sidecar.get("agents") or []
-    models = [a.get("prov:label") or a.get("@id", "") for a in agents
-              if isinstance(a, dict)]
+    models = [a.get("prov:label") or a.get("@id", "") for a in agents if isinstance(a, dict)]
     if models:
         lines.append(f"Models: {', '.join(m for m in models if m)}.")
     n_sources = sidecar.get("lighthouse:sourceCount")
@@ -38,17 +37,28 @@ def _provenance_section(sidecar: dict[str, Any]) -> list[str]:
     content_hash = sidecar.get("lighthouse:contentHash")
     if content_hash:
         lines.append(f"Content hash: `{content_hash}`.")
-    lines += ["", "The complete W3C PROV-O manifest for this run:", "",
-              "```json",
-              json.dumps(sidecar, sort_keys=True, indent=2),
-              "```"]
+    lines += [
+        "",
+        "The complete W3C PROV-O manifest for this run:",
+        "",
+        "```json",
+        json.dumps(sidecar, sort_keys=True, indent=2),
+        "```",
+    ]
     return lines
 
 
-def export_markdown(out_path: str | Path, *, draft_id: str, title: str,
-                    body_html: str, topic: str = "",
-                    wep_phrase: str | None = None, source_count: int = 0,
-                    provenance: dict[str, Any] | None = None) -> Path:
+def export_markdown(
+    out_path: str | Path,
+    *,
+    draft_id: str,
+    title: str,
+    body_html: str,
+    topic: str = "",
+    wep_phrase: str | None = None,
+    source_count: int = 0,
+    provenance: dict[str, Any] | None = None,
+) -> Path:
     """Write the draft as a standalone Markdown document. Returns the path.
 
     ``provenance`` is the loaded ``<draft_id>.prov.json`` sidecar when the
@@ -65,8 +75,9 @@ def export_markdown(out_path: str | Path, *, draft_id: str, title: str,
     if wep_phrase:
         meta.append(f"Confidence: {wep_phrase}")
     meta.append(f"Sources cited: {source_count}")
-    meta.append(f"Draft: {draft_id} · exported "
-                f"{datetime.now(UTC).date().isoformat()} by Lighthouse")
+    meta.append(
+        f"Draft: {draft_id} · exported {datetime.now(UTC).date().isoformat()} by Lighthouse"
+    )
     lines += [" · ".join(meta), ""]
     lines += _html_to_blocks(body_html)
     if provenance is not None:

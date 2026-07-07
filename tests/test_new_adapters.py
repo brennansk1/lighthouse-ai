@@ -52,8 +52,14 @@ S2_EMPTY_JSON: dict = {"data": []}
 
 S2_NOTITLE_JSON = {
     "data": [
-        {"paperId": "zzz999", "title": "", "abstract": "Orphan abstract.", "year": 2020,
-         "citationCount": 0, "url": "https://www.semanticscholar.org/paper/zzz999"},
+        {
+            "paperId": "zzz999",
+            "title": "",
+            "abstract": "Orphan abstract.",
+            "year": 2020,
+            "citationCount": 0,
+            "url": "https://www.semanticscholar.org/paper/zzz999",
+        },
     ]
 }
 
@@ -138,8 +144,7 @@ CL_EMPTY_JSON: dict = {"results": []}
 
 CL_NOCASE_JSON: dict = {
     "results": [
-        {"cluster_id": 11111, "caseName": "", "case_name": "",
-         "snippet": "Orphan snippet."},
+        {"cluster_id": 11111, "caseName": "", "case_name": "", "snippet": "Orphan snippet."},
     ]
 }
 
@@ -158,10 +163,9 @@ def mocked_http():
 # Helper route builders (mirror the pattern in test_specialty_sources.py)
 # ---------------------------------------------------------------------------
 
+
 def _s2_ok(m, payload=S2_JSON):
-    m.get("https://api.semanticscholar.org/graph/v1/paper/search").respond(
-        200, json=payload
-    )
+    m.get("https://api.semanticscholar.org/graph/v1/paper/search").respond(200, json=payload)
 
 
 def _sec_ok(m, payload=SEC_JSON):
@@ -169,9 +173,7 @@ def _sec_ok(m, payload=SEC_JSON):
 
 
 def _cl_ok(m, payload=CL_JSON):
-    m.get("https://www.courtlistener.com/api/rest/v4/search/").respond(
-        200, json=payload
-    )
+    m.get("https://www.courtlistener.com/api/rest/v4/search/").respond(200, json=payload)
 
 
 # ===========================================================================
@@ -241,17 +243,15 @@ def test_s2_skips_items_without_title(mocked_http):
 
 
 def test_s2_respects_max_results(mocked_http):
-    route = mocked_http.get(
-        "https://api.semanticscholar.org/graph/v1/paper/search"
-    ).respond(200, json=S2_JSON)
+    route = mocked_http.get("https://api.semanticscholar.org/graph/v1/paper/search").respond(
+        200, json=S2_JSON
+    )
     search_semantic_scholar("transformers", max_results=7)
     assert route.calls.last.request.url.params["limit"] == "7"
 
 
 def test_s2_raises_on_http_error(mocked_http):
-    mocked_http.get(
-        "https://api.semanticscholar.org/graph/v1/paper/search"
-    ).respond(429)
+    mocked_http.get("https://api.semanticscholar.org/graph/v1/paper/search").respond(429)
     with pytest.raises(httpx.HTTPStatusError):
         search_semantic_scholar("x")
 
@@ -266,17 +266,17 @@ def test_s2_uses_injected_client(mocked_http):
 
 
 def test_s2_api_key_sent_as_header(mocked_http):
-    route = mocked_http.get(
-        "https://api.semanticscholar.org/graph/v1/paper/search"
-    ).respond(200, json=S2_JSON)
+    route = mocked_http.get("https://api.semanticscholar.org/graph/v1/paper/search").respond(
+        200, json=S2_JSON
+    )
     search_semantic_scholar("transformers", api_key="mykey")
     assert route.calls.last.request.headers.get("x-api-key") == "mykey"
 
 
 def test_s2_no_api_key_no_header(mocked_http):
-    route = mocked_http.get(
-        "https://api.semanticscholar.org/graph/v1/paper/search"
-    ).respond(200, json=S2_JSON)
+    route = mocked_http.get("https://api.semanticscholar.org/graph/v1/paper/search").respond(
+        200, json=S2_JSON
+    )
     search_semantic_scholar("transformers")
     assert "x-api-key" not in route.calls.last.request.headers
 
@@ -375,9 +375,7 @@ def test_sec_uses_injected_client(mocked_http):
 
 
 def test_sec_respects_max_results(mocked_http):
-    route = mocked_http.get(
-        "https://efts.sec.gov/LATEST/search-index"
-    ).respond(200, json=SEC_JSON)
+    route = mocked_http.get("https://efts.sec.gov/LATEST/search-index").respond(200, json=SEC_JSON)
     search_sec_edgar("revenue", max_results=3)
     # The adapter passes max_results via hits.hits.total.value param.
     assert route.calls.last.request.url.params["hits.hits.total.value"] == "3"
@@ -450,17 +448,15 @@ def test_cl_skips_results_without_case_name(mocked_http):
 
 
 def test_cl_respects_max_results(mocked_http):
-    route = mocked_http.get(
-        "https://www.courtlistener.com/api/rest/v4/search/"
-    ).respond(200, json=CL_JSON)
+    route = mocked_http.get("https://www.courtlistener.com/api/rest/v4/search/").respond(
+        200, json=CL_JSON
+    )
     search_courtlistener("equal protection", max_results=10)
     assert route.calls.last.request.url.params["page_size"] == "10"
 
 
 def test_cl_raises_on_http_error(mocked_http):
-    mocked_http.get(
-        "https://www.courtlistener.com/api/rest/v4/search/"
-    ).respond(403)
+    mocked_http.get("https://www.courtlistener.com/api/rest/v4/search/").respond(403)
     with pytest.raises(httpx.HTTPStatusError):
         search_courtlistener("x")
 
@@ -474,17 +470,17 @@ def test_cl_uses_injected_client(mocked_http):
 
 
 def test_cl_api_key_sent_as_token_header(mocked_http):
-    route = mocked_http.get(
-        "https://www.courtlistener.com/api/rest/v4/search/"
-    ).respond(200, json=CL_JSON)
+    route = mocked_http.get("https://www.courtlistener.com/api/rest/v4/search/").respond(
+        200, json=CL_JSON
+    )
     search_courtlistener("equal protection", api_key="mytoken")
     assert route.calls.last.request.headers.get("authorization") == "Token mytoken"
 
 
 def test_cl_no_api_key_no_auth_header(mocked_http):
-    route = mocked_http.get(
-        "https://www.courtlistener.com/api/rest/v4/search/"
-    ).respond(200, json=CL_JSON)
+    route = mocked_http.get("https://www.courtlistener.com/api/rest/v4/search/").respond(
+        200, json=CL_JSON
+    )
     search_courtlistener("equal protection")
     assert "authorization" not in route.calls.last.request.headers
 
@@ -502,6 +498,7 @@ REAL = pytest.mark.skipif(
 @REAL
 def test_live_semantic_scholar():
     import httpx
+
     try:
         docs = search_semantic_scholar("transformer neural network", max_results=3)
     except httpx.HTTPStatusError as exc:

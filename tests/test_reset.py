@@ -17,8 +17,9 @@ def client(migrated_paths):
 
 def _seed(paths):
     c = open_db(paths.state_db)
-    c.execute("INSERT INTO jobs (id, mode, status, metadata_json) "
-              "VALUES ('j1', 'ask', 'queued', '{}')")
+    c.execute(
+        "INSERT INTO jobs (id, mode, status, metadata_json) VALUES ('j1', 'ask', 'queued', '{}')"
+    )
     c.commit()
     c.close()
     paths.config_file.write_text("[ui]\nnotify_enabled = true\n", encoding="utf-8")

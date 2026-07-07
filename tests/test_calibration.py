@@ -27,13 +27,18 @@ def test_log_score_basic_and_overconfidence_penalty():
 def test_brier_decomposition_identity_for_binned_constant_forecasts():
     # Forecasts take two distinct values that land in separate deciles, so each
     # bin's forecast is constant → the decomposition identity is exact.
-    preds = ([(0.2, False)] * 8 + [(0.2, True)] * 2     # bin@0.2: 20% true
-             + [(0.8, True)] * 7 + [(0.8, False)] * 3)  # bin@0.8: 70% true
+    preds = (
+        [(0.2, False)] * 8
+        + [(0.2, True)] * 2  # bin@0.2: 20% true
+        + [(0.8, True)] * 7
+        + [(0.8, False)] * 3
+    )  # bin@0.8: 70% true
     d = cal.brier_decomposition(preds)
     mean_brier = sum((p - (1.0 if o else 0.0)) ** 2 for p, o in preds) / len(preds)
     assert d["brier"] == pytest.approx(mean_brier, abs=1e-4)
     assert d["brier"] == pytest.approx(
-        d["reliability"] - d["resolution"] + d["uncertainty"], abs=1e-4)
+        d["reliability"] - d["resolution"] + d["uncertainty"], abs=1e-4
+    )
     assert d["n"] == len(preds)
 
 
@@ -89,8 +94,7 @@ def test_apply_temperature_monotone_and_noop_at_one():
 
 def test_fit_temperature_corrects_overconfidence():
     # Overconfident: predicts 0.95/0.05 but is right only ~70% of the time.
-    preds = ([(0.95, True)] * 7 + [(0.95, False)] * 3
-             + [(0.05, False)] * 7 + [(0.05, True)] * 3)
+    preds = [(0.95, True)] * 7 + [(0.95, False)] * 3 + [(0.05, False)] * 7 + [(0.05, True)] * 3
     t = cal.fit_temperature(preds)
     assert t > 1.0  # needs softening
     before = cal.expected_calibration_error(preds)
@@ -99,7 +103,7 @@ def test_fit_temperature_corrects_overconfidence():
 
 
 def test_fit_temperature_degenerate_returns_one():
-    assert cal.fit_temperature([(0.9, True)] * 10) == 1.0      # one-class
+    assert cal.fit_temperature([(0.9, True)] * 10) == 1.0  # one-class
     assert cal.fit_temperature([(0.7, True), (0.3, False)]) == 1.0  # too few
 
 
@@ -143,8 +147,9 @@ def test_probability_from_evidence_independence_and_entailment_help():
 
 def test_probability_from_evidence_contradiction_caps_at_even():
     # However strong the evidence, a flagged contradiction can't read above "even".
-    p = cal.probability_from_evidence(n_sources=5, independent_sources=5,
-                                      entailment=1.0, contradicted=True)
+    p = cal.probability_from_evidence(
+        n_sources=5, independent_sources=5, entailment=1.0, contradicted=True
+    )
     assert p <= 0.5
 
 

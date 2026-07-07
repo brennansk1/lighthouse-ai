@@ -47,8 +47,7 @@ class BackendStalled(OllamaUnavailable):
     eternally-running job.
     """
 
-    def __init__(self, message: str, *, model: str,
-                 stalled_after_s: float, call: str):
+    def __init__(self, message: str, *, model: str, stalled_after_s: float, call: str):
         super().__init__(message)
         self.model = model
         self.stalled_after_s = stalled_after_s
@@ -81,18 +80,23 @@ class ModelInfo:
 class OllamaBackend:
     """Thin wrapper around the Ollama REST API."""
 
-    def __init__(self, host: str = DEFAULT_HOST, *,
-                 connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
-                 read_timeout: float = DEFAULT_READ_TIMEOUT,
-                 stall_timeout: float = DEFAULT_STALL_TIMEOUT,
-                 embed_read_timeout: float = DEFAULT_EMBED_READ_TIMEOUT,
-                 client: httpx.Client | None = None):
+    def __init__(
+        self,
+        host: str = DEFAULT_HOST,
+        *,
+        connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
+        read_timeout: float = DEFAULT_READ_TIMEOUT,
+        stall_timeout: float = DEFAULT_STALL_TIMEOUT,
+        embed_read_timeout: float = DEFAULT_EMBED_READ_TIMEOUT,
+        client: httpx.Client | None = None,
+    ):
         self.host = host.rstrip("/")
         self._connect_timeout = connect_timeout
         self.stall_timeout = stall_timeout
         self.embed_read_timeout = embed_read_timeout
-        self._timeout = httpx.Timeout(connect=connect_timeout, read=read_timeout,
-                                      write=read_timeout, pool=connect_timeout)
+        self._timeout = httpx.Timeout(
+            connect=connect_timeout, read=read_timeout, write=read_timeout, pool=connect_timeout
+        )
         self._owns_client = client is None
         self._client = client or httpx.Client(base_url=self.host, timeout=self._timeout)
 
@@ -135,12 +139,14 @@ class OllamaBackend:
             raise OllamaUnavailable(f"GET /api/tags → {r.status_code}: {r.text}")
         out: list[ModelInfo] = []
         for m in r.json().get("models", []):
-            out.append(ModelInfo(
-                name=m["name"],
-                size_bytes=int(m.get("size", 0)),
-                digest=str(m.get("digest", "")),
-                modified_at=m.get("modified_at"),
-            ))
+            out.append(
+                ModelInfo(
+                    name=m["name"],
+                    size_bytes=int(m.get("size", 0)),
+                    digest=str(m.get("digest", "")),
+                    modified_at=m.get("modified_at"),
+                )
+            )
         return out
 
     def pull(self, model: str, *, progress_cb=None) -> None:
@@ -151,15 +157,14 @@ class OllamaBackend:
         """
         try:
             with self._client.stream(
-                "POST", "/api/pull",
+                "POST",
+                "/api/pull",
                 json={"model": model, "stream": True},
                 timeout=httpx.Timeout(connect=60.0, read=None, write=60.0, pool=60.0),
             ) as r:
                 if r.status_code != 200:
                     body = r.read().decode(errors="replace")
-                    raise OllamaUnavailable(
-                        f"POST /api/pull → {r.status_code}: {body}"
-                    )
+                    raise OllamaUnavailable(f"POST /api/pull → {r.status_code}: {body}")
                 for line in r.iter_lines():
                     if not line:
                         continue
@@ -180,15 +185,18 @@ class OllamaBackend:
         except httpx.HTTPError as exc:
             raise OllamaUnavailable(f"DELETE /api/delete failed: {exc}") from exc
         if r.status_code not in (200, 404):
-            raise OllamaUnavailable(
-                f"DELETE /api/delete → {r.status_code}: {r.text}"
-            )
+            raise OllamaUnavailable(f"DELETE /api/delete → {r.status_code}: {r.text}")
 
     # ----------------------------------------------------- chat ---------
-    def chat(self, model: str, prompt: str, *,
-             sampling: dict[str, Any] | None = None,
-             system: str | None = None,
-             on_token: Callable[[str], None] | None = None) -> ChatResponse:
+    def chat(
+        self,
+        model: str,
+        prompt: str,
+        *,
+        sampling: dict[str, Any] | None = None,
+        system: str | None = None,
+        on_token: Callable[[str], None] | None = None,
+    ) -> ChatResponse:
         """Single-turn chat. Returns the full completion.
 
         The request always streams (JSON-lines), whether or not ``on_token``
@@ -216,8 +224,9 @@ class OllamaBackend:
         }
         return self._chat_stream(model, body, on_token)
 
-    def _chat_stream(self, model: str, body: dict[str, Any],
-                     on_token: Callable[[str], None] | None) -> ChatResponse:
+    def _chat_stream(
+        self, model: str, body: dict[str, Any], on_token: Callable[[str], None] | None
+    ) -> ChatResponse:
         """Streaming chat — JSON-lines, same shape as ``pull``.
 
         The per-read timeout is ``stall_timeout``: on a streaming response
@@ -230,18 +239,17 @@ class OllamaBackend:
         completion_tokens = 0
         model_name = model
         done_reason: str | None = None
-        stall = httpx.Timeout(connect=self._connect_timeout,
-                              read=self.stall_timeout,
-                              write=self.stall_timeout,
-                              pool=self._connect_timeout)
+        stall = httpx.Timeout(
+            connect=self._connect_timeout,
+            read=self.stall_timeout,
+            write=self.stall_timeout,
+            pool=self._connect_timeout,
+        )
         try:
-            with self._client.stream("POST", "/api/chat", json=body,
-                                     timeout=stall) as r:
+            with self._client.stream("POST", "/api/chat", json=body, timeout=stall) as r:
                 if r.status_code != 200:
                     detail = r.read().decode(errors="replace")[:300]
-                    raise OllamaUnavailable(
-                        f"POST /api/chat → {r.status_code}: {detail}"
-                    )
+                    raise OllamaUnavailable(f"POST /api/chat → {r.status_code}: {detail}")
                 for line in r.iter_lines():
                     if not line:
                         continue
@@ -266,8 +274,10 @@ class OllamaBackend:
             raise BackendStalled(
                 f"backend stalled: no progress for {self.stall_timeout:.0f}s "
                 f"on POST /api/chat model={model}",
-                model=model, stalled_after_s=self.stall_timeout,
-                call="chat") from exc
+                model=model,
+                stalled_after_s=self.stall_timeout,
+                call="chat",
+            ) from exc
         except httpx.HTTPError as exc:
             raise OllamaUnavailable(f"POST /api/chat failed: {exc}") from exc
         return ChatResponse(
@@ -284,10 +294,12 @@ class OllamaBackend:
         texts_list = list(texts)
         if not texts_list:
             return EmbeddingResponse(vectors=[], model=model)
-        embed_to = httpx.Timeout(connect=self._connect_timeout,
-                                 read=self.embed_read_timeout,
-                                 write=self.embed_read_timeout,
-                                 pool=self._connect_timeout)
+        embed_to = httpx.Timeout(
+            connect=self._connect_timeout,
+            read=self.embed_read_timeout,
+            write=self.embed_read_timeout,
+            pool=self._connect_timeout,
+        )
         try:
             r = self._client.post(
                 "/api/embed",
@@ -298,14 +310,14 @@ class OllamaBackend:
             raise BackendStalled(
                 f"backend stalled: no response for {self.embed_read_timeout:.0f}s "
                 f"on POST /api/embed model={model}",
-                model=model, stalled_after_s=self.embed_read_timeout,
-                call="embed") from exc
+                model=model,
+                stalled_after_s=self.embed_read_timeout,
+                call="embed",
+            ) from exc
         except httpx.HTTPError as exc:
             raise OllamaUnavailable(f"POST /api/embed failed: {exc}") from exc
         if r.status_code != 200:
-            raise OllamaUnavailable(
-                f"POST /api/embed → {r.status_code}: {r.text[:300]}"
-            )
+            raise OllamaUnavailable(f"POST /api/embed → {r.status_code}: {r.text[:300]}")
         data = r.json()
         return EmbeddingResponse(
             vectors=[list(v) for v in data.get("embeddings", [])],

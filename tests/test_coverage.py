@@ -21,8 +21,9 @@ SUBS = ["What is the cost?", "What is the risk?", "What is the timeline?"]
 
 
 def test_all_covered_is_complete():
-    secs = [_Section(q, "A substantive answer with more than eight words here indeed.")
-            for q in SUBS]
+    secs = [
+        _Section(q, "A substantive answer with more than eight words here indeed.") for q in SUBS
+    ]
     rep = assess_coverage(SUBS, secs)
     assert rep.total == 3 and rep.covered == 3
     assert rep.gaps == []
@@ -33,7 +34,7 @@ def test_all_covered_is_complete():
 def test_uncovered_subquestion_is_a_gap():
     secs = [
         _Section(SUBS[0], "A substantive answer with more than eight words here indeed."),
-        _Section(SUBS[1], "short"),          # too short → not covered
+        _Section(SUBS[1], "short"),  # too short → not covered
         # SUBS[2] missing entirely
     ]
     rep = assess_coverage(SUBS, secs)
@@ -62,5 +63,6 @@ def test_find_missing_angles_parses_model_lines():
     class _GW:
         def complete(self, role, prompt, *, job_id=None):
             return _Resp("- Long-term maintenance cost\n- Vendor lock-in\nNONE")
+
     angles = find_missing_angles("Q", "draft", gateway=_GW())
     assert angles == ["Long-term maintenance cost", "Vendor lock-in"]

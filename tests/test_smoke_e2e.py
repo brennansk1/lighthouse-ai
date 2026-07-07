@@ -48,13 +48,18 @@ def test_full_pipeline_from_ingest_to_dashboard(migrated_paths):
 
     # 1. Sandbox: admit a clean HTML, reject a script-laden one.
     q = Quarantine(paths.data_dir / "quarantine.db", paths.data_dir / "Q")
-    broker = SandboxBroker(q, [
-        PDFJavaScriptScanner(), HTMLScriptScanner(), ArchiveBombScanner(),
-    ])
-    clean = broker.admit(b"<html><p>clean content</p></html>",
-                         filename="x.html", content_type="text/html")
-    bad = broker.admit(b"<script>e()</script>",
-                       filename="y.html", content_type="text/html")
+    broker = SandboxBroker(
+        q,
+        [
+            PDFJavaScriptScanner(),
+            HTMLScriptScanner(),
+            ArchiveBombScanner(),
+        ],
+    )
+    clean = broker.admit(
+        b"<html><p>clean content</p></html>", filename="x.html", content_type="text/html"
+    )
+    bad = broker.admit(b"<script>e()</script>", filename="y.html", content_type="text/html")
     assert clean.verdict is Verdict.ADMIT
     assert bad.verdict is Verdict.QUARANTINE
 
@@ -72,17 +77,19 @@ def test_full_pipeline_from_ingest_to_dashboard(migrated_paths):
     assert hits
 
     # 3. Framing + Deep-Dive.
-    report = run_deepdive("Compare classical and quantum chips",
-                          hybrid=hs, max_rounds=2)
+    report = run_deepdive("Compare classical and quantum chips", hybrid=hs, max_rounds=2)
     assert report.sections
     assert report.framing.sub_questions
 
     # 4. Monitor + HTML.
     items = [
-        MonitorItem(source="rss", url="https://x/1",
-                    title="Breaking: new qubit fidelity record",
-                    body="Researchers report a major breakthrough. " * 20,
-                    published_at="2026-05-27T09:00:00Z"),
+        MonitorItem(
+            source="rss",
+            url="https://x/1",
+            title="Breaking: new qubit fidelity record",
+            body="Researchers report a major breakthrough. " * 20,
+            published_at="2026-05-27T09:00:00Z",
+        ),
     ]
     mr = run_monitor("quantum", items)
     html = render_monitor_html(mr)
@@ -90,12 +97,19 @@ def test_full_pipeline_from_ingest_to_dashboard(migrated_paths):
 
     # 5. Governor + Gateway: a real model call through the mock provider.
     g = Governor(paths.state_db, BUDGET_DEFAULTS)
-    profile = HardwareProfile(platform="macos", arch="arm64", apple_silicon=True,
-                              total_ram_gb=64.0, free_ram_gb=32.0,
-                              cpu_cores_physical=8, cpu_cores_logical=8,
-                              gpu=[], unified_memory=True,
-                              available_backends=["cpu", "ollama"],
-                              suggested_tier="T3")
+    profile = HardwareProfile(
+        platform="macos",
+        arch="arm64",
+        apple_silicon=True,
+        total_ram_gb=64.0,
+        free_ram_gb=32.0,
+        cpu_cores_physical=8,
+        cpu_cores_logical=8,
+        gpu=[],
+        unified_memory=True,
+        available_backends=["cpu", "ollama"],
+        suggested_tier="T3",
+    )
     gw = Gateway(g, paths.audit_db, profile=profile)
     resp = gw.complete("planner", "Hello, planner.", job_id="smoke-1")
     assert resp.text
@@ -105,17 +119,22 @@ def test_full_pipeline_from_ingest_to_dashboard(migrated_paths):
     test_target.reset()
     test_target.install()
     for i in range(5):
-        write_intent(paths.intents_db, target="test_target", op="upsert",
-                     payload={"i": i}, idempotency_key=f"smoke-{i}")
+        write_intent(
+            paths.intents_db,
+            target="test_target",
+            op="upsert",
+            payload={"i": i},
+            idempotency_key=f"smoke-{i}",
+        )
     assert outbox_depth(paths.intents_db) == 5
     counts = Effector(paths.intents_db).run_until_empty()
     assert counts.get("applied") == 5
     assert outbox_depth(paths.intents_db) == 0
 
     # 7. Verification: record + resolve a position, score the registry.
-    pos = record_position(paths.positions_db,
-                          claim="Quantum supremacy holds for >1k qubits by 2030",
-                          probability=0.6)
+    pos = record_position(
+        paths.positions_db, claim="Quantum supremacy holds for >1k qubits by 2030", probability=0.6
+    )
     assert band_for_probability(0.6).name == "likely"
     resolve_position(paths.positions_db, pos.id, outcome=True)
     metrics = score_all(paths.positions_db)
@@ -126,8 +145,9 @@ def test_full_pipeline_from_ingest_to_dashboard(migrated_paths):
     secret = b"smoke-secret"
     seal_event_chain(paths.audit_db, secret=secret)
     for i in range(3):
-        append_event(paths.audit_db, actor="smoke", event_type="tick",
-                     payload={"i": i}, secret=secret)
+        append_event(
+            paths.audit_db, actor="smoke", event_type="tick", payload={"i": i}, secret=secret
+        )
     bad = verify_audit_chain(paths.audit_db, secret=secret)
     assert bad == []
 

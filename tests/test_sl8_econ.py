@@ -266,9 +266,9 @@ def test_fred_preflight_short_circuits_without_key(monkeypatch, broker):
     monkeypatch.setattr("lighthouse_ai.sources.fred.search_series", _spy)
     result = run_skill(skill, "unemployment", broker=broker)
     assert not result.ok
-    assert "FRED_API_KEY" in result.error           # actionable, names the env var
+    assert "FRED_API_KEY" in result.error  # actionable, names the env var
     assert result.documents == []
-    assert result.fetches == 0 and calls["n"] == 0   # never hit the network
+    assert result.fetches == 0 and calls["n"] == 0  # never hit the network
 
 
 def test_fred_run_no_community_tag(monkeypatch, fred_skill, broker):
@@ -354,6 +354,7 @@ def test_fred_watchable_swallows_exception(monkeypatch, fred_skill, broker):
 
 def test_fred_import_guard_passes(fred_skill):
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(fred_skill.path)
 
 
@@ -437,6 +438,7 @@ def test_bea_run_degrades_on_egress_block(monkeypatch, bea_skill, broker):
 
 def test_bea_import_guard_passes(bea_skill):
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(bea_skill.path)
 
 
@@ -538,6 +540,7 @@ def test_bls_watchable_swallows_exception(monkeypatch, bls_skill, broker):
 
 def test_bls_import_guard_passes(bls_skill):
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(bls_skill.path)
 
 
@@ -620,6 +623,7 @@ def test_world_bank_run_degrades_on_egress_block(monkeypatch, world_bank_skill, 
 
 def test_world_bank_import_guard_passes(world_bank_skill):
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(world_bank_skill.path)
 
 
@@ -702,6 +706,7 @@ def test_oecd_run_degrades_on_egress_block(monkeypatch, oecd_skill, broker):
 
 def test_oecd_import_guard_passes(oecd_skill):
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(oecd_skill.path)
 
 
@@ -784,6 +789,7 @@ def test_census_run_degrades_on_egress_block(monkeypatch, census_skill, broker):
 
 def test_census_import_guard_passes(census_skill):
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(census_skill.path)
 
 
@@ -794,6 +800,7 @@ def test_census_import_guard_passes(census_skill):
 
 def test_discover_skills_includes_all_six_econ():
     from lighthouse_ai.skills import discover_skills
+
     manifests = discover_skills()
     econ_ids = {"fred", "bea", "bls", "world_bank", "oecd", "census"}
     found = econ_ids & set(manifests.keys())

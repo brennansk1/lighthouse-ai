@@ -24,8 +24,11 @@ M = ToolCapability.MUTATING
 
 def _tools() -> list[Tool]:
     return [
-        Tool("search", R), Tool("read_file", R), Tool("write_note", W),
-        Tool("fetch_url", N), Tool("delete_corpus", M),
+        Tool("search", R),
+        Tool("read_file", R),
+        Tool("write_note", W),
+        Tool("fetch_url", N),
+        Tool("delete_corpus", M),
     ]
 
 

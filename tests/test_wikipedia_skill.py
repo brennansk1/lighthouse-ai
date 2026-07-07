@@ -34,114 +34,123 @@ from lighthouse_ai.skills.capabilities import build_context
 # Fixtures / canned API responses
 # ---------------------------------------------------------------------------
 
-SEARCH_JSON = json.dumps({
-    "query": {
-        "search": [
-            {
-                "title": "Eiffel Tower",
-                "pageid": 9974,
-                "snippet": "A wrought-iron lattice tower on the Champ de Mars in Paris.",
-            },
-            {
-                "title": "Eiffel (engineering firm)",
-                "pageid": 12345,
-                "snippet": "French industrial group named after Gustave Eiffel.",
-            },
-        ]
+SEARCH_JSON = json.dumps(
+    {
+        "query": {
+            "search": [
+                {
+                    "title": "Eiffel Tower",
+                    "pageid": 9974,
+                    "snippet": "A wrought-iron lattice tower on the Champ de Mars in Paris.",
+                },
+                {
+                    "title": "Eiffel (engineering firm)",
+                    "pageid": 12345,
+                    "snippet": "French industrial group named after Gustave Eiffel.",
+                },
+            ]
+        }
     }
-})
+)
 
-SUMMARY_JSON = json.dumps({
-    "type": "standard",
-    "title": "Eiffel Tower",
-    "extract": (
-        "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, "
-        "France. It is named after the engineer Gustave Eiffel, whose company designed and "
-        "built the tower from 1887 to 1889."
-    ),
-    "description": "Landmark in Paris, France",
-    "content_urls": {
-        "desktop": {"page": "https://en.wikipedia.org/wiki/Eiffel_Tower"}
-    },
-})
+SUMMARY_JSON = json.dumps(
+    {
+        "type": "standard",
+        "title": "Eiffel Tower",
+        "extract": (
+            "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, "
+            "France. It is named after the engineer Gustave Eiffel, whose company designed and "
+            "built the tower from 1887 to 1889."
+        ),
+        "description": "Landmark in Paris, France",
+        "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Eiffel_Tower"}},
+    }
+)
 
-EXTRACT_JSON = json.dumps({
-    "query": {
-        "pages": {
-            "9974": {
-                "pageid": 9974,
-                "title": "Eiffel Tower",
-                "extract": (
-                    "The Eiffel Tower is a wrought-iron lattice tower. "
-                    "== History ==\nBuilt 1887–1889 for the World's Fair."
-                ),
+EXTRACT_JSON = json.dumps(
+    {
+        "query": {
+            "pages": {
+                "9974": {
+                    "pageid": 9974,
+                    "title": "Eiffel Tower",
+                    "extract": (
+                        "The Eiffel Tower is a wrought-iron lattice tower. "
+                        "== History ==\nBuilt 1887–1889 for the World's Fair."
+                    ),
+                }
             }
         }
     }
-})
+)
 
-RECENTCHANGES_JSON = json.dumps({
-    "query": {
-        "recentchanges": [
-            {
-                "type": "edit",
-                "ns": 0,
-                "title": "Eiffel Tower",
-                "pageid": 9974,
-                "revid": 1111111,
-                "timestamp": "2024-05-01T10:00:00Z",
-                "user": "WikiEditor",
-                "comment": "Updated visitor numbers",
-            },
-            {
-                "type": "edit",
-                "ns": 0,
-                "title": "Berlin Wall",
-                "pageid": 5678,
-                "revid": 2222222,
-                "timestamp": "2024-05-01T09:30:00Z",
-                "user": "AnotherEditor",
-                "comment": "Fixed date",
-            },
-        ]
+RECENTCHANGES_JSON = json.dumps(
+    {
+        "query": {
+            "recentchanges": [
+                {
+                    "type": "edit",
+                    "ns": 0,
+                    "title": "Eiffel Tower",
+                    "pageid": 9974,
+                    "revid": 1111111,
+                    "timestamp": "2024-05-01T10:00:00Z",
+                    "user": "WikiEditor",
+                    "comment": "Updated visitor numbers",
+                },
+                {
+                    "type": "edit",
+                    "ns": 0,
+                    "title": "Berlin Wall",
+                    "pageid": 5678,
+                    "revid": 2222222,
+                    "timestamp": "2024-05-01T09:30:00Z",
+                    "user": "AnotherEditor",
+                    "comment": "Fixed date",
+                },
+            ]
+        }
     }
-})
+)
 
-WIKITEXT_INFOBOX_JSON = json.dumps({
-    "query": {
-        "pages": [
-            {
-                "pageid": 9974,
-                "title": "Eiffel Tower",
-                "revisions": [
-                    {
-                        "slots": {
-                            "main": {
-                                "content": (
-                                    "{{Infobox building\n"
-                                    "| name = Eiffel Tower\n"
-                                    "| image = Tour Eiffel Wikimedia Commons.jpg\n"
-                                    "| location = Paris, France\n"
-                                    "| built = 1887–1889\n"
-                                    "| architect = [[Gustave Eiffel]]\n"
-                                    "| height = {{convert|330|m|ft}}\n"
-                                    "| floors = 3\n"
-                                    "}}\n"
-                                    "The Eiffel Tower is a wrought-iron lattice tower."
-                                )
+WIKITEXT_INFOBOX_JSON = json.dumps(
+    {
+        "query": {
+            "pages": [
+                {
+                    "pageid": 9974,
+                    "title": "Eiffel Tower",
+                    "revisions": [
+                        {
+                            "slots": {
+                                "main": {
+                                    "content": (
+                                        "{{Infobox building\n"
+                                        "| name = Eiffel Tower\n"
+                                        "| image = Tour Eiffel Wikimedia Commons.jpg\n"
+                                        "| location = Paris, France\n"
+                                        "| built = 1887–1889\n"
+                                        "| architect = [[Gustave Eiffel]]\n"
+                                        "| height = {{convert|330|m|ft}}\n"
+                                        "| floors = 3\n"
+                                        "}}\n"
+                                        "The Eiffel Tower is a wrought-iron lattice tower."
+                                    )
+                                }
                             }
                         }
-                    }
-                ],
-            }
-        ]
+                    ],
+                }
+            ]
+        }
     }
-})
+)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_client() -> httpx.Client:
     """Return the real httpx.Client; respx intercepts at the transport level."""
@@ -158,6 +167,7 @@ def _load_wikipedia(tmp_path):
 # ---------------------------------------------------------------------------
 # Manifest
 # ---------------------------------------------------------------------------
+
 
 def test_manifest_loads():
     skill = load_skill("wikipedia")
@@ -195,6 +205,7 @@ def test_watchable_entrypoint_present():
 # Import guard (no forbidden modules in skill source)
 # ---------------------------------------------------------------------------
 
+
 def test_import_guard_passes():
     """The skill must not import httpx, requests, urllib, etc. directly.
 
@@ -209,15 +220,16 @@ def test_import_guard_passes():
 # run() — documents tagged skill_id="wikipedia"
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_run_returns_tagged_documents(tmp_path):
     """run() should return Documents with skill_id="wikipedia"."""
-    respx.get(
-        url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&list=search.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_JSON.encode()))
-    respx.get(
-        url__regex=r"https://en\.wikipedia\.org/api/rest_v1/page/summary/.*"
-    ).mock(return_value=httpx.Response(200, content=SUMMARY_JSON.encode()))
+    respx.get(url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&list=search.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_JSON.encode())
+    )
+    respx.get(url__regex=r"https://en\.wikipedia\.org/api/rest_v1/page/summary/.*").mock(
+        return_value=httpx.Response(200, content=SUMMARY_JSON.encode())
+    )
     respx.get(
         url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&prop=extracts.*"
     ).mock(return_value=httpx.Response(200, content=EXTRACT_JSON.encode()))
@@ -234,12 +246,12 @@ def test_run_returns_tagged_documents(tmp_path):
 
 @respx.mock
 def test_run_document_has_url(tmp_path):
-    respx.get(
-        url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&list=search.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_JSON.encode()))
-    respx.get(
-        url__regex=r"https://en\.wikipedia\.org/api/rest_v1/page/summary/.*"
-    ).mock(return_value=httpx.Response(200, content=SUMMARY_JSON.encode()))
+    respx.get(url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&list=search.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_JSON.encode())
+    )
+    respx.get(url__regex=r"https://en\.wikipedia\.org/api/rest_v1/page/summary/.*").mock(
+        return_value=httpx.Response(200, content=SUMMARY_JSON.encode())
+    )
     respx.get(
         url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&prop=extracts.*"
     ).mock(return_value=httpx.Response(200, content=EXTRACT_JSON.encode()))
@@ -256,9 +268,9 @@ def test_run_document_has_url(tmp_path):
 def test_run_empty_search_returns_no_documents(tmp_path):
     """When search returns no results, run() should return an empty list."""
     empty = json.dumps({"query": {"search": []}})
-    respx.get(
-        url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&list=search.*"
-    ).mock(return_value=httpx.Response(200, content=empty.encode()))
+    respx.get(url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&list=search.*").mock(
+        return_value=httpx.Response(200, content=empty.encode())
+    )
 
     skill, broker = _load_wikipedia(tmp_path)
     result = run_skill(skill, "xyzzy_nonexistent_page_99999", broker=broker, client=_make_client())
@@ -270,12 +282,12 @@ def test_run_empty_search_returns_no_documents(tmp_path):
 @respx.mock
 def test_run_signed_skill_no_community_tag(tmp_path):
     """Since wikipedia is signed=True, documents must NOT have community=True."""
-    respx.get(
-        url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&list=search.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_JSON.encode()))
-    respx.get(
-        url__regex=r"https://en\.wikipedia\.org/api/rest_v1/page/summary/.*"
-    ).mock(return_value=httpx.Response(200, content=SUMMARY_JSON.encode()))
+    respx.get(url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&list=search.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_JSON.encode())
+    )
+    respx.get(url__regex=r"https://en\.wikipedia\.org/api/rest_v1/page/summary/.*").mock(
+        return_value=httpx.Response(200, content=SUMMARY_JSON.encode())
+    )
     respx.get(
         url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&prop=extracts.*"
     ).mock(return_value=httpx.Response(200, content=EXTRACT_JSON.encode()))
@@ -293,6 +305,7 @@ def test_run_signed_skill_no_community_tag(tmp_path):
 # run_watchable() — recent revisions
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_run_watchable_returns_revision_documents(tmp_path):
     respx.get(
@@ -300,9 +313,7 @@ def test_run_watchable_returns_revision_documents(tmp_path):
     ).mock(return_value=httpx.Response(200, content=RECENTCHANGES_JSON.encode()))
 
     skill, broker = _load_wikipedia(tmp_path)
-    result = run_watchable(
-        skill, "Eiffel Tower", since=None, broker=broker, client=_make_client()
-    )
+    result = run_watchable(skill, "Eiffel Tower", since=None, broker=broker, client=_make_client())
     assert result.ok, f"run_watchable failed: {result.error}"
     assert len(result.documents) >= 1
     for doc in result.documents:
@@ -320,9 +331,7 @@ def test_run_watchable_since_parameter(tmp_path):
 
     skill, broker = _load_wikipedia(tmp_path)
     since = datetime(2024, 1, 1, tzinfo=UTC)
-    result = run_watchable(
-        skill, "Eiffel", since=since, broker=broker, client=_make_client()
-    )
+    result = run_watchable(skill, "Eiffel", since=since, broker=broker, client=_make_client())
     assert result.ok
 
 
@@ -342,6 +351,7 @@ def test_run_watchable_no_relevant_results(tmp_path):
 # ---------------------------------------------------------------------------
 # Infobox parser (pure Python, no network)
 # ---------------------------------------------------------------------------
+
 
 def test_infobox_parser_extracts_fields():
     from lighthouse_ai.skills.library.wikipedia.parsers.infobox import parse_infobox
@@ -416,6 +426,7 @@ def test_infobox_parser_case_insensitive():
 # extract_infobox tool (with mocked fetch)
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_extract_infobox_tool(tmp_path):
     """extract_infobox should fetch wikitext and return parsed fields."""
@@ -427,6 +438,7 @@ def test_extract_infobox_tool(tmp_path):
     ctx = build_context(skill.manifest, broker=broker, client=_make_client())
 
     from lighthouse_ai.skills.library.wikipedia.tools.extract_infobox import extract_infobox
+
     fields = extract_infobox(ctx, "Eiffel Tower")
 
     assert fields.get("name") == "Eiffel Tower"
@@ -440,16 +452,18 @@ def test_extract_infobox_tool(tmp_path):
 # search tool (unit test with mocked fetch)
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_search_tool_returns_hits(tmp_path):
-    respx.get(
-        url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&list=search.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_JSON.encode()))
+    respx.get(url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&list=search.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_JSON.encode())
+    )
 
     skill, broker = _load_wikipedia(tmp_path)
     ctx = build_context(skill.manifest, broker=broker, client=_make_client())
 
     from lighthouse_ai.skills.library.wikipedia.tools.search import search
+
     hits = search(ctx, "Eiffel Tower", limit=5)
     assert len(hits) == 2
     assert hits[0]["title"] == "Eiffel Tower"
@@ -460,16 +474,18 @@ def test_search_tool_returns_hits(tmp_path):
 # fetch_page tool
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_fetch_page_summary(tmp_path):
-    respx.get(
-        url__regex=r"https://en\.wikipedia\.org/api/rest_v1/page/summary/.*"
-    ).mock(return_value=httpx.Response(200, content=SUMMARY_JSON.encode()))
+    respx.get(url__regex=r"https://en\.wikipedia\.org/api/rest_v1/page/summary/.*").mock(
+        return_value=httpx.Response(200, content=SUMMARY_JSON.encode())
+    )
 
     skill, broker = _load_wikipedia(tmp_path)
     ctx = build_context(skill.manifest, broker=broker, client=_make_client())
 
     from lighthouse_ai.skills.library.wikipedia.tools.fetch_page import fetch_page
+
     doc = fetch_page(ctx, "Eiffel Tower", full_extract=False)
     assert doc is not None
     assert "Eiffel Tower" in doc.text
@@ -479,14 +495,15 @@ def test_fetch_page_summary(tmp_path):
 
 @respx.mock
 def test_fetch_page_404_returns_none(tmp_path):
-    respx.get(
-        url__regex=r"https://en\.wikipedia\.org/api/rest_v1/page/summary/.*"
-    ).mock(return_value=httpx.Response(404, content=b'{"type":"not_found"}'))
+    respx.get(url__regex=r"https://en\.wikipedia\.org/api/rest_v1/page/summary/.*").mock(
+        return_value=httpx.Response(404, content=b'{"type":"not_found"}')
+    )
 
     skill, broker = _load_wikipedia(tmp_path)
     ctx = build_context(skill.manifest, broker=broker, client=_make_client())
 
     from lighthouse_ai.skills.library.wikipedia.tools.fetch_page import fetch_page
+
     doc = fetch_page(ctx, "NonExistentPage99999XYZ", full_extract=False)
     assert doc is None
 
@@ -501,6 +518,7 @@ def test_fetch_page_full_extract(tmp_path):
     ctx = build_context(skill.manifest, broker=broker, client=_make_client())
 
     from lighthouse_ai.skills.library.wikipedia.tools.fetch_page import fetch_page
+
     doc = fetch_page(ctx, "Eiffel Tower", full_extract=True)
     assert doc is not None
     assert "History" in doc.text
@@ -511,17 +529,20 @@ def test_fetch_page_full_extract(tmp_path):
 # walk_category tool
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_walk_category_returns_pages(tmp_path):
-    cat_json = json.dumps({
-        "query": {
-            "categorymembers": [
-                {"title": "Solar power", "ns": 0, "pageid": 101},
-                {"title": "Wind power", "ns": 0, "pageid": 102},
-                {"title": "Category:Solar energy", "ns": 14, "pageid": 200},
-            ]
+    cat_json = json.dumps(
+        {
+            "query": {
+                "categorymembers": [
+                    {"title": "Solar power", "ns": 0, "pageid": 101},
+                    {"title": "Wind power", "ns": 0, "pageid": 102},
+                    {"title": "Category:Solar energy", "ns": 14, "pageid": 200},
+                ]
+            }
         }
-    })
+    )
     respx.get(
         url__regex=r"https://en\.wikipedia\.org/w/api\.php\?action=query&list=categorymembers.*"
     ).mock(return_value=httpx.Response(200, content=cat_json.encode()))
@@ -530,6 +551,7 @@ def test_walk_category_returns_pages(tmp_path):
     ctx = build_context(skill.manifest, broker=broker, client=_make_client())
 
     from lighthouse_ai.skills.library.wikipedia.tools.walk_category import walk_category
+
     pages = walk_category(ctx, "Renewable energy", include_subcategories=False)
     titles = [p["title"] for p in pages]
     assert "Solar power" in titles
@@ -539,6 +561,7 @@ def test_walk_category_returns_pages(tmp_path):
 # ---------------------------------------------------------------------------
 # Live-network gate
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.skipif(
     not os.getenv("LIGHTHOUSE_REAL_BACKEND"),

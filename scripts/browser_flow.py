@@ -6,6 +6,7 @@ Bounded (in-thread uvicorn, ephemeral port, dies with the script).
 
 Run: uv run python scripts/browser_flow.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -56,34 +57,38 @@ def main() -> int:
                 card.click()
                 # Step 2 — wait for the frame step, then fill the question.
                 page.get_by_text("Frame your", exact=False).first.wait_for(
-                    state="visible", timeout=10000)
+                    state="visible", timeout=10000
+                )
                 box = page.get_by_placeholder("e.g. What is driving", exact=False)
                 box.wait_for(state="visible", timeout=8000)
                 box.fill(TOPIC)
-                page.get_by_role("button", name="Next: review",
-                                 exact=False).first.click()
+                page.get_by_role("button", name="Next: review", exact=False).first.click()
                 # Step 3 — launch (target the BUTTON, not descriptive prose that
                 # also contains the word "launch").
-                launch = page.get_by_role("button", name="Launch",
-                                          exact=False).first
+                launch = page.get_by_role("button", name="Launch", exact=False).first
                 launch.wait_for(state="visible", timeout=10000)
                 launch.click()
                 page.wait_for_timeout(2500)
             except Exception as exc:
                 page.screenshot(path="/tmp/lh-flow-fail.png", full_page=True)
-                findings.append(f"wizard interaction error: {exc!r} "
-                                "(screenshot /tmp/lh-flow-fail.png)")
+                findings.append(
+                    f"wizard interaction error: {exc!r} (screenshot /tmp/lh-flow-fail.png)"
+                )
 
             for pr in posts:
                 print(f"  net: {pr}")
             jobs = httpx.get(f"{base}/api/jobs", timeout=10).json()
             job_list = jobs.get("jobs", jobs) if isinstance(jobs, dict) else jobs
-            created = [j for j in job_list
-                       if TOPIC[:20] in str(j.get("metadata_json", j))
-                       or TOPIC[:20] in str(j)]
+            created = [
+                j
+                for j in job_list
+                if TOPIC[:20] in str(j.get("metadata_json", j)) or TOPIC[:20] in str(j)
+            ]
             if created:
-                print(f"  job-create  OK    {len(job_list)} job(s); ours present "
-                      f"(mode={created[0].get('mode')}, status={created[0].get('status')})")
+                print(
+                    f"  job-create  OK    {len(job_list)} job(s); ours present "
+                    f"(mode={created[0].get('mode')}, status={created[0].get('status')})"
+                )
             else:
                 findings.append(f"wizard launch did not create a job (jobs={job_list})")
                 print(f"  job-create  FAIL  jobs={job_list}")
@@ -97,8 +102,9 @@ def main() -> int:
             if paused_after and resume_visible:
                 print(f"  pause-btn   OK    control={ctrl}")
             else:
-                findings.append(f"Pause did not flip state (control={ctrl}, "
-                                f"resume_visible={resume_visible})")
+                findings.append(
+                    f"Pause did not flip state (control={ctrl}, resume_visible={resume_visible})"
+                )
                 print(f"  pause-btn   FAIL  control={ctrl} resume_visible={resume_visible}")
             # Resume so we leave clean state.
             if resume_visible:
@@ -107,6 +113,7 @@ def main() -> int:
 
             # ---- Flow 3: sandbox upload — benign accepted, hostile rejected ----
             import os
+
             page.goto(f"{base}/#sandbox", wait_until="domcontentloaded")
             page.wait_for_timeout(1200)
             benign = os.path.join(tmp, "benign.txt")
@@ -116,24 +123,33 @@ def main() -> int:
             page.wait_for_timeout(1800)
             eicar = os.path.join(tmp, "evil.com")
             with open(eicar, "w") as fh:
-                fh.write(r"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-"
-                         r"ANTIVIRUS-TEST-FILE!$H+H*")
+                fh.write(
+                    r"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-"
+                    r"ANTIVIRUS-TEST-FILE!$H+H*"
+                )
             page.locator("input[type='file']").set_input_files(eicar)
             page.wait_for_timeout(1800)
 
             sb = httpx.get(f"{base}/api/sandbox", timeout=10).json()
             items = sb.get("items", sb) if isinstance(sb, dict) else sb
             benign_stored = any("benign" in str(i.get("filename", "")) for i in items)
-            eicar_clean = any("evil" in str(i.get("filename", "")) and
-                              i.get("scan_verdict") == "clean" for i in items)
+            eicar_clean = any(
+                "evil" in str(i.get("filename", "")) and i.get("scan_verdict") == "clean"
+                for i in items
+            )
             if benign_stored and not eicar_clean:
-                print(f"  sandbox     OK    benign stored; EICAR not stored-as-clean "
-                      f"({len(items)} item(s))")
+                print(
+                    f"  sandbox     OK    benign stored; EICAR not stored-as-clean "
+                    f"({len(items)} item(s))"
+                )
             else:
-                findings.append(f"sandbox security: benign_stored={benign_stored}, "
-                                f"eicar_clean={eicar_clean}, items={items}")
-                print(f"  sandbox     FAIL  benign_stored={benign_stored} "
-                      f"eicar_clean={eicar_clean}")
+                findings.append(
+                    f"sandbox security: benign_stored={benign_stored}, "
+                    f"eicar_clean={eicar_clean}, items={items}"
+                )
+                print(
+                    f"  sandbox     FAIL  benign_stored={benign_stored} eicar_clean={eicar_clean}"
+                )
 
             if errors:
                 findings.append(f"page errors: {errors[:3]}")
@@ -144,8 +160,10 @@ def main() -> int:
 
     print("\n=== SUMMARY ===")
     if not findings:
-        print("INTERACTION FLOWS OK — wizard creates a job; global Pause toggles "
-              "state; sandbox stores benign + blocks EICAR.")
+        print(
+            "INTERACTION FLOWS OK — wizard creates a job; global Pause toggles "
+            "state; sandbox stores benign + blocks EICAR."
+        )
         return 0
     for f in findings:
         print("  -", f)

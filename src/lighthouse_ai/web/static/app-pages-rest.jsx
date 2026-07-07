@@ -1363,7 +1363,7 @@ function HealthPage({ toast }) {
           border: `1px solid ${allOk ? 'var(--green-dark)' : failCount > 0 ? '#c05a20' : 'var(--rule)'}` }}>
           {allOk
             ? 'Everything is running'
-            : failCount > 0 ? `${failCount} thing${failCount > 1 ? 's' : ''} need attention`
+            : failCount > 0 ? `${failCount} item${failCount > 1 ? 's' : ''} ${failCount > 1 ? 'need' : 'needs'} attention`
             : 'Checking…'}
         </div>
       )}
@@ -1630,7 +1630,7 @@ function RChecksPanel({ checks }) {
     : allOk ? 'var(--green-dark)' : '#c05a20';
   const summaryText = checks.length === 0 ? 'No checks reported yet'
     : allOk ? `All ${checks.length} services OK`
-    : `${failing.length} of ${checks.length} need attention`;
+    : `${failing.length} of ${checks.length} ${failing.length === 1 ? 'needs' : 'need'} attention`;
 
   return (
     <div style={{ ...window.card, padding: 20 }}>

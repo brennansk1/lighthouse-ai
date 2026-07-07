@@ -16,6 +16,7 @@ from lighthouse_ai.secrets import (
 
 class _FakeKeyring:
     """Minimal keyring API surface: get/set/delete by (service, key)."""
+
     def __init__(self):
         self._store: dict[tuple[str, str], str] = {}
         self.set_calls = 0
@@ -48,6 +49,7 @@ def store_file(tmp_path: Path) -> SecretStore:
 
 
 # --- keyring-primary path ---
+
 
 def test_put_and_get_via_keyring(store_kr):
     s, kr = store_kr
@@ -83,6 +85,7 @@ def test_get_or_create_generates_when_missing(store_kr):
 
 
 # --- file fallback path ---
+
 
 def test_put_uses_file_when_keyring_disabled(store_file, tmp_path):
     store_file.put("k1", "v1")
@@ -125,11 +128,14 @@ def test_list_returns_file_keys(store_file):
 
 # --- error-tolerance ---
 
+
 class _BrokenKeyring:
     def get_password(self, *args, **kw):
         raise RuntimeError("locked")
+
     def set_password(self, *args, **kw):
         raise RuntimeError("locked")
+
     def delete_password(self, *args, **kw):
         raise RuntimeError("locked")
 
@@ -149,12 +155,15 @@ def test_audit_chain_canonical_key_constant():
 
 # --- audit chain integration --------------------------------------------
 
+
 def test_audit_append_with_explicit_secret_unchanged(migrated_paths):
     """Pre-Sprint-21 callers still work."""
     from lighthouse_ai.verification.audit_chain import append_event, verify_audit_chain
+
     secret = b"x" * 32
-    seq = append_event(migrated_paths.audit_db, actor="t",
-                       event_type="e", payload={"v": 1}, secret=secret)
+    seq = append_event(
+        migrated_paths.audit_db, actor="t", event_type="e", payload={"v": 1}, secret=secret
+    )
     assert seq >= 1
     assert verify_audit_chain(migrated_paths.audit_db, secret=secret) == []
 
@@ -166,8 +175,14 @@ def test_audit_append_pulls_from_secret_store_when_secret_none(migrated_paths):
         resolve_secret,
         verify_audit_chain,
     )
-    append_event(migrated_paths.audit_db, actor="t", event_type="e",
-                 payload={"v": 1}, data_dir=migrated_paths.data_dir)
+
+    append_event(
+        migrated_paths.audit_db,
+        actor="t",
+        event_type="e",
+        payload={"v": 1},
+        data_dir=migrated_paths.data_dir,
+    )
     # The minted secret is the one verify_audit_chain expects.
     resolved = resolve_secret(None, data_dir=migrated_paths.data_dir)
     assert verify_audit_chain(migrated_paths.audit_db, secret=resolved) == []
@@ -180,14 +195,21 @@ def test_audit_append_consistent_secret_across_calls(migrated_paths):
         resolve_secret,
         verify_audit_chain,
     )
+
     for i in range(3):
-        append_event(migrated_paths.audit_db, actor="t", event_type="e",
-                     payload={"i": i}, data_dir=migrated_paths.data_dir)
+        append_event(
+            migrated_paths.audit_db,
+            actor="t",
+            event_type="e",
+            payload={"i": i},
+            data_dir=migrated_paths.data_dir,
+        )
     secret = resolve_secret(None, data_dir=migrated_paths.data_dir)
     assert verify_audit_chain(migrated_paths.audit_db, secret=secret) == []
 
 
 def test_resolve_secret_requires_data_dir_when_no_explicit():
     from lighthouse_ai.verification.audit_chain import resolve_secret
+
     with pytest.raises(ValueError):
         resolve_secret(None)

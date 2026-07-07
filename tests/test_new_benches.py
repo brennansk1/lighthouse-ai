@@ -81,8 +81,18 @@ def test_sandbox_bench_returns_dict(tmp_path) -> None:
 
 def test_sandbox_bench_required_keys(tmp_path) -> None:
     result = run_sandbox_bench(data_dir=tmp_path)
-    for key in ("tp", "fp", "tn", "fn", "precision", "recall",
-                "false_positive_rate", "per_case", "n_hostile", "n_benign"):
+    for key in (
+        "tp",
+        "fp",
+        "tn",
+        "fn",
+        "precision",
+        "recall",
+        "false_positive_rate",
+        "per_case",
+        "n_hostile",
+        "n_benign",
+    ):
         assert key in result, f"missing key: {key}"
 
 
@@ -98,8 +108,7 @@ def test_sandbox_bench_zero_false_positives_on_benign(tmp_path) -> None:
     assert len(benign_only) > 0, "bench has no benign payloads"
     result = run_sandbox_bench(data_dir=tmp_path, payloads=benign_only)
     assert result["fp"] == 0, (
-        f"False positives on benign set: {result['fp']} — "
-        f"per_case={result['per_case']}"
+        f"False positives on benign set: {result['fp']} — per_case={result['per_case']}"
     )
 
 
@@ -222,8 +231,7 @@ def test_skill_recommender_bench_returns_dict() -> None:
 
 def test_skill_recommender_bench_required_keys() -> None:
     result = run_skill_recommender_bench()
-    for key in ("top1_accuracy", "top3_accuracy", "n_cases", "n_scored",
-                "per_case", "note"):
+    for key in ("top1_accuracy", "top3_accuracy", "n_cases", "n_scored", "per_case", "note"):
         assert key in result, f"missing key: {key}"
 
 

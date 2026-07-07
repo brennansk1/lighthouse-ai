@@ -23,13 +23,22 @@ from dataclasses import dataclass, field
 from typing import Any
 
 KNOWN_EVENTS = {
-    "job.progress", "job.status", "job.step",
-    "draft.staged", "draft.approved", "draft.rejected",
-    "position.created", "position.resolved",
+    "job.progress",
+    "job.status",
+    "job.step",
+    "draft.staged",
+    "draft.approved",
+    "draft.rejected",
+    "position.created",
+    "position.resolved",
     "audit.appended",
-    "governor.tier", "governor.tripped",
-    "doctor.changed", "intent.dead",
-    "control.status", "chat.token", "chat.turn",
+    "governor.tier",
+    "governor.tripped",
+    "doctor.changed",
+    "intent.dead",
+    "control.status",
+    "chat.token",
+    "chat.turn",
 }
 
 #: Sentinel enqueued to a subscriber that overflowed its queue — the SSE stream
@@ -77,7 +86,7 @@ class EventBus:
                     # room and enqueue a close sentinel the generator acts on, so
                     # the response ends and the client reconnects with a fresh queue.
                     try:
-                        q.get_nowait()          # drop the oldest queued message
+                        q.get_nowait()  # drop the oldest queued message
                         q.put_nowait(_OVERFLOW)
                     except Exception:
                         self._subscribers.discard(q)

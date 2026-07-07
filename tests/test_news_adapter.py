@@ -67,6 +67,7 @@ _EMPTY_BYTES = b"""<?xml version="1.0"?><notarss/>"""
 # Fake HTTP response
 # ---------------------------------------------------------------------------
 
+
 class FakeResponse:
     def __init__(self, content: bytes, status_code: int = 200):
         self.content = content
@@ -112,6 +113,7 @@ def test_parse_feed_bytes_unknown_root():
 
 def test_fetch_outlet_feed_rss_via_client():
     """fetch_outlet_feed with a canned client returns parsed items."""
+
     def canned_client(url: str) -> FakeResponse:
         return FakeResponse(_RSS_BYTES)
 
@@ -121,6 +123,7 @@ def test_fetch_outlet_feed_rss_via_client():
 
 def test_fetch_outlet_feed_max_results_respected():
     """max_results caps the returned items."""
+
     def canned_client(url: str) -> FakeResponse:
         return FakeResponse(_RSS_BYTES)
 
@@ -130,6 +133,7 @@ def test_fetch_outlet_feed_max_results_respected():
 
 def test_fetch_outlet_feed_non_200_returns_empty():
     """Non-200 response returns empty list."""
+
     def canned_client(url: str) -> FakeResponse:
         return FakeResponse(b"", status_code=404)
 
@@ -139,6 +143,7 @@ def test_fetch_outlet_feed_non_200_returns_empty():
 
 def test_fetch_outlet_feed_client_exception_returns_empty():
     """Client exception returns empty list gracefully."""
+
     def bad_client(url: str):
         raise ConnectionError("timeout")
 
@@ -175,8 +180,16 @@ def test_filter_since_none_returns_all():
 def test_filter_since_no_published_at_excluded():
     """Items without published_at are excluded on incremental ticks."""
     items = [
-        MonitorItem(source="test", url="https://example.com/1", title="T1", body="", published_at=None),
-        MonitorItem(source="test", url="https://example.com/2", title="T2", body="", published_at="2027-01-01T12:00:00Z"),
+        MonitorItem(
+            source="test", url="https://example.com/1", title="T1", body="", published_at=None
+        ),
+        MonitorItem(
+            source="test",
+            url="https://example.com/2",
+            title="T2",
+            body="",
+            published_at="2027-01-01T12:00:00Z",
+        ),
     ]
     cutoff = datetime(2026, 1, 1)
     filtered = _news.filter_since(items, cutoff)
@@ -256,8 +269,16 @@ def test_items_to_documents_basic():
 def test_items_to_documents_skips_empty_text():
     """Items with no title and no body are skipped."""
     items = [
-        MonitorItem(source="test", url="https://example.com/x", title="", body="", published_at=None),
-        MonitorItem(source="test", url="https://example.com/y", title="Has title", body="", published_at=None),
+        MonitorItem(
+            source="test", url="https://example.com/x", title="", body="", published_at=None
+        ),
+        MonitorItem(
+            source="test",
+            url="https://example.com/y",
+            title="Has title",
+            body="",
+            published_at=None,
+        ),
     ]
     ctx = _make_mock_ctx("bbc_news")
     docs = _news.items_to_documents(ctx, items, outlet_id="bbc_news")
@@ -269,7 +290,9 @@ def test_items_to_documents_feed_url_in_metadata():
     """feed_url is propagated to metadata."""
     items = _news.parse_feed_bytes(_RSS_BYTES)[:1]
     ctx = _make_mock_ctx("npr")
-    docs = _news.items_to_documents(ctx, items, outlet_id="npr", feed_url="https://feeds.example.com/rss")
+    docs = _news.items_to_documents(
+        ctx, items, outlet_id="npr", feed_url="https://feeds.example.com/rss"
+    )
     assert docs[0].metadata["feed_url"] == "https://feeds.example.com/rss"
 
 
@@ -280,6 +303,7 @@ def test_items_to_documents_feed_url_in_metadata():
 
 def test_search_outlet_returns_empty_on_non_200():
     """Non-200 response from all param variants returns empty list."""
+
     def client(url: str) -> FakeResponse:
         return FakeResponse(b"<html><body>Not found</body></html>", status_code=404)
 

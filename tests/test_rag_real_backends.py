@@ -22,9 +22,11 @@ from lighthouse_ai.rag.qdrant_store import QdrantStore
 
 # ============================== OllamaEmbedder ==============================
 
+
 @dataclass
 class _FakeOllama:
     """Stub matching the OllamaBackend.embed/available surface."""
+
     vectors: list[list[float]] | None = None
     available_flag: bool = True
     raise_on_embed: bool = False
@@ -72,6 +74,7 @@ def test_embedder_available_proxies_backend():
 
 # ============================== QdrantStore =================================
 
+
 @dataclass
 class _Collection:
     name: str
@@ -113,17 +116,19 @@ class _FakeQdrantClient:
     def get_collections(self):
         return _CollectionsResponse([_Collection(n) for n in self.collections])
 
-    def create_collection(self, *, collection_name, vectors_config,
-                          hnsw_config=None, quantization_config=None):
-        self.create_calls.append({
-            "name": collection_name,
-            "size": vectors_config.size,
-            "distance": str(vectors_config.distance),
-            "hnsw_m": getattr(hnsw_config, "m", None),
-            "ef_construct": getattr(hnsw_config, "ef_construct", None),
-            "quantization": type(quantization_config).__name__
-                            if quantization_config else None,
-        })
+    def create_collection(
+        self, *, collection_name, vectors_config, hnsw_config=None, quantization_config=None
+    ):
+        self.create_calls.append(
+            {
+                "name": collection_name,
+                "size": vectors_config.size,
+                "distance": str(vectors_config.distance),
+                "hnsw_m": getattr(hnsw_config, "m", None),
+                "ef_construct": getattr(hnsw_config, "ef_construct", None),
+                "quantization": type(quantization_config).__name__ if quantization_config else None,
+            }
+        )
         self.collections[collection_name] = {"size": vectors_config.size}
         self.payload_indexes[collection_name] = set()
 
@@ -135,8 +140,7 @@ class _FakeQdrantClient:
         for p in points:
             self.points[p.id] = {"vector": p.vector, "payload": p.payload}
 
-    def query_points(self, *, collection_name, query, limit,
-                     query_filter=None, with_payload=True):
+    def query_points(self, *, collection_name, query, limit, query_filter=None, with_payload=True):
         hits: list[_Hit] = []
         for pid, body in self.points.items():
             if query_filter is not None:
@@ -193,10 +197,20 @@ def test_qdrant_ensure_is_idempotent(fake_qdrant):
 def test_qdrant_upsert_and_search_round_trip(fake_qdrant):
     store = QdrantStore(dim=4, client=fake_qdrant)
     chunks = [
-        Chunk(id="c1", document_id="d1", text="alpha", position=0,
-              metadata={"source": "S", "grade": "A"}),
-        Chunk(id="c2", document_id="d1", text="beta", position=1,
-              metadata={"source": "S", "grade": "B"}),
+        Chunk(
+            id="c1",
+            document_id="d1",
+            text="alpha",
+            position=0,
+            metadata={"source": "S", "grade": "A"},
+        ),
+        Chunk(
+            id="c2",
+            document_id="d1",
+            text="beta",
+            position=1,
+            metadata={"source": "S", "grade": "B"},
+        ),
     ]
     vectors = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]
     store.upsert(chunks, vectors)
@@ -238,6 +252,7 @@ def test_qdrant_available_false_when_client_raises():
     class Broken:
         def get_collections(self):
             raise RuntimeError("down")
+
     store = QdrantStore(dim=2, client=Broken())
     assert store.available() is False
 

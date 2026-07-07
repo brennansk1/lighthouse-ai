@@ -56,21 +56,23 @@ def _parse_documents(data: dict) -> list[Document]:
         if abstract:
             text = f"{title}. {abstract}"
 
-        out.append(Document(
-            id=f"fedreg:{doc_number}" if doc_number else f"fedreg:{title[:40]}",
-            text=text,
-            metadata={
-                "source": "federal_register",
-                "url": html_url,
-                "grade": "A",
-                "title": title,
-                "document_number": doc_number,
-                "document_type": doc_type,
-                "agency_names": agency_names,
-                "publication_date": publication_date,
-                "citation": citation,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"fedreg:{doc_number}" if doc_number else f"fedreg:{title[:40]}",
+                text=text,
+                metadata={
+                    "source": "federal_register",
+                    "url": html_url,
+                    "grade": "A",
+                    "title": title,
+                    "document_number": doc_number,
+                    "document_type": doc_type,
+                    "agency_names": agency_names,
+                    "publication_date": publication_date,
+                    "citation": citation,
+                },
+            )
+        )
     return out
 
 

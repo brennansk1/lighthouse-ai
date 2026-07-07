@@ -49,14 +49,20 @@ def test_available_false_on_network_error(mocked):
 
 
 def test_list_models_parses_tags(mocked):
-    mocked.get("/api/tags").respond(200, json={
-        "models": [
-            {"name": "qwen3:8b", "size": 5_500_000_000,
-             "digest": "sha256:abc", "modified_at": "2026-01-01T00:00:00Z"},
-            {"name": "nomic-embed-text:latest", "size": 274_000_000,
-             "digest": "sha256:def"},
-        ]
-    })
+    mocked.get("/api/tags").respond(
+        200,
+        json={
+            "models": [
+                {
+                    "name": "qwen3:8b",
+                    "size": 5_500_000_000,
+                    "digest": "sha256:abc",
+                    "modified_at": "2026-01-01T00:00:00Z",
+                },
+                {"name": "nomic-embed-text:latest", "size": 274_000_000, "digest": "sha256:def"},
+            ]
+        },
+    )
     out = _backend(mocked).list_models()
     assert [m.name for m in out] == ["qwen3:8b", "nomic-embed-text:latest"]
     assert out[0].size_bytes == 5_500_000_000
@@ -73,12 +79,20 @@ def test_chat_parses_completion(mocked):
     # chat() always streams now (the generation watchdog needs a per-chunk
     # progress signal); without on_token it still returns the identical
     # ChatResponse, assembled from the JSON-lines frames.
-    mocked.post("/api/chat").respond(200, text=_stream_body(
-        {"message": {"role": "assistant", "content": "Hello world."},
-         "done": False},
-        {"message": {"content": ""}, "done": True, "model": "qwen3:8b",
-         "prompt_eval_count": 5, "eval_count": 3, "done_reason": "stop"},
-    ))
+    mocked.post("/api/chat").respond(
+        200,
+        text=_stream_body(
+            {"message": {"role": "assistant", "content": "Hello world."}, "done": False},
+            {
+                "message": {"content": ""},
+                "done": True,
+                "model": "qwen3:8b",
+                "prompt_eval_count": 5,
+                "eval_count": 3,
+                "done_reason": "stop",
+            },
+        ),
+    )
     resp = _backend(mocked).chat("qwen3:8b", "hi")
     assert resp.text == "Hello world."
     assert resp.prompt_tokens == 5
@@ -87,12 +101,21 @@ def test_chat_parses_completion(mocked):
 
 
 def test_chat_passes_sampling_options(mocked):
-    route = mocked.post("/api/chat").respond(200, text=_stream_body(
-        {"message": {"content": "ok"}, "done": True,
-         "model": "qwen3:8b", "prompt_eval_count": 1, "eval_count": 1},
-    ))
+    route = mocked.post("/api/chat").respond(
+        200,
+        text=_stream_body(
+            {
+                "message": {"content": "ok"},
+                "done": True,
+                "model": "qwen3:8b",
+                "prompt_eval_count": 1,
+                "eval_count": 1,
+            },
+        ),
+    )
     _backend(mocked).chat(
-        "qwen3:8b", "p",
+        "qwen3:8b",
+        "p",
         sampling={"temperature": 0.2, "top_p": 0.9, "max_tokens": 128, "seed": 42},
     )
     body = json.loads(route.calls.last.request.content)
@@ -104,10 +127,15 @@ def test_chat_passes_sampling_options(mocked):
 
 
 def test_chat_with_system_message(mocked):
-    route = mocked.post("/api/chat").respond(200, json={
-        "model": "x", "message": {"content": ""},
-        "prompt_eval_count": 0, "eval_count": 0,
-    })
+    route = mocked.post("/api/chat").respond(
+        200,
+        json={
+            "model": "x",
+            "message": {"content": ""},
+            "prompt_eval_count": 0,
+            "eval_count": 0,
+        },
+    )
     _backend(mocked).chat("x", "p", system="be terse")
     msgs = json.loads(route.calls.last.request.content)["messages"]
     assert msgs[0]["role"] == "system" and msgs[0]["content"] == "be terse"
@@ -128,18 +156,28 @@ def test_chat_raises_on_network_error(mocked):
 
 # --- chat streaming (on_token) -------------------------------------------
 
+
 def _stream_body(*chunks: dict) -> str:
     """Ollama streams newline-delimited JSON frames."""
     return "\n".join(json.dumps(c) for c in chunks)
 
 
 def test_chat_streams_with_on_token(mocked):
-    route = mocked.post("/api/chat").respond(200, text=_stream_body(
-        {"message": {"content": "Hel"}, "done": False},
-        {"message": {"content": "lo."}, "done": False},
-        {"message": {"content": ""}, "done": True, "model": "qwen3:8b",
-         "prompt_eval_count": 11, "eval_count": 2, "done_reason": "stop"},
-    ))
+    route = mocked.post("/api/chat").respond(
+        200,
+        text=_stream_body(
+            {"message": {"content": "Hel"}, "done": False},
+            {"message": {"content": "lo."}, "done": False},
+            {
+                "message": {"content": ""},
+                "done": True,
+                "model": "qwen3:8b",
+                "prompt_eval_count": 11,
+                "eval_count": 2,
+                "done_reason": "stop",
+            },
+        ),
+    )
     got: list[str] = []
     resp = _backend(mocked).chat("qwen3:8b", "hi", on_token=got.append)
     # The streamed result is identical in shape to the non-streaming one.
@@ -154,11 +192,13 @@ def test_chat_streams_with_on_token(mocked):
 
 def test_chat_stream_sink_errors_never_break_the_call(mocked):
     """A broken UI sink must not kill the model call (best-effort contract)."""
-    mocked.post("/api/chat").respond(200, text=_stream_body(
-        {"message": {"content": "ok"}, "done": False},
-        {"message": {"content": ""}, "done": True,
-         "prompt_eval_count": 1, "eval_count": 1},
-    ))
+    mocked.post("/api/chat").respond(
+        200,
+        text=_stream_body(
+            {"message": {"content": "ok"}, "done": False},
+            {"message": {"content": ""}, "done": True, "prompt_eval_count": 1, "eval_count": 1},
+        ),
+    )
 
     def _boom(_tok: str) -> None:
         raise RuntimeError("sink crashed")
@@ -168,12 +208,20 @@ def test_chat_stream_sink_errors_never_break_the_call(mocked):
 
 
 def test_chat_stream_skips_malformed_frames(mocked):
-    mocked.post("/api/chat").respond(200, text=(
-        "not-json\n"
-        + _stream_body(
-            {"message": {"content": "fine"}, "done": True,
-             "prompt_eval_count": 1, "eval_count": 1})
-    ))
+    mocked.post("/api/chat").respond(
+        200,
+        text=(
+            "not-json\n"
+            + _stream_body(
+                {
+                    "message": {"content": "fine"},
+                    "done": True,
+                    "prompt_eval_count": 1,
+                    "eval_count": 1,
+                }
+            )
+        ),
+    )
     got: list[str] = []
     resp = _backend(mocked).chat("x", "p", on_token=got.append)
     assert resp.text == "fine"
@@ -197,6 +245,7 @@ def test_chat_stream_raises_on_network_error(mocked):
 # httpx surfaces that as a ReadTimeout on the streaming read. The backend must
 # translate it into BackendStalled with the diagnostic attrs the dispatcher
 # audits — not the generic OllamaUnavailable, and never a silent hang.
+
 
 def test_chat_stall_raises_backend_stalled_with_attrs(mocked):
     mocked.post("/api/chat").side_effect = httpx.ReadTimeout("no bytes")
@@ -235,9 +284,13 @@ def test_embed_non_timeout_error_stays_unavailable(mocked):
 
 
 def test_embed_returns_vectors(mocked):
-    mocked.post("/api/embed").respond(200, json={
-        "model": "nomic", "embeddings": [[0.1, 0.2], [0.3, 0.4]],
-    })
+    mocked.post("/api/embed").respond(
+        200,
+        json={
+            "model": "nomic",
+            "embeddings": [[0.1, 0.2], [0.3, 0.4]],
+        },
+    )
     resp = _backend(mocked).embed("nomic", ["a", "b"])
     assert resp.vectors == [[0.1, 0.2], [0.3, 0.4]]
 
@@ -256,11 +309,14 @@ def test_embed_raises_on_non_200(mocked):
 
 
 def test_pull_streams_progress_to_callback(mocked):
-    mocked.post("/api/pull").respond(200, text=(
-        '{"status":"pulling manifest"}\n'
-        '{"status":"downloading","completed":50}\n'
-        '{"status":"success"}\n'
-    ))
+    mocked.post("/api/pull").respond(
+        200,
+        text=(
+            '{"status":"pulling manifest"}\n'
+            '{"status":"downloading","completed":50}\n'
+            '{"status":"success"}\n'
+        ),
+    )
     seen: list[dict] = []
     _backend(mocked).pull("qwen3:8b", progress_cb=seen.append)
     assert seen[-1]["status"] == "success"
@@ -287,8 +343,7 @@ def test_delete_raises_on_other_codes(mocked):
 
 
 def test_sampling_translation():
-    out = _sampling_to_options({"temperature": 0.3, "top_p": 1.0,
-                                "max_tokens": 256, "seed": 7})
+    out = _sampling_to_options({"temperature": 0.3, "top_p": 1.0, "max_tokens": 256, "seed": 7})
     assert out == {"temperature": 0.3, "top_p": 1.0, "num_predict": 256, "seed": 7}
 
 
@@ -297,6 +352,7 @@ def test_sampling_translation_ignores_unknown_keys():
 
 
 # ============================== integration (real Ollama) ==============================
+
 
 def _ollama_reachable() -> bool:
     try:
@@ -312,11 +368,8 @@ def _ollama_reachable() -> bool:
 # LIGHTHOUSE_REAL_BACKEND=1 to enable.
 import os as _os
 
-_REAL_BACKEND_OK = (_os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1"
-                    and _ollama_reachable())
-_REAL_BACKEND_SKIP_REASON = (
-    "set LIGHTHOUSE_REAL_BACKEND=1 and have ollama on 127.0.0.1:11434"
-)
+_REAL_BACKEND_OK = _os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1" and _ollama_reachable()
+_REAL_BACKEND_SKIP_REASON = "set LIGHTHOUSE_REAL_BACKEND=1 and have ollama on 127.0.0.1:11434"
 
 
 @pytest.mark.integration
@@ -333,12 +386,7 @@ def _is_embedding_model(name: str) -> bool:
     support chat"). Exclude them from the chat smoke. Covers bge-*, nomic-embed,
     mxbai-embed, *-embed*, all-minilm, arctic-embed, etc."""
     low = name.lower()
-    return (
-        low.startswith("bge")
-        or "embed" in low
-        or "all-minilm" in low
-        or "arctic-embed" in low
-    )
+    return low.startswith("bge") or "embed" in low or "all-minilm" in low or "arctic-embed" in low
 
 
 @pytest.mark.integration
@@ -350,9 +398,7 @@ def test_real_ollama_chat_returns_tokens():
         # bge-m3 (often alphabetically first) 400s with "does not support chat".
         chat_models = [m for m in models if not _is_embedding_model(m)]
         if not chat_models:
-            pytest.skip(
-                "no chat-capable models pulled — run `ollama pull qwen3:8b` first"
-            )
+            pytest.skip("no chat-capable models pulled — run `ollama pull qwen3:8b` first")
         # Honor an explicit pin first (LIGHTHOUSE_FORCE_MODEL), so this smoke
         # uses the same model the rest of the real-backend suite is pinned to.
         forced = _os.environ.get("LIGHTHOUSE_FORCE_MODEL", "").strip()
@@ -362,17 +408,24 @@ def test_real_ollama_chat_returns_tokens():
             # Prefer a genuinely small model for speed. Match on parameter-count
             # suffixes only — brand names like "mistral-small:24b" / "devstral-
             # small" contain "small" but are 15-24 GB, so never match on "small".
-            small = [m for m in chat_models if any(
-                s in m.lower()
-                for s in ("0.5b", "1b", "1.5b", "2b", "3b", "4b", "7b", "8b", "9b", "mini")
-            )]
+            small = [
+                m
+                for m in chat_models
+                if any(
+                    s in m.lower()
+                    for s in ("0.5b", "1b", "1.5b", "2b", "3b", "4b", "7b", "8b", "9b", "mini")
+                )
+            ]
             model = sorted(small or chat_models)[0]
         # Reasoning models (e.g. qwen3.5) emit <think>…</think> tokens that the
         # backend strips, so a small max_tokens budget can be spent entirely on
         # thinking and leave empty visible text. Give generous headroom so a
         # one-word answer can land after any thinking.
-        resp = b.chat(model, "Reply with the single word: ok.",
-                      sampling={"temperature": 0.0, "max_tokens": 256})
+        resp = b.chat(
+            model,
+            "Reply with the single word: ok.",
+            sampling={"temperature": 0.0, "max_tokens": 256},
+        )
     # The real signal: the chat round-trip generated tokens.
     assert resp.completion_tokens > 0
     # Visible text is expected — unless a reasoning model spent the whole budget

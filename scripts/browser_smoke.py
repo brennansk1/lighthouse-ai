@@ -8,6 +8,7 @@ failures that the in-process TestClient API tests cannot.
 
 Run: uv run python scripts/browser_smoke.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -39,11 +40,12 @@ def main() -> int:
                 failed: list[str] = []
                 # Bind the per-page lists as defaults so the lambdas capture this
                 # iteration's lists, not the loop variable (ruff B023).
-                page.on("console", lambda m, ce=console_errors:
-                        ce.append(m.text) if m.type == "error" else None)
-                page.on("pageerror", lambda e, pe=page_errors: pe.append(str(e)))
-                page.on("requestfailed",
-                        lambda r, fl=failed: fl.append(f"{r.method} {r.url}"))
+                page.on(
+                    "console",
+                    lambda m, ce=console_errors: ce.append(m.text) if m.type == "error" else None,  # type: ignore
+                )
+                page.on("pageerror", lambda e, pe=page_errors: pe.append(str(e)))  # type: ignore
+                page.on("requestfailed", lambda r, fl=failed: fl.append(f"{r.method} {r.url}"))  # type: ignore
 
                 url = f"{base}/#{page_id}"
                 # The dashboard holds a live SSE/event stream open, so

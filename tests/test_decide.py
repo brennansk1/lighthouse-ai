@@ -19,6 +19,7 @@ from lighthouse_ai.modes.decide import (
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+
 def _two_option_run(**kw) -> DecideReport:
     """Standard two-option, two-criterion run used by many tests."""
     return run_decide(
@@ -62,6 +63,7 @@ def _controlled_run(
 # Validation errors
 # ---------------------------------------------------------------------------
 
+
 def test_requires_two_options_message():
     with pytest.raises(ValueError, match="at least 2 options"):
         run_decide("q", options=["only"], criteria=[Criterion("c", 1.0)])
@@ -83,7 +85,8 @@ def test_rejects_duplicate_option_labels():
 def test_rejects_zero_weight_names_offender():
     with pytest.raises(ValueError, match="non-positive weights"):
         run_decide(
-            "q", options=["a", "b"],
+            "q",
+            options=["a", "b"],
             criteria=[Criterion("good", 1.0), Criterion("bad", 0.0)],
         )
 
@@ -96,6 +99,7 @@ def test_rejects_negative_weight():
 # ---------------------------------------------------------------------------
 # Determinism
 # ---------------------------------------------------------------------------
+
 
 def test_deterministic_winner_and_totals():
     r1 = _two_option_run()
@@ -113,6 +117,7 @@ def test_totals_in_unit_interval():
 # ---------------------------------------------------------------------------
 # Weighted argmax correctness
 # ---------------------------------------------------------------------------
+
 
 def test_weighted_argmax_picks_correct_winner():
     """A wins on scalability (weight 3); B wins on cost (weight 1) — A should win."""
@@ -169,16 +174,15 @@ def test_total_equals_weighted_sum():
 # higher_is_better=False handling
 # ---------------------------------------------------------------------------
 
+
 def test_lower_is_better_flips_score():
     """lower_is_better criterion: the option with low raw score should win."""
     crits = [Criterion("cost", weight=1.0, higher_is_better=False)]
     scores = {
-        ("Cheap", "cost"): 0.2,   # effective = 1-0.2 = 0.8
+        ("Cheap", "cost"): 0.2,  # effective = 1-0.2 = 0.8
         ("Expensive", "cost"): 0.9,  # effective = 1-0.9 = 0.1
     }
-    r = _controlled_run(
-        scores=scores, criteria=crits, options=["Cheap", "Expensive"]
-    )
+    r = _controlled_run(scores=scores, criteria=crits, options=["Cheap", "Expensive"])
     assert r.winner == "Cheap"
 
 
@@ -201,9 +205,9 @@ def test_mixed_polarity_winner():
     ]
     scores = {
         ("A", "speed"): 0.9,
-        ("A", "cost"): 0.8,   # high cost = bad (effective 0.2)
+        ("A", "cost"): 0.8,  # high cost = bad (effective 0.2)
         ("B", "speed"): 0.4,
-        ("B", "cost"): 0.1,   # low cost = good (effective 0.9)
+        ("B", "cost"): 0.1,  # low cost = good (effective 0.9)
     }
     # A contribution: (2/3)*0.9 + (1/3)*0.2 = 0.6 + 0.0667 = 0.667
     # B contribution: (2/3)*0.4 + (1/3)*0.9 = 0.267 + 0.3 = 0.567
@@ -215,12 +219,15 @@ def test_mixed_polarity_winner():
 # Cells coverage
 # ---------------------------------------------------------------------------
 
+
 def test_cells_cover_every_option_criterion_pair():
     r = _two_option_run()
     pairs = {(c.option, c.criterion) for c in r.cells}
     assert pairs == {
-        ("Postgres", "scalability"), ("Postgres", "simplicity"),
-        ("SQLite", "scalability"), ("SQLite", "simplicity"),
+        ("Postgres", "scalability"),
+        ("Postgres", "simplicity"),
+        ("SQLite", "scalability"),
+        ("SQLite", "simplicity"),
     }
 
 
@@ -239,6 +246,7 @@ def test_cell_contribution_non_negative():
 # ---------------------------------------------------------------------------
 # Sensitivity sweep
 # ---------------------------------------------------------------------------
+
 
 def test_sensitivity_sweep_present_for_each_criterion():
     r = _two_option_run()
@@ -290,6 +298,7 @@ def test_sensitivity_margin_delta_is_float():
 # Crux quality
 # ---------------------------------------------------------------------------
 
+
 def test_crux_is_nonempty_and_mentions_winner():
     r = _two_option_run()
     assert r.crux
@@ -317,8 +326,10 @@ def test_crux_mentions_decisive_criterion_when_flip_exists():
 def test_crux_mentions_adjudicate_when_decisive():
     crits = [Criterion("key", weight=4.0), Criterion("minor", weight=1.0)]
     scores = {
-        ("A", "key"): 0.95, ("A", "minor"): 0.1,
-        ("B", "key"): 0.1, ("B", "minor"): 0.95,
+        ("A", "key"): 0.95,
+        ("A", "minor"): 0.1,
+        ("B", "key"): 0.1,
+        ("B", "minor"): 0.95,
     }
     r = _controlled_run(scores=scores, criteria=crits)
     assert "Adjudicate" in r.crux
@@ -327,8 +338,10 @@ def test_crux_mentions_adjudicate_when_decisive():
 def test_crux_robust_lead_acknowledges_robustness():
     crits = [Criterion("c1", weight=1.0), Criterion("c2", weight=1.0)]
     scores = {
-        ("Strong", "c1"): 0.99, ("Strong", "c2"): 0.99,
-        ("Weak", "c1"): 0.01, ("Weak", "c2"): 0.01,
+        ("Strong", "c1"): 0.99,
+        ("Strong", "c2"): 0.99,
+        ("Weak", "c1"): 0.01,
+        ("Weak", "c2"): 0.01,
     }
     r = _controlled_run(scores=scores, criteria=crits, options=["Strong", "Weak"])
     assert "robust" in r.crux.lower() or "all weighting" in r.crux.lower()
@@ -337,6 +350,7 @@ def test_crux_robust_lead_acknowledges_robustness():
 # ---------------------------------------------------------------------------
 # Decisive criteria list (additive field)
 # ---------------------------------------------------------------------------
+
 
 def test_decisive_criteria_field_present():
     r = _two_option_run()
@@ -354,6 +368,7 @@ def test_decisive_criteria_matches_sensitivity():
 # Primary driver (additive field)
 # ---------------------------------------------------------------------------
 
+
 def test_primary_driver_is_highest_weight_criterion():
     r = _two_option_run()
     # scalability has weight 2.0, simplicity has weight 1.0
@@ -363,6 +378,7 @@ def test_primary_driver_is_highest_weight_criterion():
 # ---------------------------------------------------------------------------
 # Tie handling (two options with identical totals)
 # ---------------------------------------------------------------------------
+
 
 def test_tie_produces_valid_report():
     """Identical scores for both options — must not raise; winner is deterministic."""
@@ -378,9 +394,11 @@ def test_tie_produces_valid_report():
 # Dict criteria coercion
 # ---------------------------------------------------------------------------
 
+
 def test_dict_criteria_are_coerced():
     r = run_decide(
-        "q", options=["a", "b"],
+        "q",
+        options=["a", "b"],
         criteria=[
             {"label": "x", "weight": 1.0},
             {"label": "y", "weight": 2.0, "higher_is_better": False},
@@ -400,6 +418,7 @@ def test_string_options_are_coerced():
 # Margin correctness
 # ---------------------------------------------------------------------------
 
+
 def test_margin_equals_winner_minus_runner_up():
     r = _two_option_run()
     if r.runner_up:
@@ -411,6 +430,7 @@ def test_margin_equals_winner_minus_runner_up():
 # Position recording
 # ---------------------------------------------------------------------------
 
+
 def test_records_position_when_db_given():
     recorded = {}
 
@@ -421,7 +441,8 @@ def test_records_position_when_db_given():
 
     orig = positions.record_position
     positions.record_position = lambda db, *, claim, probability: recorded.update(
-        claim=claim, probability=probability)
+        claim=claim, probability=probability
+    )
     try:
         _two_option_run(positions_db=FakeDB())
     finally:
@@ -434,12 +455,16 @@ def test_records_position_when_db_given():
 # Three-option run
 # ---------------------------------------------------------------------------
 
+
 def test_three_options_winner_is_consistent():
     crits = [Criterion("quality", weight=2.0), Criterion("price", weight=1.0)]
     scores = {
-        ("Gold", "quality"): 0.95, ("Gold", "price"): 0.2,
-        ("Silver", "quality"): 0.70, ("Silver", "price"): 0.6,
-        ("Bronze", "quality"): 0.40, ("Bronze", "price"): 0.9,
+        ("Gold", "quality"): 0.95,
+        ("Gold", "price"): 0.2,
+        ("Silver", "quality"): 0.70,
+        ("Silver", "price"): 0.6,
+        ("Bronze", "quality"): 0.40,
+        ("Bronze", "price"): 0.9,
     }
     r = _controlled_run(scores=scores, criteria=crits, options=["Gold", "Silver", "Bronze"])
     # Gold: (2/3)*0.95 + (1/3)*0.2 = 0.633 + 0.067 = 0.70

@@ -34,8 +34,10 @@ def test_migrate_path_creates_expected_tables(tmp_path: Path):
     migrate_path(db_path, "state")
     conn = open_db(db_path)
     try:
-        names = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        names = {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
     finally:
         conn.close()
     assert "supervisor_state" in names
@@ -77,6 +79,7 @@ def test_intents_schema_has_status_check(migrated_paths):
     conn = open_db(migrated_paths.intents_db)
     try:
         import sqlite3
+
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
                 "INSERT INTO intents (idempotency_key,target,op,payload_json,status) "
@@ -89,8 +92,10 @@ def test_intents_schema_has_status_check(migrated_paths):
 def test_monitor_sessions_migration_applies(migrated_paths):
     conn = open_db(migrated_paths.state_db)
     try:
-        names = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        names = {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
         applied = applied_migrations(conn)
     finally:
         conn.close()
@@ -102,8 +107,10 @@ def test_monitor_sessions_migration_applies(migrated_paths):
 def test_artifacts_and_transcripts_migration_applies(migrated_paths):
     conn = open_db(migrated_paths.state_db)
     try:
-        names = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        names = {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
         applied = applied_migrations(conn)
         draft_cols = {r[1] for r in conn.execute("PRAGMA table_info(drafts)")}
         ask_cols = {r[1] for r in conn.execute("PRAGMA table_info(ask_sessions)")}
@@ -119,10 +126,13 @@ def test_apply_migrations_records_applied_ids(tmp_path: Path):
     db_path = tmp_path / "a.db"
     conn = open_db(db_path)
     try:
-        apply_migrations(conn, [
-            Migration("0001", "CREATE TABLE t (x);"),
-            Migration("0002", "CREATE TABLE u (y);"),
-        ])
+        apply_migrations(
+            conn,
+            [
+                Migration("0001", "CREATE TABLE t (x);"),
+                Migration("0002", "CREATE TABLE u (y);"),
+            ],
+        )
         assert applied_migrations(conn) == {"0001", "0002"}
     finally:
         conn.close()
@@ -143,14 +153,19 @@ def test_failed_migration_rolls_back_atomically(tmp_path: Path):
     conn = open_db(db_path)
     try:
         with pytest.raises(sqlite3.OperationalError):
-            apply_migrations(conn, [
-                Migration(
-                    "0001_partial",
-                    "CREATE TABLE good (x);\nCREATE TABLE good (x);",  # 2nd fails
-                ),
-            ])
-        names = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            apply_migrations(
+                conn,
+                [
+                    Migration(
+                        "0001_partial",
+                        "CREATE TABLE good (x);\nCREATE TABLE good (x);",  # 2nd fails
+                    ),
+                ],
+            )
+        names = {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
         assert "good" not in names  # rolled back
         assert applied_migrations(conn) == set()  # not recorded
     finally:
@@ -162,10 +177,13 @@ def test_new_migration_appended_runs_only_unseen(tmp_path: Path):
     conn = open_db(db_path)
     try:
         apply_migrations(conn, [Migration("0001", "CREATE TABLE t (x);")])
-        added = apply_migrations(conn, [
-            Migration("0001", "CREATE TABLE t (x);"),  # already applied
-            Migration("0002", "CREATE TABLE u (y);"),
-        ])
+        added = apply_migrations(
+            conn,
+            [
+                Migration("0001", "CREATE TABLE t (x);"),  # already applied
+                Migration("0002", "CREATE TABLE u (y);"),
+            ],
+        )
         assert added == ["0002"]
     finally:
         conn.close()

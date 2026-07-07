@@ -45,9 +45,7 @@ def search_videos(
         List of Documents with video metadata (URL, title, description).
     """
     try:
-        results = _searxng.search(
-            query, max_results=max_results * 2, categories="videos"
-        )
+        results = _searxng.search(query, max_results=max_results * 2, categories="videos")
     except SearXNGUnavailable:
         return []
 

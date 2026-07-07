@@ -137,14 +137,17 @@ FRED_OBS_JSON = {
 
 FRED_RELEASES_JSON = {
     "releases": [
-        {"id": 10, "name": "Employment Situation", "press_release": True, "link": "https://www.bls.gov/news.release/empsit.nr0.htm"},
+        {
+            "id": 10,
+            "name": "Employment Situation",
+            "press_release": True,
+            "link": "https://www.bls.gov/news.release/empsit.nr0.htm",
+        },
         {"id": 11, "name": "GDP", "press_release": True, "link": ""},
     ]
 }
 
-FRED_VINTAGES_JSON = {
-    "vintage_dates": ["2024-01-26", "2024-04-25", "2024-07-25", "2024-09-26"]
-}
+FRED_VINTAGES_JSON = {"vintage_dates": ["2024-01-26", "2024-04-25", "2024-07-25", "2024-09-26"]}
 
 FRED_SERIES_JSON = {
     "seriess": [
@@ -244,9 +247,7 @@ def test_fred_revisions_returns_document(mocked_http):
 
 
 def test_fred_compare_series_returns_documents(mocked_http):
-    mocked_http.get("https://api.stlouisfed.org/fred/series").respond(
-        200, json=FRED_SERIES_JSON
-    )
+    mocked_http.get("https://api.stlouisfed.org/fred/series").respond(200, json=FRED_SERIES_JSON)
     docs = fred_compare(["GDPC1"])
     assert len(docs) == 1
     assert docs[0].metadata["series_id"] == "GDPC1"
@@ -270,7 +271,10 @@ BEA_DATASET_JSON = {
     "BEAAPI": {
         "Results": {
             "Dataset": [
-                {"DatasetName": "NIPA", "DatasetDescription": "National Income and Product Accounts"},
+                {
+                    "DatasetName": "NIPA",
+                    "DatasetDescription": "National Income and Product Accounts",
+                },
                 {"DatasetName": "Regional", "DatasetDescription": "Regional Economic Accounts"},
                 {"DatasetName": "GDPbyIndustry", "DatasetDescription": "GDP by Industry"},
             ]
@@ -324,54 +328,42 @@ BEA_INDUSTRY_JSON = {
 
 
 def test_bea_search_returns_documents(mocked_http):
-    mocked_http.get("https://apps.bea.gov/api/data").respond(
-        200, json=BEA_DATASET_JSON
-    )
+    mocked_http.get("https://apps.bea.gov/api/data").respond(200, json=BEA_DATASET_JSON)
     docs = bea_search("national accounts")
     assert len(docs) >= 1
     assert isinstance(docs[0], Document)
 
 
 def test_bea_search_filters_by_query(mocked_http):
-    mocked_http.get("https://apps.bea.gov/api/data").respond(
-        200, json=BEA_DATASET_JSON
-    )
+    mocked_http.get("https://apps.bea.gov/api/data").respond(200, json=BEA_DATASET_JSON)
     docs = bea_search("GDP industry")
     names = [d.metadata["dataset_name"] for d in docs]
     assert "GDPbyIndustry" in names or "NIPA" in names
 
 
 def test_bea_search_metadata_grade(mocked_http):
-    mocked_http.get("https://apps.bea.gov/api/data").respond(
-        200, json=BEA_DATASET_JSON
-    )
+    mocked_http.get("https://apps.bea.gov/api/data").respond(200, json=BEA_DATASET_JSON)
     docs = bea_search("national")
     assert docs[0].metadata["source"] == "bea"
     assert docs[0].metadata["grade"] == "A"
 
 
 def test_bea_fetch_table_returns_documents(mocked_http):
-    mocked_http.get("https://apps.bea.gov/api/data").respond(
-        200, json=BEA_NIPA_DATA_JSON
-    )
+    mocked_http.get("https://apps.bea.gov/api/data").respond(200, json=BEA_NIPA_DATA_JSON)
     docs = bea_fetch_table("T10101")
     assert len(docs) >= 1
     assert "Gross domestic product" in docs[0].metadata["line_description"]
 
 
 def test_bea_list_nipa_tables(mocked_http):
-    mocked_http.get("https://apps.bea.gov/api/data").respond(
-        200, json=BEA_PARAM_JSON
-    )
+    mocked_http.get("https://apps.bea.gov/api/data").respond(200, json=BEA_PARAM_JSON)
     docs = bea_nipa_tables()
     assert len(docs) >= 1
     assert docs[0].metadata["table_name"] == "T10101"
 
 
 def test_bea_get_industry_account(mocked_http):
-    mocked_http.get("https://apps.bea.gov/api/data").respond(
-        200, json=BEA_INDUSTRY_JSON
-    )
+    mocked_http.get("https://apps.bea.gov/api/data").respond(200, json=BEA_INDUSTRY_JSON)
     docs = bea_industry("ALL")
     assert len(docs) >= 1
     assert "Manufacturing" in docs[0].text
@@ -384,9 +376,7 @@ def test_bea_raises_on_http_error(mocked_http):
 
 
 def test_bea_uses_injected_client(mocked_http):
-    mocked_http.get("https://apps.bea.gov/api/data").respond(
-        200, json=BEA_DATASET_JSON
-    )
+    mocked_http.get("https://apps.bea.gov/api/data").respond(200, json=BEA_DATASET_JSON)
     with httpx.Client() as client:
         docs = bea_search("gdp", client=client)
         assert isinstance(docs, list)
@@ -468,9 +458,7 @@ def test_bls_fetch_empty_data(mocked_http):
 
 
 def test_bls_list_releases(mocked_http):
-    mocked_http.get("https://api.bls.gov/publicAPI/v2/surveys").respond(
-        200, json=BLS_SURVEYS_JSON
-    )
+    mocked_http.get("https://api.bls.gov/publicAPI/v2/surveys").respond(200, json=BLS_SURVEYS_JSON)
     docs = bls_releases()
     assert len(docs) == 2
     assert docs[0].metadata["survey_abbreviation"] == "CES"
@@ -563,27 +551,21 @@ WB_COUNTRY_JSON = [
 
 
 def test_wb_search_returns_documents(mocked_http):
-    mocked_http.get("https://api.worldbank.org/v2/indicator").respond(
-        200, json=WB_INDICATOR_JSON
-    )
+    mocked_http.get("https://api.worldbank.org/v2/indicator").respond(200, json=WB_INDICATOR_JSON)
     docs = wb_search("GDP")
     assert len(docs) >= 1
     assert isinstance(docs[0], Document)
 
 
 def test_wb_search_extracts_indicator_id(mocked_http):
-    mocked_http.get("https://api.worldbank.org/v2/indicator").respond(
-        200, json=WB_INDICATOR_JSON
-    )
+    mocked_http.get("https://api.worldbank.org/v2/indicator").respond(200, json=WB_INDICATOR_JSON)
     docs = wb_search("GDP")
     ids = [d.metadata["indicator_id"] for d in docs]
     assert "NY.GDP.MKTP.CD" in ids
 
 
 def test_wb_search_metadata_grade(mocked_http):
-    mocked_http.get("https://api.worldbank.org/v2/indicator").respond(
-        200, json=WB_INDICATOR_JSON
-    )
+    mocked_http.get("https://api.worldbank.org/v2/indicator").respond(200, json=WB_INDICATOR_JSON)
     doc = wb_search("GDP")[0]
     assert doc.metadata["source"] == "world_bank"
     assert doc.metadata["grade"] == "A"
@@ -597,9 +579,9 @@ def test_wb_search_empty(mocked_http):
 
 
 def test_wb_fetch_indicator_returns_document(mocked_http):
-    mocked_http.get(
-        "https://api.worldbank.org/v2/country/USA/indicator/NY.GDP.MKTP.CD"
-    ).respond(200, json=WB_DATA_JSON)
+    mocked_http.get("https://api.worldbank.org/v2/country/USA/indicator/NY.GDP.MKTP.CD").respond(
+        200, json=WB_DATA_JSON
+    )
     docs = wb_fetch("NY.GDP.MKTP.CD", "USA")
     assert len(docs) == 1
     assert docs[0].metadata["country_code"] == "USA"
@@ -607,9 +589,7 @@ def test_wb_fetch_indicator_returns_document(mocked_http):
 
 
 def test_wb_fetch_empty_data(mocked_http):
-    mocked_http.get(
-        "https://api.worldbank.org/v2/country/USA/indicator/NY.GDP.MKTP.CD"
-    ).respond(
+    mocked_http.get("https://api.worldbank.org/v2/country/USA/indicator/NY.GDP.MKTP.CD").respond(
         200, json=[{"page": 1, "pages": 1, "per_page": 50, "total": 0}, []]
     )
     assert wb_fetch("NY.GDP.MKTP.CD", "USA") == []
@@ -624,9 +604,7 @@ def test_wb_list_topic_returns_documents(mocked_http):
 
 
 def test_wb_country_metadata(mocked_http):
-    mocked_http.get("https://api.worldbank.org/v2/country/USA").respond(
-        200, json=WB_COUNTRY_JSON
-    )
+    mocked_http.get("https://api.worldbank.org/v2/country/USA").respond(200, json=WB_COUNTRY_JSON)
     docs = wb_country_meta("USA")
     assert len(docs) == 1
     assert docs[0].metadata["country_code"] == "USA"
@@ -640,9 +618,7 @@ def test_wb_raises_on_http_error(mocked_http):
 
 
 def test_wb_uses_injected_client(mocked_http):
-    mocked_http.get("https://api.worldbank.org/v2/indicator").respond(
-        200, json=WB_INDICATOR_JSON
-    )
+    mocked_http.get("https://api.worldbank.org/v2/indicator").respond(200, json=WB_INDICATOR_JSON)
     with httpx.Client() as client:
         docs = wb_search("gdp", client=client)
         assert isinstance(docs, list)
@@ -721,9 +697,9 @@ def test_oecd_search_catalog_empty_query():
 
 def test_oecd_fetch_dataset(mocked_http):
     dataset_id = "OECD.SDD.NAD,DSD_NAMAIN1@DF_TABLE1_EXPENDITURE,1.0"
-    mocked_http.get(
-        f"https://sdmx.oecd.org/public/rest/data/{dataset_id}/all"
-    ).respond(200, json=OECD_SDMX_JSON)
+    mocked_http.get(f"https://sdmx.oecd.org/public/rest/data/{dataset_id}/all").respond(
+        200, json=OECD_SDMX_JSON
+    )
     docs = oecd_fetch(dataset_id)
     assert len(docs) >= 1
     assert docs[0].metadata["source"] == "oecd"
@@ -762,9 +738,9 @@ def test_oecd_fetch_multidim_observation_keys(mocked_http):
             },
         }
     }
-    mocked_http.get(
-        f"https://sdmx.oecd.org/public/rest/data/{dataset_id}/all"
-    ).respond(200, json=multidim_json)
+    mocked_http.get(f"https://sdmx.oecd.org/public/rest/data/{dataset_id}/all").respond(
+        200, json=multidim_json
+    )
     docs = oecd_fetch(dataset_id)
     assert len(docs) >= 1
     # The first numeric component indexes the time dimension labels.
@@ -774,18 +750,16 @@ def test_oecd_fetch_multidim_observation_keys(mocked_http):
 
 def test_oecd_fetch_raises_on_http_error(mocked_http):
     dataset_id = "OECD.SDD.NAD,DSD_NAMAIN1@DF_TABLE1_EXPENDITURE,1.0"
-    mocked_http.get(
-        f"https://sdmx.oecd.org/public/rest/data/{dataset_id}/all"
-    ).respond(404)
+    mocked_http.get(f"https://sdmx.oecd.org/public/rest/data/{dataset_id}/all").respond(404)
     with pytest.raises(httpx.HTTPStatusError):
         oecd_fetch(dataset_id)
 
 
 def test_oecd_compare_countries(mocked_http):
     dataset_id = "OECD.SDD.NAD,DSD_NAMAIN1@DF_TABLE1_EXPENDITURE,1.0"
-    mocked_http.get(
-        f"https://sdmx.oecd.org/public/rest/data/{dataset_id}/USA+DEU.."
-    ).respond(200, json=OECD_SDMX_JSON)
+    mocked_http.get(f"https://sdmx.oecd.org/public/rest/data/{dataset_id}/USA+DEU..").respond(
+        200, json=OECD_SDMX_JSON
+    )
     docs = oecd_compare(dataset_id, ["USA", "DEU"])
     assert isinstance(docs, list)
 
@@ -799,9 +773,9 @@ def test_oecd_list_recent_releases():
 
 def test_oecd_fetch_uses_injected_client(mocked_http):
     dataset_id = "OECD.SDD.NAD,DSD_NAMAIN1@DF_TABLE1_EXPENDITURE,1.0"
-    mocked_http.get(
-        f"https://sdmx.oecd.org/public/rest/data/{dataset_id}/all"
-    ).respond(200, json=OECD_SDMX_JSON)
+    mocked_http.get(f"https://sdmx.oecd.org/public/rest/data/{dataset_id}/all").respond(
+        200, json=OECD_SDMX_JSON
+    )
     with httpx.Client() as client:
         docs = oecd_fetch(dataset_id, client=client)
         assert isinstance(docs, list)
@@ -844,45 +818,35 @@ CENSUS_DEC_JSON = [
 
 
 def test_census_search_returns_documents(mocked_http):
-    mocked_http.get("https://api.census.gov/data.json").respond(
-        200, json=CENSUS_DATASETS_JSON
-    )
+    mocked_http.get("https://api.census.gov/data.json").respond(200, json=CENSUS_DATASETS_JSON)
     docs = census_search("American Community Survey")
     assert len(docs) >= 1
     assert isinstance(docs[0], Document)
 
 
 def test_census_search_filters_by_query(mocked_http):
-    mocked_http.get("https://api.census.gov/data.json").respond(
-        200, json=CENSUS_DATASETS_JSON
-    )
+    mocked_http.get("https://api.census.gov/data.json").respond(200, json=CENSUS_DATASETS_JSON)
     docs = census_search("decennial 2020")
     titles = [d.metadata["title"] for d in docs]
     assert any("Decennial" in t or "decennial" in t.lower() for t in titles)
 
 
 def test_census_search_metadata_grade(mocked_http):
-    mocked_http.get("https://api.census.gov/data.json").respond(
-        200, json=CENSUS_DATASETS_JSON
-    )
+    mocked_http.get("https://api.census.gov/data.json").respond(200, json=CENSUS_DATASETS_JSON)
     docs = census_search("census")
     assert docs[0].metadata["source"] == "census"
     assert docs[0].metadata["grade"] == "A"
 
 
 def test_census_fetch_acs_returns_documents(mocked_http):
-    mocked_http.get("https://api.census.gov/data/2022/acs/acs5").respond(
-        200, json=CENSUS_ACS_JSON
-    )
+    mocked_http.get("https://api.census.gov/data/2022/acs/acs5").respond(200, json=CENSUS_ACS_JSON)
     docs = census_acs(["B01003_001E", "B19013_001E"], year=2022, geography="state")
     assert len(docs) == 2
     assert any("California" in d.metadata["geo_label"] for d in docs)
 
 
 def test_census_fetch_acs_metadata(mocked_http):
-    mocked_http.get("https://api.census.gov/data/2022/acs/acs5").respond(
-        200, json=CENSUS_ACS_JSON
-    )
+    mocked_http.get("https://api.census.gov/data/2022/acs/acs5").respond(200, json=CENSUS_ACS_JSON)
     docs = census_acs(["B01003_001E"], year=2022, geography="state")
     doc = docs[0]
     assert doc.metadata["source"] == "census"
@@ -891,9 +855,7 @@ def test_census_fetch_acs_metadata(mocked_http):
 
 
 def test_census_fetch_decennial(mocked_http):
-    mocked_http.get("https://api.census.gov/data/2020/dec/dhc").respond(
-        200, json=CENSUS_DEC_JSON
-    )
+    mocked_http.get("https://api.census.gov/data/2020/dec/dhc").respond(200, json=CENSUS_DEC_JSON)
     docs = census_dec(["P1_001N"], year=2020, geography="state")
     assert len(docs) == 1
     assert "Texas" in docs[0].metadata["geo_label"]
@@ -930,9 +892,7 @@ def test_census_acs_raises_on_http_error(mocked_http):
 
 
 def test_census_uses_injected_client(mocked_http):
-    mocked_http.get("https://api.census.gov/data.json").respond(
-        200, json=CENSUS_DATASETS_JSON
-    )
+    mocked_http.get("https://api.census.gov/data.json").respond(200, json=CENSUS_DATASETS_JSON)
     with httpx.Client() as client:
         docs = census_search("acs", client=client)
         assert isinstance(docs, list)

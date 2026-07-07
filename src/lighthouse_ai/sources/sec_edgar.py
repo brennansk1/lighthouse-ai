@@ -66,9 +66,7 @@ def _parse(data: dict) -> list[Document]:
         if accession:
             acc_nodash = accession.replace("-", "")
             cik = str(src.get("cik") or "").zfill(10)
-            url = (
-                f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nodash}/"
-            )
+            url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nodash}/"
         else:
             url = ""
         # Snippet text from full-text search results.
@@ -76,20 +74,22 @@ def _parse(data: dict) -> list[Document]:
         snippet_parts = highlights.get("file_text", []) or []
         snippet = " … ".join(snippet_parts)
         text = f"{title}. {snippet}" if snippet else title
-        out.append(Document(
-            id=f"sec:{accession}" if accession else f"sec:{title[:40]}",
-            text=text,
-            metadata={
-                "source": "sec_edgar",
-                "url": url,
-                "grade": "B",
-                "published_date": file_date,
-                "title": title,
-                "form_type": form_type,
-                "entity_name": entity_name,
-                "display_names": display_names,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"sec:{accession}" if accession else f"sec:{title[:40]}",
+                text=text,
+                metadata={
+                    "source": "sec_edgar",
+                    "url": url,
+                    "grade": "B",
+                    "published_date": file_date,
+                    "title": title,
+                    "form_type": form_type,
+                    "entity_name": entity_name,
+                    "display_names": display_names,
+                },
+            )
+        )
     return out
 
 
@@ -117,11 +117,16 @@ def search_sec_edgar(
             _API,
             allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
-            params={"q": query, "dateRange": "custom", "_source": "true",
-                    "from": 0, "hits.hits.total.value": max_results,
-                    "hits.hits._source": "true",
-                    "hits.hits.highlight": "true",
-                    "category": "form-type"},
+            params={
+                "q": query,
+                "dateRange": "custom",
+                "_source": "true",
+                "from": 0,
+                "hits.hits.total.value": max_results,
+                "hits.hits._source": "true",
+                "hits.hits.highlight": "true",
+                "category": "form-type",
+            },
             client=client,
         )
         r.raise_for_status()

@@ -5,6 +5,7 @@ Pause API, and confirms clean shutdown. Daemon threads die with the script.
 
 Run: uv run python scripts/supervisor_smoke.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -44,7 +45,7 @@ def main() -> int:
             dead = [t.name for t in loops if not t.is_alive()]
             findings.append(f"loop(s) died: {dead}")
         if i % 3 == 0:
-            print(f"  t={i*3:2d}s  loops_alive={alive}/5  RAM_free={free:.1f}GB")
+            print(f"  t={i * 3:2d}s  loops_alive={alive}/5  RAM_free={free:.1f}GB")
         time.sleep(3)
 
     # Health endpoint responds while loops run.
@@ -78,8 +79,10 @@ def main() -> int:
 
     print("\n=== SUMMARY ===")
     if not findings:
-        print("SUPERVISOR SMOKE OK — 5 loops booted + ticked + survived; pause "
-              "works; clean shutdown; no RSS blowup.")
+        print(
+            "SUPERVISOR SMOKE OK — 5 loops booted + ticked + survived; pause "
+            "works; clean shutdown; no RSS blowup."
+        )
         return 0
     for f in findings:
         print("  -", f)

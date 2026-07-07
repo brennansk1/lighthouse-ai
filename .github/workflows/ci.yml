@@ -65,3 +65,32 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
+
+  release-desktop:
+    name: Build macOS Desktop App
+    needs: [test]
+    runs-on: macos-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Sync dependencies
+        run: uv sync
+
+      - name: Build macOS App
+        run: |
+          uv run pyinstaller --noconfirm --windowed --name "Lighthouse" \
+            --add-data "src/lighthouse_ai/web/static:lighthouse_ai/web/static" \
+            scripts/desktop.py
+          tar -czf Lighthouse-macOS-arm64.tar.gz -C dist Lighthouse.app
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: Lighthouse-macOS-arm64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -124,12 +124,7 @@ def _fetch_extract(ctx: SkillContext, title: str, encoded: str) -> Document | No
 
 def _url_encode(text: str) -> str:
     """Percent-encode a title for a URL path segment (stdlib only)."""
-    safe = (
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789"
-        "-_.~:@!$&'()*+,;="
-    )
+    safe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~:@!$&'()*+,;="
     encoded = []
     for ch in text.encode("utf-8"):
         c = chr(ch)

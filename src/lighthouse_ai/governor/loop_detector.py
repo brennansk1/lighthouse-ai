@@ -132,9 +132,7 @@ class LoopDetector:
         self._node_calls: dict[tuple[str, str], int] = defaultdict(int)
         self._seen_hashes: dict[str, set[str]] = defaultdict(set)
         # job_id -> ordered {query_hash: embedding}; OrderedDict gives us LRU.
-        self._embeddings: dict[str, OrderedDict[str, list[float]]] = defaultdict(
-            OrderedDict
-        )
+        self._embeddings: dict[str, OrderedDict[str, list[float]]] = defaultdict(OrderedDict)
 
     @property
     def config(self) -> LoopConfig:
@@ -212,15 +210,10 @@ class LoopDetector:
             return LoopDecision(
                 allowed=False,
                 layer="recursion_depth",
-                reason=(
-                    f"recursion depth {depth} exceeds ceiling "
-                    f"{self._config.recursion_depth}"
-                ),
+                reason=(f"recursion depth {depth} exceeds ceiling {self._config.recursion_depth}"),
                 detail={"depth": float(depth)},
             )
-        return LoopDecision(
-            allowed=True, layer="recursion_depth", detail={"depth": float(depth)}
-        )
+        return LoopDecision(allowed=True, layer="recursion_depth", detail={"depth": float(depth)})
 
     # --- exact-query repeat (§24.6 row 3) ---
 
@@ -277,10 +270,7 @@ class LoopDetector:
                 return LoopDecision(
                     allowed=False,
                     layer="semantic_query_repeat",
-                    reason=(
-                        f"query cosine-similar to a prior query "
-                        f"(cos {sim:.4f} > {threshold})"
-                    ),
+                    reason=(f"query cosine-similar to a prior query (cos {sim:.4f} > {threshold})"),
                     detail={"max_similarity": sim},
                 )
 

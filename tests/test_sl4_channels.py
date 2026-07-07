@@ -84,17 +84,21 @@ ATOM_XML = b"""\
 """
 
 # CDX JSON: first row is the header.
-CDX_JSON = json.dumps([
-    ["timestamp", "original", "statuscode", "mimetype"],
-    ["20221201120000", "https://example.com/page", "200", "text/html"],
-    ["20221115080000", "https://example.com/page", "200", "text/html"],
-]).encode()
+CDX_JSON = json.dumps(
+    [
+        ["timestamp", "original", "statuscode", "mimetype"],
+        ["20221201120000", "https://example.com/page", "200", "text/html"],
+        ["20221115080000", "https://example.com/page", "200", "text/html"],
+    ]
+).encode()
 
 CDX_EMPTY = json.dumps([]).encode()
-CDX_SINGLE = json.dumps([
-    ["timestamp", "original", "statuscode", "mimetype"],
-    ["20221201120000", "https://example.com/page", "200", "text/html"],
-]).encode()
+CDX_SINGLE = json.dumps(
+    [
+        ["timestamp", "original", "statuscode", "mimetype"],
+        ["20221201120000", "https://example.com/page", "200", "text/html"],
+    ]
+).encode()
 
 SNAPSHOT_HTML = b"<html><body>Preserved content</body></html>"
 
@@ -102,6 +106,7 @@ SNAPSHOT_HTML = b"<html><body>Preserved content</body></html>"
 # ---------------------------------------------------------------------------
 # Helper: build a fake ctx.fetch that returns canned responses
 # ---------------------------------------------------------------------------
+
 
 def _fake_response(content: bytes, status: int = 200) -> httpx.Response:
     return httpx.Response(status, content=content)
@@ -142,6 +147,7 @@ def _make_ctx(skill_id: str, broker, responses: dict[str, bytes]):
 # RSS — manifest
 # ---------------------------------------------------------------------------
 
+
 def test_rss_manifest_loads():
     skill = load_skill("rss")
     m = skill.manifest
@@ -166,6 +172,7 @@ def test_rss_watchable_entrypoint_present():
 # RSS — import guard
 # ---------------------------------------------------------------------------
 
+
 def test_rss_import_guard_passes():
     skill = load_skill("rss")
     assert skill.manifest.id == "rss"
@@ -175,12 +182,14 @@ def test_rss_import_guard_passes():
 # RSS — run()
 # ---------------------------------------------------------------------------
 
+
 def test_rss_run_returns_documents(tmp_path):
     """run() fetches the feed URL found in the question and returns Documents."""
     broker = build_default_broker(tmp_path)
     ctx = _make_ctx("rss", broker, {"https://example.com/feed": RSS_XML})
 
     from lighthouse_ai.skills.library.rss.skill import run
+
     docs = run(ctx, "Latest news from https://example.com/feed", max_results=5)
     assert len(docs) > 0
     for doc in docs:
@@ -194,6 +203,7 @@ def test_rss_run_no_url_returns_empty(tmp_path):
     ctx = _make_ctx("rss", broker, {})
 
     from lighthouse_ai.skills.library.rss.skill import run
+
     docs = run(ctx, "What is the best RSS reader?", max_results=5)
     assert docs == []
 
@@ -203,6 +213,7 @@ def test_rss_run_max_results_respected(tmp_path):
     ctx = _make_ctx("rss", broker, {"https://example.com/feed": RSS_XML})
 
     from lighthouse_ai.skills.library.rss.skill import run
+
     docs = run(ctx, "https://example.com/feed", max_results=2)
     assert len(docs) <= 2
 
@@ -213,6 +224,7 @@ def test_rss_run_atom_feed(tmp_path):
     ctx = _make_ctx("rss", broker, {"https://atom.example.com/feed": ATOM_XML})
 
     from lighthouse_ai.skills.library.rss.skill import run
+
     docs = run(ctx, "https://atom.example.com/feed", max_results=5)
     assert len(docs) >= 1
     titles = [d.metadata.get("title", "") for d in docs]
@@ -223,12 +235,14 @@ def test_rss_run_atom_feed(tmp_path):
 # RSS — run_watchable()
 # ---------------------------------------------------------------------------
 
+
 def test_rss_run_watchable_since_none_returns_all(tmp_path):
     """With since=None all timestamped items should be returned."""
     broker = build_default_broker(tmp_path)
     ctx = _make_ctx("rss", broker, {"https://example.com/feed": RSS_XML})
 
     from lighthouse_ai.skills.library.rss.skill import run_watchable
+
     docs = run_watchable(ctx, "https://example.com/feed", since=None, max_results=10)
     # All 3 items have timestamps so all should come back.
     assert len(docs) == 3
@@ -240,6 +254,7 @@ def test_rss_run_watchable_filters_by_since(tmp_path):
     ctx = _make_ctx("rss", broker, {"https://example.com/feed": RSS_XML})
 
     from lighthouse_ai.skills.library.rss.skill import run_watchable
+
     # since = May 28 noon — should include May 29 only, not May 28 or older.
     since = datetime(2026, 5, 28, 12, 0, 0)
     docs = run_watchable(ctx, "https://example.com/feed", since=since, max_results=10)
@@ -252,6 +267,7 @@ def test_rss_run_watchable_tagged_documents(tmp_path):
     ctx = _make_ctx("rss", broker, {"https://example.com/feed": RSS_XML})
 
     from lighthouse_ai.skills.library.rss.skill import run_watchable
+
     docs = run_watchable(ctx, "https://example.com/feed", since=None, max_results=10)
     for doc in docs:
         assert doc.metadata.get("skill_id") == "rss"
@@ -263,6 +279,7 @@ def test_rss_run_watchable_no_url_returns_empty(tmp_path):
     ctx = _make_ctx("rss", broker, {})
 
     from lighthouse_ai.skills.library.rss.skill import run_watchable
+
     docs = run_watchable(ctx, "watch for news about climate", since=None, max_results=5)
     assert docs == []
 
@@ -270,6 +287,7 @@ def test_rss_run_watchable_no_url_returns_empty(tmp_path):
 # ---------------------------------------------------------------------------
 # RSS — via run_skill runner
 # ---------------------------------------------------------------------------
+
 
 def test_rss_run_skill_via_runner(tmp_path):
     """run_skill() runner integration: result.ok and documents are tagged.
@@ -295,6 +313,7 @@ def test_rss_run_skill_via_runner(tmp_path):
 # Wayback — manifest
 # ---------------------------------------------------------------------------
 
+
 def test_wayback_manifest_loads():
     skill = load_skill("wayback")
     m = skill.manifest
@@ -315,6 +334,7 @@ def test_wayback_manifest_loads():
 # Wayback — import guard
 # ---------------------------------------------------------------------------
 
+
 def test_wayback_import_guard_passes():
     skill = load_skill("wayback")
     assert skill.manifest.id == "wayback"
@@ -324,8 +344,10 @@ def test_wayback_import_guard_passes():
 # Wayback — CDX parsing (pure Python, no network)
 # ---------------------------------------------------------------------------
 
+
 def test_parse_cdx_response_normal():
     from lighthouse_ai.skills.library.wayback.tools.cdx import parse_cdx_response
+
     records = parse_cdx_response(CDX_JSON)
     assert len(records) == 2
     assert records[0]["timestamp"] == "20221201120000"
@@ -335,17 +357,20 @@ def test_parse_cdx_response_normal():
 
 def test_parse_cdx_response_empty():
     from lighthouse_ai.skills.library.wayback.tools.cdx import parse_cdx_response
+
     assert parse_cdx_response(CDX_EMPTY) == []
 
 
 def test_parse_cdx_response_malformed():
     from lighthouse_ai.skills.library.wayback.tools.cdx import parse_cdx_response
+
     assert parse_cdx_response(b"not json at all {{") == []
     assert parse_cdx_response(b"null") == []
 
 
 def test_parse_cdx_response_single():
     from lighthouse_ai.skills.library.wayback.tools.cdx import parse_cdx_response
+
     records = parse_cdx_response(CDX_SINGLE)
     assert len(records) == 1
     assert records[0]["timestamp"] == "20221201120000"
@@ -354,6 +379,7 @@ def test_parse_cdx_response_single():
 # ---------------------------------------------------------------------------
 # Wayback — lookup_url_at_date
 # ---------------------------------------------------------------------------
+
 
 def test_wayback_lookup_url_at_date_returns_document(tmp_path):
     """lookup_url_at_date should parse a CDX response and return a Document."""
@@ -370,6 +396,7 @@ def test_wayback_lookup_url_at_date_returns_document(tmp_path):
     )
 
     from lighthouse_ai.skills.library.wayback.tools.lookup_url_at_date import lookup_url_at_date
+
     doc = lookup_url_at_date(ctx, "https://example.com/page", "20221201", fetch_content=False)
     assert doc is not None
     assert doc.metadata.get("source") == "wayback"
@@ -392,14 +419,17 @@ def test_wayback_lookup_url_at_date_no_cdx_returns_none(tmp_path):
     )
 
     from lighthouse_ai.skills.library.wayback.tools.lookup_url_at_date import lookup_url_at_date
-    doc = lookup_url_at_date(ctx, "https://uncrawled.example.com/page", "20221201",
-                             fetch_content=False)
+
+    doc = lookup_url_at_date(
+        ctx, "https://uncrawled.example.com/page", "20221201", fetch_content=False
+    )
     assert doc is None
 
 
 # ---------------------------------------------------------------------------
 # Wayback — list_snapshots
 # ---------------------------------------------------------------------------
+
 
 def test_wayback_list_snapshots_returns_records(tmp_path):
     broker = build_default_broker(tmp_path)
@@ -410,6 +440,7 @@ def test_wayback_list_snapshots_returns_records(tmp_path):
     )
 
     from lighthouse_ai.skills.library.wayback.tools.list_snapshots import list_snapshots
+
     records = list_snapshots(ctx, "https://example.com/page", limit=20)
     assert len(records) == 2
     assert records[0]["timestamp"] == "20221201120000"
@@ -424,6 +455,7 @@ def test_wayback_list_snapshots_empty_cdx(tmp_path):
     )
 
     from lighthouse_ai.skills.library.wayback.tools.list_snapshots import list_snapshots
+
     records = list_snapshots(ctx, "https://uncrawled.example.com/page")
     assert records == []
 
@@ -431,6 +463,7 @@ def test_wayback_list_snapshots_empty_cdx(tmp_path):
 # ---------------------------------------------------------------------------
 # Wayback — run() via skill entrypoint
 # ---------------------------------------------------------------------------
+
 
 def test_wayback_run_extracts_url_from_question(tmp_path):
     """run() should extract the URL from the question and return Documents."""
@@ -445,6 +478,7 @@ def test_wayback_run_extracts_url_from_question(tmp_path):
     )
 
     from lighthouse_ai.skills.library.wayback.skill import run
+
     docs = run(
         ctx,
         "What did https://example.com/page say on 2022-12-01?",
@@ -460,6 +494,7 @@ def test_wayback_run_no_url_returns_empty(tmp_path):
     ctx = _make_ctx("wayback", broker, {})
 
     from lighthouse_ai.skills.library.wayback.skill import run
+
     docs = run(ctx, "What is the history of the Internet?", max_results=3)
     assert docs == []
 
@@ -470,6 +505,7 @@ def test_wayback_run_skips_archive_org_urls(tmp_path):
     ctx = _make_ctx("wayback", broker, {})
 
     from lighthouse_ai.skills.library.wayback.skill import run
+
     docs = run(
         ctx,
         "See https://web.archive.org/web/20220101/https://example.com",
@@ -482,6 +518,7 @@ def test_wayback_run_skips_archive_org_urls(tmp_path):
 # ---------------------------------------------------------------------------
 # RSS parse_feed_bytes (pure Python, no network)
 # ---------------------------------------------------------------------------
+
 
 def test_parse_feed_bytes_rss():
     items = parse_feed_bytes(RSS_XML)
@@ -507,8 +544,10 @@ def test_parse_feed_bytes_malformed():
 # Wayback — snapshot_url helper (no network)
 # ---------------------------------------------------------------------------
 
+
 def test_snapshot_url_raw():
     from lighthouse_ai.skills.library.wayback.tools.cdx import snapshot_url
+
     url = snapshot_url("20221201120000", "https://example.com/page", raw=True)
     assert "id_" in url
     assert "20221201120000" in url
@@ -517,6 +556,7 @@ def test_snapshot_url_raw():
 
 def test_snapshot_url_replay():
     from lighthouse_ai.skills.library.wayback.tools.cdx import snapshot_url
+
     url = snapshot_url("20221201120000", "https://example.com/page", raw=False)
     assert "id_" not in url
     assert "20221201120000" in url
@@ -525,6 +565,7 @@ def test_snapshot_url_replay():
 # ---------------------------------------------------------------------------
 # Live-network gate
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.skipif(
     not os.getenv("LIGHTHOUSE_REAL_BACKEND"),

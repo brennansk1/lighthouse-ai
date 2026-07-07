@@ -43,9 +43,7 @@ def search_images(
         List of Documents with image metadata (URLs, titles, alt-text).
     """
     try:
-        results = _searxng.search(
-            query, max_results=max_results * 2, categories="images"
-        )
+        results = _searxng.search(query, max_results=max_results * 2, categories="images")
     except SearXNGUnavailable:
         return []
 

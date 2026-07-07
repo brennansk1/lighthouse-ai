@@ -502,7 +502,9 @@ class PolitenessGate:
                         if wait > 0.0:
                             logger.debug(
                                 "PolitenessGate: crawl-delay %.1fs for %s (sleeping %.3fs)",
-                                delay, host, wait,
+                                delay,
+                                host,
+                                wait,
                             )
                             self._sleeper(wait)
                     self._last_fetch[host] = time.monotonic()

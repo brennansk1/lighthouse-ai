@@ -45,13 +45,8 @@ def _ollama_reachable() -> bool:
         return False
 
 
-_REAL_BACKEND_OK = (
-    os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1"
-    and _ollama_reachable()
-)
-_SKIP_REASON = (
-    "set LIGHTHOUSE_REAL_BACKEND=1 and have ollama running on 127.0.0.1:11434"
-)
+_REAL_BACKEND_OK = os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1" and _ollama_reachable()
+_SKIP_REASON = "set LIGHTHOUSE_REAL_BACKEND=1 and have ollama running on 127.0.0.1:11434"
 
 _FLAG_EMBEDDING_AVAILABLE = importlib.util.find_spec("FlagEmbedding") is not None
 
@@ -62,10 +57,10 @@ pytestmark = pytest.mark.skipif(not _REAL_BACKEND_OK, reason=_SKIP_REASON)
 # ---------------------------------------------------------------------------
 
 # Ranking-quality bars (the metrics that are meaningful at 1-relevant-doc/query).
-_RECALL_AT_5_BASE = 0.83        # ≥5/6 queries surface their one relevant doc
-_MRR_BASE = 0.75                # relevant doc near rank 1 with real bge-m3
+_RECALL_AT_5_BASE = 0.83  # ≥5/6 queries surface their one relevant doc
+_MRR_BASE = 0.75  # relevant doc near rank 1 with real bge-m3
 _RECALL_AT_5_RERANKER = 0.83
-_MRR_RERANKER = 0.90            # reranker should push the relevant doc to rank 1
+_MRR_RERANKER = 0.90  # reranker should push the relevant doc to rank 1
 # precision@5 is reported but NOT gated: its ceiling on this golden set is 0.20
 # (one relevant doc per query). See the module docstring.
 _PRECISION_AT_5_CEILING = 0.20
@@ -106,9 +101,7 @@ def _build_real_embedder():
 def test_retrieval_precision_bge_m3() -> None:
     """Golden-set precision@5 ≥ 0.40 with real bge-m3 embeddings."""
     if not _bge_m3_pulled():
-        pytest.skip(
-            "bge-m3 not pulled in Ollama — run: ollama pull bge-m3"
-        )
+        pytest.skip("bge-m3 not pulled in Ollama — run: ollama pull bge-m3")
 
     from lighthouse_ai.eval.golden import build_golden_set, build_index, evaluate
     from lighthouse_ai.rag.rerank import ScoreReranker
@@ -221,9 +214,7 @@ def test_skill_recommender_recall_at_k() -> None:
     macro = result["macro_recall"]
     n = result["n_cases"]
 
-    print(
-        f"\n[skill-recommender] macro_recall@5={macro:.3f}  n_cases={n}"
-    )
+    print(f"\n[skill-recommender] macro_recall@5={macro:.3f}  n_cases={n}")
     if result["note"]:
         print(f"  note: {result['note']}")
 

@@ -47,8 +47,7 @@ def test_escape_md_coerces_none_and_numbers():
 
 
 def test_render_matrix_has_winner_margin_crux():
-    body = {"winner": "Option A", "margin": 0.42,
-            "crux": "Cost dominates", "runner_up": "Option B"}
+    body = {"winner": "Option A", "margin": 0.42, "crux": "Cost dominates", "runner_up": "Option B"}
     msg = render_artifact("matrix", "Pick a DB", body)
     assert "Winner" in msg and "Option A" in msg
     assert "0\\.42" in msg  # margin (the '.' is MarkdownV2-escaped)
@@ -77,8 +76,12 @@ def test_render_verdict_has_verdict_and_crux():
 
 
 def test_render_verdict_prefers_explicit_crux():
-    body = {"judge_summary": "summary", "crux": "the real crux",
-            "disputes": ["a dispute"], "responses": []}
+    body = {
+        "judge_summary": "summary",
+        "crux": "the real crux",
+        "disputes": ["a dispute"],
+        "responses": [],
+    }
     msg = render_artifact("verdict", "Q", body)
     assert "the real crux" in msg
 
@@ -90,10 +93,18 @@ def test_render_report_section_count_coverage_top_finding():
     body = {
         "question": "What is X?",
         "sections": [
-            {"title": "Background", "body": "X is a thing.",
-             "citations": ["c1"], "is_load_bearing": False},
-            {"title": "Core", "body": "The load-bearing finding.",
-             "citations": ["c2", "c3"], "is_load_bearing": True},
+            {
+                "title": "Background",
+                "body": "X is a thing.",
+                "citations": ["c1"],
+                "is_load_bearing": False,
+            },
+            {
+                "title": "Core",
+                "body": "The load-bearing finding.",
+                "citations": ["c2", "c3"],
+                "is_load_bearing": True,
+            },
         ],
     }
     msg = render_artifact("report", "Investigation of X", body)
@@ -104,8 +115,7 @@ def test_render_report_section_count_coverage_top_finding():
 
 
 def test_render_report_uses_explicit_citation_coverage():
-    body = {"sections": [{"title": "S", "body": "b", "citations": []}],
-            "citation_coverage": 0.5}
+    body = {"sections": [{"title": "S", "body": "b", "citations": []}], "citation_coverage": 0.5}
     msg = render_artifact("report", "T", body)
     assert "50%" in msg
 
@@ -123,11 +133,13 @@ def test_render_table_prisma_counts():
 
 
 def test_render_timeline_event_count_and_span():
-    body = {"events": [
-        {"date": "2020-01-01", "action": "start"},
-        {"date": "2022-06-15", "action": "milestone"},
-        {"date": "2021-03-03", "action": "middle"},
-    ]}
+    body = {
+        "events": [
+            {"date": "2020-01-01", "action": "start"},
+            {"date": "2022-06-15", "action": "milestone"},
+            {"date": "2021-03-03", "action": "middle"},
+        ]
+    }
     msg = render_artifact("timeline", "History of X", body)
     assert "Events" in msg and "3" in msg
     assert "2020\\-01\\-01" in msg and "2022\\-06\\-15" in msg  # span endpoints
@@ -195,8 +207,12 @@ def test_notify_disabled_returns_false_and_does_not_send():
     with respx.mock:
         route = respx.post(SEND_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
         sent = notify_artifact_staged(
-            "matrix", "T", {"winner": "A"},
-            bot_token=TOKEN, chat_id=CHAT, enabled=False,
+            "matrix",
+            "T",
+            {"winner": "A"},
+            bot_token=TOKEN,
+            chat_id=CHAT,
+            enabled=False,
         )
         assert sent is False
         assert not route.called  # never even attempted
@@ -206,8 +222,12 @@ def test_notify_missing_token_returns_false():
     with respx.mock:
         route = respx.post(SEND_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
         sent = notify_artifact_staged(
-            "matrix", "T", {"winner": "A"},
-            bot_token="", chat_id=CHAT, enabled=True,
+            "matrix",
+            "T",
+            {"winner": "A"},
+            bot_token="",
+            chat_id=CHAT,
+            enabled=True,
         )
         assert sent is False
         assert not route.called
@@ -215,8 +235,12 @@ def test_notify_missing_token_returns_false():
 
 def test_notify_missing_chat_returns_false():
     sent = notify_artifact_staged(
-        "matrix", "T", {"winner": "A"},
-        bot_token=TOKEN, chat_id="", enabled=True,
+        "matrix",
+        "T",
+        {"winner": "A"},
+        bot_token=TOKEN,
+        chat_id="",
+        enabled=True,
     )
     assert sent is False
 
@@ -234,9 +258,12 @@ def test_notify_enabled_sends_rendered_markdownv2():
 
     respx.post(SEND_URL).mock(side_effect=handler)
     sent = notify_artifact_staged(
-        "matrix", "Pick a DB",
+        "matrix",
+        "Pick a DB",
         {"winner": "Postgres", "margin": 0.3, "crux": "ops cost"},
-        bot_token=TOKEN, chat_id=CHAT, enabled=True,
+        bot_token=TOKEN,
+        chat_id=CHAT,
+        enabled=True,
     )
     assert sent is True
     payload = captured["json"]
@@ -252,8 +279,13 @@ def test_notify_uses_injected_client_no_network():
     respx.post(SEND_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
     client = httpx.Client()
     sent = notify_artifact_staged(
-        "digest", "Watch", {"alerts": [], "digest": []},
-        bot_token=TOKEN, chat_id=CHAT, enabled=True, client=client,
+        "digest",
+        "Watch",
+        {"alerts": [], "digest": []},
+        bot_token=TOKEN,
+        chat_id=CHAT,
+        enabled=True,
+        client=client,
     )
     assert sent is True
     # An injected client belongs to the caller and must remain open.
@@ -265,7 +297,11 @@ def test_notify_uses_injected_client_no_network():
 def test_notify_returns_false_on_delivery_failure():
     respx.post(SEND_URL).mock(return_value=httpx.Response(403, json={"ok": False}))
     sent = notify_artifact_staged(
-        "matrix", "T", {"winner": "A"},
-        bot_token=TOKEN, chat_id=CHAT, enabled=True,
+        "matrix",
+        "T",
+        {"winner": "A"},
+        bot_token=TOKEN,
+        chat_id=CHAT,
+        enabled=True,
     )
     assert sent is False

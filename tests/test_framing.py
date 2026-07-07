@@ -18,21 +18,26 @@ from lighthouse_ai.framing import (
 
 # --- typing ---
 
-@pytest.mark.parametrize("q,expected", [
-    ("Should I go to grad school?", QuestionType.DECISION_SUPPORT),
-    ("Python vs Rust for systems programming", QuestionType.COMPARATIVE),
-    ("Why did the bank collapse?", QuestionType.CAUSAL_EXPLANATION),
-    ("Will AI solve coding by 2030?", QuestionType.PREDICTIVE_FORECAST),
-    ("What's going on with the chip ban?", QuestionType.EXPLORATORY_SURVEY),
-    ("Is the homeopathy claim disputed?", QuestionType.CONTROVERSY_RESOLUTION),
-    ("Is method X good for time series forecasting?", QuestionType.METHODOLOGY_EVALUATION),
-    ("What is the speed of light?", QuestionType.FACTUAL_LOOKUP),
-])
+
+@pytest.mark.parametrize(
+    "q,expected",
+    [
+        ("Should I go to grad school?", QuestionType.DECISION_SUPPORT),
+        ("Python vs Rust for systems programming", QuestionType.COMPARATIVE),
+        ("Why did the bank collapse?", QuestionType.CAUSAL_EXPLANATION),
+        ("Will AI solve coding by 2030?", QuestionType.PREDICTIVE_FORECAST),
+        ("What's going on with the chip ban?", QuestionType.EXPLORATORY_SURVEY),
+        ("Is the homeopathy claim disputed?", QuestionType.CONTROVERSY_RESOLUTION),
+        ("Is method X good for time series forecasting?", QuestionType.METHODOLOGY_EVALUATION),
+        ("What is the speed of light?", QuestionType.FACTUAL_LOOKUP),
+    ],
+)
 def test_classify_question_matches_keyword_rules(q, expected):
     assert classify_question(q) == expected
 
 
 # --- critique ---
+
 
 def test_compound_question_flagged():
     c = critique_question("What is X and why is Y true?")
@@ -57,6 +62,7 @@ def test_under_specified_flagged():
 
 # --- multiplication + selection ---
 
+
 def test_multiply_frames_returns_at_least_three():
     fs = multiply_frames("Should I retrain on Rust?", QuestionType.DECISION_SUPPORT)
     assert len(fs) >= 3
@@ -76,12 +82,14 @@ def test_frame_question_empty_raises():
 
 # --- decomposition ---
 
+
 def test_decompose_includes_evidence_subquestion_for_comparative():
     subs = decompose("X vs Y", QuestionType.COMPARATIVE)
     assert any("evidence" in s.lower() for s in subs)
 
 
 # --- full pipeline ---
+
 
 def test_run_framing_end_to_end():
     fq = run_framing("Should I move from PyTorch to JAX?")
@@ -94,6 +102,7 @@ def test_run_framing_end_to_end():
 
 
 # --- router ---
+
 
 def test_router_short_definition_skips_retrieval():
     r = AdaptiveRouter().classify("Define dropout?")
@@ -142,9 +151,14 @@ def _mock_gw(question_type="factual_lookup", sub_questions=None, framings=None):
     sub_questions = sub_questions or ["What is established?", "What is disputed?"]
     payload = {
         "question_type": question_type,
-        "critique": {"well_formed": True, "is_compound": False,
-                     "has_presupposition": False, "is_underspecified": False,
-                     "implicit_utility": False, "notes": []},
+        "critique": {
+            "well_formed": True,
+            "is_compound": False,
+            "has_presupposition": False,
+            "is_underspecified": False,
+            "implicit_utility": False,
+            "notes": [],
+        },
         "framings": framings,
         "chosen_label": framings[0]["label"],
         "sub_questions": sub_questions,
@@ -155,8 +169,10 @@ def _mock_gw(question_type="factual_lookup", sub_questions=None, framings=None):
 
 
 def test_run_framing_with_gateway_calls_planner():
-    gw = _mock_gw(question_type="comparative",
-                  sub_questions=["What is the evidence?", "On what criteria differ?"])
+    gw = _mock_gw(
+        question_type="comparative",
+        sub_questions=["What is the evidence?", "On what criteria differ?"],
+    )
     fq = run_framing("X vs Y", gateway=gw)
     called_role = gw.complete.call_args[0][0]
     assert called_role == "planner"
@@ -184,17 +200,20 @@ def test_run_framing_strips_markdown_fence():
     """LLMs sometimes wrap JSON in ```json ... ```."""
     payload = {
         "question_type": "causal_explanation",
-        "critique": {"well_formed": True, "is_compound": False,
-                     "has_presupposition": False, "is_underspecified": False,
-                     "implicit_utility": False, "notes": []},
+        "critique": {
+            "well_formed": True,
+            "is_compound": False,
+            "has_presupposition": False,
+            "is_underspecified": False,
+            "implicit_utility": False,
+            "notes": [],
+        },
         "framings": [{"label": "F1", "statement": "Why X?", "rationale": "r"}],
         "chosen_label": "F1",
         "sub_questions": ["What is the proximate cause?", "What are distal causes?"],
     }
     gw = MagicMock()
-    gw.complete.return_value = MagicMock(
-        text=f"```json\n{json.dumps(payload)}\n```"
-    )
+    gw.complete.return_value = MagicMock(text=f"```json\n{json.dumps(payload)}\n```")
     fq = run_framing("Why did X happen?", gateway=gw)
     assert fq.question_type == QuestionType.CAUSAL_EXPLANATION
     assert len(fq.sub_questions) == 2

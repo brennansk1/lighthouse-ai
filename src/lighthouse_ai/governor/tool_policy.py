@@ -83,14 +83,15 @@ def decide(profile: TaskProfile, tool: Tool) -> ToolPolicyDecision:
     """Pure policy check for a single tool under a task profile."""
     if profile.from_content and tool.capability is not ToolCapability.READ_ONLY:
         return ToolPolicyDecision(
-            tool.name, False,
+            tool.name,
+            False,
             "content-derived step may only call read_only tools",
         )
     if _RANK[tool.capability] > _RANK[profile.max_capability]:
         return ToolPolicyDecision(
-            tool.name, False,
-            f"{tool.capability.value} exceeds task ceiling "
-            f"{profile.max_capability.value}",
+            tool.name,
+            False,
+            f"{tool.capability.value} exceeds task ceiling {profile.max_capability.value}",
         )
     return ToolPolicyDecision(tool.name, True, "within policy")
 
@@ -125,9 +126,14 @@ def enforce(
                 from ..verification.audit_chain import append_event
 
                 append_event(
-                    audit_db, actor=profile.name, event_type="tool_policy_refused",
-                    payload={"tool": tool.name, "capability": tool.capability.value,
-                             "reason": decision.reason},
+                    audit_db,
+                    actor=profile.name,
+                    event_type="tool_policy_refused",
+                    payload={
+                        "tool": tool.name,
+                        "capability": tool.capability.value,
+                        "reason": decision.reason,
+                    },
                     secret=secret,
                 )
             except Exception:

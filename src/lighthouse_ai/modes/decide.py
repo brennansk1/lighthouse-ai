@@ -57,8 +57,8 @@ class Criterion:
 class ScoredCell:
     option: str
     criterion: str
-    score: float           # raw rating in [0, 1] of how well option meets criterion
-    contribution: float    # weight-normalised contribution to the option's total
+    score: float  # raw rating in [0, 1] of how well option meets criterion
+    contribution: float  # weight-normalised contribution to the option's total
     rationale: str = ""
     # Additive field (§6 Decide): per-cell uncertainty band derived from
     # evidence disagreement on this (option, criterion) pair. 0.0 means the
@@ -70,8 +70,8 @@ class ScoredCell:
 @dataclass(frozen=True)
 class SensitivityResult:
     criterion: str
-    decisive: bool          # zeroing this criterion flips the winner
-    swing_to: str | None    # who wins if this criterion is removed
+    decisive: bool  # zeroing this criterion flips the winner
+    swing_to: str | None  # who wins if this criterion is removed
     # Additive field: how much the winner's margin changes after removal.
     # Positive = winner's lead grows (criterion was actually helping runner-up);
     # Negative = winner's lead shrinks (criterion was helping the winner).
@@ -97,7 +97,7 @@ class DecideReport:
     claims: list[str] = field(default_factory=list)
     # Additive fields — safe to add; frontend ignores unknown keys.
     decisive_criteria: list[str] = field(default_factory=list)
-    primary_driver: str | None = None   # highest-weighted criterion
+    primary_driver: str | None = None  # highest-weighted criterion
     # Additive fields (§6 Decide — evidence variance):
     # robust_to_weights mirrors the original notion (no single-criterion drop
     # flips the winner). robust_to_evidence is the stronger test: the winner
@@ -125,11 +125,13 @@ def _coerce_criteria(criteria: Sequence[Criterion | dict]) -> list[Criterion]:
         if isinstance(c, Criterion):
             out.append(c)
         else:
-            out.append(Criterion(
-                label=str(c["label"]),
-                weight=float(c.get("weight", 0.0)),
-                higher_is_better=bool(c.get("higher_is_better", True)),
-            ))
+            out.append(
+                Criterion(
+                    label=str(c["label"]),
+                    weight=float(c.get("weight", 0.0)),
+                    higher_is_better=bool(c.get("higher_is_better", True)),
+                )
+            )
     return out
 
 
@@ -144,8 +146,15 @@ def _stub_score(option: str, criterion: str) -> float:
     return (int.from_bytes(h[:4], "big") % 1000) / 999.0
 
 
-def _llm_score(gateway: Gateway, question: str, option: str, criterion: str,
-               *, job_id: str | None, gate: SchedulerGate | None) -> float:
+def _llm_score(
+    gateway: Gateway,
+    question: str,
+    option: str,
+    criterion: str,
+    *,
+    job_id: str | None,
+    gate: SchedulerGate | None,
+) -> float:
     prompt = (
         f"Decision question: {question}\n"
         f"Option: {option}\n"
@@ -153,6 +162,7 @@ def _llm_score(gateway: Gateway, question: str, option: str, criterion: str,
         "On a scale of 0.0 to 1.0, how well does this option satisfy this "
         "criterion? Reply with only the number."
     )
+
     def _parse(text: str) -> float | None:
         for token in text.replace(",", " ").split():
             try:
@@ -163,9 +173,12 @@ def _llm_score(gateway: Gateway, question: str, option: str, criterion: str,
         return None
 
     return complete_structured_or(
-        gateway, prompt, parse=_parse,
+        gateway,
+        prompt,
+        parse=_parse,
         fallback=lambda: _stub_score(option, criterion),
-        gate=gate, job_id=job_id,
+        gate=gate,
+        job_id=job_id,
     )
 
 
@@ -196,13 +209,15 @@ def _compute_totals(
             contribution = (c.weight / weight_sum) * effective
             totals[o.label] += contribution
             var = float(var_fn(o.label, c.label)) if var_fn is not None else 0.0
-            cells.append(ScoredCell(
-                option=o.label,
-                criterion=c.label,
-                score=round(raw, 3),
-                contribution=round(contribution, 4),
-                variance=round(var, 4),
-            ))
+            cells.append(
+                ScoredCell(
+                    option=o.label,
+                    criterion=c.label,
+                    score=round(raw, 3),
+                    contribution=round(contribution, 4),
+                    variance=round(var, 4),
+                )
+            )
     return cells, {k: round(v, 4) for k, v in totals.items()}
 
 
@@ -211,10 +226,7 @@ def _rank(totals: dict[str, float]) -> tuple[str, str | None, float]:
     ranked = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
     winner = ranked[0][0]
     runner_up = ranked[1][0] if len(ranked) > 1 else None
-    margin = (
-        round(ranked[0][1] - ranked[1][1], 4) if len(ranked) > 1
-        else round(ranked[0][1], 4)
-    )
+    margin = round(ranked[0][1] - ranked[1][1], 4) if len(ranked) > 1 else round(ranked[0][1], 4)
     return winner, runner_up, margin
 
 
@@ -233,25 +245,29 @@ def _sensitivity(
         remaining = [x for x in criteria if x.label != c.label]
         if not remaining:
             # Only one criterion; removing it leaves nothing to decide.
-            results.append(SensitivityResult(
-                criterion=c.label,
-                decisive=True,
-                swing_to=None,
-                margin_delta=0.0,
-                evidence_contested=c.label in contested,
-            ))
+            results.append(
+                SensitivityResult(
+                    criterion=c.label,
+                    decisive=True,
+                    swing_to=None,
+                    margin_delta=0.0,
+                    evidence_contested=c.label in contested,
+                )
+            )
             continue
         _, sub_totals = _compute_totals(options, remaining, score_fn)
         sub_winner, _, sub_margin = _rank(sub_totals)
         decisive = sub_winner != baseline_winner
         margin_delta = round(sub_margin - baseline_margin, 4)
-        results.append(SensitivityResult(
-            criterion=c.label,
-            decisive=decisive,
-            swing_to=sub_winner if decisive else None,
-            margin_delta=margin_delta,
-            evidence_contested=c.label in contested,
-        ))
+        results.append(
+            SensitivityResult(
+                criterion=c.label,
+                decisive=decisive,
+                swing_to=sub_winner if decisive else None,
+                margin_delta=margin_delta,
+                evidence_contested=c.label in contested,
+            )
+        )
     return results
 
 
@@ -344,17 +360,14 @@ def _build_crux(
     # Collect the set of alternatives that would win if decisive criteria
     # were removed (may be more than one if different criteria point to
     # different alternatives).
-    swing_targets = sorted({
-        s.swing_to for s in sensitivity
-        if s.decisive and s.swing_to is not None
-    })
+    swing_targets = sorted(
+        {s.swing_to for s in sensitivity if s.decisive and s.swing_to is not None}
+    )
 
     contested_clause = ""
     if decisive_contested:
         dc = _join(decisive_contested)
-        contested_clause = (
-            f" AND the evidence on {dc} is contested"
-        )
+        contested_clause = f" AND the evidence on {dc} is contested"
 
     if swing_targets:
         swing_phrase = " or ".join(swing_targets)
@@ -465,9 +478,11 @@ def run_decide(
         )
 
     if gateway is None:
+
         def score_fn(o: str, c: str) -> float:
             return _stub_score(o, c)
     else:
+
         def score_fn(o: str, c: str) -> float:
             return _llm_score(gateway, question, o, c, job_id=job_id, gate=gate)
 
@@ -481,14 +496,10 @@ def run_decide(
     winner, runner_up, margin = _rank(totals)
 
     # Criteria carrying any contested (non-zero variance) cell.
-    contested_set = {
-        cell.criterion for cell in cells if cell.variance > 0.0
-    }
+    contested_set = {cell.criterion for cell in cells if cell.variance > 0.0}
     contested_criteria = [c.label for c in crits if c.label in contested_set]
 
-    sensitivity = _sensitivity(
-        opts, crits, score_fn, winner, margin, contested=contested_set
-    )
+    sensitivity = _sensitivity(opts, crits, score_fn, winner, margin, contested=contested_set)
 
     decisive_crits = [s.criterion for s in sensitivity if s.decisive]
 
@@ -499,22 +510,22 @@ def run_decide(
     # every contested cell's uncertainty band. Only meaningful when something
     # is actually contested; with no variance the evidence is consonant.
     if contested_set:
-        ev_winner, _ = _evidence_perturbed_winner(
-            opts, crits, score_fn, var_fn, winner
-        )
+        ev_winner, _ = _evidence_perturbed_winner(opts, crits, score_fn, var_fn, winner)
         robust_to_evidence = ev_winner == winner
     else:
         robust_to_evidence = True
-    decided_on_contested_evidence = any(
-        c in contested_set for c in decisive_crits
-    )
+    decided_on_contested_evidence = any(c in contested_set for c in decisive_crits)
 
     # Primary driver: the criterion with the highest weight (most influential
     # by construction regardless of sensitivity).
     primary_driver = max(crits, key=lambda c: c.weight).label
 
     crux = _build_crux(
-        winner, runner_up, decisive_crits, sensitivity, primary_driver,
+        winner,
+        runner_up,
+        decisive_crits,
+        sensitivity,
+        primary_driver,
         contested_crits=contested_criteria,
         robust_to_evidence=robust_to_evidence,
     )
@@ -523,6 +534,7 @@ def run_decide(
     if positions_db is not None:
         try:
             from ..verification.positions import record_position
+
             # Confidence scales with margin; a thin margin is a weak claim.
             # Contested evidence on the winner is an additional discount.
             prob = max(0.5, min(0.95, 0.5 + margin))

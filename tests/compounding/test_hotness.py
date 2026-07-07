@@ -90,8 +90,11 @@ def test_recency_midweek_between_full_and_half() -> None:
 
 def test_breakdown_terms_sum_to_total() -> None:
     stats = EntityStats(
-        mention_count_30d=10, distinct_sources=3,
-        last_seen_ms=NOW, query_hits_30d=2, graph_centrality=0.7,
+        mention_count_30d=10,
+        distinct_sources=3,
+        last_seen_ms=NOW,
+        query_hits_30d=2,
+        graph_centrality=0.7,
     )
     b = hotness_breakdown(stats, NOW)
     assert b.total == pytest.approx(
@@ -100,13 +103,19 @@ def test_breakdown_terms_sum_to_total() -> None:
     assert b.total == pytest.approx(hotness_at(stats, NOW))
     # All five named terms present in the tooltip dict.
     assert set(b.as_dict()) == {
-        "mentions", "sources", "recency", "centrality", "query_hits", "total"
+        "mentions",
+        "sources",
+        "recency",
+        "centrality",
+        "query_hits",
+        "total",
     }
 
 
 def test_none_centrality_contributes_zero() -> None:
-    stats = EntityStats(mention_count_30d=1, distinct_sources=0,
-                        last_seen_ms=None, graph_centrality=None)
+    stats = EntityStats(
+        mention_count_30d=1, distinct_sources=0, last_seen_ms=None, graph_centrality=None
+    )
     assert hotness_breakdown(stats, NOW).centrality == 0.0
 
 
@@ -120,10 +129,15 @@ def test_none_centrality_contributes_zero() -> None:
     hits=st.integers(min_value=0, max_value=100),
 )
 def test_more_mentions_never_lowers_hotness(mentions, extra, sources, hits) -> None:
-    base = EntityStats(mention_count_30d=mentions, distinct_sources=sources,
-                       last_seen_ms=NOW, query_hits_30d=hits)
-    more = EntityStats(mention_count_30d=mentions + extra, distinct_sources=sources,
-                       last_seen_ms=NOW, query_hits_30d=hits)
+    base = EntityStats(
+        mention_count_30d=mentions, distinct_sources=sources, last_seen_ms=NOW, query_hits_30d=hits
+    )
+    more = EntityStats(
+        mention_count_30d=mentions + extra,
+        distinct_sources=sources,
+        last_seen_ms=NOW,
+        query_hits_30d=hits,
+    )
     assert hotness_at(more, NOW) >= hotness_at(base, NOW)
 
 
@@ -133,16 +147,21 @@ def test_more_mentions_never_lowers_hotness(mentions, extra, sources, hits) -> N
 )
 def test_more_sources_never_lowers_hotness(sources, extra) -> None:
     base = EntityStats(mention_count_30d=5, distinct_sources=sources, last_seen_ms=NOW)
-    more = EntityStats(mention_count_30d=5, distinct_sources=sources + extra,
-                       last_seen_ms=NOW)
+    more = EntityStats(mention_count_30d=5, distinct_sources=sources + extra, last_seen_ms=NOW)
     assert hotness_at(more, NOW) >= hotness_at(base, NOW)
 
 
-@given(age_days=st.integers(min_value=0, max_value=60),
-       older_days=st.integers(min_value=1, max_value=60))
+@given(
+    age_days=st.integers(min_value=0, max_value=60),
+    older_days=st.integers(min_value=1, max_value=60),
+)
 def test_older_last_seen_never_raises_hotness(age_days, older_days) -> None:
-    newer = EntityStats(mention_count_30d=5, distinct_sources=2,
-                        last_seen_ms=NOW - age_days * _DAY_MS)
-    older = EntityStats(mention_count_30d=5, distinct_sources=2,
-                        last_seen_ms=NOW - (age_days + older_days) * _DAY_MS)
+    newer = EntityStats(
+        mention_count_30d=5, distinct_sources=2, last_seen_ms=NOW - age_days * _DAY_MS
+    )
+    older = EntityStats(
+        mention_count_30d=5,
+        distinct_sources=2,
+        last_seen_ms=NOW - (age_days + older_days) * _DAY_MS,
+    )
     assert hotness_at(older, NOW) <= hotness_at(newer, NOW)

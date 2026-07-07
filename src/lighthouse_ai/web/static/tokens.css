@@ -254,3 +254,42 @@ button, input, select, textarea {
 
 /* Focus */
 :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+/* ===== Micro-Animations & Dynamic Hover Styles ===== */
+.lh-row-hover {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
+              box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
+              border-color 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.lh-row-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card), 0 8px 20px rgba(11,35,53,0.06);
+  border-color: var(--primary) !important;
+}
+
+@keyframes lh-bubble-slide {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.lh-bubble-in {
+  animation: lh-bubble-slide 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes lh-pulse-soft {
+  0% { box-shadow: 0 0 0 0 rgba(78, 195, 247, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(78, 195, 247, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(78, 195, 247, 0); }
+}
+.lh-pulse-active {
+  animation: lh-pulse-soft 2s infinite;
+}
+
+.lh-wizard-tile {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.lh-wizard-tile:hover {
+  border-color: var(--primary) !important;
+  background: var(--paper-3) !important;
+  transform: translateY(-1px);
+}
+

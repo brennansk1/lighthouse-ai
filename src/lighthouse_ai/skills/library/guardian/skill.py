@@ -30,18 +30,18 @@ _OUTLET_ID = "guardian"
 
 # Topic slug → Guardian section slug mapping
 _SECTION_MAP: dict[str, str] = {
-    "world":       "world",
-    "uk":          "uk-news",
-    "politics":    "politics",
-    "technology":  "technology",
-    "science":     "science",
+    "world": "world",
+    "uk": "uk-news",
+    "politics": "politics",
+    "technology": "technology",
+    "science": "science",
     "environment": "environment",
-    "business":    "business",
-    "culture":     "culture",
-    "sport":       "sport",
-    "health":      "society",
-    "society":     "society",
-    "education":   "education",
+    "business": "business",
+    "culture": "culture",
+    "sport": "sport",
+    "health": "society",
+    "society": "society",
+    "education": "education",
 }
 
 
@@ -56,7 +56,9 @@ def _urlencode(params: dict) -> str:
     return "&".join(pairs)
 
 
-def _build_search_url(query: str, *, section: str = "", api_key: str = "test", page_size: int = 10) -> str:
+def _build_search_url(
+    query: str, *, section: str = "", api_key: str = "test", page_size: int = 10
+) -> str:
     """Build a Guardian Content API search URL."""
     params: dict[str, str] = {
         "show-fields": "trailText,headline,shortUrl",
@@ -95,13 +97,15 @@ def _parse_guardian_json(payload: bytes, outlet_id: str) -> list[MonitorItem]:
         pub = r.get("webPublicationDate", "")
         if not url:
             continue
-        items.append(MonitorItem(
-            source=outlet_id,
-            url=url,
-            title=_news._strip_html(title),
-            body=_news._strip_html(body),
-            published_at=pub or None,
-        ))
+        items.append(
+            MonitorItem(
+                source=outlet_id,
+                url=url,
+                title=_news._strip_html(title),
+                body=_news._strip_html(body),
+                published_at=pub or None,
+            )
+        )
     return items
 
 

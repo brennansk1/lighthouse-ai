@@ -1,5 +1,10 @@
 # Lighthouse — local-first deep research
 
+[![CI](https://github.com/your-org/lighthouse/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/lighthouse/actions/workflows/ci.yml)
+[![Python Versions](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+
 **Air-gapped, citation-audited research on a confidential corpus that never leaves
 your machine.** Point Lighthouse at a corpus you can't send to a cloud service — a
 legal matter, a patient set, a deal room — and get back deep, sourced research where
@@ -32,7 +37,7 @@ Three things it is built to hold true:
 > - **Live measurement numbers pending.** Quality thresholds (retrieval precision,
 >   faithfulness, calibration) are defined but not yet measured end-to-end on real data.
 >
-> See [`CAPABILITIES.md`](./CAPABILITIES.md) for the full, honest status and the path to
+> See [`docs/CAPABILITIES.md`](./docs/CAPABILITIES.md) for the full, honest status and the path to
 > a release.
 
 ## Verify it yourself
@@ -66,7 +71,7 @@ with disputed-date splits, structured debate verdicts). Every claim carries a
 confidence band and the HMAC-chained audit log makes the entire run tamper-evident.
 
 The full capability surface, the path to deployment, and the test/status wall live in
-**[`CAPABILITIES.md`](./CAPABILITIES.md)**. The in-app **Guide** tab walks every feature
+**[`docs/CAPABILITIES.md`](./docs/CAPABILITIES.md)**. The in-app **Guide** tab walks every feature
 in plain language.
 
 ## Quick start
@@ -94,6 +99,23 @@ uv run lighthouse-supervisor    # then open http://127.0.0.1:8765/
 
 # 5. Research
 uv run lighthouse research "Why did psychology's replication crisis emerge?"
+```
+
+### Native Desktop App (macOS)
+
+Lighthouse can be packaged and run as a native, lightweight Cocoa desktop application:
+
+```bash
+# 1. Run the desktop window from source
+uv run python scripts/desktop.py
+
+# 2. Compile a standalone double-clickable application bundle (.app)
+uv run pyinstaller --noconfirm --windowed --name "Lighthouse" \
+  --add-data "src/lighthouse_ai/web/static:lighthouse_ai/web/static" \
+  scripts/desktop.py
+
+# 3. Open the compiled application
+open dist/Lighthouse.app
 ```
 
 > **Footnote — `pip install lighthouse-ai` / `uvx lighthouse-ai` are not available yet.**
@@ -207,24 +229,26 @@ Sources (arXiv · OpenAlex · PubMed · Crossref · RSS)
 
 Lighthouse is **pre-alpha, feature-complete for v1.0 scope, in its validation
 phase before release.** The detailed test/build status wall, the path to deployment,
-and the full capability inventory live in **[`CAPABILITIES.md`](./CAPABILITIES.md)**.
+and the full capability inventory live in **[`docs/CAPABILITIES.md`](./docs/CAPABILITIES.md)**.
 
 ## Development
 
 ```bash
-uv run pytest -q                          # 3140+ pass, ~106 skip
-uv run ruff check src tests               # 0 errors
-uv run mypy src/lighthouse_ai             # 0 errors (blocking CI gate)
+uv run pytest -q                          # 3220+ pass, ~82 skip
+uv run ruff check .                       # 0 errors
+uv run mypy src scripts                   # 0 errors (blocking CI gate)
 LIGHTHOUSE_REAL_BACKEND=1 uv run pytest tests/test_backends_ollama.py  # real LLM
 ```
 
-Contributions welcome. Open an issue to discuss before large PRs. All new features
+**Contributions are highly welcome!** Please see **[`CONTRIBUTING.md`](./CONTRIBUTING.md)** for full instructions on setting up your environment, checking code quality, and submitting Pull Requests.
+
+Open an issue to discuss before large PRs. All new features
 require unit tests; integration tests for real-backend paths must be gated on
 `LIGHTHOUSE_REAL_BACKEND=1` and must not start background processes.
 
 ## Documentation
 
-- [`CAPABILITIES.md`](./CAPABILITIES.md) — **the full capability surface, path to
+- [`docs/CAPABILITIES.md`](./docs/CAPABILITIES.md) — **the full capability surface, path to
   deployment, and test/status wall** (the detailed inventory behind this README)
 - [`docs/MODE_PROCESSES.md`](./docs/MODE_PROCESSES.md) — **the 7 research modes in
   full detail** (algorithm, techniques, provenance, and optimality notes per mode)

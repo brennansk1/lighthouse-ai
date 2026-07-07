@@ -55,6 +55,7 @@ class _Page(Container):
         the mypy fix in one place and preserves readability.
         """
         from .app import LighthouseTUI  # local import avoids circular at module level
+
         return cast(LighthouseTUI, self.app)
 
     def client_get(self, path: str, **params: Any) -> dict[str, Any] | None:
@@ -98,7 +99,8 @@ class HomePage(_Page):
             body.update(
                 "[yellow]Supervisor offline.[/] Could not reach the control "
                 "plane.\n\nStart it with  [b]lighthouse start[/]  then press "
-                "[b]1[/] to retry.")
+                "[b]1[/] to retry."
+            )
             return
         cal = d.get("calibration") or {}
         jobs = d.get("jobs") or []
@@ -128,9 +130,7 @@ class HomePage(_Page):
         if not alerts:
             lines.append("  Nothing needs attention.")
         for a in alerts:
-            lines.append(
-                f"  • [#c44536]{(a.get('kind', '') or '').upper()}[/] "
-                f"{a.get('text', '')}")
+            lines.append(f"  • [#c44536]{(a.get('kind', '') or '').upper()}[/] {a.get('text', '')}")
         lines.append("")
         digest = d.get("digest") or []
         lines.append("[b]Topic activity — last 24h[/]")
@@ -138,8 +138,8 @@ class HomePage(_Page):
             lines.append("  No activity yet. Add a topic (press [b]4[/]).")
         for item in digest:
             lines.append(
-                f"  [#2d7a9e]{(item.get('topic') or '').upper()}[/] "
-                f"{item.get('delta', '')}")
+                f"  [#2d7a9e]{(item.get('topic') or '').upper()}[/] {item.get('delta', '')}"
+            )
         # Calibration sparkline (history if present, else single point).
         hist = cal.get("history") or cal.get("brier_history") or []
         if hist:
@@ -151,8 +151,9 @@ class HomePage(_Page):
 class JobsPage(_Page):
     def compose(self) -> ComposeResult:
         yield DataTable(id="jobs-table", cursor_type="row")
-        yield Static("[dim]↑/↓ move · enter detail · n new · p pause/resume[/]",
-                     classes="page-foot")
+        yield Static(
+            "[dim]↑/↓ move · enter detail · n new · p pause/resume[/]", classes="page-foot"
+        )
 
     def on_mount(self) -> None:
         t = self.query_one("#jobs-table", DataTable)
@@ -173,8 +174,14 @@ class JobsPage(_Page):
             md = j.get("metadata") or {}
             prog = int((md.get("progress") or 0) * 100)
             bar = "█" * (prog // 20) + "░" * (5 - prog // 20)
-            t.add_row(j["id"], j.get("mode", ""), md.get("topic", "—"),
-                      j.get("status", ""), f"{bar} {prog}%", key=j["id"])
+            t.add_row(
+                j["id"],
+                j.get("mode", ""),
+                md.get("topic", "—"),
+                j.get("status", ""),
+                f"{bar} {prog}%",
+                key=j["id"],
+            )
         if 0 <= prev < t.row_count:
             t.move_cursor(row=prev)
 
@@ -233,39 +240,42 @@ class JobDetailScreen(ModalScreen):
                     yield VerticalScroll(Static(id="jd-intents-body"))
 
     def on_mount(self) -> None:
-        self.query_one("#jd-calls-table", DataTable).add_columns(
-            "Seq", "Time", "Model", "Tokens")
+        self.query_one("#jd-calls-table", DataTable).add_columns("Seq", "Time", "Model", "Tokens")
         try:
             from .app import LighthouseTUI  # local import — avoids circular at module level
+
             d = cast(LighthouseTUI, self.app).client.get(f"/api/jobs/{self.job_id}")
         except Exception:
             d = None
         if not d:
             self.query_one("#jd-trace-body", Static).update(
-                "[yellow]Could not load job detail (supervisor offline).[/]")
+                "[yellow]Could not load job detail (supervisor offline).[/]"
+            )
             return
         md = d.get("metadata") or {}
-        stages = md.get("trace") or [
-            "framing", "planner", "researchers", "denoiser"]
+        stages = md.get("trace") or ["framing", "planner", "researchers", "denoiser"]
         self.query_one("#jd-trace-body", Static).update(
             f"[b]{md.get('topic', self.job_id)}[/]\n\n"
             f"Mode: {d.get('mode', '—')}   Status: {d.get('status', '—')}\n\n"
-            "[b]Pipeline[/]\n" + "\n".join(f"  → {s}" for s in stages))
+            "[b]Pipeline[/]\n" + "\n".join(f"  → {s}" for s in stages)
+        )
         ev = md.get("evidence") or []
         self.query_one("#jd-evidence-body", Static).update(
-            "\n".join(f"  • {e}" for e in ev) if ev
-            else "No evidence chunks recorded for this job.")
+            "\n".join(f"  • {e}" for e in ev) if ev else "No evidence chunks recorded for this job."
+        )
         t = self.query_one("#jd-calls-table", DataTable)
         for c in d.get("model_calls") or []:
-            t.add_row(str(c.get("seq", "")), c.get("ts", ""),
-                      c.get("model", ""), str(c.get("tokens", 0)))
+            t.add_row(
+                str(c.get("seq", "")), c.get("ts", ""), c.get("model", ""), str(c.get("tokens", 0))
+            )
         if t.row_count == 0:
             t.add_row("—", "—", "no model calls yet", "—")
         intents = md.get("intents") or []
         self.query_one("#jd-intents-body", Static).update(
-            "\n".join(f"  {i.get('target', '?')}: {i.get('status', '?')}"
-                      for i in intents) if intents
-            else "No outbox intents for this job.")
+            "\n".join(f"  {i.get('target', '?')}: {i.get('status', '?')}" for i in intents)
+            if intents
+            else "No outbox intents for this job."
+        )
 
 
 # ════════════════════════════ DRAFTS ════════════════════════════
@@ -277,8 +287,7 @@ class DraftsPage(_Page):
                 yield Static(id="draft-head")
                 yield WepBadge(id="draft-wep")
                 yield Markdown("", id="draft-body")
-        yield Static("[dim]↑/↓ move · enter open · a approve · r reject[/]",
-                     classes="page-foot")
+        yield Static("[dim]↑/↓ move · enter open · a approve · r reject[/]", classes="page-foot")
 
     def on_mount(self) -> None:
         self._drafts: list[dict] = []
@@ -308,8 +317,9 @@ class DraftsPage(_Page):
             return
         for i, dr in enumerate(self._drafts):
             status = (dr.get("status") or "?")[:3]
-            lv.append(ListItem(Label(f"[dim]{status}[/]  {dr.get('title', '')}"),
-                               id=f"draft-row-{i}"))
+            lv.append(
+                ListItem(Label(f"[dim]{status}[/]  {dr.get('title', '')}"), id=f"draft-row-{i}")
+            )
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if not event.item.id or not event.item.id.startswith("draft-row-"):
@@ -326,11 +336,14 @@ class DraftsPage(_Page):
         self.query_one("#draft-head", Static).update(
             f"[b]{detail.get('title', '')}[/]\n"
             f"Sources: {detail.get('source_count', 0)}   "
-            f"Status: {detail.get('status', '—')}")
+            f"Status: {detail.get('status', '—')}"
+        )
         self.query_one("#draft-wep", WepBadge).set_wep(
-            detail.get("wep_phrase"), detail.get("wep_band"))
+            detail.get("wep_phrase"), detail.get("wep_band")
+        )
         self.query_one("#draft-body", Markdown).update(
-            _html_to_md(detail.get("body_html", "") or detail.get("body_md", "")))
+            _html_to_md(detail.get("body_html", "") or detail.get("body_md", ""))
+        )
 
     def action_approve(self) -> None:
         if not self._selected:
@@ -358,8 +371,7 @@ class TopicsPage(_Page):
                         yield Static(id="topic-sources")
                     with TabPane("Recent items", id="tp-items"):
                         yield Static(id="topic-items")
-        yield Static("[dim]↑/↓ move · enter detail · n new[/]",
-                     classes="page-foot")
+        yield Static("[dim]↑/↓ move · enter detail · n new[/]", classes="page-foot")
 
     def on_mount(self) -> None:
         t = self.query_one("#topics-table", DataTable)
@@ -376,8 +388,7 @@ class TopicsPage(_Page):
             t.add_row("no topics yet", "—", "—")
             return
         for tp in self._topics:
-            t.add_row(tp["name"], tp.get("mode", ""),
-                      str(tp.get("source_count", 0)), key=tp["id"])
+            t.add_row(tp["name"], tp.get("mode", ""), str(tp.get("source_count", 0)), key=tp["id"])
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         tid = event.row_key.value if event.row_key else None
@@ -390,15 +401,18 @@ class TopicsPage(_Page):
             f"[b]{detail.get('name', '')}[/]\n\n"
             f"Mode: {detail.get('mode', '—')}\n"
             f"Cadence: {detail.get('cadence', '—')}\n"
-            f"Status: {detail.get('status', '—')}")
+            f"Status: {detail.get('status', '—')}"
+        )
         srcs = detail.get("sources", [])
         self.query_one("#topic-sources", Static).update(
-            "\n".join(f"  [{s.get('grade', '?')}] {s.get('url', '')}"
-                      for s in srcs) if srcs else "  No sources yet.")
+            "\n".join(f"  [{s.get('grade', '?')}] {s.get('url', '')}" for s in srcs)
+            if srcs
+            else "  No sources yet."
+        )
         items = detail.get("recent_items", [])
         self.query_one("#topic-items", Static).update(
-            "\n".join(f"  • {i}" for i in items) if items
-            else "  No recent items.")
+            "\n".join(f"  • {i}" for i in items) if items else "  No recent items."
+        )
 
     def action_new_topic(self) -> None:
         self.app.push_screen(NewTopicModal())
@@ -425,15 +439,17 @@ class PositionsPage(_Page):
         overdue = self.client_get("/api/positions", overdue="true") or {}
         self._overdue = overdue.get("positions", [])
         self.query_one("#pos-overdue", Static).update(
-            _format_positions(self._overdue, "Nothing overdue. Good."))
+            _format_positions(self._overdue, "Nothing overdue. Good.")
+        )
         all_pos = self.client_get("/api/positions") or {}
         self.query_one("#pos-all", Static).update(
-            _format_positions(all_pos.get("positions", []), "No positions yet."))
+            _format_positions(all_pos.get("positions", []), "No positions yet.")
+        )
         self.query_one("#pos-cal", Static).update(
-            _format_calibration(self.client_get("/api/calibration") or {}))
+            _format_calibration(self.client_get("/api/calibration") or {})
+        )
         hyp = self.client_get("/api/hypotheses") or {}
-        self.query_one("#pos-hyp", Static).update(
-            _format_hypotheses(hyp.get("hypotheses", [])))
+        self.query_one("#pos-hyp", Static).update(_format_hypotheses(hyp.get("hypotheses", [])))
 
     def _first_overdue_id(self) -> int | None:
         return self._overdue[0]["id"] if self._overdue else None
@@ -451,8 +467,7 @@ class PositionsPage(_Page):
         pid = self._first_overdue_id()
         if pid is None:
             return
-        if self.client_post(f"/api/positions/{pid}/resolve",
-                            json={"outcome": outcome}) is not None:
+        if self.client_post(f"/api/positions/{pid}/resolve", json={"outcome": outcome}) is not None:
             self.app.notify(f"Position {pid}: {outcome}")
             self.refresh_data()
 
@@ -471,28 +486,26 @@ class HealthPage(_Page):
                 yield DataTable(id="audit-table", cursor_type="row")
 
     def on_mount(self) -> None:
-        self.query_one("#audit-table", DataTable).add_columns(
-            "Seq", "Time", "Actor", "Event")
+        self.query_one("#audit-table", DataTable).add_columns("Seq", "Time", "Actor", "Event")
         self.start_polling()
 
     def refresh_data(self) -> None:
         h = self.client_get("/api/health")
         if not h:
             self.query_one("#health-overview", Static).update(
-                "[yellow]Supervisor offline.[/] Run `lighthouse start`.")
+                "[yellow]Supervisor offline.[/] Run `lighthouse start`."
+            )
             return
-        self.query_one("#health-overview", Static).update(
-            _format_health_overview(h))
-        self.query_one("#health-budget", Static).update(
-            _format_budget(h.get("budget") or {}))
-        self.query_one("#health-storage", Static).update(
-            _format_storage(h.get("storage") or {}))
+        self.query_one("#health-overview", Static).update(_format_health_overview(h))
+        self.query_one("#health-budget", Static).update(_format_budget(h.get("budget") or {}))
+        self.query_one("#health-storage", Static).update(_format_storage(h.get("storage") or {}))
         audit = self.client_get("/api/audit", limit=50) or {}
         t = self.query_one("#audit-table", DataTable)
         t.clear()
         for e in audit.get("events", []):
-            t.add_row(str(e.get("seq", "")), e.get("ts", ""),
-                      e.get("actor", ""), e.get("event_type", ""))
+            t.add_row(
+                str(e.get("seq", "")), e.get("ts", ""), e.get("actor", ""), e.get("event_type", "")
+            )
         if t.row_count == 0:
             t.add_row("—", "—", "no events", "—")
 
@@ -528,27 +541,30 @@ class SettingsPage(_Page):
             f"Data dir: {lh.get('data_dir', '~/.lighthouse')}\n"
             f"Detected tier: {hw.get('detected_tier', '—')}\n"
             f"Logseq: {'enabled' if cfg.get('logseq', {}).get('enabled') else 'disabled'}\n"
-            f"Telegram: {'enabled' if cfg.get('telegram', {}).get('enabled') else 'disabled'}")
+            f"Telegram: {'enabled' if cfg.get('telegram', {}).get('enabled') else 'disabled'}"
+        )
         h = self.client_get("/api/health") or {}
         ext = h.get("external", {})
         self.query_one("#set-models", Static).update(
             f"Ollama: {'reachable' if ext.get('ollama') else 'offline (run: ollama serve)'}\n"
             f"Qdrant: {'reachable' if ext.get('qdrant') else 'offline (optional)'}\n\n"
-            "Pull a model:  lighthouse models pull qwen3:8b")
+            "Pull a model:  lighthouse models pull qwen3:8b"
+        )
         sec = (self.client_get("/api/secrets") or {}).get("secrets", {})
         self.query_one("#set-secrets", Static).update(
-            "\n".join(f"{k}: {v}" for k, v in sec.items())
-            or "No secrets in the file store.")
+            "\n".join(f"{k}: {v}" for k, v in sec.items()) or "No secrets in the file store."
+        )
         skills = (self.client_get("/api/skills") or {}).get("skills", [])
         self.query_one("#set-skills", Static).update(
-            "\n".join(f"• {s.get('name', '?')} (used {s.get('use_count', 0)}×)"
-                      for s in skills) or "No skills curated yet.")
+            "\n".join(f"• {s.get('name', '?')} (used {s.get('use_count', 0)}×)" for s in skills)
+            or "No skills curated yet."
+        )
         persp = (self.client_get("/api/perspectives") or {}).get("perspectives", [])
         self.query_one("#set-persp", Static).update(
-            "\n".join(f"• {p.get('name', '?')} — {p.get('stance', '')}"
-                      for p in persp) or "No perspectives defined.")
-        self.query_one("#set-adv", Static).update(
-            _json.dumps(cfg, indent=2) if cfg else "{}")
+            "\n".join(f"• {p.get('name', '?')} — {p.get('stance', '')}" for p in persp)
+            or "No perspectives defined."
+        )
+        self.query_one("#set-adv", Static).update(_json.dumps(cfg, indent=2) if cfg else "{}")
 
 
 # ════════════════════════════ INTELLIGENCE ════════════════════════════
@@ -589,9 +605,8 @@ class IntelligencePage(_Page):
         # Update the app's sidebar counter for open escalations.
         try:
             from .widgets import Sidebar
-            open_count = sum(
-                1 for e in self._escalations if e.get("status") == "open"
-            )
+
+            open_count = sum(1 for e in self._escalations if e.get("status") == "open")
             self.app.query_one(Sidebar).set_counter("intelligence", open_count)
         except Exception:
             pass
@@ -615,9 +630,7 @@ class IntelligencePage(_Page):
             ts = (r.get("created_at") or "")[:16].replace("T", " ")
             body_short = (r.get("body") or "")[:60]
             proposed = (r.get("proposed_action") or "")[:40] or "—"
-            t.add_row(
-                r.get("kind", ""), ts, body_short, proposed, key=r.get("id")
-            )
+            t.add_row(r.get("kind", ""), ts, body_short, proposed, key=r.get("id"))
         if 0 <= prev < t.row_count:
             t.move_cursor(row=prev)
 
@@ -640,8 +653,12 @@ class IntelligencePage(_Page):
             ts = (e.get("created_at") or "")[:16].replace("T", " ")
             body_short = (e.get("body") or "")[:60]
             t.add_row(
-                e.get("kind", ""), e.get("priority", ""), e.get("status", ""),
-                ts, body_short, key=e.get("id"),
+                e.get("kind", ""),
+                e.get("priority", ""),
+                e.get("status", ""),
+                ts,
+                body_short,
+                key=e.get("id"),
             )
         if 0 <= prev < t.row_count:
             t.move_cursor(row=prev)
@@ -654,17 +671,13 @@ class IntelligencePage(_Page):
             row_key = t.coordinate_to_cell_key(t.cursor_coordinate).row_key
         except Exception:
             return None
-        return next(
-            (e for e in self._escalations if e.get("id") == row_key.value), None
-        )
+        return next((e for e in self._escalations if e.get("id") == row_key.value), None)
 
     def _update_escalation(self, status: str) -> None:
         esc = self._selected_escalation()
         if not esc:
             return
-        result = self.client_post(
-            f"/api/escalations/{esc['id']}/status", json={"status": status}
-        )
+        result = self.client_post(f"/api/escalations/{esc['id']}/status", json={"status": status})
         if result is not None:
             self.app.notify(f"Escalation {esc['id'][:8]}… → {status}")
             self.refresh_data()
@@ -726,8 +739,7 @@ class NewJobModal(ModalScreen):
             Label("New job"),
             Input(placeholder="Topic", id="job-topic"),
             Input(placeholder="Mode (Deep-Dive)", id="job-mode", value="Deep-Dive"),
-            Horizontal(Button("Cancel", id="cancel"),
-                       Button("Create", variant="primary", id="ok")),
+            Horizontal(Button("Cancel", id="cancel"), Button("Create", variant="primary", id="ok")),
             id="modal-box",
         )
 
@@ -737,7 +749,10 @@ class NewJobModal(ModalScreen):
             mode = self.query_one("#job-mode", Input).value.strip() or "Deep-Dive"
             if topic:
                 from .app import LighthouseTUI  # local import — avoids circular at module level
-                cast(LighthouseTUI, self.app).client.post("/api/jobs", json={"mode": mode, "topic": topic})
+
+                cast(LighthouseTUI, self.app).client.post(
+                    "/api/jobs", json={"mode": mode, "topic": topic}
+                )
                 self.app.notify("Job queued")
         self.dismiss()
 
@@ -751,8 +766,7 @@ class NewTopicModal(ModalScreen):
             Input(placeholder="Name", id="topic-name"),
             Input(placeholder="Mode (Monitor)", id="topic-mode", value="Monitor"),
             Input(placeholder="Source URL (optional)", id="topic-src"),
-            Horizontal(Button("Cancel", id="cancel"),
-                       Button("Create", variant="primary", id="ok")),
+            Horizontal(Button("Cancel", id="cancel"), Button("Create", variant="primary", id="ok")),
             id="modal-box",
         )
 
@@ -763,9 +777,11 @@ class NewTopicModal(ModalScreen):
             src = self.query_one("#topic-src", Input).value.strip()
             if name:
                 from .app import LighthouseTUI  # local import — avoids circular at module level
-                cast(LighthouseTUI, self.app).client.post("/api/topics", json={
-                    "name": name, "mode": mode,
-                    "sources": [src] if src else []})
+
+                cast(LighthouseTUI, self.app).client.post(
+                    "/api/topics",
+                    json={"name": name, "mode": mode, "sources": [src] if src else []},
+                )
                 self.app.notify("Topic created")
         self.dismiss()
 
@@ -781,8 +797,7 @@ class RejectModal(ModalScreen):
         yield Container(
             Label("Reject draft — reason?"),
             Input(placeholder="One-line reason", id="reason"),
-            Horizontal(Button("Cancel", id="cancel"),
-                       Button("Reject", variant="error", id="ok")),
+            Horizontal(Button("Cancel", id="cancel"), Button("Reject", variant="error", id="ok")),
             id="modal-box",
         )
 
@@ -791,8 +806,10 @@ class RejectModal(ModalScreen):
             reason = self.query_one("#reason", Input).value.strip()
             if reason:
                 from .app import LighthouseTUI  # local import — avoids circular at module level
-                cast(LighthouseTUI, self.app).client.post(f"/api/drafts/{self.draft_id}/reject",
-                                                          json={"reason": reason})
+
+                cast(LighthouseTUI, self.app).client.post(
+                    f"/api/drafts/{self.draft_id}/reject", json={"reason": reason}
+                )
                 self.app.notify("Rejected")
         self.dismiss()
 
@@ -800,8 +817,7 @@ class RejectModal(ModalScreen):
 class HelpModal(ModalScreen):
     """A ``?`` help overlay listing the flat keymap."""
 
-    BINDINGS = [Binding("escape", "dismiss", "Close"),
-                Binding("question_mark", "dismiss", "Close")]
+    BINDINGS = [Binding("escape", "dismiss", "Close"), Binding("question_mark", "dismiss", "Close")]
 
     HELP = (
         "1–8        switch pages (Home … Intelligence)\n"
@@ -848,8 +864,7 @@ def _format_positions(positions: list[dict], empty: str) -> str:
         if p.get("outcome") is None:
             verdict = "[dim]unresolved — [y] confirmed  [n] refuted  [d] defer[/]"
         else:
-            verdict = ("[#4a8a6e]confirmed[/]" if p["outcome"]
-                       else "[#c44536]refuted[/]")
+            verdict = "[#4a8a6e]confirmed[/]" if p["outcome"] else "[#c44536]refuted[/]"
             verdict += f" · Brier {float(p.get('brier') or 0):.3f}"
         out.append(f"• {p.get('claim', '')}\n    {band}{conf_s} · {verdict}")
     return "\n\n".join(out)
@@ -875,8 +890,8 @@ def _format_calibration(cal: dict) -> str:
         lines += ["", "By domain", "  DOMAIN        N    BRIER"]
         for d in by_domain:
             lines.append(
-                f"  {str(d.get('domain', '?'))[:12]:12}  {d.get('n', 0):<4} "
-                f"{d.get('brier', 0):.3f}")
+                f"  {str(d.get('domain', '?'))[:12]:12}  {d.get('n', 0):<4} {d.get('brier', 0):.3f}"
+            )
     return "\n".join(lines)
 
 
@@ -901,11 +916,9 @@ def _reliability_diagram(bins: list[dict]) -> list[str]:
 def _format_hypotheses(hyps: list[dict]) -> str:
     if not hyps:
         return "No hypotheses yet."
-    cols: dict[str, list[str]] = {
-        "open": [], "supported": [], "refuted": [], "retired": []}
+    cols: dict[str, list[str]] = {"open": [], "supported": [], "refuted": [], "retired": []}
     for h in hyps:
-        cols.setdefault(h.get("status", "open"), []).append(
-            h.get("statement", ""))
+        cols.setdefault(h.get("status", "open"), []).append(h.get("statement", ""))
     out = []
     for status, items in cols.items():
         out.append(f"[b]{status.upper()} ({len(items)})[/]")
@@ -917,6 +930,7 @@ def _format_hypotheses(hyps: list[dict]) -> str:
 def _format_health_overview(h: dict) -> str:
     def mark(ok: bool) -> str:
         return "[#4a8a6e]✓[/]" if ok else "[dim]–[/]"
+
     dbs = h.get("databases", {})
     db_ok = bool(dbs) and all(v == "ok" for v in dbs.values())
     hw = h.get("hardware", {})
@@ -940,8 +954,7 @@ def _format_health_overview(h: dict) -> str:
         f"{mark(b.get('tier') == 'green')} Budget      "
         f"${usd.get('used', '?')} of ${usd.get('cap', '?')} (tier {b.get('tier', '?')})",
         "",
-        "No action needed." if h.get("overall") == "green"
-        else "Review the rows above.",
+        "No action needed." if h.get("overall") == "green" else "Review the rows above.",
     ]
     return "\n".join(lines)
 
@@ -973,9 +986,7 @@ def _format_budget(b: dict) -> str:
 def _format_storage(s: dict) -> str:
     if not s:
         return "No storage data."
-    lines = [
-        f"Disk: {s.get('disk_free_gb', '?')} GB free of "
-        f"{s.get('disk_total_gb', '?')} GB", ""]
+    lines = [f"Disk: {s.get('disk_free_gb', '?')} GB free of {s.get('disk_total_gb', '?')} GB", ""]
     for name, b in (s.get("subdirs_bytes") or {}).items():
         lines.append(f"  {name + '/':14} {b / 1e6:.1f} MB")
     lines += ["", "Litestream replicas:"]
@@ -984,7 +995,5 @@ def _format_storage(s: dict) -> str:
         lines.append("  none yet")
     for r in reps:
         lag = r.get("lag_seconds")
-        lines.append(
-            f"  {r.get('name', '?')}: "
-            f"{'no snapshot' if lag is None else f'lag {lag}s'}")
+        lines.append(f"  {r.get('name', '?')}: {'no snapshot' if lag is None else f'lag {lag}s'}")
     return "\n".join(lines)

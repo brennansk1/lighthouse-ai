@@ -42,27 +42,42 @@ class SandboxBroker:
             self.scanners.insert(0, EICARScanner())
         self.quarantine = quarantine
 
-    def admit(self, payload: bytes, *, url: str | None = None,
-              filename: str | None = None,
-              content_type: str | None = None) -> BrokerOutcome:
+    def admit(
+        self,
+        payload: bytes,
+        *,
+        url: str | None = None,
+        filename: str | None = None,
+        content_type: str | None = None,
+    ) -> BrokerOutcome:
         sha = Quarantine.hash_bytes(payload)
         results: list[ScanResult] = []
         for scanner in self.scanners:
-            if not scanner.supports(content_type=content_type or "",
-                                    filename=filename):
+            if not scanner.supports(content_type=content_type or "", filename=filename):
                 continue
             try:
                 results.append(scanner.scan(payload, filename=filename))
             except Exception as exc:
-                results.append(ScanResult(scanner.name, "quarantine",
-                                          f"scanner error: {exc!r}"))
+                results.append(ScanResult(scanner.name, "quarantine", f"scanner error: {exc!r}"))
 
         verdict = self._aggregate(results)
-        reasons = [{"scanner": r.scanner, "verdict": r.verdict, "reason": r.reason,
-                    "details": r.details or {}} for r in results]
+        reasons = [
+            {
+                "scanner": r.scanner,
+                "verdict": r.verdict,
+                "reason": r.reason,
+                "details": r.details or {},
+            }
+            for r in results
+        ]
         rec = self.quarantine.record(
-            sha256=sha, url=url, filename=filename, content_type=content_type,
-            verdict=verdict.value, reasons=reasons, payload=payload,
+            sha256=sha,
+            url=url,
+            filename=filename,
+            content_type=content_type,
+            verdict=verdict.value,
+            reasons=reasons,
+            payload=payload,
         )
         return BrokerOutcome(verdict=verdict, sha256=sha, record=rec, scan_results=results)
 
@@ -83,9 +98,12 @@ def build_default_broker(data_dir: Path) -> SandboxBroker:
         HTMLScriptScanner,
         PDFJavaScriptScanner,
     )
+
     q = Quarantine(data_dir / "quarantine.db", data_dir / "quarantine")
     scanners: list[Scanner] = [
-        EICARScanner(), PDFJavaScriptScanner(),
-        HTMLScriptScanner(), ArchiveBombScanner(),
+        EICARScanner(),
+        PDFJavaScriptScanner(),
+        HTMLScriptScanner(),
+        ArchiveBombScanner(),
     ]
     return SandboxBroker(q, scanners)

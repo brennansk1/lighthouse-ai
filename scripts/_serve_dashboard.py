@@ -1,6 +1,7 @@
 """Dev-only: serve just the Lighthouse control plane (dashboard + API), no
 supervisor daemons. For local UI verification. Data dir via LIGHTHOUSE_DATA_DIR.
 """
+
 import os
 
 import uvicorn

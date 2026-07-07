@@ -60,7 +60,7 @@ def expand_query(
         title_words = re.findall(r"\b[A-Za-z][a-z]{3,}\b", result.title or "")
         # Build 2-word bigrams as focused sub-queries.
         for i in range(len(title_words) - 1):
-            bigram = f"{title_words[i]} {title_words[i+1]}"
+            bigram = f"{title_words[i]} {title_words[i + 1]}"
             if bigram.lower() not in seen:
                 candidate = f"{query} {bigram}"
                 variants.append(candidate)

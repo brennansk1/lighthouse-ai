@@ -16,10 +16,12 @@ def _source_domain(source: str) -> str:
     parsed = urlparse(source)
     return parsed.netloc or source.split("/")[0] or source
 
+
 NOW = 1_000 * 86_400_000
 
 
 # ── _source_domain helper ────────────────────────────────────────────────────
+
 
 def test_source_domain_extracts_netloc() -> None:
     assert _source_domain("https://arxiv.org/abs/1234.5678") == "arxiv.org"
@@ -41,11 +43,10 @@ def test_source_domain_empty_string_safe() -> None:
 
 # ── ingest-path simulation ───────────────────────────────────────────────────
 
-def _simulate_ingest(store: EntityHotnessStore,
-                     tracked: set[str],
-                     text: str,
-                     source: str,
-                     now_ms: int) -> None:
+
+def _simulate_ingest(
+    store: EntityHotnessStore, tracked: set[str], text: str, source: str, now_ms: int
+) -> None:
     """Mirror the entity-mention logic in pipeline.ingest_text."""
     source_key = _source_domain(source)
     text_lower = text.lower()
@@ -57,10 +58,13 @@ def _simulate_ingest(store: EntityHotnessStore,
 def test_ingest_records_mention_for_tracked_entity(tmp_path) -> None:
     store = EntityHotnessStore(tmp_path / "h.db")
     tracked = {"CRISPR", "AlphaFold"}
-    _simulate_ingest(store, tracked,
-                     text="Recent work on CRISPR gene editing has shown ...",
-                     source="https://nature.com/article/123",
-                     now_ms=NOW)
+    _simulate_ingest(
+        store,
+        tracked,
+        text="Recent work on CRISPR gene editing has shown ...",
+        source="https://nature.com/article/123",
+        now_ms=NOW,
+    )
     stats = store.get_stats("CRISPR")
     assert stats is not None
     assert stats.mention_count_30d == 1
@@ -69,29 +73,38 @@ def test_ingest_records_mention_for_tracked_entity(tmp_path) -> None:
 
 def test_ingest_case_insensitive_match(tmp_path) -> None:
     store = EntityHotnessStore(tmp_path / "h.db")
-    _simulate_ingest(store, {"alphafold"},
-                     text="AlphaFold predictions improved.",
-                     source="https://science.org/paper",
-                     now_ms=NOW)
+    _simulate_ingest(
+        store,
+        {"alphafold"},
+        text="AlphaFold predictions improved.",
+        source="https://science.org/paper",
+        now_ms=NOW,
+    )
     assert store.get_stats("alphafold") is not None
 
 
 def test_ingest_no_match_leaves_store_empty(tmp_path) -> None:
     store = EntityHotnessStore(tmp_path / "h.db")
-    _simulate_ingest(store, {"GPT-5"},
-                     text="Totally unrelated content about butterflies.",
-                     source="https://example.com",
-                     now_ms=NOW)
+    _simulate_ingest(
+        store,
+        {"GPT-5"},
+        text="Totally unrelated content about butterflies.",
+        source="https://example.com",
+        now_ms=NOW,
+    )
     assert store.get_stats("GPT-5") is None
 
 
 def test_ingest_deduplicates_same_source(tmp_path) -> None:
     store = EntityHotnessStore(tmp_path / "h.db")
     for _ in range(3):
-        _simulate_ingest(store, {"CRISPR"},
-                         text="CRISPR was mentioned.",
-                         source="https://pubmed.ncbi.nlm.nih.gov/123",
-                         now_ms=NOW)
+        _simulate_ingest(
+            store,
+            {"CRISPR"},
+            text="CRISPR was mentioned.",
+            source="https://pubmed.ncbi.nlm.nih.gov/123",
+            now_ms=NOW,
+        )
     stats = store.get_stats("CRISPR")
     assert stats.mention_count_30d == 3
     assert stats.distinct_sources == 1  # same domain, not 3
@@ -99,10 +112,17 @@ def test_ingest_deduplicates_same_source(tmp_path) -> None:
 
 def test_ingest_different_sources_accumulate_distinct(tmp_path) -> None:
     store = EntityHotnessStore(tmp_path / "h.db")
-    for src in ("https://arxiv.org/p1", "https://nature.com/p2", "https://pubmed.ncbi.nlm.nih.gov/p3"):
-        _simulate_ingest(store, {"transformer"},
-                         text="transformer architecture explained",
-                         source=src,
-                         now_ms=NOW)
+    for src in (
+        "https://arxiv.org/p1",
+        "https://nature.com/p2",
+        "https://pubmed.ncbi.nlm.nih.gov/p3",
+    ):
+        _simulate_ingest(
+            store,
+            {"transformer"},
+            text="transformer architecture explained",
+            source=src,
+            now_ms=NOW,
+        )
     stats = store.get_stats("transformer")
     assert stats.distinct_sources == 3

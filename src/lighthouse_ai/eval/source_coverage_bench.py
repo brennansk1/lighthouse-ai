@@ -128,9 +128,7 @@ def run_source_coverage_bench(
             case_note = case_note or "empty recommendation list (library may be empty)"
             r_k = 0.0
             rr = 0.0
-        elif gold_id not in ranked_ids and not any(
-            gold_id == r.skill_id for r in recs
-        ):
+        elif gold_id not in ranked_ids and not any(gold_id == r.skill_id for r in recs):
             case_note = case_note or f"gold skill '{gold_id}' not in recommendations"
             r_k = recall_at_k(ranked_ids, {gold_id}, k)
             rr = mrr(ranked_ids, {gold_id})

@@ -23,6 +23,7 @@ from lighthouse_ai.modes.debate import (
 # Fake gateway
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _Resp:
     text: str
@@ -47,6 +48,7 @@ class FakeJudgeGateway:
 # ---------------------------------------------------------------------------
 # gateway=None — heuristic fallback, no regression
 # ---------------------------------------------------------------------------
+
 
 def test_offline_falls_back_to_heuristic():
     result = run_debate("X causes Y.", "Draft text here.")
@@ -162,9 +164,7 @@ def test_perspective_gateway_error_degrades_and_continues():
                 if self.calls == 2:
                     raise RuntimeError("perspective model crashed")
                 return _Resp("a critique")
-            return _Resp(
-                "CRUX: none\nPERSPECTIVE: none\nRESOLVES_WITH: n/a\nSUMMARY: ok"
-            )
+            return _Resp("CRUX: none\nPERSPECTIVE: none\nRESOLVES_WITH: n/a\nSUMMARY: ok")
 
     gw = PerspectiveBoomGateway()
     res = run_debate("Claim.", "Draft.", gateway=gw)

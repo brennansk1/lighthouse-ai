@@ -37,7 +37,9 @@ def test_sqlite_backup_under_write_load_yields_consistent_copy(tmp_paths):
             while not stop.is_set():
                 conn.execute(
                     "INSERT INTO audit_events (actor, event_type, payload_json) "
-                    "VALUES (?, 'tick', '{}')", (f"w{i}",))
+                    "VALUES (?, 'tick', '{}')",
+                    (f"w{i}",),
+                )
                 i += 1
                 # Small sleep so we don't peg the CPU.
                 time.sleep(0.001)
@@ -88,16 +90,20 @@ def test_litestream_end_to_end_round_trip(tmp_paths):
         for i in range(10):
             conn.execute(
                 "INSERT INTO audit_events (actor, event_type, payload_json) "
-                "VALUES (?, 'seed', '{}')", (f"s{i}",))
+                "VALUES (?, 'seed', '{}')",
+                (f"s{i}",),
+            )
     finally:
         conn.close()
 
     # Render config and run `litestream replicate` briefly.
     from lighthouse_ai.litestream import write_litestream_config
+
     cfg = write_litestream_config(tmp_paths)
     proc = subprocess.Popen(
         ["litestream", "replicate", "-config", str(cfg)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     try:
         time.sleep(3)  # let it take an initial snapshot
@@ -112,9 +118,9 @@ def test_litestream_end_to_end_round_trip(tmp_paths):
     # -config is required: without it litestream looks for /etc/litestream.yml
     # (found live on litestream 0.5.12 — the no-config form errors out).
     subprocess.run(
-        ["litestream", "restore", "-config", str(cfg),
-         "-o", str(target), str(tmp_paths.audit_db)],
-        check=True, capture_output=True,
+        ["litestream", "restore", "-config", str(cfg), "-o", str(target), str(tmp_paths.audit_db)],
+        check=True,
+        capture_output=True,
     )
     assert target.exists()
     conn = open_db(target)

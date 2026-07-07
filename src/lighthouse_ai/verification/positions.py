@@ -70,7 +70,8 @@ def _ensure_extras(positions_db: Path) -> None:
         # for a person to decide rather than being silently left open or guessed.
         statements.append(
             "CREATE TABLE IF NOT EXISTS human_resolution_queue ("
-            "position_id INTEGER PRIMARY KEY, enqueued_at TEXT, reason TEXT)")
+            "position_id INTEGER PRIMARY KEY, enqueued_at TEXT, reason TEXT)"
+        )
         for s in statements:
             try:
                 conn.execute(s)
@@ -84,11 +85,16 @@ def _ensure_extras(positions_db: Path) -> None:
         conn.close()
 
 
-def record_position(positions_db: Path, *, claim: str, probability: float,
-                    band: str | None = None,
-                    resolve_by: str | None = None,
-                    resolution_criterion: str | None = None,
-                    now: datetime | None = None) -> Position:
+def record_position(
+    positions_db: Path,
+    *,
+    claim: str,
+    probability: float,
+    band: str | None = None,
+    resolve_by: str | None = None,
+    resolution_criterion: str | None = None,
+    now: datetime | None = None,
+) -> Position:
     """Record a high-confidence claim as a scoreable calibration position.
 
     ``resolve_by`` is the deadline at which the auto-resolver re-researches the
@@ -116,8 +122,14 @@ def record_position(positions_db: Path, *, claim: str, probability: float,
         rid = cur.fetchone()[0]
     finally:
         conn.close()
-    return Position(id=rid, claim=claim, wep_band=wep.name, confidence=probability,
-                    resolve_by=resolve_by, resolution_criterion=resolution_criterion)
+    return Position(
+        id=rid,
+        claim=claim,
+        wep_band=wep.name,
+        confidence=probability,
+        resolve_by=resolve_by,
+        resolution_criterion=resolution_criterion,
+    )
 
 
 def resolve_position(positions_db: Path, position_id: int, outcome: bool) -> Position:
@@ -139,12 +151,12 @@ def resolve_position(positions_db: Path, position_id: int, outcome: bool) -> Pos
         )
     finally:
         conn.close()
-    return Position(id=row[0], claim=row[1], wep_band=row[2], confidence=row[3],
-                    outcome=outcome, brier=bs)
+    return Position(
+        id=row[0], claim=row[1], wep_band=row[2], confidence=row[3], outcome=outcome, brier=bs
+    )
 
 
-def enqueue_human_resolution(positions_db: Path, position_id: int,
-                             reason: str) -> None:
+def enqueue_human_resolution(positions_db: Path, position_id: int, reason: str) -> None:
     """Mark a position for human decision (idempotent). Best-effort — never
     raises into the resolver loop."""
     _ensure_extras(positions_db)
@@ -153,7 +165,8 @@ def enqueue_human_resolution(positions_db: Path, position_id: int,
         conn.execute(
             "INSERT OR IGNORE INTO human_resolution_queue "
             "(position_id, enqueued_at, reason) VALUES (?, datetime('now'), ?)",
-            (position_id, reason))
+            (position_id, reason),
+        )
     except Exception:  # pragma: no cover - defensive
         pass
     finally:
@@ -169,11 +182,22 @@ def list_human_queue(positions_db: Path) -> list[dict]:
             "SELECT q.position_id, q.reason, q.enqueued_at, p.claim, p.confidence, "
             "p.wep_band, p.resolve_by FROM human_resolution_queue q "
             "JOIN positions p ON p.id = q.position_id "
-            "WHERE p.outcome IS NULL ORDER BY q.enqueued_at").fetchall()
+            "WHERE p.outcome IS NULL ORDER BY q.enqueued_at"
+        ).fetchall()
     finally:
         conn.close()
-    return [{"position_id": r[0], "reason": r[1], "enqueued_at": r[2], "claim": r[3],
-             "confidence": r[4], "wep_band": r[5], "resolve_by": r[6]} for r in rows]
+    return [
+        {
+            "position_id": r[0],
+            "reason": r[1],
+            "enqueued_at": r[2],
+            "claim": r[3],
+            "confidence": r[4],
+            "wep_band": r[5],
+            "resolve_by": r[6],
+        }
+        for r in rows
+    ]
 
 
 def timeline(positions_db: Path, *, bucket: str = "week") -> list[dict]:
@@ -197,10 +221,13 @@ def timeline(positions_db: Path, *, bucket: str = "week") -> list[dict]:
     finally:
         conn.close()
     return [
-        {"bucket": b, "n": int(n),
-         "mean_brier": round(mb or 0.0, 4),
-         "mean_probability": round(mp or 0.0, 4),
-         "mean_outcome_rate": round(mo or 0.0, 4)}
+        {
+            "bucket": b,
+            "n": int(n),
+            "mean_brier": round(mb or 0.0, 4),
+            "mean_probability": round(mp or 0.0, 4),
+            "mean_outcome_rate": round(mo or 0.0, 4),
+        }
         for b, n, mb, mp, mo in rows
     ]
 
@@ -211,8 +238,7 @@ def score_all(positions_db: Path) -> dict[str, float]:
     conn = open_db(positions_db)
     try:
         rows = conn.execute(
-            "SELECT confidence, outcome, brier FROM positions "
-            "WHERE outcome IS NOT NULL"
+            "SELECT confidence, outcome, brier FROM positions WHERE outcome IS NOT NULL"
         ).fetchall()
     finally:
         conn.close()
@@ -262,12 +288,10 @@ def calibration_report(positions_db: Path) -> dict:
         rows = conn.execute(
             "SELECT confidence, outcome FROM positions WHERE outcome IS NOT NULL"
         ).fetchall()
-        open_n = conn.execute(
-            "SELECT COUNT(*) FROM positions WHERE outcome IS NULL").fetchone()[0]
+        open_n = conn.execute("SELECT COUNT(*) FROM positions WHERE outcome IS NULL").fetchone()[0]
     finally:
         conn.close()
-    preds: list[tuple[float, bool]] = [
-        (float(p or 0.0), bool(o)) for p, o in rows]
+    preds: list[tuple[float, bool]] = [(float(p or 0.0), bool(o)) for p, o in rows]
     bins = [(b.low, min(b.high, 1.0)) for b in WEP_BANDS]
     curve = cal.reliability_curve(preds, bins) if preds else []
     # attach the plain-language band label to each populated bin

@@ -80,10 +80,7 @@ def run(
         log.info(
             "who.skill.egress_blocked_or_error",
             error=repr(exc),
-            note=(
-                "run `lighthouse trust add ghoapi.azureedge.net` to enable "
-                "live WHO GHO fetches"
-            ),
+            note=("run `lighthouse trust add ghoapi.azureedge.net` to enable live WHO GHO fetches"),
         )
         return []
 
@@ -141,10 +138,7 @@ def run_watchable(
         log.info(
             "who.skill.egress_blocked_or_error",
             error=repr(exc),
-            note=(
-                "run `lighthouse trust add ghoapi.azureedge.net` to enable "
-                "live WHO GHO fetches"
-            ),
+            note=("run `lighthouse trust add ghoapi.azureedge.net` to enable live WHO GHO fetches"),
         )
         return []
 

@@ -59,26 +59,29 @@ def _parse_series_data(result: dict) -> list[Document]:
         # Build concise text: last 10 data points
         recent = data_points[:10]
         obs_text = "; ".join(
-            f"{d.get('year', '')}-{d.get('period', '')}: {d.get('value', '')}"
-            for d in recent
+            f"{d.get('year', '')}-{d.get('period', '')}: {d.get('value', '')}" for d in recent
         )
         catalog = s.get("catalog") or {}
         series_title = (catalog.get("series_title") or series_id).strip()
         text = f"BLS {series_title}: {obs_text}"
         url = f"https://data.bls.gov/timeseries/{series_id}"
-        out.append(Document(
-            id=f"bls:{series_id}",
-            text=text,
-            metadata={
-                "source": "bls",
-                "url": url,
-                "grade": "A",
-                "title": series_title,
-                "series_id": series_id,
-                "latest_value": data_points[0].get("value", "") if data_points else "",
-                "latest_period": f"{data_points[0].get('year', '')}-{data_points[0].get('period', '')}" if data_points else "",
-            },
-        ))
+        out.append(
+            Document(
+                id=f"bls:{series_id}",
+                text=text,
+                metadata={
+                    "source": "bls",
+                    "url": url,
+                    "grade": "A",
+                    "title": series_title,
+                    "series_id": series_id,
+                    "latest_value": data_points[0].get("value", "") if data_points else "",
+                    "latest_period": f"{data_points[0].get('year', '')}-{data_points[0].get('period', '')}"
+                    if data_points
+                    else "",
+                },
+            )
+        )
     return out
 
 
@@ -117,17 +120,19 @@ def search_series(
     for series_id, title, tag in _CATALOG:
         if any(w in title.lower() or w in tag for w in q.split()):
             url = f"https://data.bls.gov/timeseries/{series_id}"
-            out.append(Document(
-                id=f"bls:{series_id}",
-                text=f"BLS series: {title} ({series_id})",
-                metadata={
-                    "source": "bls",
-                    "url": url,
-                    "grade": "A",
-                    "title": title,
-                    "series_id": series_id,
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"bls:{series_id}",
+                    text=f"BLS series: {title} ({series_id})",
+                    metadata={
+                        "source": "bls",
+                        "url": url,
+                        "grade": "A",
+                        "title": title,
+                        "series_id": series_id,
+                    },
+                )
+            )
         if len(out) >= max_results:
             break
     return out
@@ -210,17 +215,23 @@ def list_releases(
             survey_name = " ".join((s.get("survey_name") or "").split())
             if not survey_name:
                 continue
-            out.append(Document(
-                id=f"bls:survey:{survey_abbr}" if survey_abbr else f"bls:survey:{survey_name[:30]}",
-                text=survey_name,
-                metadata={
-                    "source": "bls",
-                    "url": f"https://www.bls.gov/{survey_abbr.lower()}/" if survey_abbr else "https://www.bls.gov/",
-                    "grade": "A",
-                    "title": survey_name,
-                    "survey_abbreviation": survey_abbr,
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"bls:survey:{survey_abbr}"
+                    if survey_abbr
+                    else f"bls:survey:{survey_name[:30]}",
+                    text=survey_name,
+                    metadata={
+                        "source": "bls",
+                        "url": f"https://www.bls.gov/{survey_abbr.lower()}/"
+                        if survey_abbr
+                        else "https://www.bls.gov/",
+                        "grade": "A",
+                        "title": survey_name,
+                        "survey_abbreviation": survey_abbr,
+                    },
+                )
+            )
         return out
     finally:
         if owns_client:
@@ -270,30 +281,52 @@ def get_occupation_data(
     fetch real observations with ``fetch_series``.
     """
     _OCC_CATALOG = [
-        ("OEUN000000000000015211", "Software Developers — Median Annual Wage", "software,developer,tech"),
-        ("OEUN000000000000029111", "Registered Nurses — Median Annual Wage", "nurse,nursing,healthcare"),
-        ("OEUN000000000000011202", "Chief Executives — Median Annual Wage", "ceo,executive,management"),
-        ("OEUN000000000000013111", "Management Analysts — Median Annual Wage", "management,analyst,consulting"),
+        (
+            "OEUN000000000000015211",
+            "Software Developers — Median Annual Wage",
+            "software,developer,tech",
+        ),
+        (
+            "OEUN000000000000029111",
+            "Registered Nurses — Median Annual Wage",
+            "nurse,nursing,healthcare",
+        ),
+        (
+            "OEUN000000000000011202",
+            "Chief Executives — Median Annual Wage",
+            "ceo,executive,management",
+        ),
+        (
+            "OEUN000000000000013111",
+            "Management Analysts — Median Annual Wage",
+            "management,analyst,consulting",
+        ),
         ("OEUN000000000000053000", "Retail Salespersons — Median Annual Wage", "retail,sales"),
-        ("OEUN000000000000151252", "Data Scientists — Median Annual Wage", "data,scientist,analytics,machine learning"),
+        (
+            "OEUN000000000000151252",
+            "Data Scientists — Median Annual Wage",
+            "data,scientist,analytics,machine learning",
+        ),
     ]
     q = query.lower()
     out: list[Document] = []
     for series_id, title, tags in _OCC_CATALOG:
         if any(w in title.lower() or w in tags for w in q.split()):
             url = "https://data.bls.gov/oes/current/oes_nat.htm"
-            out.append(Document(
-                id=f"bls:{series_id}",
-                text=f"BLS OES: {title} ({series_id})",
-                metadata={
-                    "source": "bls",
-                    "url": url,
-                    "grade": "A",
-                    "title": title,
-                    "series_id": series_id,
-                    "dataset": "OES",
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"bls:{series_id}",
+                    text=f"BLS OES: {title} ({series_id})",
+                    metadata={
+                        "source": "bls",
+                        "url": url,
+                        "grade": "A",
+                        "title": title,
+                        "series_id": series_id,
+                        "dataset": "OES",
+                    },
+                )
+            )
         if len(out) >= max_results:
             break
     return out

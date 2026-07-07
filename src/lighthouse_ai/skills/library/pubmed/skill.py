@@ -124,12 +124,20 @@ def run_watchable(
                 try:
                     # PubMed dates: "2024-3" or "2024-Mar-15" or "2024"
                     # Normalise to just the year (worst case) or YYYY-MM-DD.
-                    date_str = published.replace("-Jan-", "-01-").replace("-Feb-", "-02-") \
-                        .replace("-Mar-", "-03-").replace("-Apr-", "-04-") \
-                        .replace("-May-", "-05-").replace("-Jun-", "-06-") \
-                        .replace("-Jul-", "-07-").replace("-Aug-", "-08-") \
-                        .replace("-Sep-", "-09-").replace("-Oct-", "-10-") \
-                        .replace("-Nov-", "-11-").replace("-Dec-", "-12-")
+                    date_str = (
+                        published.replace("-Jan-", "-01-")
+                        .replace("-Feb-", "-02-")
+                        .replace("-Mar-", "-03-")
+                        .replace("-Apr-", "-04-")
+                        .replace("-May-", "-05-")
+                        .replace("-Jun-", "-06-")
+                        .replace("-Jul-", "-07-")
+                        .replace("-Aug-", "-08-")
+                        .replace("-Sep-", "-09-")
+                        .replace("-Oct-", "-10-")
+                        .replace("-Nov-", "-11-")
+                        .replace("-Dec-", "-12-")
+                    )
                     # Pad partial dates with -01 so fromisoformat works
                     parts = date_str.split("-")
                     if len(parts) == 1:

@@ -23,19 +23,26 @@ from lighthouse_ai.gateway import (
 from lighthouse_ai.hardware import GPUInfo, HardwareProfile, llm_budget_gb
 
 
-def _profile(ram_gb: float, *, tier="T2", platform="macos", unified=True,
-             gpus=None) -> HardwareProfile:
+def _profile(
+    ram_gb: float, *, tier="T2", platform="macos", unified=True, gpus=None
+) -> HardwareProfile:
     return HardwareProfile(
-        platform=platform, arch="arm64", apple_silicon=(platform == "macos"),
-        total_ram_gb=ram_gb, free_ram_gb=ram_gb / 2,
-        cpu_cores_physical=10, cpu_cores_logical=10,
+        platform=platform,
+        arch="arm64",
+        apple_silicon=(platform == "macos"),
+        total_ram_gb=ram_gb,
+        free_ram_gb=ram_gb / 2,
+        cpu_cores_physical=10,
+        cpu_cores_logical=10,
         gpu=gpus if gpus is not None else ([GPUInfo("Apple", ram_gb, "apple")] if unified else []),
-        unified_memory=unified, available_backends=["cpu", "ollama"],
+        unified_memory=unified,
+        available_backends=["cpu", "ollama"],
         suggested_tier=tier,
     )
 
 
 # --- budget math (§5.2) ---
+
 
 def test_budget_macos_24gb():
     assert llm_budget_gb(_profile(25.77)) == pytest.approx(15.47, abs=0.01)
@@ -47,16 +54,22 @@ def test_budget_linux_smaller_os_reserve():
 
 
 def test_budget_discrete_gpu_uses_vram():
-    p = _profile(64.0, platform="linux", unified=False,
-                 gpus=[GPUInfo("RTX 4090", 24.0, "nvidia")])
+    p = _profile(64.0, platform="linux", unified=False, gpus=[GPUInfo("RTX 4090", 24.0, "nvidia")])
     assert llm_budget_gb(p) == pytest.approx(20.5, abs=0.01)
 
 
 # --- footprint + MoE paging ---
 
+
 def test_footprint_table_has_expected_classes():
-    for m in ("qwen3.5-9b", "qwen3.6-35b-a3b", "qwen3.6-27b",
-              "deepseek-v4-flash", "deepseek-v4-pro", "phi-4-mini"):
+    for m in (
+        "qwen3.5-9b",
+        "qwen3.6-35b-a3b",
+        "qwen3.6-27b",
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "phi-4-mini",
+    ):
         assert m in MODEL_FOOTPRINTS_GB
 
 
@@ -88,13 +101,17 @@ def test_floor_and_aux_constants():
 
 # --- recommend_models follows the curated per-tier table ---
 
-@pytest.mark.parametrize("tier,planner,researcher,synthesizer,aux", [
-    ("T1", "qwen3.5-9b", "qwen3.5-9b", "qwen3.5-9b", "phi-4-mini"),
-    ("T2", "qwen3.6-35b-a3b", "qwen3.6-35b-a3b", "qwen3.6-35b-a3b", "qwen3.5-9b"),
-    ("T3", "qwen3.6-35b-a3b", "qwen3.6-35b-a3b", "qwen3.6-27b", "qwen3.5-9b"),
-    ("T4", "qwen3.6-35b-a3b", "qwen3.6-35b-a3b", "deepseek-v4-flash", "qwen3.5-9b"),
-    ("T5", "deepseek-v4-pro", "deepseek-v4-pro", "deepseek-v4-pro", "qwen3.5-9b"),
-])
+
+@pytest.mark.parametrize(
+    "tier,planner,researcher,synthesizer,aux",
+    [
+        ("T1", "qwen3.5-9b", "qwen3.5-9b", "qwen3.5-9b", "phi-4-mini"),
+        ("T2", "qwen3.6-35b-a3b", "qwen3.6-35b-a3b", "qwen3.6-35b-a3b", "qwen3.5-9b"),
+        ("T3", "qwen3.6-35b-a3b", "qwen3.6-35b-a3b", "qwen3.6-27b", "qwen3.5-9b"),
+        ("T4", "qwen3.6-35b-a3b", "qwen3.6-35b-a3b", "deepseek-v4-flash", "qwen3.5-9b"),
+        ("T5", "deepseek-v4-pro", "deepseek-v4-pro", "deepseek-v4-pro", "qwen3.5-9b"),
+    ],
+)
 def test_recommend_matches_table(tier, planner, researcher, synthesizer, aux):
     rec = recommend_models(_profile(32.0, tier=tier))
     assert rec["planner"].model == planner
@@ -117,6 +134,7 @@ def test_fixed_roles_unchanged():
 
 # --- budget_report advisory ---
 
+
 def test_budget_report_flags_paging_on_24gb_t2():
     rep = budget_report(_profile(25.77, tier="T2"))
     assert rep["budget_gb"] == pytest.approx(15.47, abs=0.01)
@@ -137,20 +155,24 @@ def test_budget_report_t1_no_paging():
 
 # --- pull preflight (disk safety) ---
 
+
 def test_estimate_download_known_vs_unknown():
     from lighthouse_ai.gateway import estimate_download_gb
+
     assert estimate_download_gb("qwen3.6-35b-a3b") > 0
     assert estimate_download_gb("totally-unknown-model") == 0.0
 
 
 def test_preflight_ok_with_ample_disk():
     from lighthouse_ai.gateway import preflight_pull
+
     pf = preflight_pull("qwen3.5-9b", free_disk_gb=100.0)
     assert pf.ok and pf.headroom_after_gb > 5.0
 
 
 def test_preflight_refuses_when_low_disk():
     from lighthouse_ai.gateway import preflight_pull
+
     pf = preflight_pull("qwen3.6-35b-a3b", free_disk_gb=10.0)
     assert not pf.ok
     assert "safety margin" in pf.reason
@@ -158,12 +180,14 @@ def test_preflight_refuses_when_low_disk():
 
 def test_preflight_flags_large_pull():
     from lighthouse_ai.gateway import preflight_pull
+
     pf = preflight_pull("deepseek-v4-flash", free_disk_gb=1000.0)
     assert pf.is_large and pf.ok
 
 
 def test_preflight_unknown_size_needs_headroom():
     from lighthouse_ai.gateway import preflight_pull
+
     assert preflight_pull("mystery", free_disk_gb=50.0).ok
     assert not preflight_pull("mystery", free_disk_gb=3.0).ok
 
@@ -172,23 +196,28 @@ def test_preflight_refuses_35b_on_this_machine():
     """Regression: 24 GB box with ~10 GB free must REFUSE the 35B-A3B pull
     rather than fill the disk and crash the OS."""
     from lighthouse_ai.gateway import preflight_pull
+
     assert not preflight_pull("qwen3.6-35b-a3b", free_disk_gb=9.8).ok
 
 
 # --- runtime RAM guard ---
 
+
 def test_enough_ram_blocks_when_insufficient():
     from lighthouse_ai.gateway import enough_ram_for
+
     assert not enough_ram_for("llama3.1:8b", available_gb=3.9)
 
 
 def test_enough_ram_allows_when_plenty():
     from lighthouse_ai.gateway import enough_ram_for
+
     assert enough_ram_for("llama3.1:8b", available_gb=20.0)
 
 
 def test_enough_ram_moe_always_allowed():
     from lighthouse_ai.gateway import enough_ram_for
+
     assert enough_ram_for("qwen3.6-35b-a3b", available_gb=2.0)
 
 
@@ -202,6 +231,7 @@ def test_runtime_moe_tag_recognized_as_pageable():
     the admission queue wrongly denies these and silently degrades to the mock,
     defeating the SSD-paging feature on exactly the 24 GB box this targets."""
     from lighthouse_ai.gateway import enough_ram_for, is_pageable_moe
+
     assert is_pageable_moe("qwen3:30b-a3b")
     assert is_pageable_moe("qwen3-coder:30b-a3b")
     assert is_pageable_moe("qwen3.5-122b-a10b")
@@ -218,16 +248,19 @@ def test_runtime_moe_tag_recognized_as_pageable():
 
 def test_estimate_resident_param_hint():
     from lighthouse_ai.gateway import estimate_resident_gb
+
     assert estimate_resident_gb("some-14b-model") > estimate_resident_gb("some-8b-model")
 
 
 # --- KV/context headroom: admission reserves more than static weights ---
+
 
 def test_resident_includes_kv_headroom_over_weights():
     """OOM-safety: the resident estimate must exceed weights-only, because the
     KV cache + activations grow with context and would otherwise swap a model
     whose weights barely fit."""
     from lighthouse_ai.gateway import estimate_resident_gb, estimate_weights_gb
+
     for m in ("qwen3.5-9b", "qwen3.6-27b", "llama3.1:8b", "some-14b-model"):
         assert estimate_resident_gb(m) > estimate_weights_gb(m) > 0
 
@@ -236,6 +269,7 @@ def test_kv_headroom_scales_with_model_size():
     """Bigger models pay more KV/activation headroom (per-token cost tracks
     hidden size), so the headroom term must grow with weight size."""
     from lighthouse_ai.gateway import _kv_context_headroom_gb
+
     assert _kv_context_headroom_gb(20.0) > _kv_context_headroom_gb(5.0)
     assert _kv_context_headroom_gb(0.0) == 0.0
 
@@ -246,6 +280,7 @@ def test_27b_resident_exceeds_footprint_for_kv():
     that already counts some KV. Regression: the old weights-only estimate came
     in *under* the footprint, under-reserving the KV cache."""
     from lighthouse_ai.gateway import estimate_resident_gb, model_footprint_gb
+
     assert estimate_resident_gb("qwen3.6-27b") >= model_footprint_gb("qwen3.6-27b")
 
 
@@ -257,6 +292,7 @@ def test_enough_ram_tighter_with_kv_headroom():
         estimate_resident_gb,
         estimate_weights_gb,
     )
+
     weights = estimate_weights_gb("qwen3.6-27b")
     resident = estimate_resident_gb("qwen3.6-27b")
     # Available sits between weights+margin and resident+margin: the KV headroom
@@ -268,11 +304,13 @@ def test_enough_ram_tighter_with_kv_headroom():
 
 # --- budget-aware resolver steps UP to a paging MoE, not down to dense ---
 
+
 def test_resolver_prefers_paging_moe_over_small_dense_when_tight():
     """On a tight-RAM box the resolver must pick the larger MoE tag (which pages
     from SSD and runs) over stepping all the way down to a small dense model —
     using the hardware well instead of leaving capability on the table."""
     from lighthouse_ai.gateway import resolve_against_installed
+
     p = _profile(25.77, tier="T2")
     installed = ["qwen3:32b", "qwen3:30b-a3b", "qwen3:8b"]
     # Tight live budget (~10 GB free): the dense 32B does not fit, but the
@@ -285,6 +323,7 @@ def test_resolver_picks_largest_dense_that_fits():
     """When RAM is ample the resolver picks the largest dense tag that fits the
     budget (best model that fits), not an over-conservative floor."""
     from lighthouse_ai.gateway import resolve_against_installed
+
     p = _profile(64.0, tier="T3")
     installed = ["qwen3:32b", "qwen2.5:14b", "qwen3:8b"]
     out = resolve_against_installed(p, installed, budget_gb=40.0)
@@ -295,6 +334,7 @@ def test_resolver_steps_down_when_dense_too_big():
     """No MoE installed and the big dense tag won't fit → step down to the
     largest dense tag that does, gracefully (not crash, not floor blindly)."""
     from lighthouse_ai.gateway import resolve_against_installed
+
     p = _profile(25.77, tier="T2")
     installed = ["qwen3:32b", "qwen2.5:14b", "qwen3:8b"]
     # ~13 GB budget: 32B (≈21 GB live) and 14B (≈10 GB) — 14B fits, 32B doesn't.
@@ -312,16 +352,28 @@ def test_gateway_falls_back_to_mock_when_lowmem(migrated_paths):
 
     @dataclass
     class _Fake:
-        def available(self): return True
-        def loaded_models(self): return []
-        def chat(self, *a, **k): return ChatResponse("REAL", 1, 1, "m")
+        def available(self):
+            return True
+
+        def loaded_models(self):
+            return []
+
+        def chat(self, *a, **k):
+            return ChatResponse("REAL", 1, 1, "m")
 
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
-    gw = Gateway(g, migrated_paths.audit_db, profile=_profile(25.77, tier="T1"),
-                 ollama=_Fake(), overrides={"planner": "llama3.1:8b"})
+    gw = Gateway(
+        g,
+        migrated_paths.audit_db,
+        profile=_profile(25.77, tier="T1"),
+        ollama=_Fake(),
+        overrides={"planner": "llama3.1:8b"},
+    )
     from lighthouse_ai.governor.ollama_queue import AdmissionConfig
+
     gw._admission = AdmissionConfig(wait_timeout_s=0.0)  # refuse now, don't poll
     import lighthouse_ai.gateway as gmod
+
     orig = gmod.estimate_resident_gb
     # Model isn't resident and would need more RAM than the host has → the
     # admission queue refuses it and the gateway falls back to the low-mem mock.
@@ -335,8 +387,10 @@ def test_gateway_falls_back_to_mock_when_lowmem(migrated_paths):
 
 # --- chosen_models.yaml records the advisory ---
 
+
 def test_write_chosen_models_records_paging(tmp_path):
     from lighthouse_ai.gateway import write_chosen_models
+
     doc = write_chosen_models(tmp_path / "chosen.yaml", _profile(25.77, tier="T2"))
     assert doc["roles"]["planner"]["model"] == "qwen3.6-35b-a3b"
     assert doc["llm_budget_gb"] == pytest.approx(15.47, abs=0.01)
@@ -345,10 +399,12 @@ def test_write_chosen_models_records_paging(tmp_path):
 
 # --- adaptability for small machines (all-machines support) ---
 
+
 def test_adaptive_ram_floor_reflects_smallest_installed_model():
     """The dispatch RAM gate must adapt to the box: a machine whose smallest
     reasoning model is a 1B clears on far less free RAM than an 8B-only box."""
     from lighthouse_ai.gateway import smallest_reasoning_resident_gb
+
     tiny = smallest_reasoning_resident_gb(["llama3.2:1b", "bge-m3"])
     big = smallest_reasoning_resident_gb(["qwen3:8b", "bge-m3"])
     assert tiny < 2.5, f"1B floor too high: {tiny}"
@@ -364,6 +420,7 @@ def test_low_budget_box_steps_down_to_tiny_model_not_mock():
     reasoning model (so a 4–8 GB box runs a real tiny model) rather than leaving
     nothing and degrading to the mock."""
     from lighthouse_ai.gateway import resolve_against_installed
+
     prof = _profile(8.0, tier="T1")
     installed = ["qwen3:8b", "llama3.2:1b", "bge-m3"]
     tight = resolve_against_installed(prof, installed, budget_gb=2.0)
@@ -382,24 +439,32 @@ def test_high_tier_box_uses_ollama_not_mock(migrated_paths):
     from lighthouse_ai.governor import BUDGET_DEFAULTS, Governor
 
     class _Fake:
-        def available(self): return True
-        def chat(self, *a, **k): return ChatResponse("REAL", 1, 1, "m")
+        def available(self):
+            return True
+
+        def chat(self, *a, **k):
+            return ChatResponse("REAL", 1, 1, "m")
 
     import lighthouse_ai.gateway as gmod
+
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
     orig = gmod.estimate_resident_gb
     gmod.estimate_resident_gb = lambda model: 0.0  # isolate routing from RAM admission
     try:
         # (a) Live path: resolved Ollama override on a T3 Apple Studio profile.
-        gw = Gateway(g, migrated_paths.audit_db, profile=_profile(64.0, tier="T3"),
-                     ollama=_Fake(), overrides={"planner": "qwen3:14b"})
+        gw = Gateway(
+            g,
+            migrated_paths.audit_db,
+            profile=_profile(64.0, tier="T3"),
+            ollama=_Fake(),
+            overrides={"planner": "qwen3:14b"},
+        )
         assert gw._bindings["planner"].backend == "ollama"
         assert "[mock" not in gw.complete("planner", "hi").text
 
         # (b) Raw catalog binding (backend == "mlx") still routes through Ollama.
-        gw2 = Gateway(g, migrated_paths.audit_db, profile=_profile(64.0, tier="T3"),
-                      ollama=_Fake())
-        assert gw2._bindings["planner"].backend == "mlx"   # from the catalog
+        gw2 = Gateway(g, migrated_paths.audit_db, profile=_profile(64.0, tier="T3"), ollama=_Fake())
+        assert gw2._bindings["planner"].backend == "mlx"  # from the catalog
         assert "[mock" not in gw2.complete("planner", "hi").text
     finally:
         gmod.estimate_resident_gb = orig
@@ -411,10 +476,18 @@ def test_resolver_knows_qwen35_family():
     invisible — research roles bound to qwen2.5-coder:14b, a coder model.
     The exact installed set from the box:"""
     from lighthouse_ai.gateway import resolve_against_installed
+
     p = _profile(25.77, tier="T2")
-    installed = ["qwen3.5:9b", "qwen3.5:4b", "bge-m3:latest", "qwen3:14b-q4_K_M",
-                 "qwen2.5-coder:14b", "qwen2.5-coder:14b-instruct",
-                 "devstral-small-2:latest", "mistral-small:24b"]
+    installed = [
+        "qwen3.5:9b",
+        "qwen3.5:4b",
+        "bge-m3:latest",
+        "qwen3:14b-q4_K_M",
+        "qwen2.5-coder:14b",
+        "qwen2.5-coder:14b-instruct",
+        "devstral-small-2:latest",
+        "mistral-small:24b",
+    ]
     # ~6 GB live budget: the 14Bs (~10 GB) don't fit; qwen3.5:9b (~6.6 GB
     # weights, picked as ≤ budget by param hint) is the right general-purpose
     # reasoner — never a coder model.
@@ -428,9 +501,15 @@ def test_resolver_no_fit_falls_back_to_smallest_not_last():
     preference (docstring contract), not whatever is last in ladder order —
     on the live box that returned a 9 GB coder model over the 3.4 GB 4b."""
     from lighthouse_ai.gateway import resolve_against_installed
+
     p = _profile(25.77, tier="T2")
-    installed = ["qwen3.5:9b", "qwen3.5:4b", "qwen3:14b-q4_K_M",
-                 "qwen2.5-coder:14b", "mistral-small:24b"]
+    installed = [
+        "qwen3.5:9b",
+        "qwen3.5:4b",
+        "qwen3:14b-q4_K_M",
+        "qwen2.5-coder:14b",
+        "mistral-small:24b",
+    ]
     out = resolve_against_installed(p, installed, budget_gb=1.0)
     assert out["planner"] == "qwen3.5:4b", out
 
@@ -439,6 +518,7 @@ def test_aux_role_prefers_small_new_gen_over_a_14b():
     """Aux is the 'smaller/faster' role: with qwen3.5:4b installed it must not
     resolve to a 9-10 GB 14B tag (the live box did exactly that)."""
     from lighthouse_ai.gateway import resolve_against_installed
+
     p = _profile(25.77, tier="T2")
     installed = ["qwen3.5:4b", "qwen3:14b-q4_K_M", "qwen2.5-coder:14b"]
     out = resolve_against_installed(p, installed, budget_gb=12.0)
@@ -450,6 +530,7 @@ def test_first_installed_never_resolves_across_size_classes():
     because the family is the same; variant suffixes of the SAME size do
     match (qwen3:14b → qwen3:14b-q4_K_M)."""
     from lighthouse_ai.gateway import _first_installed
+
     assert _first_installed(["qwen3:8b"], ["qwen3:14b-q4_K_M"]) is None
     assert _first_installed(["qwen3:14b"], ["qwen3:14b-q4_K_M"]) == "qwen3:14b-q4_K_M"
     assert _first_installed(["bge-m3"], ["bge-m3:latest"]) == "bge-m3:latest"

@@ -43,7 +43,7 @@ def _build_headers(api_key: str | None) -> dict[str, str]:
 
 def _parse_dockets(data: dict) -> list[Document]:
     """Parse a /dockets response into Documents."""
-    items = (data.get("data") or [])
+    items = data.get("data") or []
     out: list[Document] = []
     for item in items:
         attrs = item.get("attributes") or {}
@@ -56,26 +56,28 @@ def _parse_dockets(data: dict) -> list[Document]:
         last_modified = (attrs.get("lastModifiedDate") or "").strip()
         url = f"https://www.regulations.gov/docket/{docket_id}" if docket_id else ""
 
-        out.append(Document(
-            id=f"regs:{docket_id}" if docket_id else f"regs:{title[:40]}",
-            text=title,
-            metadata={
-                "source": "regulations_gov",
-                "url": url,
-                "grade": "A",
-                "title": title,
-                "docket_id": docket_id,
-                "docket_type": docket_type,
-                "agency_id": agency_id,
-                "last_modified": last_modified,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"regs:{docket_id}" if docket_id else f"regs:{title[:40]}",
+                text=title,
+                metadata={
+                    "source": "regulations_gov",
+                    "url": url,
+                    "grade": "A",
+                    "title": title,
+                    "docket_id": docket_id,
+                    "docket_type": docket_type,
+                    "agency_id": agency_id,
+                    "last_modified": last_modified,
+                },
+            )
+        )
     return out
 
 
 def _parse_documents(data: dict) -> list[Document]:
     """Parse a /documents response into Documents."""
-    items = (data.get("data") or [])
+    items = data.get("data") or []
     out: list[Document] = []
     for item in items:
         attrs = item.get("attributes") or {}
@@ -89,27 +91,29 @@ def _parse_documents(data: dict) -> list[Document]:
         docket_id = (attrs.get("docketId") or "").strip()
         url = f"https://www.regulations.gov/document/{doc_id}" if doc_id else ""
 
-        out.append(Document(
-            id=f"regs:doc:{doc_id}" if doc_id else f"regs:doc:{title[:40]}",
-            text=title,
-            metadata={
-                "source": "regulations_gov",
-                "url": url,
-                "grade": "A",
-                "title": title,
-                "document_id": doc_id,
-                "document_type": doc_type,
-                "agency_id": agency_id,
-                "posted_date": posted_date,
-                "docket_id": docket_id,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"regs:doc:{doc_id}" if doc_id else f"regs:doc:{title[:40]}",
+                text=title,
+                metadata={
+                    "source": "regulations_gov",
+                    "url": url,
+                    "grade": "A",
+                    "title": title,
+                    "document_id": doc_id,
+                    "document_type": doc_type,
+                    "agency_id": agency_id,
+                    "posted_date": posted_date,
+                    "docket_id": docket_id,
+                },
+            )
+        )
     return out
 
 
 def _parse_comments(data: dict) -> list[Document]:
     """Parse a /comments response into Documents."""
-    items = (data.get("data") or [])
+    items = data.get("data") or []
     out: list[Document] = []
     for item in items:
         attrs = item.get("attributes") or {}
@@ -126,19 +130,21 @@ def _parse_comments(data: dict) -> list[Document]:
         if comment_text:
             text = f"{title}. {comment_text[:500]}"
 
-        out.append(Document(
-            id=f"regs:comment:{comment_id}" if comment_id else f"regs:comment:{title[:40]}",
-            text=text,
-            metadata={
-                "source": "regulations_gov",
-                "url": url,
-                "grade": "B",  # public comments are unverified third-party
-                "title": title,
-                "comment_id": comment_id,
-                "posted_date": posted_date,
-                "docket_id": docket_id,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"regs:comment:{comment_id}" if comment_id else f"regs:comment:{title[:40]}",
+                text=text,
+                metadata={
+                    "source": "regulations_gov",
+                    "url": url,
+                    "grade": "B",  # public comments are unverified third-party
+                    "title": title,
+                    "comment_id": comment_id,
+                    "posted_date": posted_date,
+                    "docket_id": docket_id,
+                },
+            )
+        )
     return out
 
 

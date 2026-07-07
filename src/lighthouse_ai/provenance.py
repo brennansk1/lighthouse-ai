@@ -246,13 +246,9 @@ def build_run_sidecar(
     # One agent URN per backend/model listed.
     agent_urns: list[dict[str, str]] = []
     for role, tag in (backends or {}).items():
-        agent_urns.append(
-            {"@id": _urn("agent", f"{role}:{tag}"), "prov:label": f"{role}={tag}"}
-        )
+        agent_urns.append({"@id": _urn("agent", f"{role}:{tag}"), "prov:label": f"{role}={tag}"})
     for m in models or []:
-        agent_urns.append(
-            {"@id": _urn_for_model(m), "@type": "prov:Agent", "prov:label": m}
-        )
+        agent_urns.append({"@id": _urn_for_model(m), "@type": "prov:Agent", "prov:label": m})
 
     # Source slot entities: we don't have individual source IDs at this call
     # site, so we mint ``source_count`` placeholder entity URNs keyed by index.

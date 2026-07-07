@@ -139,11 +139,10 @@ def grade_artifact(body_json: dict) -> ParityScore:
     # Distinct cited sources across all sections (falls back to a recorded count).
     cited: set = set()
     for s in sections:
-        for c in (s.get("citations") or []):
+        for c in s.get("citations") or []:
             cited.add(c)
     source_count = len(cited) or int(_num(body_json.get("source_count")))
-    docs_acquired = int(_num((body_json.get("acquisition") or {}).get(
-        "documents_acquired")))
+    docs_acquired = int(_num((body_json.get("acquisition") or {}).get("documents_acquired")))
 
     # 1. breadth — distinct sources vs. a depth-appropriate target.
     target = _BREADTH_TARGET.get(depth, 12)
@@ -159,8 +158,7 @@ def grade_artifact(body_json: dict) -> ParityScore:
     #    grounding gate rejects fabricated ids at production time, so a shipped
     #    artifact should have zero fabricated. We *measure* it rather than assume:
     #    a fabricated count > 0 (recorded in metrics) tanks this to reflect reality.
-    fabricated = _num(m.get("fabricated_citations", body_json.get(
-        "fabricated_citations", 0.0)))
+    fabricated = _num(m.get("fabricated_citations", body_json.get("fabricated_citations", 0.0)))
     if source_count == 0:
         citation_verifiability = 0.0  # nothing cited → nothing verifiable
     elif fabricated > 0:
@@ -210,8 +208,7 @@ def grade_artifact(body_json: dict) -> ParityScore:
     return ParityScore(dimensions=dims, raw=raw, overall=overall)
 
 
-def compare(lighthouse: ParityScore,
-            frontier: FrontierScore | None = None) -> dict:
+def compare(lighthouse: ParityScore, frontier: FrontierScore | None = None) -> dict:
     """Head-to-head of one Lighthouse artifact vs. an optional frontier grade.
 
     Returns per-dimension deltas (Lighthouse − frontier) and which side wins each,
@@ -223,12 +220,15 @@ def compare(lighthouse: ParityScore,
     if frontier is None:
         return out
     fnorm = frontier.normalized()
-    deltas = {k: round(lighthouse.dimensions.get(k, 0.0) - fnorm.get(k, 0.0), 3)
-              for k in lighthouse.dimensions}
+    deltas = {
+        k: round(lighthouse.dimensions.get(k, 0.0) - fnorm.get(k, 0.0), 3)
+        for k in lighthouse.dimensions
+    }
     out["frontier"] = {"model": frontier.model, "dimensions": fnorm}
     out["deltas"] = deltas
-    out["wins"] = {k: ("lighthouse" if d > 0 else "frontier" if d < 0 else "tie")
-                   for k, d in deltas.items()}
+    out["wins"] = {
+        k: ("lighthouse" if d > 0 else "frontier" if d < 0 else "tie") for k, d in deltas.items()
+    }
     # The claim's crux: win-or-tie on the two trust columns.
     trust_cols = ("grounding", "citation_verifiability")
     out["holds_trust_wedge"] = all(deltas[c] >= 0 for c in trust_cols)
@@ -270,5 +270,6 @@ def render_report(results: list[dict]) -> str:
             f"{d.get('breadth', 0):.2f} | {d.get('grounding', 0):.2f} | "
             f"{d.get('citation_verifiability', 0):.2f} | "
             f"{d.get('contradiction_honesty', 0):.2f} | "
-            f"{d.get('open_question_honesty', 0):.2f} | {fr_overall} | {wedge} |")
+            f"{d.get('open_question_honesty', 0):.2f} | {fr_overall} | {wedge} |"
+        )
     return "\n".join(lines) + "\n"

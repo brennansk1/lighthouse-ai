@@ -7,6 +7,7 @@ JSX-compile / React-runtime errors and screenshots to /tmp/lh-track.png.
 
 Run: uv run python scripts/browser_track.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -28,12 +29,20 @@ def main() -> int:
     paths = make_paths(data_dir=tmp)
     server, thread, port = serve_in_thread(paths, port=0)  # migrates the DBs
     # Seed: two resolved in the "likely" band (one hit, one miss) + one human-queue.
-    p1 = record_position(paths.positions_db, claim="GDP growth will exceed 2% in 2026.", probability=0.8)
-    p2 = record_position(paths.positions_db, claim="The bill will pass committee by Q3.", probability=0.8)
-    p3 = record_position(paths.positions_db, claim="Should the agency prioritize solar over wind?", probability=0.5)
+    p1 = record_position(
+        paths.positions_db, claim="GDP growth will exceed 2% in 2026.", probability=0.8
+    )
+    p2 = record_position(
+        paths.positions_db, claim="The bill will pass committee by Q3.", probability=0.8
+    )
+    p3 = record_position(
+        paths.positions_db, claim="Should the agency prioritize solar over wind?", probability=0.5
+    )
     resolve_position(paths.positions_db, p1.id, outcome=True)
     resolve_position(paths.positions_db, p2.id, outcome=False)
-    enqueue_human_resolution(paths.positions_db, p3.id, "subjective or long-horizon claim — needs a human")
+    enqueue_human_resolution(
+        paths.positions_db, p3.id, "subjective or long-horizon claim — needs a human"
+    )
 
     base = f"http://127.0.0.1:{port}"
     print(f"server up on {base}")
@@ -44,7 +53,9 @@ def main() -> int:
             page = browser.new_page()
             console_errors: list[str] = []
             page_errors: list[str] = []
-            page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
+            page.on(
+                "console", lambda m: console_errors.append(m.text) if m.type == "error" else None
+            )
             page.on("pageerror", lambda e: page_errors.append(str(e)))
             page.goto(f"{base}/#track", wait_until="domcontentloaded", timeout=20000)
             page.wait_for_timeout(2500)

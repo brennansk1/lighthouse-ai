@@ -27,7 +27,7 @@ def applier(intent: Intent) -> None:
         remaining = _FAILURES_REMAINING.get(intent.idempotency_key, 0)
         if remaining > 0:
             _FAILURES_REMAINING[intent.idempotency_key] = remaining - 1
-            raise RuntimeError(f"simulated failure (remaining={remaining-1})")
+            raise RuntimeError(f"simulated failure (remaining={remaining - 1})")
         _APPLIED[intent.idempotency_key] = dict(intent.payload)
 
 

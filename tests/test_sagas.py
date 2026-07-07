@@ -7,8 +7,9 @@ from lighthouse_ai.sagas import clear, compensate, known_targets, register
 
 
 def _make_intent() -> Intent:
-    return Intent(id=1, idempotency_key="k", target="X", op="o", payload={},
-                  status="applied", attempts=1)
+    return Intent(
+        id=1, idempotency_key="k", target="X", op="o", payload={}, status="applied", attempts=1
+    )
 
 
 def test_register_and_compensate_runs_callback():

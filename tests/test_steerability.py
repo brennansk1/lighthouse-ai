@@ -45,18 +45,22 @@ class _CapturingOllama:
 
     def chat(self, model: str, prompt: str, *, sampling=None, system=None) -> ChatResponse:
         self.calls.append({"model": model, "prompt": prompt, "sampling": sampling})
-        return ChatResponse(text=self.fixed_text, prompt_tokens=3,
-                            completion_tokens=2, model=model)
+        return ChatResponse(text=self.fixed_text, prompt_tokens=3, completion_tokens=2, model=model)
 
 
 @pytest.fixture
 def stub_profile() -> HardwareProfile:
     """T1 — binds every reasoning role to Ollama per catalog/models.yaml."""
     return HardwareProfile(
-        platform="macos", arch="arm64", apple_silicon=True,
-        total_ram_gb=16.0, free_ram_gb=8.0,
-        cpu_cores_physical=8, cpu_cores_logical=8,
-        gpu=[], unified_memory=True,
+        platform="macos",
+        arch="arm64",
+        apple_silicon=True,
+        total_ram_gb=16.0,
+        free_ram_gb=8.0,
+        cpu_cores_physical=8,
+        cpu_cores_logical=8,
+        gpu=[],
+        unified_memory=True,
         available_backends=["cpu", "ollama"],
         suggested_tier="T1",
     )
@@ -64,8 +68,14 @@ def stub_profile() -> HardwareProfile:
 
 def _gateway(migrated_paths, stub_profile, fake, **kw) -> Gateway:
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
-    return Gateway(g, migrated_paths.audit_db, profile=stub_profile,
-                   ollama=fake, prefer_real_backends=True, **kw)
+    return Gateway(
+        g,
+        migrated_paths.audit_db,
+        profile=stub_profile,
+        ollama=fake,
+        prefer_real_backends=True,
+        **kw,
+    )
 
 
 # --- SamplingParams unit behavior -----------------------------------------
@@ -82,8 +92,8 @@ def test_sampling_params_overlay_only_set_fields() -> None:
     out = SamplingParams(seed=42, temperature=0.0).overlay(base)
     assert out["seed"] == 42
     assert out["temperature"] == 0.0
-    assert out["top_p"] == 0.9          # untouched
-    assert out["max_tokens"] == 4096    # untouched
+    assert out["top_p"] == 0.9  # untouched
+    assert out["max_tokens"] == 4096  # untouched
 
 
 def test_locked_preset_forces_seed_and_zero_temperature() -> None:
@@ -119,8 +129,12 @@ def test_per_call_override_flows_to_backend(migrated_paths, stub_profile) -> Non
 
 def test_global_default_sampling_flows_to_backend(migrated_paths, stub_profile) -> None:
     fake = _CapturingOllama()
-    gw = _gateway(migrated_paths, stub_profile, fake,
-                  default_sampling=SamplingParams(seed=99, temperature=0.0))
+    gw = _gateway(
+        migrated_paths,
+        stub_profile,
+        fake,
+        default_sampling=SamplingParams(seed=99, temperature=0.0),
+    )
     gw.complete("planner", "hi")
     samp = fake.calls[0]["sampling"]
     assert samp["seed"] == 99
@@ -129,8 +143,12 @@ def test_global_default_sampling_flows_to_backend(migrated_paths, stub_profile) 
 
 def test_per_role_override_only_affects_that_role(migrated_paths, stub_profile) -> None:
     fake = _CapturingOllama()
-    gw = _gateway(migrated_paths, stub_profile, fake,
-                  sampling={"planner": SamplingParams(seed=555, temperature=0.0)})
+    gw = _gateway(
+        migrated_paths,
+        stub_profile,
+        fake,
+        sampling={"planner": SamplingParams(seed=555, temperature=0.0)},
+    )
     gw.complete("planner", "a")
     gw.complete("researcher", "b")
     planner_samp = fake.calls[0]["sampling"]
@@ -144,9 +162,13 @@ def test_per_role_override_only_affects_that_role(migrated_paths, stub_profile) 
 
 def test_per_call_override_beats_per_role_and_default(migrated_paths, stub_profile) -> None:
     fake = _CapturingOllama()
-    gw = _gateway(migrated_paths, stub_profile, fake,
-                  default_sampling=SamplingParams(seed=1),
-                  sampling={"planner": SamplingParams(seed=2)})
+    gw = _gateway(
+        migrated_paths,
+        stub_profile,
+        fake,
+        default_sampling=SamplingParams(seed=1),
+        sampling={"planner": SamplingParams(seed=2)},
+    )
     gw.complete("planner", "hi", sampling=SamplingParams(seed=3))
     assert fake.calls[0]["sampling"]["seed"] == 3
 
@@ -164,9 +186,7 @@ def test_locked_mode_forces_seed_and_zero_temp(migrated_paths, stub_profile) -> 
         assert call["sampling"]["seed"] == 0
 
 
-def test_locked_mode_options_are_deterministic_for_ollama(
-    migrated_paths, stub_profile
-) -> None:
+def test_locked_mode_options_are_deterministic_for_ollama(migrated_paths, stub_profile) -> None:
     """The captured sampling dict translates to Ollama options with temp 0 + seed."""
     fake = _CapturingOllama()
     gw = _gateway(migrated_paths, stub_profile, fake, locked=True)
@@ -181,8 +201,7 @@ def test_locked_mode_options_are_deterministic_for_ollama(
 
 def test_effective_sampling_is_side_effect_free(migrated_paths, stub_profile) -> None:
     fake = _CapturingOllama()
-    gw = _gateway(migrated_paths, stub_profile, fake,
-                  sampling={"planner": SamplingParams(seed=8)})
+    gw = _gateway(migrated_paths, stub_profile, fake, sampling={"planner": SamplingParams(seed=8)})
     eff = gw.effective_sampling("planner")
     assert eff["seed"] == 8
     assert fake.calls == []  # resolving did not issue a completion
@@ -196,8 +215,12 @@ def test_provenance_sidecar_records_sampling(migrated_paths, stub_profile) -> No
     gw = _gateway(migrated_paths, stub_profile, fake, locked=True)
     sampling_prov = gw.sampling_provenance()
     sidecar = build_run_sidecar(
-        draft_id="d-1", job_id="job-1", question="Q?", mode="deep-dive",
-        backends={"planner": "qwen3:8b"}, source_count=0,
+        draft_id="d-1",
+        job_id="job-1",
+        question="Q?",
+        mode="deep-dive",
+        backends={"planner": "qwen3:8b"},
+        source_count=0,
         sampling=sampling_prov,
     )
     assert sidecar["lighthouse:sampling"]["locked"] is True
@@ -211,8 +234,12 @@ def test_provenance_sidecar_records_sampling(migrated_paths, stub_profile) -> No
 def test_provenance_sidecar_omits_sampling_when_unset() -> None:
     """Backward-compatible: no ``sampling`` arg → no new key (shape unchanged)."""
     sidecar = build_run_sidecar(
-        draft_id="d-2", job_id="job-2", question="Q?", mode="deep-dive",
-        backends={}, source_count=0,
+        draft_id="d-2",
+        job_id="job-2",
+        question="Q?",
+        mode="deep-dive",
+        backends={},
+        source_count=0,
     )
     assert "lighthouse:sampling" not in sidecar
     assert "lighthouse:sampling" not in sidecar["activity"]
@@ -231,8 +258,9 @@ def test_sampling_provenance_covers_every_bound_role(migrated_paths, stub_profil
 
 def test_audit_event_records_effective_sampling(migrated_paths, stub_profile) -> None:
     fake = _CapturingOllama()
-    gw = _gateway(migrated_paths, stub_profile, fake,
-                  sampling={"planner": SamplingParams(seed=321)})
+    gw = _gateway(
+        migrated_paths, stub_profile, fake, sampling={"planner": SamplingParams(seed=321)}
+    )
     gw.complete("planner", "hi", job_id="trace-s")
     conn = open_db(migrated_paths.audit_db)
     try:

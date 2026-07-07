@@ -21,6 +21,7 @@ base install, offline and deterministically:
 The incomplete-beta machinery (:func:`reg_incomplete_beta`, :func:`beta_ppf`) is a
 dependency-free port of the standard continued-fraction algorithm.
 """
+
 from __future__ import annotations
 
 import math
@@ -71,8 +72,7 @@ def brier_decomposition(preds: Sequence[Pred], *, n_bins: int = 10) -> dict:
     items = [(float(p), 1.0 if o else 0.0) for p, o in preds]
     n = len(items)
     if n == 0:
-        return {"brier": 0.0, "reliability": 0.0, "resolution": 0.0,
-                "uncertainty": 0.0, "n": 0}
+        return {"brier": 0.0, "reliability": 0.0, "resolution": 0.0, "uncertainty": 0.0, "n": 0}
     obar = sum(o for _, o in items) / n
     bins: list[list[tuple[float, float]]] = [[] for _ in range(n_bins)]
     for p, o in items:
@@ -92,9 +92,13 @@ def brier_decomposition(preds: Sequence[Pred], *, n_bins: int = 10) -> dict:
     resolution /= n
     uncertainty = obar * (1.0 - obar)
     brier = reliability - resolution + uncertainty
-    return {"brier": round(brier, 5), "reliability": round(reliability, 5),
-            "resolution": round(resolution, 5), "uncertainty": round(uncertainty, 5),
-            "n": n}
+    return {
+        "brier": round(brier, 5),
+        "reliability": round(reliability, 5),
+        "resolution": round(resolution, 5),
+        "uncertainty": round(uncertainty, 5),
+        "n": n,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -165,9 +169,9 @@ def beta_ppf(q: float, a: float, b: float) -> float:
     return 0.5 * (lo + hi)
 
 
-def beta_binomial_estimate(k: int, n: int, *, prior_mean: float,
-                           prior_strength: float = 2.0,
-                           ci: float = 0.90) -> dict:
+def beta_binomial_estimate(
+    k: int, n: int, *, prior_mean: float, prior_strength: float = 2.0, ci: float = 0.90
+) -> dict:
     """Shrunk success-rate estimate for ``k`` of ``n`` with a weak Beta prior.
 
     The prior is ``Beta(prior_mean·s, (1-prior_mean)·s)`` with strength ``s``
@@ -186,9 +190,13 @@ def beta_binomial_estimate(k: int, n: int, *, prior_mean: float,
     return {"mean": round(mean, 4), "lo": round(lo, 4), "hi": round(hi, 4), "n": n}
 
 
-def reliability_curve(preds: Sequence[Pred],
-                      bins: Sequence[tuple[float, float]] | None = None,
-                      *, prior_strength: float = 2.0, ci: float = 0.90) -> list[dict]:
+def reliability_curve(
+    preds: Sequence[Pred],
+    bins: Sequence[tuple[float, float]] | None = None,
+    *,
+    prior_strength: float = 2.0,
+    ci: float = 0.90,
+) -> list[dict]:
     """Per-bin reliability: mean forecast vs shrunk observed rate + interval.
 
     ``bins`` is a list of ``(lo, hi)`` probability ranges (default: deciles). Each
@@ -210,14 +218,21 @@ def reliability_curve(preds: Sequence[Pred],
         k = round(sum(o for _, o in members))
         mean_pred = sum(p for p, _ in members) / n
         midpoint = 0.5 * (lo + hi)
-        est = beta_binomial_estimate(k, n, prior_mean=midpoint,
-                                     prior_strength=prior_strength, ci=ci)
-        out.append({
-            "bin_lo": round(lo, 3), "bin_hi": round(hi, 3),
-            "predicted": round(mean_pred, 4),
-            "observed": est["mean"], "observed_lo": est["lo"], "observed_hi": est["hi"],
-            "n": n, "hits": k,
-        })
+        est = beta_binomial_estimate(
+            k, n, prior_mean=midpoint, prior_strength=prior_strength, ci=ci
+        )
+        out.append(
+            {
+                "bin_lo": round(lo, 3),
+                "bin_hi": round(hi, 3),
+                "predicted": round(mean_pred, 4),
+                "observed": est["mean"],
+                "observed_lo": est["lo"],
+                "observed_hi": est["hi"],
+                "n": n,
+                "hits": k,
+            }
+        )
     return out
 
 
@@ -247,8 +262,9 @@ def apply_temperature(probability: float, temperature: float) -> float:
     return _sigmoid(_logit(probability) / temperature)
 
 
-def fit_temperature(preds: Sequence[Pred], *, lo: float = 0.2, hi: float = 5.0,
-                    iters: int = 60) -> float:
+def fit_temperature(
+    preds: Sequence[Pred], *, lo: float = 0.2, hi: float = 5.0, iters: int = 60
+) -> float:
     """Fit the temperature minimizing mean log loss on ``preds`` (golden-section).
 
     Returns 1.0 (no-op) when there's too little or degenerate data. Robust with
@@ -310,10 +326,13 @@ def expected_calibration_error(preds: Sequence[Pred], *, n_bins: int = 10) -> fl
 # --------------------------------------------------------------------------- #
 # Evidence strength → input to probability elicitation
 # --------------------------------------------------------------------------- #
-def evidence_strength(*, n_sources: int = 0,
-                      independence: float | None = None,
-                      recency: float | None = None,
-                      agreement: float | None = None) -> float:
+def evidence_strength(
+    *,
+    n_sources: int = 0,
+    independence: float | None = None,
+    recency: float | None = None,
+    agreement: float | None = None,
+) -> float:
     """Combine evidence features into a [0,1] strength signal.
 
     ``n_sources`` is mapped through a saturating curve (more sources help with
@@ -330,16 +349,19 @@ def evidence_strength(*, n_sources: int = 0,
 
 
 #: probability floors/ceilings for an evidence-derived claim confidence.
-_UNSOURCED_P = 0.45      # an asserted-but-uncited claim sits just below "even"
-_SOURCED_FLOOR = 0.55    # a single cited source starts in "even/likely"
-_SOURCED_SPAN = 0.37     # strongest evidence reaches ~0.92 ("almost certain" floor)
+_UNSOURCED_P = 0.45  # an asserted-but-uncited claim sits just below "even"
+_SOURCED_FLOOR = 0.55  # a single cited source starts in "even/likely"
+_SOURCED_SPAN = 0.37  # strongest evidence reaches ~0.92 ("almost certain" floor)
 _CONTRADICTED_CAP = 0.5  # a flagged contradiction can't read above "even chance"
 
 
-def probability_from_evidence(*, n_sources: int,
-                              independent_sources: int | None = None,
-                              entailment: float | None = None,
-                              contradicted: bool = False) -> float:
+def probability_from_evidence(
+    *,
+    n_sources: int,
+    independent_sources: int | None = None,
+    entailment: float | None = None,
+    contradicted: bool = False,
+) -> float:
     """Derive *the probability a claim is true* from its evidence (not a constant).
 
     This replaces the old fixed heuristics (Investigate's 0.75/0.5, Survey's 0.7)
@@ -362,8 +384,7 @@ def probability_from_evidence(*, n_sources: int,
     else:
         indep = n_sources if independent_sources is None else max(0, independent_sources)
         independence = min(1.0, indep / 2.0)  # 1 distinct → 0.5, ≥2 → 1.0
-        s = evidence_strength(n_sources=n_sources, independence=independence,
-                              agreement=entailment)
+        s = evidence_strength(n_sources=n_sources, independence=independence, agreement=entailment)
         p = _SOURCED_FLOOR + _SOURCED_SPAN * s
     if contradicted:
         p = min(p, _CONTRADICTED_CAP)

@@ -109,6 +109,7 @@ def lookup_url_at_date(
 
 # ---- helpers ---------------------------------------------------------------
 
+
 def _normalize_ts(date: str) -> str:
     """Pad a date string to a 14-digit timestamp (append zeros if shorter)."""
     digits = "".join(c for c in date if c.isdigit())
@@ -144,7 +145,7 @@ def _ts_diff(a: str, b: str) -> int:
     try:
         return abs(int(a) - int(b))
     except (ValueError, TypeError):
-        return 10 ** 15
+        return 10**15
 
 
 def _closest(records: list[dict[str, str]], target_ts: str) -> dict[str, str] | None:
@@ -154,11 +155,10 @@ def _closest(records: list[dict[str, str]], target_ts: str) -> dict[str, str] | 
     return min(records, key=lambda r: _ts_diff(r.get("timestamp", "0"), target_ts))
 
 
-def _availability_lookup(
-    ctx: SkillContext, url: str, ts: str
-) -> dict[str, str] | None:
+def _availability_lookup(ctx: SkillContext, url: str, ts: str) -> dict[str, str] | None:
     """Query the Wayback Availability API as a CDX fallback."""
     from .cdx import _pct_encode
+
     avail_url = _AVAILABILITY_URL.format(url=_pct_encode(url), ts=_pct_encode(ts))
     try:
         resp = ctx.fetch(avail_url)

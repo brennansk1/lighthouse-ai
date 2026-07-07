@@ -63,7 +63,8 @@ class EntityHotnessStore:
         try:
             row = conn.execute(
                 "SELECT mention_count_30d, distinct_sources_json FROM entity_hotness "
-                "WHERE entity_id=?", (entity_id,),
+                "WHERE entity_id=?",
+                (entity_id,),
             ).fetchone()
             if row is None:
                 sources: set[str] = {source} if source else set()
@@ -168,8 +169,8 @@ class EntityHotnessStore:
         conn = open_db(self.db_path)
         try:
             conn.execute(
-                "UPDATE entity_hotness SET last_hotness=?, last_updated_ms=? "
-                "WHERE entity_id=?", (score, now, entity_id),
+                "UPDATE entity_hotness SET last_hotness=?, last_updated_ms=? WHERE entity_id=?",
+                (score, now, entity_id),
             )
         finally:
             conn.close()

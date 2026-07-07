@@ -39,134 +39,145 @@ from lighthouse_ai.skills.capabilities import build_context
 # Canned API responses
 # ---------------------------------------------------------------------------
 
-SEARCH_JSON = json.dumps({
-    "searchinfo": {"search": "Albert Einstein"},
-    "search": [
-        {
-            "id": "Q937",
-            "title": "Q937",
-            "pageid": 701,
-            "repository": "wikidata",
-            "url": "//www.wikidata.org/wiki/Q937",
-            "concepturi": "http://www.wikidata.org/entity/Q937",
-            "label": "Albert Einstein",
-            "description": "German-born theoretical physicist (1879–1955)",
-            "match": {"type": "label", "language": "en", "text": "Albert Einstein"},
-            "aliases": ["Einstein"],
-        }
-    ],
-    "success": 1,
-})
+SEARCH_JSON = json.dumps(
+    {
+        "searchinfo": {"search": "Albert Einstein"},
+        "search": [
+            {
+                "id": "Q937",
+                "title": "Q937",
+                "pageid": 701,
+                "repository": "wikidata",
+                "url": "//www.wikidata.org/wiki/Q937",
+                "concepturi": "http://www.wikidata.org/entity/Q937",
+                "label": "Albert Einstein",
+                "description": "German-born theoretical physicist (1879–1955)",
+                "match": {"type": "label", "language": "en", "text": "Albert Einstein"},
+                "aliases": ["Einstein"],
+            }
+        ],
+        "success": 1,
+    }
+)
 
-SEARCH_EMPTY_JSON = json.dumps({
-    "searchinfo": {"search": "xyzzy_nonexistent_99999"},
-    "search": [],
-    "success": 1,
-})
+SEARCH_EMPTY_JSON = json.dumps(
+    {
+        "searchinfo": {"search": "xyzzy_nonexistent_99999"},
+        "search": [],
+        "success": 1,
+    }
+)
 
-ENTITY_JSON = json.dumps({
-    "entities": {
-        "Q937": {
-            "type": "item",
-            "id": "Q937",
-            "labels": {
-                "en": {"language": "en", "value": "Albert Einstein"},
-            },
-            "descriptions": {
-                "en": {"language": "en", "value": "German-born theoretical physicist (1879–1955)"},
-            },
-            "aliases": {
-                "en": [{"language": "en", "value": "Einstein"}],
-            },
-            "claims": {
-                "P496": [
-                    {
-                        "rank": "normal",
-                        "mainsnak": {
-                            "snaktype": "value",
-                            "property": "P496",
-                            "datavalue": {
-                                "value": "0000-0000-0000-0001",
-                                "type": "string",
-                            },
-                        },
-                    }
-                ],
-                "P214": [
-                    {
-                        "rank": "normal",
-                        "mainsnak": {
-                            "snaktype": "value",
-                            "property": "P214",
-                            "datavalue": {
-                                "value": "75121530",
-                                "type": "string",
-                            },
-                        },
-                    }
-                ],
-                "P213": [
-                    {
-                        "rank": "normal",
-                        "mainsnak": {
-                            "snaktype": "value",
-                            "property": "P213",
-                            "datavalue": {
-                                "value": "0000 0001 2097 2672",
-                                "type": "string",
-                            },
-                        },
-                    }
-                ],
-                "P569": [
-                    {
-                        "rank": "normal",
-                        "mainsnak": {
-                            "snaktype": "value",
-                            "property": "P569",
-                            "datavalue": {
-                                "value": {
-                                    "time": "+1879-03-14T00:00:00Z",
-                                    "precision": 11,
-                                    "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+ENTITY_JSON = json.dumps(
+    {
+        "entities": {
+            "Q937": {
+                "type": "item",
+                "id": "Q937",
+                "labels": {
+                    "en": {"language": "en", "value": "Albert Einstein"},
+                },
+                "descriptions": {
+                    "en": {
+                        "language": "en",
+                        "value": "German-born theoretical physicist (1879–1955)",
+                    },
+                },
+                "aliases": {
+                    "en": [{"language": "en", "value": "Einstein"}],
+                },
+                "claims": {
+                    "P496": [
+                        {
+                            "rank": "normal",
+                            "mainsnak": {
+                                "snaktype": "value",
+                                "property": "P496",
+                                "datavalue": {
+                                    "value": "0000-0000-0000-0001",
+                                    "type": "string",
                                 },
-                                "type": "time",
                             },
-                        },
-                    }
-                ],
-                "P31": [
-                    {
-                        "rank": "normal",
-                        "mainsnak": {
-                            "snaktype": "value",
-                            "property": "P31",
-                            "datavalue": {
-                                "value": {
-                                    "entity-type": "item",
-                                    "numeric-id": 5,
-                                    "id": "Q5",
+                        }
+                    ],
+                    "P214": [
+                        {
+                            "rank": "normal",
+                            "mainsnak": {
+                                "snaktype": "value",
+                                "property": "P214",
+                                "datavalue": {
+                                    "value": "75121530",
+                                    "type": "string",
                                 },
-                                "type": "wikibase-entityid",
                             },
-                        },
-                    }
-                ],
-            },
-        }
-    },
-    "success": 1,
-})
+                        }
+                    ],
+                    "P213": [
+                        {
+                            "rank": "normal",
+                            "mainsnak": {
+                                "snaktype": "value",
+                                "property": "P213",
+                                "datavalue": {
+                                    "value": "0000 0001 2097 2672",
+                                    "type": "string",
+                                },
+                            },
+                        }
+                    ],
+                    "P569": [
+                        {
+                            "rank": "normal",
+                            "mainsnak": {
+                                "snaktype": "value",
+                                "property": "P569",
+                                "datavalue": {
+                                    "value": {
+                                        "time": "+1879-03-14T00:00:00Z",
+                                        "precision": 11,
+                                        "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+                                    },
+                                    "type": "time",
+                                },
+                            },
+                        }
+                    ],
+                    "P31": [
+                        {
+                            "rank": "normal",
+                            "mainsnak": {
+                                "snaktype": "value",
+                                "property": "P31",
+                                "datavalue": {
+                                    "value": {
+                                        "entity-type": "item",
+                                        "numeric-id": 5,
+                                        "id": "Q5",
+                                    },
+                                    "type": "wikibase-entityid",
+                                },
+                            },
+                        }
+                    ],
+                },
+            }
+        },
+        "success": 1,
+    }
+)
 
-ENTITY_MISSING_JSON = json.dumps({
-    "entities": {
-        "Q99999999": {
-            "id": "Q99999999",
-            "missing": "",
-        }
-    },
-    "success": 1,
-})
+ENTITY_MISSING_JSON = json.dumps(
+    {
+        "entities": {
+            "Q99999999": {
+                "id": "Q99999999",
+                "missing": "",
+            }
+        },
+        "success": 1,
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +205,7 @@ def _load_wikidata(tmp_path):
 # ---------------------------------------------------------------------------
 # Manifest
 # ---------------------------------------------------------------------------
+
 
 def test_manifest_loads():
     skill = load_skill("wikidata")
@@ -229,6 +241,7 @@ def test_manifest_output_shape_is_graph():
 # Import guard (no forbidden modules in skill source)
 # ---------------------------------------------------------------------------
 
+
 def test_import_guard_passes():
     """The skill must not import httpx, requests, urllib, etc. directly."""
     skill = load_skill("wikidata")
@@ -239,19 +252,25 @@ def test_import_guard_passes():
 # run() — documents tagged skill_id="wikidata"
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_run_returns_tagged_documents(tmp_path):
     """run() should return Documents with skill_id='wikidata'."""
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_JSON.encode()))
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*"
-    ).mock(return_value=httpx.Response(200, content=ENTITY_JSON.encode()))
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_JSON.encode())
+    )
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*").mock(
+        return_value=httpx.Response(200, content=ENTITY_JSON.encode())
+    )
 
     skill, broker = _load_wikidata(tmp_path)
-    result = run_skill(skill, "Albert Einstein", broker=broker, client=_make_client(),
-                       platform_allowlist=_WIKIDATA_ALLOWLIST)
+    result = run_skill(
+        skill,
+        "Albert Einstein",
+        broker=broker,
+        client=_make_client(),
+        platform_allowlist=_WIKIDATA_ALLOWLIST,
+    )
     assert result.ok, f"run_skill failed: {result.error}"
     assert len(result.documents) > 0
     for doc in result.documents:
@@ -262,36 +281,48 @@ def test_run_returns_tagged_documents(tmp_path):
 
 @respx.mock
 def test_run_document_has_qid_and_url(tmp_path):
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_JSON.encode()))
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*"
-    ).mock(return_value=httpx.Response(200, content=ENTITY_JSON.encode()))
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_JSON.encode())
+    )
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*").mock(
+        return_value=httpx.Response(200, content=ENTITY_JSON.encode())
+    )
 
     skill, broker = _load_wikidata(tmp_path)
-    result = run_skill(skill, "Albert Einstein", broker=broker, client=_make_client(),
-                       platform_allowlist=_WIKIDATA_ALLOWLIST)
+    result = run_skill(
+        skill,
+        "Albert Einstein",
+        broker=broker,
+        client=_make_client(),
+        platform_allowlist=_WIKIDATA_ALLOWLIST,
+    )
     assert result.ok
     for doc in result.documents:
         assert doc.metadata.get("qid") == "Q937"
         url = doc.metadata.get("url", "")
-        assert url.startswith("https://www.wikidata.org/wiki/"), f"Expected Wikidata URL, got: {url!r}"
+        assert url.startswith("https://www.wikidata.org/wiki/"), (
+            f"Expected Wikidata URL, got: {url!r}"
+        )
 
 
 @respx.mock
 def test_run_document_has_identifiers(tmp_path):
     """Documents should carry a populated identifiers dict."""
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_JSON.encode()))
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*"
-    ).mock(return_value=httpx.Response(200, content=ENTITY_JSON.encode()))
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_JSON.encode())
+    )
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*").mock(
+        return_value=httpx.Response(200, content=ENTITY_JSON.encode())
+    )
 
     skill, broker = _load_wikidata(tmp_path)
-    result = run_skill(skill, "Albert Einstein", broker=broker, client=_make_client(),
-                       platform_allowlist=_WIKIDATA_ALLOWLIST)
+    result = run_skill(
+        skill,
+        "Albert Einstein",
+        broker=broker,
+        client=_make_client(),
+        platform_allowlist=_WIKIDATA_ALLOWLIST,
+    )
     assert result.ok
     doc = result.documents[0]
     ids = doc.metadata.get("identifiers", {})
@@ -303,13 +334,18 @@ def test_run_document_has_identifiers(tmp_path):
 @respx.mock
 def test_run_empty_search_returns_no_documents(tmp_path):
     """When search returns no results, run() should return an empty list."""
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_EMPTY_JSON.encode()))
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_EMPTY_JSON.encode())
+    )
 
     skill, broker = _load_wikidata(tmp_path)
-    result = run_skill(skill, "xyzzy_nonexistent_99999", broker=broker, client=_make_client(),
-                       platform_allowlist=_WIKIDATA_ALLOWLIST)
+    result = run_skill(
+        skill,
+        "xyzzy_nonexistent_99999",
+        broker=broker,
+        client=_make_client(),
+        platform_allowlist=_WIKIDATA_ALLOWLIST,
+    )
     assert result.ok
     assert result.documents == []
     assert result.thin
@@ -318,16 +354,21 @@ def test_run_empty_search_returns_no_documents(tmp_path):
 @respx.mock
 def test_run_signed_skill_no_community_tag(tmp_path):
     """Since wikidata is signed=True, documents must NOT have community=True."""
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_JSON.encode()))
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*"
-    ).mock(return_value=httpx.Response(200, content=ENTITY_JSON.encode()))
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_JSON.encode())
+    )
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*").mock(
+        return_value=httpx.Response(200, content=ENTITY_JSON.encode())
+    )
 
     skill, broker = _load_wikidata(tmp_path)
-    result = run_skill(skill, "Albert Einstein", broker=broker, client=_make_client(),
-                       platform_allowlist=_WIKIDATA_ALLOWLIST)
+    result = run_skill(
+        skill,
+        "Albert Einstein",
+        broker=broker,
+        client=_make_client(),
+        platform_allowlist=_WIKIDATA_ALLOWLIST,
+    )
     assert result.ok
     for doc in result.documents:
         assert "community" not in doc.metadata, (
@@ -338,6 +379,7 @@ def test_run_signed_skill_no_community_tag(tmp_path):
 # ---------------------------------------------------------------------------
 # EgressBlocked degradation
 # ---------------------------------------------------------------------------
+
 
 def test_run_egress_blocked_returns_empty_list(tmp_path):
     """run() must return [] (not crash) when EgressBlocked is raised."""
@@ -384,17 +426,20 @@ def test_run_egress_blocked_wrapped_exception(tmp_path):
 # search_entity tool
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_search_entity_returns_hits(tmp_path):
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_JSON.encode()))
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_JSON.encode())
+    )
 
     skill, broker = _load_wikidata(tmp_path)
-    ctx = build_context(skill.manifest, broker=broker, client=_make_client(),
-                        platform_allowlist=_WIKIDATA_ALLOWLIST)
+    ctx = build_context(
+        skill.manifest, broker=broker, client=_make_client(), platform_allowlist=_WIKIDATA_ALLOWLIST
+    )
 
     from lighthouse_ai.skills.library.wikidata.skill import search_entity
+
     hits = search_entity(ctx, "Albert Einstein", limit=5)
     assert len(hits) == 1
     assert hits[0]["id"] == "Q937"
@@ -404,15 +449,17 @@ def test_search_entity_returns_hits(tmp_path):
 
 @respx.mock
 def test_search_entity_empty_result(tmp_path):
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_EMPTY_JSON.encode()))
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_EMPTY_JSON.encode())
+    )
 
     skill, broker = _load_wikidata(tmp_path)
-    ctx = build_context(skill.manifest, broker=broker, client=_make_client(),
-                        platform_allowlist=_WIKIDATA_ALLOWLIST)
+    ctx = build_context(
+        skill.manifest, broker=broker, client=_make_client(), platform_allowlist=_WIKIDATA_ALLOWLIST
+    )
 
     from lighthouse_ai.skills.library.wikidata.skill import search_entity
+
     hits = search_entity(ctx, "xyzzy_nonexistent_99999", limit=5)
     assert hits == []
 
@@ -421,17 +468,20 @@ def test_search_entity_empty_result(tmp_path):
 # fetch_entity tool
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_fetch_entity_returns_entity(tmp_path):
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*"
-    ).mock(return_value=httpx.Response(200, content=ENTITY_JSON.encode()))
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*").mock(
+        return_value=httpx.Response(200, content=ENTITY_JSON.encode())
+    )
 
     skill, broker = _load_wikidata(tmp_path)
-    ctx = build_context(skill.manifest, broker=broker, client=_make_client(),
-                        platform_allowlist=_WIKIDATA_ALLOWLIST)
+    ctx = build_context(
+        skill.manifest, broker=broker, client=_make_client(), platform_allowlist=_WIKIDATA_ALLOWLIST
+    )
 
     from lighthouse_ai.skills.library.wikidata.skill import fetch_entity
+
     entity = fetch_entity(ctx, "Q937")
     assert entity is not None
     assert entity["id"] == "Q937"
@@ -440,15 +490,17 @@ def test_fetch_entity_returns_entity(tmp_path):
 
 @respx.mock
 def test_fetch_entity_missing_returns_none(tmp_path):
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*"
-    ).mock(return_value=httpx.Response(200, content=ENTITY_MISSING_JSON.encode()))
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*").mock(
+        return_value=httpx.Response(200, content=ENTITY_MISSING_JSON.encode())
+    )
 
     skill, broker = _load_wikidata(tmp_path)
-    ctx = build_context(skill.manifest, broker=broker, client=_make_client(),
-                        platform_allowlist=_WIKIDATA_ALLOWLIST)
+    ctx = build_context(
+        skill.manifest, broker=broker, client=_make_client(), platform_allowlist=_WIKIDATA_ALLOWLIST
+    )
 
     from lighthouse_ai.skills.library.wikidata.skill import fetch_entity
+
     entity = fetch_entity(ctx, "Q99999999")
     assert entity is None
 
@@ -457,17 +509,20 @@ def test_fetch_entity_missing_returns_none(tmp_path):
 # get_properties tool
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_get_properties_returns_claims_dict(tmp_path):
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*"
-    ).mock(return_value=httpx.Response(200, content=ENTITY_JSON.encode()))
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*").mock(
+        return_value=httpx.Response(200, content=ENTITY_JSON.encode())
+    )
 
     skill, broker = _load_wikidata(tmp_path)
-    ctx = build_context(skill.manifest, broker=broker, client=_make_client(),
-                        platform_allowlist=_WIKIDATA_ALLOWLIST)
+    ctx = build_context(
+        skill.manifest, broker=broker, client=_make_client(), platform_allowlist=_WIKIDATA_ALLOWLIST
+    )
 
     from lighthouse_ai.skills.library.wikidata.skill import get_properties
+
     props = get_properties(ctx, "Q937")
     assert isinstance(props, dict)
     # P496 = ORCID, should be present
@@ -485,20 +540,23 @@ def test_get_properties_returns_claims_dict(tmp_path):
 # resolve_identifier tool
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_resolve_identifier_returns_identifiers(tmp_path):
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_JSON.encode()))
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*"
-    ).mock(return_value=httpx.Response(200, content=ENTITY_JSON.encode()))
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_JSON.encode())
+    )
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbgetentities.*").mock(
+        return_value=httpx.Response(200, content=ENTITY_JSON.encode())
+    )
 
     skill, broker = _load_wikidata(tmp_path)
-    ctx = build_context(skill.manifest, broker=broker, client=_make_client(),
-                        platform_allowlist=_WIKIDATA_ALLOWLIST)
+    ctx = build_context(
+        skill.manifest, broker=broker, client=_make_client(), platform_allowlist=_WIKIDATA_ALLOWLIST
+    )
 
     from lighthouse_ai.skills.library.wikidata.skill import resolve_identifier
+
     ids = resolve_identifier(ctx, "Albert Einstein")
     assert ids.get("qid") == "Q937"
     assert ids.get("label") == "Albert Einstein"
@@ -507,15 +565,17 @@ def test_resolve_identifier_returns_identifiers(tmp_path):
 
 @respx.mock
 def test_resolve_identifier_empty_search_returns_empty(tmp_path):
-    respx.get(
-        url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*"
-    ).mock(return_value=httpx.Response(200, content=SEARCH_EMPTY_JSON.encode()))
+    respx.get(url__regex=r"https://www\.wikidata\.org/w/api\.php\?action=wbsearchentities.*").mock(
+        return_value=httpx.Response(200, content=SEARCH_EMPTY_JSON.encode())
+    )
 
     skill, broker = _load_wikidata(tmp_path)
-    ctx = build_context(skill.manifest, broker=broker, client=_make_client(),
-                        platform_allowlist=_WIKIDATA_ALLOWLIST)
+    ctx = build_context(
+        skill.manifest, broker=broker, client=_make_client(), platform_allowlist=_WIKIDATA_ALLOWLIST
+    )
 
     from lighthouse_ai.skills.library.wikidata.skill import resolve_identifier
+
     ids = resolve_identifier(ctx, "xyzzy_nonexistent_99999")
     assert ids == {}
 
@@ -524,19 +584,22 @@ def test_resolve_identifier_empty_search_returns_empty(tmp_path):
 # Entity parser (pure Python, no network)
 # ---------------------------------------------------------------------------
 
+
 def test_parse_entity_claims_string_type():
     from lighthouse_ai.skills.library.wikidata.parsers.entity import parse_entity_claims
 
     entity = {
         "claims": {
-            "P496": [{
-                "rank": "normal",
-                "mainsnak": {
-                    "snaktype": "value",
-                    "property": "P496",
-                    "datavalue": {"value": "0000-0001-2345-6789", "type": "string"},
-                },
-            }]
+            "P496": [
+                {
+                    "rank": "normal",
+                    "mainsnak": {
+                        "snaktype": "value",
+                        "property": "P496",
+                        "datavalue": {"value": "0000-0001-2345-6789", "type": "string"},
+                    },
+                }
+            ]
         }
     }
     claims = parse_entity_claims(entity)
@@ -548,17 +611,19 @@ def test_parse_entity_claims_entityid_type():
 
     entity = {
         "claims": {
-            "P31": [{
-                "rank": "normal",
-                "mainsnak": {
-                    "snaktype": "value",
-                    "property": "P31",
-                    "datavalue": {
-                        "value": {"entity-type": "item", "numeric-id": 5, "id": "Q5"},
-                        "type": "wikibase-entityid",
+            "P31": [
+                {
+                    "rank": "normal",
+                    "mainsnak": {
+                        "snaktype": "value",
+                        "property": "P31",
+                        "datavalue": {
+                            "value": {"entity-type": "item", "numeric-id": 5, "id": "Q5"},
+                            "type": "wikibase-entityid",
+                        },
                     },
-                },
-            }]
+                }
+            ]
         }
     }
     claims = parse_entity_claims(entity)
@@ -570,21 +635,23 @@ def test_parse_entity_claims_time_type():
 
     entity = {
         "claims": {
-            "P569": [{
-                "rank": "normal",
-                "mainsnak": {
-                    "snaktype": "value",
-                    "property": "P569",
-                    "datavalue": {
-                        "value": {
-                            "time": "+1879-03-14T00:00:00Z",
-                            "precision": 11,
-                            "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+            "P569": [
+                {
+                    "rank": "normal",
+                    "mainsnak": {
+                        "snaktype": "value",
+                        "property": "P569",
+                        "datavalue": {
+                            "value": {
+                                "time": "+1879-03-14T00:00:00Z",
+                                "precision": 11,
+                                "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+                            },
+                            "type": "time",
                         },
-                        "type": "time",
                     },
-                },
-            }]
+                }
+            ]
         }
     }
     claims = parse_entity_claims(entity)
@@ -661,10 +728,10 @@ def test_extract_identifier_props():
     from lighthouse_ai.skills.library.wikidata.parsers.entity import extract_identifier_props
 
     claims = {
-        "P496": "0000-0001-2345-6789",   # ORCID
-        "P214": "75121530",              # VIAF
-        "P345": "nm0000001",             # IMDb
-        "P31":  "Q5",                    # instance of (not an identifier)
+        "P496": "0000-0001-2345-6789",  # ORCID
+        "P214": "75121530",  # VIAF
+        "P345": "nm0000001",  # IMDb
+        "P31": "Q5",  # instance of (not an identifier)
     }
     ids = extract_identifier_props(claims)
     assert ids.get("ORCID") == "0000-0001-2345-6789"
@@ -737,6 +804,7 @@ def test_entity_aliases():
 # URL encoder (unit test — no network)
 # ---------------------------------------------------------------------------
 
+
 def test_url_encode_spaces():
     from lighthouse_ai.skills.library.wikidata.skill import _url_encode
 
@@ -760,6 +828,7 @@ def test_url_encode_unicode():
 # ---------------------------------------------------------------------------
 # Live-network gate
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.skipif(
     not os.getenv("LIGHTHOUSE_REAL_BACKEND"),

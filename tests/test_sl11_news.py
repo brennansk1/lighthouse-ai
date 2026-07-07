@@ -93,7 +93,9 @@ ALL_SKILL_IDS = [
 ]
 
 
-def _make_ctx(broker, skill_id: str, rss_bytes: bytes = _RSS_BYTES, extra_client: dict | None = None):
+def _make_ctx(
+    broker, skill_id: str, rss_bytes: bytes = _RSS_BYTES, extra_client: dict | None = None
+):
     """Build a SkillContext with ctx.fetch monkeypatched to return canned bytes."""
     from lighthouse_ai.rag.chunker import Document
     from lighthouse_ai.skills.capabilities import SkillContext
@@ -104,6 +106,7 @@ def _make_ctx(broker, skill_id: str, rss_bytes: bytes = _RSS_BYTES, extra_client
         def __init__(self, content: bytes, status_code: int = 200):
             self.content = content
             self.status_code = status_code
+
         def __bool__(self):
             return True
 
@@ -131,7 +134,12 @@ def _make_ctx(broker, skill_id: str, rss_bytes: bytes = _RSS_BYTES, extra_client
         doc = _make_document(
             doc_id=f"{skill_id}:page:{hash(url) & 0xFFFFFFFF:08x}",
             text=content.decode("utf-8", errors="replace")[:500],
-            metadata={"url": url, "type": "news_article", "outlet": skill_id, **(kw.get("extra_meta") or {})},
+            metadata={
+                "url": url,
+                "type": "news_article",
+                "outlet": skill_id,
+                **(kw.get("extra_meta") or {}),
+            },
         )
         return doc
 
@@ -152,13 +160,16 @@ def _make_ctx(broker, skill_id: str, rss_bytes: bytes = _RSS_BYTES, extra_client
 # 1. Load + manifest checks for all 6 skills
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("skill_id", ALL_SKILL_IDS)
 def test_skill_loads(skill_id: str):
     """Each skill loads cleanly: manifest parses, import guard passes."""
     s = load_skill(skill_id)
     assert s.manifest.id == skill_id
     assert callable(s.entrypoint)
-    assert s.watchable_entrypoint is not None, f"{skill_id} must have run_watchable (watchable=true)"
+    assert s.watchable_entrypoint is not None, (
+        f"{skill_id} must have run_watchable (watchable=true)"
+    )
 
 
 @pytest.mark.parametrize("skill_id", ALL_SKILL_IDS)
@@ -177,7 +188,7 @@ def test_manifest_allsides_audit_tag_present(skill_id: str):
     allsides_tags = [t for t in s.manifest.audit_tags if t.startswith("allsides:")]
     assert allsides_tags, (
         f"{skill_id} manifest is missing an 'allsides:*' audit_tag; "
-        "add audit_tags = [\"allsides:<rating>\", ...] to manifest.toml"
+        'add audit_tags = ["allsides:<rating>", ...] to manifest.toml'
     )
 
 
@@ -206,13 +217,14 @@ def test_manifest_perspective_lens(skill_id: str):
 # ---------------------------------------------------------------------------
 
 _EXPECTED_ALLSIDES: dict[str, str] = {
-    "reuters":          "allsides:center",
+    "reuters": "allsides:center",
     "associated_press": "allsides:center",
-    "bbc_news":         "allsides:lean_left",
-    "npr":              "allsides:lean_left",
-    "guardian":         "allsides:left",
-    "propublica":       "allsides:lean_left",
+    "bbc_news": "allsides:lean_left",
+    "npr": "allsides:lean_left",
+    "guardian": "allsides:left",
+    "propublica": "allsides:lean_left",
 }
+
 
 @pytest.mark.parametrize("skill_id,expected_tag", list(_EXPECTED_ALLSIDES.items()))
 def test_allsides_rating_correct(skill_id: str, expected_tag: str):
@@ -227,6 +239,7 @@ def test_allsides_rating_correct(skill_id: str, expected_tag: str):
 # 3. discover_skills includes all 6
 # ---------------------------------------------------------------------------
 
+
 def test_discover_skills_includes_all_six():
     """discover_skills() includes all 6 news skill ids."""
     manifests = discover_skills()
@@ -237,6 +250,7 @@ def test_discover_skills_includes_all_six():
 # ---------------------------------------------------------------------------
 # 4. run() via monkeypatched sources.news returns Documents
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("skill_id", ["reuters", "associated_press", "bbc_news", "npr"])
 def test_run_rss_based_skill_returns_documents(monkeypatch, skill_id: str, broker, tmp_path):
@@ -297,6 +311,7 @@ def test_run_propublica_returns_documents(monkeypatch, broker, tmp_path):
 # 5. run_watchable() with since filter
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("skill_id", ["reuters", "associated_press", "bbc_news"])
 def test_run_watchable_since_none_returns_all(monkeypatch, skill_id: str, broker):
     """With since=None run_watchable returns all canned items."""
@@ -336,14 +351,13 @@ def test_run_watchable_since_filters_old(monkeypatch, skill_id: str, broker):
 
     # The "Old Story" (2026-06-01) should be filtered out
     old_story_in_docs = any("old" in doc.text.lower() for doc in docs)
-    assert not old_story_in_docs, (
-        f"{skill_id} run_watchable(since=cutoff) included an old item"
-    )
+    assert not old_story_in_docs, f"{skill_id} run_watchable(since=cutoff) included an old item"
 
 
 # ---------------------------------------------------------------------------
 # 6. EgressBlocked degrades gracefully
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("skill_id", ALL_SKILL_IDS)
 def test_run_degrades_on_egress_blocked(monkeypatch, skill_id: str, broker):
@@ -367,14 +381,13 @@ def test_run_degrades_on_egress_blocked(monkeypatch, skill_id: str, broker):
     ctx.fetch.side_effect = EgressBlocked("blocked in test")
 
     docs = s.entrypoint(ctx, "test query", max_results=5)
-    assert docs == [], (
-        f"{skill_id} run() must return [] on EgressBlocked, got {docs}"
-    )
+    assert docs == [], f"{skill_id} run() must return [] on EgressBlocked, got {docs}"
 
 
 # ---------------------------------------------------------------------------
 # 7. NPR audio transcript integration (stub graceful degradation)
 # ---------------------------------------------------------------------------
+
 
 def test_npr_fetch_audio_transcript_returns_empty_without_provider():
     """NPR fetch_audio_transcript returns [] when no ASR provider registered."""
@@ -425,6 +438,7 @@ def test_npr_fetch_audio_transcript_uses_cache():
 # 8. Guardian get_tags tool
 # ---------------------------------------------------------------------------
 
+
 def test_guardian_get_tags_returns_documents(broker):
     """Guardian get_tags fetches tag-specific articles from the API."""
     from lighthouse_ai.skills.library.guardian.skill import get_tags
@@ -439,6 +453,7 @@ def test_guardian_get_tags_returns_documents(broker):
 # ---------------------------------------------------------------------------
 # 9. ProPublica search_data_repo nonprofit search
 # ---------------------------------------------------------------------------
+
 
 def test_propublica_search_data_repo_nonprofits(broker):
     """ProPublica search_data_repo returns Documents for nonprofit query."""
@@ -462,6 +477,7 @@ def test_propublica_search_data_repo_unknown_dataset_returns_empty(broker):
 # ---------------------------------------------------------------------------
 # 10. Live / integration tests (opt-in)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.skipif(
     not os.environ.get("LIGHTHOUSE_REAL_BACKEND"),

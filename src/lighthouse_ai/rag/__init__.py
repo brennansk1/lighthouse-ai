@@ -1,4 +1,5 @@
 """RAG subsystem — chunking, embeddings, vector store, hybrid retrieval."""
+
 from .bm25 import BM25Index
 from .chunker import Chunk, Document, chunk_document
 from .contextual import prepend_context

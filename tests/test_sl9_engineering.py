@@ -329,12 +329,14 @@ def packages_skill():
 
 def test_discover_skills_includes_github():
     from lighthouse_ai.skills import discover_skills
+
     manifests = discover_skills()
     assert "github" in manifests
 
 
 def test_discover_skills_includes_packages():
     from lighthouse_ai.skills import discover_skills
+
     manifests = discover_skills()
     assert "packages" in manifests
 
@@ -737,6 +739,7 @@ def test_packages_run_empty_result_is_thin(monkeypatch, packages_skill, broker):
 
 def test_packages_run_swallows_exception_per_registry(monkeypatch, packages_skill, broker):
     """One registry failing should not prevent results from others."""
+
     def _raise(*a, **kw):
         raise RuntimeError("network error")
 
@@ -875,11 +878,13 @@ def test_packages_watchable_degrades_on_egress_block(monkeypatch, packages_skill
 
 def test_github_import_guard_passes(github_skill):
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(github_skill.path)
 
 
 def test_packages_import_guard_passes(packages_skill):
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(packages_skill.path)
 
 

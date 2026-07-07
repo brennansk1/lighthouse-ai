@@ -64,6 +64,7 @@ _ADJUDICATE_RE = re.compile(r"/adjudicate", re.IGNORECASE)
 # Directive parsing helpers
 # --------------------------------------------------------------------------- #
 
+
 def _parse_sources_pin(text: str) -> list[str] | None:
     """/sources skill_a,skill_b  → [skill_a, skill_b] or None if absent.
 
@@ -88,7 +89,7 @@ def _parse_sources_pin(text: str) -> list[str] | None:
     idx = re.search(r"/sources\s+", text, re.IGNORECASE)
     if not idx:
         return None
-    rest = text[idx.end():]
+    rest = text[idx.end() :]
     # Collect leading identifier tokens (stop at first non-identifier token).
     tokens = []
     for tok in rest.split():
@@ -113,6 +114,7 @@ def _has_adjudicate(text: str) -> bool:
 # Session + Turn
 # --------------------------------------------------------------------------- #
 
+
 @dataclass(frozen=True)
 class Turn:
     role: Role
@@ -121,6 +123,12 @@ class Turn:
     # Zone S additions — present only on assistant turns
     skill_ids_used: list[str] = field(default_factory=list)
     adjudicate_flag: bool = False
+    # Artifact chat additions
+    backend: str | None = None
+    researched: bool | None = None
+    research_note: str | None = None
+    wep_band: str | None = None
+    citations_rich: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -131,15 +139,30 @@ class QUCSession:
     # Skills pinned via /sources — sticky for the session.
     pinned_skills: list[str] = field(default_factory=list)
 
-    def add(self, role: Role, text: str, citations: list[str] | None = None,
-            skill_ids_used: list[str] | None = None,
-            adjudicate_flag: bool = False) -> Turn:
+    def add(
+        self,
+        role: Role,
+        text: str,
+        citations: list[str] | None = None,
+        skill_ids_used: list[str] | None = None,
+        adjudicate_flag: bool = False,
+        backend: str | None = None,
+        researched: bool | None = None,
+        research_note: str | None = None,
+        wep_band: str | None = None,
+        citations_rich: list[dict] | None = None,
+    ) -> Turn:
         t = Turn(
             role=role,
             text=text,
             citations=list(citations or []),
             skill_ids_used=list(skill_ids_used or []),
             adjudicate_flag=adjudicate_flag,
+            backend=backend,
+            researched=researched,
+            research_note=research_note,
+            wep_band=wep_band,
+            citations_rich=list(citations_rich or []),
         )
         self.history.append(t)
         return t
@@ -165,6 +188,7 @@ class QUCSession:
 # Contradiction statement helper
 # --------------------------------------------------------------------------- #
 
+
 def _contradiction_prefix(
     evidence_chunks,
     *,
@@ -183,8 +207,9 @@ def _contradiction_prefix(
         from ..verification.discipline import Claim as _Claim
 
         # Build minimal claim objects from chunk text.
-        claims = [_Claim(text=getattr(getattr(h, "chunk", h), "text", "")[:200])
-                  for h in evidence_chunks]
+        claims = [
+            _Claim(text=getattr(getattr(h, "chunk", h), "text", "")[:200]) for h in evidence_chunks
+        ]
         contradictions = detect(
             claims,
             [getattr(h, "chunk", h) for h in evidence_chunks],
@@ -196,7 +221,7 @@ def _contradiction_prefix(
         lines = []
         for c in contradictions:
             lines.append(
-                f"Note: sources disagree on \"{c.claim[:80]}\" "
+                f'Note: sources disagree on "{c.claim[:80]}" '
                 f"[{c.detection_layer}, severity={c.severity}]."
             )
         return "\n".join(lines) + "\n\n"
@@ -207,6 +232,7 @@ def _contradiction_prefix(
 # --------------------------------------------------------------------------- #
 # Per-turn skill selection (Zone S, §4.2)
 # --------------------------------------------------------------------------- #
+
 
 def _select_skills(
     user_text: str,
@@ -253,6 +279,7 @@ def _select_skills(
 # --------------------------------------------------------------------------- #
 # Main entry point
 # --------------------------------------------------------------------------- #
+
 
 def ask(
     session: QUCSession,
@@ -314,9 +341,7 @@ def ask(
     if hybrid is not None and len(user_text.split()) >= retrieve_threshold:
         hits = hybrid.search(user_text, top_k=4)
         citations = [h.chunk.id for h in hits]
-        evidence_block = "\n".join(
-            f"[{i+1}] {h.chunk.text[:300]}" for i, h in enumerate(hits)
-        )
+        evidence_block = "\n".join(f"[{i + 1}] {h.chunk.text[:300]}" for i, h in enumerate(hits))
 
     history = session.render_history()
 
@@ -330,15 +355,14 @@ def ask(
         )
 
     if gateway is None:
-        answer = (f"[draft] (no LLM bound) — you asked: {user_text}\n"
-                  f"Evidence chunks: {len(citations)}")
+        answer = (
+            f"[draft] (no LLM bound) — you asked: {user_text}\nEvidence chunks: {len(citations)}"
+        )
     else:
         # Build the skill context hint for the planner (§4.2).
         skill_hint = ""
         if effective_skills:
-            skill_hint = (
-                f"Skills available for this turn: {', '.join(effective_skills)}\n"
-            )
+            skill_hint = f"Skills available for this turn: {', '.join(effective_skills)}\n"
 
         prompt = (
             f"Conversation so far:\n{history}\n\n"

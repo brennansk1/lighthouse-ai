@@ -43,16 +43,15 @@ def _get_scorer() -> tuple[object | None, str | None]:
     Returns (scorer_object, kind) where kind is "minicheck" or None.
     """
     global _scorer, _scorer_kind
-    if _scorer_kind is not None or (_scorer is None and _scorer_kind is None
-                                    and not available()):
+    if _scorer_kind is not None or (_scorer is None and _scorer_kind is None and not available()):
         return _scorer, _scorer_kind
 
     if _scorer is None:
         if _minicheck_available():
             try:
                 from minicheck.minicheck import MiniCheck  # type: ignore[import]
-                _scorer = MiniCheck(model_name="flan-t5-large", device="cpu",
-                                    cache_dir=None)
+
+                _scorer = MiniCheck(model_name="flan-t5-large", device="cpu", cache_dir=None)
                 _scorer_kind = "minicheck"
             except Exception:
                 # Importable but construction failed (missing weights, bad

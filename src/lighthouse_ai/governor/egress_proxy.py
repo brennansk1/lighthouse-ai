@@ -226,8 +226,7 @@ class EgressProxy:
                 return False
             for dom in self._allowed:
                 dom_labels = dom.split(".")
-                if (len(labels) > len(dom_labels)
-                        and labels[-len(dom_labels):] == dom_labels):
+                if len(labels) > len(dom_labels) and labels[-len(dom_labels) :] == dom_labels:
                     return True
         return False
 
@@ -266,9 +265,7 @@ class EgressProxy:
             )
 
         if not host:
-            return EgressDecision(
-                allowed=False, host=host, tier=tier, reason="no resolvable host"
-            )
+            return EgressDecision(allowed=False, host=host, tier=tier, reason="no resolvable host")
 
         if not self.is_allowed_host(host):
             return EgressDecision(

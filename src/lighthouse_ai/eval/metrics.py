@@ -41,9 +41,7 @@ def _dedup_preserve_order(ids: Sequence[str]) -> list[str]:
     return out
 
 
-def precision_at_k(
-    retrieved_ids: Sequence[str], relevant_ids: Iterable[str], k: int
-) -> float:
+def precision_at_k(retrieved_ids: Sequence[str], relevant_ids: Iterable[str], k: int) -> float:
     """Fraction of the top-``k`` retrieved ids that are relevant.
 
     Denominator is ``k`` (not the number actually returned) so that returning
@@ -60,9 +58,7 @@ def precision_at_k(
     return hits / k
 
 
-def recall_at_k(
-    retrieved_ids: Sequence[str], relevant_ids: Iterable[str], k: int
-) -> float:
+def recall_at_k(retrieved_ids: Sequence[str], relevant_ids: Iterable[str], k: int) -> float:
     """Fraction of all relevant ids that appear in the top-``k`` retrieved.
 
     Denominator is the size of the relevant set. If nothing is relevant the
@@ -115,13 +111,68 @@ _CLAIM_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 # faithfulness toward 1.0 for any fluent-but-unsupported answer.
 _STOPWORDS = frozenset(
     {
-        "a", "an", "the", "and", "or", "but", "if", "then", "else", "of",
-        "to", "in", "on", "at", "by", "for", "with", "as", "is", "are",
-        "was", "were", "be", "been", "being", "it", "its", "this", "that",
-        "these", "those", "from", "into", "about", "than", "so", "such",
-        "can", "will", "would", "should", "could", "may", "might", "do",
-        "does", "did", "has", "have", "had", "not", "no", "yes", "we",
-        "you", "they", "he", "she", "i", "their", "our", "your",
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "but",
+        "if",
+        "then",
+        "else",
+        "of",
+        "to",
+        "in",
+        "on",
+        "at",
+        "by",
+        "for",
+        "with",
+        "as",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "it",
+        "its",
+        "this",
+        "that",
+        "these",
+        "those",
+        "from",
+        "into",
+        "about",
+        "than",
+        "so",
+        "such",
+        "can",
+        "will",
+        "would",
+        "should",
+        "could",
+        "may",
+        "might",
+        "do",
+        "does",
+        "did",
+        "has",
+        "have",
+        "had",
+        "not",
+        "no",
+        "yes",
+        "we",
+        "you",
+        "they",
+        "he",
+        "she",
+        "i",
+        "their",
+        "our",
+        "your",
     }
 )
 
@@ -133,11 +184,7 @@ def _claim_tokens(text: str) -> list[str]:
     nouns/verbs/numbers that assert something. Stripping stopwords focuses the
     overlap measure on substance rather than grammar.
     """
-    return [
-        t
-        for t in (m.lower() for m in _CLAIM_TOKEN_RE.findall(text))
-        if t not in _STOPWORDS
-    ]
+    return [t for t in (m.lower() for m in _CLAIM_TOKEN_RE.findall(text)) if t not in _STOPWORDS]
 
 
 def faithfulness(answer: str, evidence_texts: Iterable[str]) -> float:

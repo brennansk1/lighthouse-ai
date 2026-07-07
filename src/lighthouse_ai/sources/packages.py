@@ -35,11 +35,13 @@ _CRATES_BASE = "https://crates.io/api/v1/crates"
 
 # Public API hosts this adapter contacts; the user invoked the package source
 # for exactly these registries, so they are authorized for egress.
-_ALLOWED_HOSTS = frozenset({
-    "pypi.org",
-    "registry.npmjs.org",
-    "crates.io",
-})
+_ALLOWED_HOSTS = frozenset(
+    {
+        "pypi.org",
+        "registry.npmjs.org",
+        "crates.io",
+    }
+)
 
 _PYPI_HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
 _NPM_HEADERS = {"User-Agent": "Lighthouse/0.1", "Accept": "application/json"}
@@ -52,6 +54,7 @@ _CRATES_HEADERS = {
 # ===========================================================================
 # PyPI
 # ===========================================================================
+
 
 def pypi_search_package(
     query: str,
@@ -170,21 +173,23 @@ def pypi_get_versions(
         for ver in versions:
             files = releases.get(ver) or []
             upload_time = files[0].get("upload_time", "") if files else ""
-            out.append(Document(
-                id=f"pypi:{name}:{ver}",
-                text=f"{name} {ver}",
-                metadata={
-                    "source": "pypi",
-                    "registry": "pypi",
-                    "type": "version",
-                    "url": f"https://pypi.org/project/{name}/{ver}/",
-                    "grade": "A",
-                    "name": name,
-                    "version": ver,
-                    "upload_time": upload_time,
-                    "num_files": len(files),
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"pypi:{name}:{ver}",
+                    text=f"{name} {ver}",
+                    metadata={
+                        "source": "pypi",
+                        "registry": "pypi",
+                        "type": "version",
+                        "url": f"https://pypi.org/project/{name}/{ver}/",
+                        "grade": "A",
+                        "name": name,
+                        "version": ver,
+                        "upload_time": upload_time,
+                        "num_files": len(files),
+                    },
+                )
+            )
         return out
     finally:
         if owns:
@@ -223,20 +228,22 @@ def pypi_get_dependencies(
         requires = info.get("requires_dist") or []
         out: list[Document] = []
         for req in requires:
-            out.append(Document(
-                id=f"pypi:{name}:{pkg_ver}:dep:{req[:60]}",
-                text=req,
-                metadata={
-                    "source": "pypi",
-                    "registry": "pypi",
-                    "type": "dependency",
-                    "url": f"https://pypi.org/project/{name}/{pkg_ver}/",
-                    "grade": "A",
-                    "package": name,
-                    "version": pkg_ver,
-                    "dependency_spec": req,
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"pypi:{name}:{pkg_ver}:dep:{req[:60]}",
+                    text=req,
+                    metadata={
+                        "source": "pypi",
+                        "registry": "pypi",
+                        "type": "dependency",
+                        "url": f"https://pypi.org/project/{name}/{pkg_ver}/",
+                        "grade": "A",
+                        "package": name,
+                        "version": pkg_ver,
+                        "dependency_spec": req,
+                    },
+                )
+            )
         return out
     finally:
         if owns:
@@ -273,23 +280,25 @@ def pypi_get_dependents(
             return []
         resp.raise_for_status()
         info = resp.json().get("info") or {}
-        return [Document(
-            id=f"pypi:{name}:dependents",
-            text=(
-                f"PyPI does not provide a public dependents API for {name}. "
-                "For reverse dependency data use libraries.io or pypinfo."
-            ),
-            metadata={
-                "source": "pypi",
-                "registry": "pypi",
-                "type": "dependents_note",
-                "url": f"https://pypi.org/project/{name}/",
-                "grade": "A",
-                "package": name,
-                "version": info.get("version") or "",
-                "limitation": "no_public_dependents_api",
-            },
-        )]
+        return [
+            Document(
+                id=f"pypi:{name}:dependents",
+                text=(
+                    f"PyPI does not provide a public dependents API for {name}. "
+                    "For reverse dependency data use libraries.io or pypinfo."
+                ),
+                metadata={
+                    "source": "pypi",
+                    "registry": "pypi",
+                    "type": "dependents_note",
+                    "url": f"https://pypi.org/project/{name}/",
+                    "grade": "A",
+                    "package": name,
+                    "version": info.get("version") or "",
+                    "limitation": "no_public_dependents_api",
+                },
+            )
+        ]
     finally:
         if owns:
             client.close()
@@ -315,6 +324,7 @@ def pypi_list_recent_releases_for_package(
 # ===========================================================================
 # npm
 # ===========================================================================
+
 
 def npm_search_package(
     query: str,
@@ -348,25 +358,31 @@ def npm_search_package(
             name = pkg.get("name", "")
             version = pkg.get("version", "")
             description = pkg.get("description") or ""
-            text = f"{name} {version}: {description}".strip(": ") if description else f"{name} {version}"
-            out.append(Document(
-                id=f"npm:{name}",
-                text=text,
-                metadata={
-                    "source": "npm",
-                    "registry": "npm",
-                    "type": "package",
-                    "url": f"https://www.npmjs.com/package/{name}",
-                    "grade": "A",
-                    "name": name,
-                    "version": version,
-                    "description": description,
-                    "keywords": pkg.get("keywords") or [],
-                    "author": (pkg.get("author") or {}).get("name") or "",
-                    "publisher": (pkg.get("publisher") or {}).get("username") or "",
-                    "date": pkg.get("date") or "",
-                },
-            ))
+            text = (
+                f"{name} {version}: {description}".strip(": ")
+                if description
+                else f"{name} {version}"
+            )
+            out.append(
+                Document(
+                    id=f"npm:{name}",
+                    text=text,
+                    metadata={
+                        "source": "npm",
+                        "registry": "npm",
+                        "type": "package",
+                        "url": f"https://www.npmjs.com/package/{name}",
+                        "grade": "A",
+                        "name": name,
+                        "version": version,
+                        "description": description,
+                        "keywords": pkg.get("keywords") or [],
+                        "author": (pkg.get("author") or {}).get("name") or "",
+                        "publisher": (pkg.get("publisher") or {}).get("username") or "",
+                        "date": pkg.get("date") or "",
+                    },
+                )
+            )
         return out
     finally:
         if owns:
@@ -401,26 +417,32 @@ def npm_fetch_package_metadata(
         latest_ver = (data.get("dist-tags") or {}).get("latest") or ""
         latest_info = (data.get("versions") or {}).get(latest_ver) or {}
         description = data.get("description") or latest_info.get("description") or ""
-        text = f"{name} {latest_ver}: {description}".strip(": ") if description else f"{name} {latest_ver}"
-        return [Document(
-            id=f"npm:{name}",
-            text=text,
-            metadata={
-                "source": "npm",
-                "registry": "npm",
-                "type": "package",
-                "url": f"https://www.npmjs.com/package/{name}",
-                "grade": "A",
-                "name": name,
-                "version": latest_ver,
-                "description": description,
-                "license": latest_info.get("license") or "",
-                "homepage": latest_info.get("homepage") or "",
-                "repository": (latest_info.get("repository") or {}).get("url") or "",
-                "keywords": data.get("keywords") or [],
-                "modified": data.get("time", {}).get("modified") or "",
-            },
-        )]
+        text = (
+            f"{name} {latest_ver}: {description}".strip(": ")
+            if description
+            else f"{name} {latest_ver}"
+        )
+        return [
+            Document(
+                id=f"npm:{name}",
+                text=text,
+                metadata={
+                    "source": "npm",
+                    "registry": "npm",
+                    "type": "package",
+                    "url": f"https://www.npmjs.com/package/{name}",
+                    "grade": "A",
+                    "name": name,
+                    "version": latest_ver,
+                    "description": description,
+                    "license": latest_info.get("license") or "",
+                    "homepage": latest_info.get("homepage") or "",
+                    "repository": (latest_info.get("repository") or {}).get("url") or "",
+                    "keywords": data.get("keywords") or [],
+                    "modified": data.get("time", {}).get("modified") or "",
+                },
+            )
+        ]
     finally:
         if owns:
             client.close()
@@ -454,25 +476,29 @@ def npm_get_versions(
         times = data.get("time") or {}
         versions_info = data.get("versions") or {}
         # Sort by release time descending
-        timed = [(ver, times.get(ver, "")) for ver in versions_info if ver not in ("created", "modified")]
+        timed = [
+            (ver, times.get(ver, "")) for ver in versions_info if ver not in ("created", "modified")
+        ]
         timed.sort(key=lambda x: x[1], reverse=True)
         timed = timed[:max_results]
         out: list[Document] = []
         for ver, publish_time in timed:
-            out.append(Document(
-                id=f"npm:{name}:{ver}",
-                text=f"{name} {ver}",
-                metadata={
-                    "source": "npm",
-                    "registry": "npm",
-                    "type": "version",
-                    "url": f"https://www.npmjs.com/package/{name}/v/{ver}",
-                    "grade": "A",
-                    "name": name,
-                    "version": ver,
-                    "published_at": publish_time,
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"npm:{name}:{ver}",
+                    text=f"{name} {ver}",
+                    metadata={
+                        "source": "npm",
+                        "registry": "npm",
+                        "type": "version",
+                        "url": f"https://www.npmjs.com/package/{name}/v/{ver}",
+                        "grade": "A",
+                        "name": name,
+                        "version": ver,
+                        "published_at": publish_time,
+                    },
+                )
+            )
         return out
     finally:
         if owns:
@@ -513,21 +539,23 @@ def npm_get_dependencies(
         deps.update(ver_info.get("peerDependencies") or {})
         out: list[Document] = []
         for dep_name, dep_range in deps.items():
-            out.append(Document(
-                id=f"npm:{name}:{version}:dep:{dep_name}",
-                text=f"{dep_name} {dep_range}",
-                metadata={
-                    "source": "npm",
-                    "registry": "npm",
-                    "type": "dependency",
-                    "url": f"https://www.npmjs.com/package/{dep_name}",
-                    "grade": "A",
-                    "package": name,
-                    "version": version,
-                    "dep_name": dep_name,
-                    "dep_range": dep_range,
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"npm:{name}:{version}:dep:{dep_name}",
+                    text=f"{dep_name} {dep_range}",
+                    metadata={
+                        "source": "npm",
+                        "registry": "npm",
+                        "type": "dependency",
+                        "url": f"https://www.npmjs.com/package/{dep_name}",
+                        "grade": "A",
+                        "package": name,
+                        "version": version,
+                        "dep_name": dep_name,
+                        "dep_range": dep_range,
+                    },
+                )
+            )
         return out
     finally:
         if owns:
@@ -562,22 +590,24 @@ def npm_get_dependents(
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
-        return [Document(
-            id=f"npm:{name}:dependents",
-            text=(
-                f"npm registry does not provide a public dependents API for {name}. "
-                "For reverse dependency data visit npmjs.com or use libraries.io."
-            ),
-            metadata={
-                "source": "npm",
-                "registry": "npm",
-                "type": "dependents_note",
-                "url": f"https://www.npmjs.com/package/{name}?activeTab=dependents",
-                "grade": "A",
-                "package": name,
-                "limitation": "no_public_dependents_api",
-            },
-        )]
+        return [
+            Document(
+                id=f"npm:{name}:dependents",
+                text=(
+                    f"npm registry does not provide a public dependents API for {name}. "
+                    "For reverse dependency data visit npmjs.com or use libraries.io."
+                ),
+                metadata={
+                    "source": "npm",
+                    "registry": "npm",
+                    "type": "dependents_note",
+                    "url": f"https://www.npmjs.com/package/{name}?activeTab=dependents",
+                    "grade": "A",
+                    "package": name,
+                    "limitation": "no_public_dependents_api",
+                },
+            )
+        ]
     finally:
         if owns:
             client.close()
@@ -602,6 +632,7 @@ def npm_list_recent_releases_for_package(
 # ===========================================================================
 # crates.io
 # ===========================================================================
+
 
 def crates_search_package(
     query: str,
@@ -634,24 +665,30 @@ def crates_search_package(
             name = crate.get("name", "")
             version = crate.get("newest_version", "")
             description = crate.get("description") or ""
-            text = f"{name} {version}: {description}".strip(": ") if description else f"{name} {version}"
-            out.append(Document(
-                id=f"crates:{name}",
-                text=text,
-                metadata={
-                    "source": "crates",
-                    "registry": "crates",
-                    "type": "package",
-                    "url": f"https://crates.io/crates/{name}",
-                    "grade": "A",
-                    "name": name,
-                    "version": version,
-                    "description": description,
-                    "downloads": crate.get("downloads", 0),
-                    "recent_downloads": crate.get("recent_downloads") or 0,
-                    "updated_at": crate.get("updated_at") or "",
-                },
-            ))
+            text = (
+                f"{name} {version}: {description}".strip(": ")
+                if description
+                else f"{name} {version}"
+            )
+            out.append(
+                Document(
+                    id=f"crates:{name}",
+                    text=text,
+                    metadata={
+                        "source": "crates",
+                        "registry": "crates",
+                        "type": "package",
+                        "url": f"https://crates.io/crates/{name}",
+                        "grade": "A",
+                        "name": name,
+                        "version": version,
+                        "description": description,
+                        "downloads": crate.get("downloads", 0),
+                        "recent_downloads": crate.get("recent_downloads") or 0,
+                        "updated_at": crate.get("updated_at") or "",
+                    },
+                )
+            )
         return out
     finally:
         if owns:
@@ -686,28 +723,32 @@ def crates_fetch_package_metadata(
         crate = data.get("crate") or {}
         version = crate.get("newest_version", "")
         description = crate.get("description") or ""
-        text = f"{name} {version}: {description}".strip(": ") if description else f"{name} {version}"
-        return [Document(
-            id=f"crates:{name}",
-            text=text,
-            metadata={
-                "source": "crates",
-                "registry": "crates",
-                "type": "package",
-                "url": f"https://crates.io/crates/{name}",
-                "grade": "A",
-                "name": name,
-                "version": version,
-                "description": description,
-                "downloads": crate.get("downloads", 0),
-                "repository": crate.get("repository") or "",
-                "homepage": crate.get("homepage") or "",
-                "documentation": crate.get("documentation") or "",
-                "updated_at": crate.get("updated_at") or "",
-                "categories": crate.get("categories") or [],
-                "keywords": crate.get("keywords") or [],
-            },
-        )]
+        text = (
+            f"{name} {version}: {description}".strip(": ") if description else f"{name} {version}"
+        )
+        return [
+            Document(
+                id=f"crates:{name}",
+                text=text,
+                metadata={
+                    "source": "crates",
+                    "registry": "crates",
+                    "type": "package",
+                    "url": f"https://crates.io/crates/{name}",
+                    "grade": "A",
+                    "name": name,
+                    "version": version,
+                    "description": description,
+                    "downloads": crate.get("downloads", 0),
+                    "repository": crate.get("repository") or "",
+                    "homepage": crate.get("homepage") or "",
+                    "documentation": crate.get("documentation") or "",
+                    "updated_at": crate.get("updated_at") or "",
+                    "categories": crate.get("categories") or [],
+                    "keywords": crate.get("keywords") or [],
+                },
+            )
+        ]
     finally:
         if owns:
             client.close()
@@ -743,23 +784,25 @@ def crates_get_versions(
         out: list[Document] = []
         for ver in versions:
             ver_num = ver.get("num", "")
-            out.append(Document(
-                id=f"crates:{name}:{ver_num}",
-                text=f"{name} {ver_num}",
-                metadata={
-                    "source": "crates",
-                    "registry": "crates",
-                    "type": "version",
-                    "url": f"https://crates.io/crates/{name}/{ver_num}",
-                    "grade": "A",
-                    "name": name,
-                    "version": ver_num,
-                    "created_at": ver.get("created_at") or "",
-                    "downloads": ver.get("downloads", 0),
-                    "yanked": ver.get("yanked", False),
-                    "license": ver.get("license") or "",
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"crates:{name}:{ver_num}",
+                    text=f"{name} {ver_num}",
+                    metadata={
+                        "source": "crates",
+                        "registry": "crates",
+                        "type": "version",
+                        "url": f"https://crates.io/crates/{name}/{ver_num}",
+                        "grade": "A",
+                        "name": name,
+                        "version": ver_num,
+                        "created_at": ver.get("created_at") or "",
+                        "downloads": ver.get("downloads", 0),
+                        "yanked": ver.get("yanked", False),
+                        "license": ver.get("license") or "",
+                    },
+                )
+            )
         return out
     finally:
         if owns:
@@ -797,23 +840,25 @@ def crates_get_dependencies(
             dep_name = dep.get("crate_id", "")
             dep_req = dep.get("req", "")
             dep_kind = dep.get("kind", "normal")
-            out.append(Document(
-                id=f"crates:{name}:{version}:dep:{dep_name}",
-                text=f"{dep_name} {dep_req} ({dep_kind})",
-                metadata={
-                    "source": "crates",
-                    "registry": "crates",
-                    "type": "dependency",
-                    "url": f"https://crates.io/crates/{dep_name}",
-                    "grade": "A",
-                    "package": name,
-                    "version": version,
-                    "dep_name": dep_name,
-                    "dep_req": dep_req,
-                    "dep_kind": dep_kind,
-                    "optional": dep.get("optional", False),
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"crates:{name}:{version}:dep:{dep_name}",
+                    text=f"{dep_name} {dep_req} ({dep_kind})",
+                    metadata={
+                        "source": "crates",
+                        "registry": "crates",
+                        "type": "dependency",
+                        "url": f"https://crates.io/crates/{dep_name}",
+                        "grade": "A",
+                        "package": name,
+                        "version": version,
+                        "dep_name": dep_name,
+                        "dep_req": dep_req,
+                        "dep_kind": dep_kind,
+                        "optional": dep.get("optional", False),
+                    },
+                )
+            )
         return out
     finally:
         if owns:
@@ -849,9 +894,7 @@ def crates_get_dependents(
         data = resp.json()
         deps = data.get("dependencies") or []
         versions = {
-            v["id"]: v
-            for v in (data.get("versions") or [])
-            if isinstance(v, dict) and "id" in v
+            v["id"]: v for v in (data.get("versions") or []) if isinstance(v, dict) and "id" in v
         }
         out: list[Document] = []
         for dep in deps:
@@ -859,22 +902,24 @@ def crates_get_dependents(
             ver_info = versions.get(ver_id) or {}
             crate_name = dep.get("crate_id", "")
             ver_num = ver_info.get("num", "")
-            out.append(Document(
-                id=f"crates:{name}:revdep:{crate_name}",
-                text=f"{crate_name} {ver_num} depends on {name}",
-                metadata={
-                    "source": "crates",
-                    "registry": "crates",
-                    "type": "reverse_dependency",
-                    "url": f"https://crates.io/crates/{crate_name}",
-                    "grade": "A",
-                    "package": name,
-                    "dependent_crate": crate_name,
-                    "dependent_version": ver_num,
-                    "req": dep.get("req") or "",
-                    "dep_kind": dep.get("kind", "normal"),
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"crates:{name}:revdep:{crate_name}",
+                    text=f"{crate_name} {ver_num} depends on {name}",
+                    metadata={
+                        "source": "crates",
+                        "registry": "crates",
+                        "type": "reverse_dependency",
+                        "url": f"https://crates.io/crates/{crate_name}",
+                        "grade": "A",
+                        "package": name,
+                        "dependent_crate": crate_name,
+                        "dependent_version": ver_num,
+                        "req": dep.get("req") or "",
+                        "dep_kind": dep.get("kind", "normal"),
+                    },
+                )
+            )
         return out
     finally:
         if owns:

@@ -84,7 +84,11 @@ def _reject_non_public_host(url: str) -> None:
     legitimately fetch 127.0.0.1).
     """
     if os.environ.get("LIGHTHOUSE_ALLOW_PRIVATE_EGRESS", "").strip().lower() in (
-            "1", "true", "yes", "on"):
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
         return
     host = urlsplit(url).hostname
     if not host:
@@ -97,8 +101,7 @@ def _reject_non_public_host(url: str) -> None:
     try:
         literal = ipaddress.ip_address(host)
         if literal.is_link_local or literal.is_reserved or literal.is_multicast:
-            raise EgressBlocked(
-                f"refusing link-local/reserved address {host} (SSRF guard)")
+            raise EgressBlocked(f"refusing link-local/reserved address {host} (SSRF guard)")
         return
     except ValueError:
         pass  # not a literal IP → a hostname
@@ -117,11 +120,18 @@ def _reject_non_public_host(url: str) -> None:
             addr = ipaddress.ip_address(ip)
         except ValueError:
             continue
-        if (addr.is_private or addr.is_loopback or addr.is_link_local
-                or addr.is_reserved or addr.is_multicast or addr.is_unspecified):
+        if (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_multicast
+            or addr.is_unspecified
+        ):
             raise EgressBlocked(
                 f"host {host!r} resolves to non-public address {ip} — refusing "
-                f"(SSRF / DNS-rebinding guard)")
+                f"(SSRF / DNS-rebinding guard)"
+            )
 
 
 def _default_port(url: str) -> int:
@@ -167,9 +177,7 @@ class EgressGuardedClient:
             # Build a default policy from the (optional) allowlist so a caller
             # can spin up a guarded client without first constructing a proxy.
             self._proxy = EgressProxy(
-                allowed_domains
-                if allowed_domains is not None
-                else DEFAULT_ALLOWED_DOMAINS
+                allowed_domains if allowed_domains is not None else DEFAULT_ALLOWED_DOMAINS
             )
         # Track ownership: we must only close a client we created ourselves.
         self._owns_client = client is None
@@ -285,8 +293,7 @@ class EgressGuardedClient:
                     reason=f"redirect to disallowed host: {final_decision.reason}",
                 )
                 raise EgressBlocked(
-                    f"redirect to disallowed host {final_host!r}: "
-                    f"{final_decision.reason}"
+                    f"redirect to disallowed host {final_host!r}: {final_decision.reason}"
                 )
 
         # ``response.request.content`` raises ``RequestNotRead`` for a streaming
@@ -294,9 +301,7 @@ class EgressGuardedClient:
         # empty anyway, so treat that as zero bytes sent rather than crashing
         # after the fetch already completed.
         try:
-            request_bytes = (
-                len(response.request.content) if response.request is not None else 0
-            )
+            request_bytes = len(response.request.content) if response.request is not None else 0
         except Exception:
             request_bytes = 0
         self._proxy.log_connection(

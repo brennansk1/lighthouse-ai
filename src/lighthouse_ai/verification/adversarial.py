@@ -68,16 +68,16 @@ def _skeptic_prompt(claim: str, evidence: str) -> str:
     )
 
 
-def refute_claim(claim: str, evidence: str, *, gateway=None,
-                 job_id: str | None = None) -> RefutationVerdict:
+def refute_claim(
+    claim: str, evidence: str, *, gateway=None, job_id: str | None = None
+) -> RefutationVerdict:
     """Refutation verdict for a single claim. Deterministic offline."""
     if gateway is None:
         if not _has_citation(claim):
             return RefutationVerdict(claim, "contested", "no citation to support it")
         return RefutationVerdict(claim, "stands", "offline: cited, not adversarially tested")
     try:
-        resp = gateway.complete("researcher", _skeptic_prompt(claim, evidence),
-                                job_id=job_id)
+        resp = gateway.complete("researcher", _skeptic_prompt(claim, evidence), job_id=job_id)
         status, reason = _parse_verdict(resp.text)
         return RefutationVerdict(claim, status, reason)
     except Exception:
@@ -85,8 +85,9 @@ def refute_claim(claim: str, evidence: str, *, gateway=None,
         return RefutationVerdict(claim, "contested", "skeptic unavailable")
 
 
-def refute_claims(claims: list[str], evidence: str, *, gateway=None,
-                  job_id: str | None = None) -> list[RefutationVerdict]:
+def refute_claims(
+    claims: list[str], evidence: str, *, gateway=None, job_id: str | None = None
+) -> list[RefutationVerdict]:
     """Run the refutation pass over key claims. Order preserved."""
     return [refute_claim(c, evidence, gateway=gateway, job_id=job_id) for c in claims]
 

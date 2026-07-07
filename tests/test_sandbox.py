@@ -19,6 +19,7 @@ from lighthouse_ai.sandbox.scanners import EICAR_SIGNATURE, EICARScanner
 
 # --- scanners ----------------------------------------------------
 
+
 def test_pdf_no_js_admitted():
     payload = b"%PDF-1.4\n%hello\n"
     s = PDFJavaScriptScanner()
@@ -66,7 +67,7 @@ def test_clean_html_admitted():
 
 def test_svg_with_script_quarantined():
     s = HTMLScriptScanner()
-    r = s.scan(b'<svg><script>alert(1)</script></svg>', filename="x.svg")
+    r = s.scan(b"<svg><script>alert(1)</script></svg>", filename="x.svg")
     assert r.verdict == "quarantine"
 
 
@@ -197,12 +198,18 @@ def test_eicar_detected():
 
 # --- broker ------------------------------------------------------
 
+
 def _broker(tmp_path: Path) -> SandboxBroker:
     q = Quarantine(tmp_path / "quarantine.db", tmp_path / "Q")
-    return SandboxBroker(q, scanners=[
-        EICARScanner(), PDFJavaScriptScanner(),
-        HTMLScriptScanner(), ArchiveBombScanner(),
-    ])
+    return SandboxBroker(
+        q,
+        scanners=[
+            EICARScanner(),
+            PDFJavaScriptScanner(),
+            HTMLScriptScanner(),
+            ArchiveBombScanner(),
+        ],
+    )
 
 
 def test_broker_admits_clean_html(tmp_path):
@@ -214,8 +221,7 @@ def test_broker_admits_clean_html(tmp_path):
 
 def test_broker_quarantines_html_with_script(tmp_path):
     b = _broker(tmp_path)
-    out = b.admit(b"<script>e()</script>", filename="x.html",
-                  content_type="text/html")
+    out = b.admit(b"<script>e()</script>", filename="x.html", content_type="text/html")
     assert out.verdict is Verdict.QUARANTINE
 
 

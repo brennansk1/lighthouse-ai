@@ -38,15 +38,13 @@ def test_budget_trip_noop_without_config(migrated_paths):
 def test_budget_trip_fires_when_enabled(migrated_paths, monkeypatch):
     migrated_paths.config_file.parent.mkdir(parents=True, exist_ok=True)
     migrated_paths.config_file.write_text(
-        '[ui]\nnotify_enabled = true\n'
-        'telegram_bot_token = "tok"\ntelegram_chat_id = "chat"\n',
+        '[ui]\nnotify_enabled = true\ntelegram_bot_token = "tok"\ntelegram_chat_id = "chat"\n',
         encoding="utf-8",
     )
     captured = {}
 
     def _fake(reason, *, bot_token, chat_id, enabled, client=None):
-        captured.update(reason=reason, bot_token=bot_token, chat_id=chat_id,
-                        enabled=enabled)
+        captured.update(reason=reason, bot_token=bot_token, chat_id=chat_id, enabled=enabled)
         return True
 
     monkeypatch.setattr(notify_pkg, "notify_budget_trip", _fake)

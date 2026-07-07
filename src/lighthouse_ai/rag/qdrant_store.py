@@ -34,14 +34,18 @@ DEFAULT_COLLECTION = "lighthouse_corpus"
 class QdrantStore:
     """``VectorStore`` Protocol implementation backed by Qdrant."""
 
-    def __init__(self, *, url: str = DEFAULT_URL,
-                 collection: str = DEFAULT_COLLECTION,
-                 dim: int,
-                 hnsw_m: int = 16,
-                 ef_construct: int = 100,
-                 scalar_quantization: bool = True,
-                 vector_on_disk: bool = False,
-                 client: Any | None = None):
+    def __init__(
+        self,
+        *,
+        url: str = DEFAULT_URL,
+        collection: str = DEFAULT_COLLECTION,
+        dim: int,
+        hnsw_m: int = 16,
+        ef_construct: int = 100,
+        scalar_quantization: bool = True,
+        vector_on_disk: bool = False,
+        client: Any | None = None,
+    ):
         self.url = url
         self.collection = collection
         self.dim = dim
@@ -57,10 +61,10 @@ class QdrantStore:
         if self._client is not None:
             return self._client
         from qdrant_client import QdrantClient
+
         # check_compatibility=False avoids a noisy UserWarning when the
         # server is unreachable (the common case in doctor/health probes).
-        self._client = QdrantClient(url=self.url, timeout=10.0,
-                                    check_compatibility=False)
+        self._client = QdrantClient(url=self.url, timeout=10.0, check_compatibility=False)
         return self._client
 
     def available(self) -> bool:
@@ -76,6 +80,7 @@ class QdrantStore:
         if self._ensured:
             return
         from qdrant_client.http import models as qm
+
         client = self._get_client()
         existing = {c.name for c in client.get_collections().collections}
         if self.collection not in existing:
@@ -97,7 +102,9 @@ class QdrantStore:
                             quantile=0.99,
                             always_ram=True,
                         ),
-                    ) if self.scalar_quantization else None
+                    )
+                    if self.scalar_quantization
+                    else None
                 ),
             )
             # Payload indexes that match the filter fields we use in retrieval.
@@ -115,6 +122,7 @@ class QdrantStore:
     # --- write ---
     def upsert(self, chunks: Iterable[Chunk], vectors: Iterable[list[float]]) -> None:
         from qdrant_client.http import models as qm
+
         self.ensure_collection()
         client = self._get_client()
         points: list[qm.PointStruct] = []
@@ -133,16 +141,17 @@ class QdrantStore:
             client.upsert(collection_name=self.collection, points=points)
 
     # --- read ---
-    def search(self, query_vector: list[float], *, k: int = 10,
-               filter: dict[str, Any] | None = None) -> list[SearchResult]:
+    def search(
+        self, query_vector: list[float], *, k: int = 10, filter: dict[str, Any] | None = None
+    ) -> list[SearchResult]:
         from qdrant_client.http import models as qm
+
         self.ensure_collection()
         client = self._get_client()
         qfilter = None
         if filter:
             must = [
-                qm.FieldCondition(key=k_, match=qm.MatchValue(value=v))
-                for k_, v in filter.items()
+                qm.FieldCondition(key=k_, match=qm.MatchValue(value=v)) for k_, v in filter.items()
             ]
             # Cast required: list[FieldCondition] is invariant but the qdrant
             # Filter.must param expects list[FieldCondition | IsEmpty... | ...].
@@ -172,8 +181,11 @@ class QdrantStore:
                 document_id=str(payload.get("document_id", "")),
                 text=str(payload.get("text", "")),
                 position=int(payload.get("position", 0)),
-                metadata={k_: v for k_, v in payload.items()
-                          if k_ not in ("chunk_id", "document_id", "text", "position")},
+                metadata={
+                    k_: v
+                    for k_, v in payload.items()
+                    if k_ not in ("chunk_id", "document_id", "text", "position")
+                },
             )
             out.append(SearchResult(chunk_id=chunk.id, score=float(h.score), chunk=chunk))
         return out
@@ -181,9 +193,9 @@ class QdrantStore:
     # --- delete / count ---
     def delete(self, chunk_ids: Iterable[str]) -> int:
         from qdrant_client.http import models as qm
+
         client = self._get_client()
-        ids = [str(uuid.uuid5(uuid.NAMESPACE_URL, f"lighthouse:chunk:{cid}"))
-               for cid in chunk_ids]
+        ids = [str(uuid.uuid5(uuid.NAMESPACE_URL, f"lighthouse:chunk:{cid}")) for cid in chunk_ids]
         if not ids:
             return 0
         client.delete(

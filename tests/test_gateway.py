@@ -25,10 +25,15 @@ from lighthouse_ai.persistence import open_db
 @pytest.fixture
 def stub_profile() -> HardwareProfile:
     return HardwareProfile(
-        platform="macos", arch="arm64", apple_silicon=True,
-        total_ram_gb=64.0, free_ram_gb=32.0,
-        cpu_cores_physical=10, cpu_cores_logical=10,
-        gpu=[], unified_memory=True,
+        platform="macos",
+        arch="arm64",
+        apple_silicon=True,
+        total_ram_gb=64.0,
+        free_ram_gb=32.0,
+        cpu_cores_physical=10,
+        cpu_cores_logical=10,
+        gpu=[],
+        unified_memory=True,
         available_backends=["cpu", "ollama"],
         suggested_tier="T3",
     )
@@ -87,6 +92,7 @@ def test_check_drift_raises_when_recorded_differs(tmp_path, stub_profile):
     write_chosen_models(dest, stub_profile)
     # Mutate the file to simulate model drift.
     import yaml as _yaml
+
     doc = _yaml.safe_load(dest.read_text())
     first_model = next(iter(doc["fingerprints"]))
     doc["fingerprints"][first_model]["registry_digest_sha256"] = "0" * 64
@@ -99,6 +105,7 @@ def test_check_drift_raises_when_recorded_differs(tmp_path, stub_profile):
 
 
 # --- Gateway proper ---
+
 
 def test_gateway_routes_role_and_records_audit(migrated_paths, stub_profile):
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
@@ -151,14 +158,13 @@ def test_complete_structured_falls_back_to_researcher(migrated_paths, stub_profi
     assert resp.role == "researcher"
 
 
-def test_gateway_with_chosen_models_uses_recorded_bindings(
-        tmp_path, migrated_paths, stub_profile):
+def test_gateway_with_chosen_models_uses_recorded_bindings(tmp_path, migrated_paths, stub_profile):
     from lighthouse_ai.gateway import recommend_models
+
     dest = tmp_path / "chosen.yaml"
     write_chosen_models(dest, stub_profile)
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
-    gw = Gateway(g, migrated_paths.audit_db, chosen_models_path=dest,
-                 profile=stub_profile)
+    gw = Gateway(g, migrated_paths.audit_db, chosen_models_path=dest, profile=stub_profile)
     gw._get_ollama = lambda: None  # hermetic: don't serve via a real local ollama
     # The gateway resolves planner via the recorded (budget-aware) yaml.
     resp = gw.complete("planner", "ping")
@@ -176,8 +182,9 @@ def test_admission_refusal_degrades_to_smaller_real_model(migrated_paths, stub_p
 
     class _FakeOllama:
         def chat(self, model, prompt, **kw):
-            return ChatResponse(text=f"real answer from {model}", prompt_tokens=1,
-                                completion_tokens=1, model=model)
+            return ChatResponse(
+                text=f"real answer from {model}", prompt_tokens=1, completion_tokens=1, model=model
+            )
 
         def loaded_models(self):
             return []
@@ -209,7 +216,7 @@ def test_admission_mocks_only_when_nothing_fits(migrated_paths, stub_profile):
             return []
 
     gw._get_ollama = lambda: _FakeOllama()
-    gw._need_gb = lambda ollama, m: 999.0            # nothing fits
+    gw._need_gb = lambda ollama, m: 999.0  # nothing fits
     gw._fallback_candidates = lambda ollama, p: ["also-too-big"]
 
     resp = gw.complete("researcher", "hi", job_id="j1")

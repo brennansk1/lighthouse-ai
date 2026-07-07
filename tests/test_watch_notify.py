@@ -24,15 +24,15 @@ def test_web_alert_fires_when_enabled(migrated_paths, monkeypatch):
     # Write a [ui] config that enables notifications.
     migrated_paths.config_file.parent.mkdir(parents=True, exist_ok=True)
     migrated_paths.config_file.write_text(
-        '[ui]\nnotify_enabled = true\n'
-        'telegram_bot_token = "tok"\ntelegram_chat_id = "chat"\n',
+        '[ui]\nnotify_enabled = true\ntelegram_bot_token = "tok"\ntelegram_chat_id = "chat"\n',
         encoding="utf-8",
     )
     captured = {}
 
     def _fake(title, body, *, bot_token, chat_id, enabled, client=None):
-        captured.update(title=title, body=body, bot_token=bot_token,
-                        chat_id=chat_id, enabled=enabled)
+        captured.update(
+            title=title, body=body, bot_token=bot_token, chat_id=chat_id, enabled=enabled
+        )
         return True
 
     monkeypatch.setattr(notify_pkg, "notify_monitor_alert", _fake)

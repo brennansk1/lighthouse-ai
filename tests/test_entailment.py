@@ -17,6 +17,7 @@ _MINICHECK_INSTALLED = importlib.util.find_spec("minicheck") is not None
 
 # --- no scorer → unchecked, never a fabricated pass ---
 
+
 def test_score_claim_returns_none_when_no_scorer(monkeypatch):
     """With no real scorer, score_claim returns None (unchecked), not 1.0."""
     monkeypatch.setattr(entailment, "_get_scorer", lambda: (None, None))
@@ -48,6 +49,7 @@ def test_no_cosine_hhem_branch():
 
 
 # --- discipline consumer: unchecked must not inflate coverage ---
+
 
 def test_discipline_entailment_checked_false_without_scorer(monkeypatch):
     """No scorer → entailment_checked False, coverage stays 0.0 (not 100%)."""
@@ -92,6 +94,7 @@ def test_high_stakes_claim_with_no_scorer_does_not_silently_pass(monkeypatch):
 
 # --- discipline consumer: a contradicted claim (fake scorer) scores low ---
 
+
 def test_discipline_contradicted_claim_scores_below_threshold(monkeypatch):
     """With a fake scorer, a contradicted claim is NOT counted as entailed."""
 
@@ -125,8 +128,7 @@ def test_score_claim_with_fake_minicheck_scorer(monkeypatch):
             score = 0.02 if "not" in claims[0] else 0.91
             return None, [score], None, None
 
-    monkeypatch.setattr(entailment, "_get_scorer",
-                        lambda: (_FakeMiniCheck(), "minicheck"))
+    monkeypatch.setattr(entailment, "_get_scorer", lambda: (_FakeMiniCheck(), "minicheck"))
 
     assert entailment.score_claim("the sky is blue", "the sky is blue") == 0.91
     contradicted = entailment.score_claim("the sky is not blue", "the sky is blue")

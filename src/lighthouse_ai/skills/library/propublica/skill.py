@@ -32,6 +32,7 @@ def _urlencode(params: dict) -> str:
         pairs.append(f"{k}={vs}")
     return "&".join(pairs)
 
+
 if TYPE_CHECKING:
     from lighthouse_ai.rag.chunker import Document
     from lighthouse_ai.skills.capabilities import SkillContext
@@ -43,21 +44,21 @@ _FEED_URL = "https://feeds.propublica.org/propublica/main"
 
 # Additional topic feeds
 _TOPIC_FEEDS: dict[str, str] = {
-    "top":              "https://feeds.propublica.org/propublica/main",
-    "main":             "https://feeds.propublica.org/propublica/main",
-    "politics":         "https://feeds.propublica.org/propublica/main",
-    "health":           "https://feeds.propublica.org/propublica/main",
+    "top": "https://feeds.propublica.org/propublica/main",
+    "main": "https://feeds.propublica.org/propublica/main",
+    "politics": "https://feeds.propublica.org/propublica/main",
+    "health": "https://feeds.propublica.org/propublica/main",
     "criminal_justice": "https://feeds.propublica.org/propublica/main",
-    "environment":      "https://feeds.propublica.org/propublica/main",
+    "environment": "https://feeds.propublica.org/propublica/main",
 }
 _DEFAULT_FEED = _FEED_URL
 _SEARCH_BASE = "https://www.propublica.org/search"
 
 # ProPublica open data endpoints (sampler — no API key required for basic use)
 _DATA_ENDPOINTS: dict[str, str] = {
-    "congress":         "https://api.propublica.org/congress/v1",
+    "congress": "https://api.propublica.org/congress/v1",
     "campaign_finance": "https://api.propublica.org/campaign-finance/v1",
-    "nonprofits":       "https://projects.propublica.org/nonprofits/api/v2",
+    "nonprofits": "https://projects.propublica.org/nonprofits/api/v2",
 }
 
 
@@ -78,13 +79,15 @@ def _parse_propublica_search_json(payload: bytes) -> list[MonitorItem]:
         pub = r.get("published_at", "") or r.get("date", "")
         if not url:
             continue
-        items.append(MonitorItem(
-            source=_OUTLET_ID,
-            url=url,
-            title=_news._strip_html(title),
-            body=_news._strip_html(body),
-            published_at=pub or None,
-        ))
+        items.append(
+            MonitorItem(
+                source=_OUTLET_ID,
+                url=url,
+                title=_news._strip_html(title),
+                body=_news._strip_html(body),
+                published_at=pub or None,
+            )
+        )
     return items
 
 
@@ -185,19 +188,21 @@ def search_data_repo(
                 if not text.strip():
                     continue
                 _np_id = ein if ein else f"{hash(name) & 0xFFFFFFFF:08x}"
-                items.append(ctx.make_document(
-                    doc_id=f"propublica:nonprofit:{_np_id}",
-                    text=text,
-                    metadata={
-                        "source": _OUTLET_ID,
-                        "url": f"https://projects.propublica.org/nonprofits/organizations/{ein}",
-                        "type": "open_data",
-                        "dataset": "nonprofits",
-                        "outlet": _OUTLET_ID,
-                        "name": name,
-                        "ein": ein,
-                    },
-                ))
+                items.append(
+                    ctx.make_document(
+                        doc_id=f"propublica:nonprofit:{_np_id}",
+                        text=text,
+                        metadata={
+                            "source": _OUTLET_ID,
+                            "url": f"https://projects.propublica.org/nonprofits/organizations/{ein}",
+                            "type": "open_data",
+                            "dataset": "nonprofits",
+                            "outlet": _OUTLET_ID,
+                            "name": name,
+                            "ein": ein,
+                        },
+                    )
+                )
             return items
         except Exception:
             return []
@@ -230,7 +235,8 @@ def list_recent_in_topic(
     # Filter by topic keyword if not a generic topic
     if topic.lower() not in ("top", "main", "politics"):
         filtered = [
-            item for item in raw
+            item
+            for item in raw
             if topic.lower() in ((item.title or "") + " " + (item.body or "")).lower()
         ]
         raw = filtered if filtered else raw

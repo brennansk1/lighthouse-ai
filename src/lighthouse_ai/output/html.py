@@ -113,9 +113,11 @@ def render_claims(claims: Iterable[Claim]) -> str:
 
 def render_monitor_html(report) -> str:  # type: ignore[no-untyped-def]
     """Render a :class:`modes.monitor.MonitorReport` as a standalone HTML file."""
-    body = [f"<h2>{_escape(report.topic)}</h2>",
-            f"<p class='meta'>Generated {_escape(report.generated_at)} — "
-            f"{report.total_seen} items, {report.suppressed_duplicates} duplicates suppressed.</p>"]
+    body = [
+        f"<h2>{_escape(report.topic)}</h2>",
+        f"<p class='meta'>Generated {_escape(report.generated_at)} — "
+        f"{report.total_seen} items, {report.suppressed_duplicates} duplicates suppressed.</p>",
+    ]
 
     body.append("<h2>Alerts</h2>")
     if not report.alerts:

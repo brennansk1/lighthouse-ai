@@ -84,9 +84,7 @@ def _backdate_claimed_at(db, intent_id: int, seconds: int) -> None:
 def _status(db, intent_id: int) -> str:
     conn = open_db(db)
     try:
-        row = conn.execute(
-            "SELECT status FROM intents WHERE id = ?", (intent_id,)
-        ).fetchone()
+        row = conn.execute("SELECT status FROM intents WHERE id = ?", (intent_id,)).fetchone()
         return str(row[0])
     finally:
         conn.close()
@@ -95,7 +93,11 @@ def _status(db, intent_id: int) -> str:
 def test_recover_orphaned_intents_requeues_stuck(migrated_paths):
     db = migrated_paths.intents_db
     iid = intents.write_intent(
-        db, target="audit", op="noop", payload={}, idempotency_key="orphan-1",
+        db,
+        target="audit",
+        op="noop",
+        payload={},
+        idempotency_key="orphan-1",
     )
     # Simulate a crash mid-apply: claim it (→ in_flight) then backdate the claim
     # past the requeue threshold so it counts as orphaned.

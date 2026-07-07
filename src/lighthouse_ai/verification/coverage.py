@@ -22,9 +22,9 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class CoverageReport:
-    total: int                       # planned (load-bearing) sub-questions
-    covered: int                     # sub-questions with a substantive section
-    gaps: list[str] = field(default_factory=list)        # uncovered sub-questions
+    total: int  # planned (load-bearing) sub-questions
+    covered: int  # sub-questions with a substantive section
+    gaps: list[str] = field(default_factory=list)  # uncovered sub-questions
     coverage_ratio: float = 1.0
     missing_angles: list[str] = field(default_factory=list)  # real-backend extras
 
@@ -39,8 +39,7 @@ def _field(obj, name, default=""):
     return getattr(obj, name, default)
 
 
-def assess_coverage(sub_questions, sections, *, min_body_words: int = 8
-                    ) -> CoverageReport:
+def assess_coverage(sub_questions, sections, *, min_body_words: int = 8) -> CoverageReport:
     """Score plan coverage. A sub-question counts as covered when a section ties
     to it AND that section has a substantive body (>= ``min_body_words`` words).
 
@@ -57,8 +56,7 @@ def assess_coverage(sub_questions, sections, *, min_body_words: int = 8
     total = len(sub_questions)
     covered = total - len(gaps)
     ratio = round(covered / total, 3) if total else 1.0
-    return CoverageReport(total=total, covered=covered, gaps=gaps,
-                          coverage_ratio=ratio)
+    return CoverageReport(total=total, covered=covered, gaps=gaps, coverage_ratio=ratio)
 
 
 def needs_another_round(report: CoverageReport) -> bool:
@@ -69,9 +67,9 @@ def needs_another_round(report: CoverageReport) -> bool:
 _LINE = re.compile(r"^\s*[-*\d.]+\s*")
 
 
-def find_missing_angles(question: str, draft_text: str, *, gateway=None,
-                        job_id: str | None = None, max_angles: int = 3
-                        ) -> list[str]:
+def find_missing_angles(
+    question: str, draft_text: str, *, gateway=None, job_id: str | None = None, max_angles: int = 3
+) -> list[str]:
     """Ask a model what angle the draft hasn't considered. Offline → ``[]``."""
     if gateway is None:
         return []

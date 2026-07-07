@@ -271,9 +271,15 @@ _PYPI_PKG_JSON = {
         ],
     },
     "releases": {
-        "2.32.0": [{"upload_time": "2024-05-01T12:00:00", "filename": "requests-2.32.0-py3-none-any.whl"}],
-        "2.31.0": [{"upload_time": "2023-05-22T10:00:00", "filename": "requests-2.31.0-py3-none-any.whl"}],
-        "2.30.0": [{"upload_time": "2023-05-03T08:00:00", "filename": "requests-2.30.0-py3-none-any.whl"}],
+        "2.32.0": [
+            {"upload_time": "2024-05-01T12:00:00", "filename": "requests-2.32.0-py3-none-any.whl"}
+        ],
+        "2.31.0": [
+            {"upload_time": "2023-05-22T10:00:00", "filename": "requests-2.31.0-py3-none-any.whl"}
+        ],
+        "2.30.0": [
+            {"upload_time": "2023-05-03T08:00:00", "filename": "requests-2.30.0-py3-none-any.whl"}
+        ],
     },
 }
 
@@ -436,61 +442,47 @@ def mocked_http():
 
 
 def test_gh_search_returns_documents(mocked_http):
-    mocked_http.get("https://api.github.com/search/repositories").respond(
-        200, json=_GH_SEARCH_JSON
-    )
+    mocked_http.get("https://api.github.com/search/repositories").respond(200, json=_GH_SEARCH_JSON)
     docs = search_repos("python http client")
     assert len(docs) == 2
     assert all(isinstance(d, Document) for d in docs)
 
 
 def test_gh_search_extracts_full_name(mocked_http):
-    mocked_http.get("https://api.github.com/search/repositories").respond(
-        200, json=_GH_SEARCH_JSON
-    )
+    mocked_http.get("https://api.github.com/search/repositories").respond(200, json=_GH_SEARCH_JSON)
     docs = search_repos("python http client")
     assert docs[0].metadata["full_name"] == "encode/httpx"
     assert docs[0].id == "github:repo:encode/httpx"
 
 
 def test_gh_search_extracts_stars(mocked_http):
-    mocked_http.get("https://api.github.com/search/repositories").respond(
-        200, json=_GH_SEARCH_JSON
-    )
+    mocked_http.get("https://api.github.com/search/repositories").respond(200, json=_GH_SEARCH_JSON)
     docs = search_repos("python http client")
     assert docs[0].metadata["stars"] == 14000
     assert docs[1].metadata["stars"] == 52000
 
 
 def test_gh_search_extracts_language_and_license(mocked_http):
-    mocked_http.get("https://api.github.com/search/repositories").respond(
-        200, json=_GH_SEARCH_JSON
-    )
+    mocked_http.get("https://api.github.com/search/repositories").respond(200, json=_GH_SEARCH_JSON)
     docs = search_repos("python http client")
     assert docs[0].metadata["language"] == "Python"
     assert docs[0].metadata["license"] == "BSD-3-Clause"
 
 
 def test_gh_search_extracts_topics(mocked_http):
-    mocked_http.get("https://api.github.com/search/repositories").respond(
-        200, json=_GH_SEARCH_JSON
-    )
+    mocked_http.get("https://api.github.com/search/repositories").respond(200, json=_GH_SEARCH_JSON)
     docs = search_repos("python http")
     assert "async" in docs[0].metadata["topics"]
 
 
 def test_gh_search_extracts_description_in_text(mocked_http):
-    mocked_http.get("https://api.github.com/search/repositories").respond(
-        200, json=_GH_SEARCH_JSON
-    )
+    mocked_http.get("https://api.github.com/search/repositories").respond(200, json=_GH_SEARCH_JSON)
     docs = search_repos("http")
     assert "next-generation" in docs[0].text
 
 
 def test_gh_search_metadata_grade_and_source(mocked_http):
-    mocked_http.get("https://api.github.com/search/repositories").respond(
-        200, json=_GH_SEARCH_JSON
-    )
+    mocked_http.get("https://api.github.com/search/repositories").respond(200, json=_GH_SEARCH_JSON)
     doc = search_repos("http")[0]
     assert doc.metadata["source"] == "github"
     assert doc.metadata["grade"] == "A"
@@ -512,9 +504,7 @@ def test_gh_search_raises_on_http_error(mocked_http):
 
 
 def test_gh_search_uses_injected_client(mocked_http):
-    mocked_http.get("https://api.github.com/search/repositories").respond(
-        200, json=_GH_SEARCH_JSON
-    )
+    mocked_http.get("https://api.github.com/search/repositories").respond(200, json=_GH_SEARCH_JSON)
     with httpx.Client() as client:
         docs = search_repos("http", client=client)
         assert len(docs) == 2
@@ -604,9 +594,9 @@ def test_gh_list_recent_issues_raises_on_http_error(mocked_http):
 
 
 def test_gh_get_dependency_graph_returns_documents(mocked_http):
-    mocked_http.get(
-        "https://api.github.com/repos/encode/httpx/dependency-graph/sbom"
-    ).respond(200, json=_GH_SBOM_JSON)
+    mocked_http.get("https://api.github.com/repos/encode/httpx/dependency-graph/sbom").respond(
+        200, json=_GH_SBOM_JSON
+    )
     docs = get_dependency_graph("encode", "httpx")
     assert len(docs) == 2
     assert docs[0].metadata["type"] == "dependency"
@@ -615,9 +605,7 @@ def test_gh_get_dependency_graph_returns_documents(mocked_http):
 
 
 def test_gh_get_dependency_graph_raises_on_http_error(mocked_http):
-    mocked_http.get(
-        "https://api.github.com/repos/encode/httpx/dependency-graph/sbom"
-    ).respond(403)
+    mocked_http.get("https://api.github.com/repos/encode/httpx/dependency-graph/sbom").respond(403)
     with pytest.raises(httpx.HTTPStatusError):
         get_dependency_graph("encode", "httpx")
 
@@ -640,9 +628,9 @@ def test_gh_get_license_returns_empty_on_404(mocked_http):
 
 
 def test_gh_get_security_advisories_returns_documents(mocked_http):
-    mocked_http.get(
-        "https://api.github.com/repos/encode/httpx/security-advisories"
-    ).respond(200, json=_GH_ADVISORIES_JSON)
+    mocked_http.get("https://api.github.com/repos/encode/httpx/security-advisories").respond(
+        200, json=_GH_ADVISORIES_JSON
+    )
     docs = get_security_advisories("encode", "httpx")
     assert len(docs) == 1
     assert docs[0].metadata["ghsa_id"] == "GHSA-xxxx-yyyy-zzzz"
@@ -652,9 +640,7 @@ def test_gh_get_security_advisories_returns_documents(mocked_http):
 
 
 def test_gh_get_security_advisories_raises_on_http_error(mocked_http):
-    mocked_http.get(
-        "https://api.github.com/repos/encode/httpx/security-advisories"
-    ).respond(403)
+    mocked_http.get("https://api.github.com/repos/encode/httpx/security-advisories").respond(403)
     with pytest.raises(httpx.HTTPStatusError):
         get_security_advisories("encode", "httpx")
 
@@ -691,9 +677,7 @@ def test_gh_get_commit_history_raises_on_http_error(mocked_http):
 
 
 def test_pypi_search_returns_document(mocked_http):
-    mocked_http.get("https://pypi.org/pypi/requests/json").respond(
-        200, json=_PYPI_PKG_JSON
-    )
+    mocked_http.get("https://pypi.org/pypi/requests/json").respond(200, json=_PYPI_PKG_JSON)
     docs = pypi_search_package("requests")
     assert len(docs) == 1
     assert isinstance(docs[0], Document)
@@ -715,9 +699,7 @@ def test_pypi_search_raises_on_non_404_error(mocked_http):
 
 
 def test_pypi_search_extracts_license_and_author(mocked_http):
-    mocked_http.get("https://pypi.org/pypi/requests/json").respond(
-        200, json=_PYPI_PKG_JSON
-    )
+    mocked_http.get("https://pypi.org/pypi/requests/json").respond(200, json=_PYPI_PKG_JSON)
     doc = pypi_search_package("requests")[0]
     assert doc.metadata["license"] == "Apache 2.0"
     assert doc.metadata["author"] == "Kenneth Reitz"
@@ -725,17 +707,13 @@ def test_pypi_search_extracts_license_and_author(mocked_http):
 
 
 def test_pypi_search_includes_summary_in_text(mocked_http):
-    mocked_http.get("https://pypi.org/pypi/requests/json").respond(
-        200, json=_PYPI_PKG_JSON
-    )
+    mocked_http.get("https://pypi.org/pypi/requests/json").respond(200, json=_PYPI_PKG_JSON)
     doc = pypi_search_package("requests")[0]
     assert "Humans" in doc.text
 
 
 def test_pypi_search_metadata_source(mocked_http):
-    mocked_http.get("https://pypi.org/pypi/requests/json").respond(
-        200, json=_PYPI_PKG_JSON
-    )
+    mocked_http.get("https://pypi.org/pypi/requests/json").respond(200, json=_PYPI_PKG_JSON)
     doc = pypi_search_package("requests")[0]
     assert doc.metadata["source"] == "pypi"
     assert doc.metadata["registry"] == "pypi"
@@ -743,9 +721,7 @@ def test_pypi_search_metadata_source(mocked_http):
 
 
 def test_pypi_search_uses_injected_client(mocked_http):
-    mocked_http.get("https://pypi.org/pypi/requests/json").respond(
-        200, json=_PYPI_PKG_JSON
-    )
+    mocked_http.get("https://pypi.org/pypi/requests/json").respond(200, json=_PYPI_PKG_JSON)
     with httpx.Client() as client:
         docs = pypi_search_package("requests", client=client)
         assert len(docs) == 1
@@ -753,18 +729,14 @@ def test_pypi_search_uses_injected_client(mocked_http):
 
 
 def test_pypi_fetch_metadata_delegates_to_search(mocked_http):
-    mocked_http.get("https://pypi.org/pypi/requests/json").respond(
-        200, json=_PYPI_PKG_JSON
-    )
+    mocked_http.get("https://pypi.org/pypi/requests/json").respond(200, json=_PYPI_PKG_JSON)
     docs = pypi_fetch_package_metadata("requests")
     assert len(docs) == 1
     assert docs[0].metadata["name"] == "requests"
 
 
 def test_pypi_get_versions_returns_version_documents(mocked_http):
-    mocked_http.get("https://pypi.org/pypi/requests/json").respond(
-        200, json=_PYPI_PKG_JSON
-    )
+    mocked_http.get("https://pypi.org/pypi/requests/json").respond(200, json=_PYPI_PKG_JSON)
     docs = pypi_get_versions("requests")
     assert len(docs) >= 2
     assert all(d.metadata["type"] == "version" for d in docs)
@@ -772,9 +744,7 @@ def test_pypi_get_versions_returns_version_documents(mocked_http):
 
 
 def test_pypi_get_versions_extracts_upload_time(mocked_http):
-    mocked_http.get("https://pypi.org/pypi/requests/json").respond(
-        200, json=_PYPI_PKG_JSON
-    )
+    mocked_http.get("https://pypi.org/pypi/requests/json").respond(200, json=_PYPI_PKG_JSON)
     docs = pypi_get_versions("requests")
     upload_times = [d.metadata["upload_time"] for d in docs]
     # At least one version should have an upload_time
@@ -788,9 +758,7 @@ def test_pypi_get_versions_returns_empty_on_404(mocked_http):
 
 
 def test_pypi_get_dependencies_returns_dep_documents(mocked_http):
-    mocked_http.get("https://pypi.org/pypi/requests/json").respond(
-        200, json=_PYPI_PKG_JSON
-    )
+    mocked_http.get("https://pypi.org/pypi/requests/json").respond(200, json=_PYPI_PKG_JSON)
     docs = pypi_get_dependencies("requests")
     assert len(docs) == 4
     assert all(d.metadata["type"] == "dependency" for d in docs)
@@ -799,9 +767,7 @@ def test_pypi_get_dependencies_returns_dep_documents(mocked_http):
 
 
 def test_pypi_get_dependents_returns_limitation_note(mocked_http):
-    mocked_http.get("https://pypi.org/pypi/requests/json").respond(
-        200, json=_PYPI_PKG_JSON
-    )
+    mocked_http.get("https://pypi.org/pypi/requests/json").respond(200, json=_PYPI_PKG_JSON)
     docs = pypi_get_dependents("requests")
     assert len(docs) == 1
     assert docs[0].metadata["type"] == "dependents_note"
@@ -815,9 +781,7 @@ def test_pypi_get_dependents_returns_empty_on_404(mocked_http):
 
 
 def test_pypi_list_recent_releases_delegates_to_get_versions(mocked_http):
-    mocked_http.get("https://pypi.org/pypi/requests/json").respond(
-        200, json=_PYPI_PKG_JSON
-    )
+    mocked_http.get("https://pypi.org/pypi/requests/json").respond(200, json=_PYPI_PKG_JSON)
     docs = pypi_list_recent_releases_for_package("requests")
     assert all(d.metadata["type"] == "version" for d in docs)
 
@@ -828,9 +792,7 @@ def test_pypi_list_recent_releases_delegates_to_get_versions(mocked_http):
 
 
 def test_npm_search_returns_documents(mocked_http):
-    mocked_http.get("https://registry.npmjs.org/-/v1/search").respond(
-        200, json=_NPM_SEARCH_JSON
-    )
+    mocked_http.get("https://registry.npmjs.org/-/v1/search").respond(200, json=_NPM_SEARCH_JSON)
     docs = npm_search_package("axios")
     assert len(docs) == 1
     assert isinstance(docs[0], Document)
@@ -840,26 +802,20 @@ def test_npm_search_returns_documents(mocked_http):
 
 
 def test_npm_search_extracts_description(mocked_http):
-    mocked_http.get("https://registry.npmjs.org/-/v1/search").respond(
-        200, json=_NPM_SEARCH_JSON
-    )
+    mocked_http.get("https://registry.npmjs.org/-/v1/search").respond(200, json=_NPM_SEARCH_JSON)
     doc = npm_search_package("axios")[0]
     assert "HTTP client" in doc.text
     assert doc.metadata["description"] == "Promise based HTTP client for the browser and node.js"
 
 
 def test_npm_search_extracts_keywords(mocked_http):
-    mocked_http.get("https://registry.npmjs.org/-/v1/search").respond(
-        200, json=_NPM_SEARCH_JSON
-    )
+    mocked_http.get("https://registry.npmjs.org/-/v1/search").respond(200, json=_NPM_SEARCH_JSON)
     doc = npm_search_package("axios")[0]
     assert "http" in doc.metadata["keywords"]
 
 
 def test_npm_search_metadata_source(mocked_http):
-    mocked_http.get("https://registry.npmjs.org/-/v1/search").respond(
-        200, json=_NPM_SEARCH_JSON
-    )
+    mocked_http.get("https://registry.npmjs.org/-/v1/search").respond(200, json=_NPM_SEARCH_JSON)
     doc = npm_search_package("axios")[0]
     assert doc.metadata["source"] == "npm"
     assert doc.metadata["registry"] == "npm"
@@ -881,9 +837,7 @@ def test_npm_search_raises_on_http_error(mocked_http):
 
 
 def test_npm_search_uses_injected_client(mocked_http):
-    mocked_http.get("https://registry.npmjs.org/-/v1/search").respond(
-        200, json=_NPM_SEARCH_JSON
-    )
+    mocked_http.get("https://registry.npmjs.org/-/v1/search").respond(200, json=_NPM_SEARCH_JSON)
     with httpx.Client() as client:
         docs = npm_search_package("axios", client=client)
         assert len(docs) == 1
@@ -891,9 +845,7 @@ def test_npm_search_uses_injected_client(mocked_http):
 
 
 def test_npm_fetch_metadata_returns_document(mocked_http):
-    mocked_http.get("https://registry.npmjs.org/axios").respond(
-        200, json=_NPM_PACKUMENT_JSON
-    )
+    mocked_http.get("https://registry.npmjs.org/axios").respond(200, json=_NPM_PACKUMENT_JSON)
     docs = npm_fetch_package_metadata("axios")
     assert len(docs) == 1
     assert docs[0].metadata["name"] == "axios"
@@ -908,9 +860,7 @@ def test_npm_fetch_metadata_returns_empty_on_404(mocked_http):
 
 
 def test_npm_get_versions_returns_version_documents(mocked_http):
-    mocked_http.get("https://registry.npmjs.org/axios").respond(
-        200, json=_NPM_PACKUMENT_JSON
-    )
+    mocked_http.get("https://registry.npmjs.org/axios").respond(200, json=_NPM_PACKUMENT_JSON)
     docs = npm_get_versions("axios")
     assert len(docs) == 2
     assert all(d.metadata["type"] == "version" for d in docs)
@@ -926,9 +876,7 @@ def test_npm_get_versions_returns_empty_on_404(mocked_http):
 
 
 def test_npm_get_versions_uses_injected_client(mocked_http):
-    mocked_http.get("https://registry.npmjs.org/axios").respond(
-        200, json=_NPM_PACKUMENT_JSON
-    )
+    mocked_http.get("https://registry.npmjs.org/axios").respond(200, json=_NPM_PACKUMENT_JSON)
     with httpx.Client() as client:
         docs = npm_get_versions("axios", client=client)
         assert len(docs) == 2
@@ -936,9 +884,7 @@ def test_npm_get_versions_uses_injected_client(mocked_http):
 
 
 def test_npm_get_dependencies_returns_dep_documents(mocked_http):
-    mocked_http.get("https://registry.npmjs.org/axios").respond(
-        200, json=_NPM_PACKUMENT_JSON
-    )
+    mocked_http.get("https://registry.npmjs.org/axios").respond(200, json=_NPM_PACKUMENT_JSON)
     docs = npm_get_dependencies("axios")
     assert len(docs) == 2
     assert all(d.metadata["type"] == "dependency" for d in docs)
@@ -947,9 +893,7 @@ def test_npm_get_dependencies_returns_dep_documents(mocked_http):
 
 
 def test_npm_get_dependents_returns_limitation_note(mocked_http):
-    mocked_http.get("https://registry.npmjs.org/axios").respond(
-        200, json=_NPM_PACKUMENT_JSON
-    )
+    mocked_http.get("https://registry.npmjs.org/axios").respond(200, json=_NPM_PACKUMENT_JSON)
     docs = npm_get_dependents("axios")
     assert len(docs) == 1
     assert docs[0].metadata["type"] == "dependents_note"
@@ -957,9 +901,7 @@ def test_npm_get_dependents_returns_limitation_note(mocked_http):
 
 
 def test_npm_list_recent_releases_delegates_to_get_versions(mocked_http):
-    mocked_http.get("https://registry.npmjs.org/axios").respond(
-        200, json=_NPM_PACKUMENT_JSON
-    )
+    mocked_http.get("https://registry.npmjs.org/axios").respond(200, json=_NPM_PACKUMENT_JSON)
     docs = npm_list_recent_releases_for_package("axios")
     assert all(d.metadata["type"] == "version" for d in docs)
 
@@ -970,9 +912,7 @@ def test_npm_list_recent_releases_delegates_to_get_versions(mocked_http):
 
 
 def test_crates_search_returns_documents(mocked_http):
-    mocked_http.get("https://crates.io/api/v1/crates").respond(
-        200, json=_CRATES_SEARCH_JSON
-    )
+    mocked_http.get("https://crates.io/api/v1/crates").respond(200, json=_CRATES_SEARCH_JSON)
     docs = crates_search_package("tokio")
     assert len(docs) == 1
     assert isinstance(docs[0], Document)
@@ -982,18 +922,14 @@ def test_crates_search_returns_documents(mocked_http):
 
 
 def test_crates_search_extracts_downloads(mocked_http):
-    mocked_http.get("https://crates.io/api/v1/crates").respond(
-        200, json=_CRATES_SEARCH_JSON
-    )
+    mocked_http.get("https://crates.io/api/v1/crates").respond(200, json=_CRATES_SEARCH_JSON)
     doc = crates_search_package("tokio")[0]
     assert doc.metadata["downloads"] == 100000000
     assert doc.metadata["recent_downloads"] == 5000000
 
 
 def test_crates_search_metadata_source(mocked_http):
-    mocked_http.get("https://crates.io/api/v1/crates").respond(
-        200, json=_CRATES_SEARCH_JSON
-    )
+    mocked_http.get("https://crates.io/api/v1/crates").respond(200, json=_CRATES_SEARCH_JSON)
     doc = crates_search_package("tokio")[0]
     assert doc.metadata["source"] == "crates"
     assert doc.metadata["registry"] == "crates"
@@ -1015,9 +951,7 @@ def test_crates_search_raises_on_http_error(mocked_http):
 
 
 def test_crates_search_uses_injected_client(mocked_http):
-    mocked_http.get("https://crates.io/api/v1/crates").respond(
-        200, json=_CRATES_SEARCH_JSON
-    )
+    mocked_http.get("https://crates.io/api/v1/crates").respond(200, json=_CRATES_SEARCH_JSON)
     with httpx.Client() as client:
         docs = crates_search_package("tokio", client=client)
         assert len(docs) == 1
@@ -1071,9 +1005,9 @@ def test_crates_get_versions_uses_injected_client(mocked_http):
 
 
 def test_crates_get_dependencies_returns_dep_documents(mocked_http):
-    mocked_http.get(
-        "https://crates.io/api/v1/crates/tokio/1.38.0/dependencies"
-    ).respond(200, json=_CRATES_DEPS_JSON)
+    mocked_http.get("https://crates.io/api/v1/crates/tokio/1.38.0/dependencies").respond(
+        200, json=_CRATES_DEPS_JSON
+    )
     docs = crates_get_dependencies("tokio", "1.38.0")
     assert len(docs) == 2
     assert all(d.metadata["type"] == "dependency" for d in docs)
@@ -1084,17 +1018,15 @@ def test_crates_get_dependencies_returns_dep_documents(mocked_http):
 
 
 def test_crates_get_dependencies_returns_empty_on_404(mocked_http):
-    mocked_http.get(
-        "https://crates.io/api/v1/crates/nonexistent/1.0.0/dependencies"
-    ).respond(404)
+    mocked_http.get("https://crates.io/api/v1/crates/nonexistent/1.0.0/dependencies").respond(404)
     docs = crates_get_dependencies("nonexistent", "1.0.0")
     assert docs == []
 
 
 def test_crates_get_dependents_returns_reverse_dep_documents(mocked_http):
-    mocked_http.get(
-        "https://crates.io/api/v1/crates/tokio/reverse_dependencies"
-    ).respond(200, json=_CRATES_REVDEPS_JSON)
+    mocked_http.get("https://crates.io/api/v1/crates/tokio/reverse_dependencies").respond(
+        200, json=_CRATES_REVDEPS_JSON
+    )
     docs = crates_get_dependents("tokio")
     assert len(docs) == 1
     assert docs[0].metadata["type"] == "reverse_dependency"
@@ -1103,9 +1035,7 @@ def test_crates_get_dependents_returns_reverse_dep_documents(mocked_http):
 
 
 def test_crates_get_dependents_returns_empty_on_404(mocked_http):
-    mocked_http.get(
-        "https://crates.io/api/v1/crates/nonexistent/reverse_dependencies"
-    ).respond(404)
+    mocked_http.get("https://crates.io/api/v1/crates/nonexistent/reverse_dependencies").respond(404)
     docs = crates_get_dependents("nonexistent")
     assert docs == []
 
@@ -1113,15 +1043,13 @@ def test_crates_get_dependents_returns_empty_on_404(mocked_http):
 def test_crates_get_dependents_tolerates_version_without_id(mocked_http):
     """A versions entry missing the 'id' key must not raise KeyError."""
     payload = {
-        "dependencies": [
-            {"crate_id": "foo", "version_id": 99, "req": "^1.0", "kind": "normal"}
-        ],
+        "dependencies": [{"crate_id": "foo", "version_id": 99, "req": "^1.0", "kind": "normal"}],
         # Malformed: this version object has no "id" key.
         "versions": [{"num": "1.2.3"}],
     }
-    mocked_http.get(
-        "https://crates.io/api/v1/crates/tokio/reverse_dependencies"
-    ).respond(200, json=payload)
+    mocked_http.get("https://crates.io/api/v1/crates/tokio/reverse_dependencies").respond(
+        200, json=payload
+    )
     docs = crates_get_dependents("tokio")
     assert len(docs) == 1
     assert docs[0].metadata["dependent_crate"] == "foo"

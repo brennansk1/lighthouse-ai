@@ -117,8 +117,7 @@ def _outcome(db) -> object:
 def test_resolver_commits_when_not_superseded(migrated_paths) -> None:
     db = _seed_position(migrated_paths)
     guard = GenerationGuard()
-    results = run_resolver_pass(db, gateway=_ResolvingGateway(),
-                                retriever=_RETRIEVER, guard=guard)
+    results = run_resolver_pass(db, gateway=_ResolvingGateway(), retriever=_RETRIEVER, guard=guard)
     assert results and results[0].auto_resolved
     assert _outcome(db) == 1  # committed
 

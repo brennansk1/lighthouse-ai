@@ -40,17 +40,17 @@ class DisciplineReport:
     sourced: int
     unsourced: int
     two_sourced: int
-    citation_coverage: float          # fraction of claims with >=1 citation
-    passed: bool                      # meets the configured floor
+    citation_coverage: float  # fraction of claims with >=1 citation
+    passed: bool  # meets the configured floor
     notes: list[str] = field(default_factory=list)
     distinct_sources: int = 0
     entailment_coverage: float = 0.0  # fraction of sourced claims entailed by grounding
-    entailment_checked: bool = False   # True iff MiniCheck/HHEM was available
+    entailment_checked: bool = False  # True iff MiniCheck/HHEM was available
     # Triangulation + integrity (set when evidence_chunks is supplied):
-    triangulated: int = 0              # claims with >=2 INDEPENDENT sources (distinct docs)
-    fabricated_citations: int = 0      # citation ids that map to no evidence chunk
+    triangulated: int = 0  # claims with >=2 INDEPENDENT sources (distinct docs)
+    fabricated_citations: int = 0  # citation ids that map to no evidence chunk
     contradictions: list[tuple[str, str]] = field(default_factory=list)
-    distinct_skills: int = 0           # distinct skill_id values across evidence (independence)
+    distinct_skills: int = 0  # distinct skill_id values across evidence (independence)
 
 
 # Antonym pairs + negation markers for a conservative, deterministic
@@ -58,17 +58,56 @@ class DisciplineReport:
 # subject tokens AND carry opposing polarity — favouring precision over recall so
 # we don't cry "contradiction" on unrelated sentences.
 _ANTONYM_PAIRS = [
-    ("increase", "decrease"), ("increases", "decreases"), ("rose", "fell"),
-    ("rise", "fall"), ("higher", "lower"), ("more", "less"), ("grew", "shrank"),
-    ("positive", "negative"), ("effective", "ineffective"), ("safe", "unsafe"),
-    ("benefit", "harm"), ("benefits", "harms"), ("supports", "refutes"),
-    ("confirms", "contradicts"), ("improved", "worsened"),
+    ("increase", "decrease"),
+    ("increases", "decreases"),
+    ("rose", "fell"),
+    ("rise", "fall"),
+    ("higher", "lower"),
+    ("more", "less"),
+    ("grew", "shrank"),
+    ("positive", "negative"),
+    ("effective", "ineffective"),
+    ("safe", "unsafe"),
+    ("benefit", "harm"),
+    ("benefits", "harms"),
+    ("supports", "refutes"),
+    ("confirms", "contradicts"),
+    ("improved", "worsened"),
 ]
 _NEGATIONS = {"not", "no", "never", "n't", "without", "cannot", "fails", "failed"}
 _STOPWORDS = {
-    "the", "a", "an", "of", "to", "in", "on", "and", "or", "is", "are", "was",
-    "were", "be", "been", "it", "its", "this", "that", "these", "those", "with",
-    "for", "by", "as", "at", "from", "has", "have", "had", "but", "than",
+    "the",
+    "a",
+    "an",
+    "of",
+    "to",
+    "in",
+    "on",
+    "and",
+    "or",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "it",
+    "its",
+    "this",
+    "that",
+    "these",
+    "those",
+    "with",
+    "for",
+    "by",
+    "as",
+    "at",
+    "from",
+    "has",
+    "have",
+    "had",
+    "but",
+    "than",
 }
 
 
@@ -82,9 +121,9 @@ def extract_claims(text: str) -> list[Claim]:
     plain = re.sub(r"<[^>]+>", " ", text)
     for raw in _SENTENCE_SPLIT.split(plain):
         s = raw.strip()
-        if len(s.split()) < 3:          # 1-2 word fragment / heading
+        if len(s.split()) < 3:  # 1-2 word fragment / heading
             continue
-        if s.endswith("?"):             # a question is not a claim
+        if s.endswith("?"):  # a question is not a claim
             continue
         ids: list[int] = []
         for m in _CITATION.finditer(s):
@@ -99,8 +138,11 @@ def _domain_by_id(evidence_chunks: list) -> dict[int, str]:
     for idx, r in enumerate(evidence_chunks, start=1):
         chunk = getattr(r, "chunk", r)
         meta = getattr(chunk, "metadata", {}) or {}
-        domain = meta.get("source") or getattr(chunk, "document_id", None) \
+        domain = (
+            meta.get("source")
+            or getattr(chunk, "document_id", None)
             or getattr(chunk, "id", f"chunk{idx}")
+        )
         out[idx] = str(domain)
     return out
 
@@ -176,9 +218,13 @@ def detect_contradictions(claims: list[Claim]) -> list[tuple[str, str]]:
     return out
 
 
-def check(text: str, *, min_coverage: float = 0.6,
-          high_stakes: bool = False,
-          evidence_chunks: list | None = None) -> DisciplineReport:
+def check(
+    text: str,
+    *,
+    min_coverage: float = 0.6,
+    high_stakes: bool = False,
+    evidence_chunks: list | None = None,
+) -> DisciplineReport:
     """Run the discipline gate over a synthesis block.
 
     ``min_coverage`` — required fraction of claims carrying >=1 citation.
@@ -190,9 +236,15 @@ def check(text: str, *, min_coverage: float = 0.6,
 
     claims = extract_claims(text)
     if not claims:
-        return DisciplineReport(claims=[], sourced=0, unsourced=0, two_sourced=0,
-                                citation_coverage=0.0, passed=False,
-                                notes=["no extractable claims"])
+        return DisciplineReport(
+            claims=[],
+            sourced=0,
+            unsourced=0,
+            two_sourced=0,
+            citation_coverage=0.0,
+            passed=False,
+            notes=["no extractable claims"],
+        )
     sourced = sum(1 for c in claims if c.is_sourced)
     unsourced = len(claims) - sourced
 
@@ -217,12 +269,11 @@ def check(text: str, *, min_coverage: float = 0.6,
         if len(set(cited)) < 2:
             return False
         # Collect skill_ids for all cited chunks that have one.
-        cited_skills = {_skill_map[cid] for cid in cited
-                        if cid in _skill_map and _skill_map[cid] is not None}
+        cited_skills = {
+            _skill_map[cid] for cid in cited if cid in _skill_map and _skill_map[cid] is not None
+        }
         # If every cited chunk has a skill_id and they all share one → NOT independent.
-        all_have_skill = all(
-            cid in _skill_map and _skill_map[cid] is not None for cid in cited
-        )
+        all_have_skill = all(cid in _skill_map and _skill_map[cid] is not None for cid in cited)
         if all_have_skill and len(cited_skills) == 1:
             return False
         return True
@@ -234,8 +285,9 @@ def check(text: str, *, min_coverage: float = 0.6,
     if not passed:
         notes.append(f"citation coverage {coverage:.0%} below floor {min_coverage:.0%}")
     if high_stakes and two < sourced:
-        notes.append(f"two-source rule: only {two}/{sourced} sourced claims "
-                     f"have >=2 independent citations")
+        notes.append(
+            f"two-source rule: only {two}/{sourced} sourced claims have >=2 independent citations"
+        )
         passed = passed and (two >= sourced)
 
     # --- entailment gate (MiniCheck when available) ---
@@ -278,8 +330,7 @@ def check(text: str, *, min_coverage: float = 0.6,
 
             if high_stakes and entailment_coverage < 0.85:
                 notes.append(
-                    f"high-stakes entailment floor not met: "
-                    f"{entailment_coverage:.0%} < 85%"
+                    f"high-stakes entailment floor not met: {entailment_coverage:.0%} < 85%"
                 )
                 passed = False
 
@@ -313,19 +364,16 @@ def check(text: str, *, min_coverage: float = 0.6,
             # if their domains differ.
             cited = [cid for cid in c.citation_ids if cid in valid_ids]
             domains = {dom_by_id[cid] for cid in cited}
-            cited_skills = {skill_by_id[cid] for cid in cited
-                            if skill_by_id[cid] is not None}
+            cited_skills = {skill_by_id[cid] for cid in cited if skill_by_id[cid] is not None}
             # If every cited chunk carries a skill_id and they all share one
             # skill, the citations are not independent regardless of domain.
-            same_single_skill = (
-                len(cited_skills) == 1
-                and all(skill_by_id[cid] is not None for cid in cited)
+            same_single_skill = len(cited_skills) == 1 and all(
+                skill_by_id[cid] is not None for cid in cited
             )
             if len(domains) >= 2 and not same_single_skill:
                 triangulated += 1
         if fabricated:
-            notes.append(f"{fabricated} claim(s) cite non-existent sources "
-                         f"(fabricated citations)")
+            notes.append(f"{fabricated} claim(s) cite non-existent sources (fabricated citations)")
             if high_stakes:
                 passed = False
 
@@ -334,15 +382,21 @@ def check(text: str, *, min_coverage: float = 0.6,
     if contradictions:
         notes.append(f"{len(contradictions)} potential contradiction(s) surfaced")
 
-    return DisciplineReport(claims=claims, sourced=sourced, unsourced=unsourced,
-                            two_sourced=two, citation_coverage=round(coverage, 3),
-                            passed=passed, notes=notes,
-                            entailment_coverage=round(entailment_coverage, 3),
-                            entailment_checked=entailment_checked,
-                            triangulated=triangulated,
-                            fabricated_citations=fabricated,
-                            contradictions=contradictions,
-                            distinct_skills=skills_count)
+    return DisciplineReport(
+        claims=claims,
+        sourced=sourced,
+        unsourced=unsourced,
+        two_sourced=two,
+        citation_coverage=round(coverage, 3),
+        passed=passed,
+        notes=notes,
+        entailment_coverage=round(entailment_coverage, 3),
+        entailment_checked=entailment_checked,
+        triangulated=triangulated,
+        fabricated_citations=fabricated,
+        contradictions=contradictions,
+        distinct_skills=skills_count,
+    )
 
 
 def check_source_diversity(evidence_chunks) -> int:

@@ -55,9 +55,7 @@ def _records(tmp_path: Path) -> list[dict]:
     return [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
 
 
-def _install_logging_guard(
-    monkeypatch: pytest.MonkeyPatch, module: object, tmp_path: Path
-) -> None:
+def _install_logging_guard(monkeypatch: pytest.MonkeyPatch, module: object, tmp_path: Path) -> None:
     """Route ``module.guarded_get`` through a logging :class:`EgressProxy`.
 
     The replacement preserves the adapter's call shape exactly — it accepts the
@@ -236,7 +234,13 @@ _ADAPTERS: list[tuple[str, object, Callable[[httpx.Client], object], Callable[[]
     ("openalex", openalex, _call_openalex, _routes_openalex, "api.openalex.org"),
     ("pubmed", pubmed, _call_pubmed, _routes_pubmed, "eutils.ncbi.nlm.nih.gov"),
     ("sec_edgar", sec_edgar, _call_sec_edgar, _routes_sec_edgar, "efts.sec.gov"),
-    ("courtlistener", courtlistener, _call_courtlistener, _routes_courtlistener, "www.courtlistener.com"),
+    (
+        "courtlistener",
+        courtlistener,
+        _call_courtlistener,
+        _routes_courtlistener,
+        "www.courtlistener.com",
+    ),
     ("searxng", searxng, _call_searxng, _routes_searxng, "localhost"),
 ]
 
@@ -274,8 +278,7 @@ def test_adapter_routes_through_guard_and_audits(
     allowed = [r for r in recs if r["allowed"] is True]
     assert allowed, f"no allowed egress record written by {module}: {recs}"
     assert any(r["host"] == expected_host for r in allowed), (
-        f"expected host {expected_host!r} in audit log, got "
-        f"{[r['host'] for r in allowed]}"
+        f"expected host {expected_host!r} in audit log, got {[r['host'] for r in allowed]}"
     )
 
 

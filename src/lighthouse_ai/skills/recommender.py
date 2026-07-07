@@ -146,8 +146,24 @@ _EXPLICIT_MENTION_BONUS = 0.8
 # Generic tokens that appear in many source names; they must not, on their own,
 # count as "the user named this source".
 _GENERIC_NAME_TOKENS = frozenset(
-    {"news", "data", "the", "web", "gov", "search", "org", "com",
-     "st", "louis", "fed", "inc", "of", "and", "for", "world"}
+    {
+        "news",
+        "data",
+        "the",
+        "web",
+        "gov",
+        "search",
+        "org",
+        "com",
+        "st",
+        "louis",
+        "fed",
+        "inc",
+        "of",
+        "and",
+        "for",
+        "world",
+    }
 )
 
 
@@ -465,9 +481,7 @@ def _apply_profile_overlay(recs: list[Recommendation], profiles_matched: list[di
     for sid in baseline:
         if sid in excluded or sid in by_id:
             continue
-        out.append(
-            Recommendation(sid, 1.0, "profile baseline (always included)", "primary")
-        )
+        out.append(Recommendation(sid, 1.0, "profile baseline (always included)", "primary"))
 
     out.sort(key=lambda r: r.score, reverse=True)
     return out
@@ -519,9 +533,7 @@ def _score_candidates(
     if not candidates:
         return []
     question = _question_text(framed)
-    docs = [
-        _skill_corpus(m, _skill_md_text(m.id, library_dir)) for m in candidates
-    ]
+    docs = [_skill_corpus(m, _skill_md_text(m.id, library_dir)) for m in candidates]
     sims = (
         _embedder_similarity(embedder, question, docs)
         if embedder is not None
@@ -532,9 +544,7 @@ def _score_candidates(
 
     recs: list[Recommendation] = []
     for manifest, sim in zip(candidates, sims):
-        rule, reasons = _rule_score(
-            manifest, framed, mode, weights, load_bearing=load_bearing
-        )
+        rule, reasons = _rule_score(manifest, framed, mode, weights, load_bearing=load_bearing)
         score = rule_w * rule + sim_w * sim
         if _explicit_mention(manifest, question):
             score += _EXPLICIT_MENTION_BONUS
@@ -550,9 +560,7 @@ def _score_candidates(
 # --------------------------------------------------------------------------- #
 # Mode branches
 # --------------------------------------------------------------------------- #
-def _recommend_for_fit(
-    candidates, framed, mode, weights, *, embedder, library_dir, load_bearing
-):
+def _recommend_for_fit(candidates, framed, mode, weights, *, embedder, library_dir, load_bearing):
     """Default branch (Investigate / Survey / Reconstruct / Watch / Ask):
     rank candidates by blended fit score, best first."""
     return _score_candidates(
@@ -706,9 +714,7 @@ def _append_general_web(
         # how the specialty skills scored.
         reason = "explicitly requested open-web search"
         out = list(recs)
-        out.append(
-            Recommendation(GENERAL_WEB_ID, round(top + 0.01, 4), reason, "primary")
-        )
+        out.append(Recommendation(GENERAL_WEB_ID, round(top + 0.01, 4), reason, "primary"))
         out.sort(key=lambda r: r.score, reverse=True)
         return out
     role = _general_web_role(mode, top)
@@ -819,9 +825,7 @@ def recommend(
 
     # Always offer general_web as fallback with the right role (§5.2).
     gw_available = _general_web_available(raw_candidates, library_dir, skills)
-    recs = _append_general_web(
-        recs, mode, available=gw_available, question=_question_text(framed)
-    )
+    recs = _append_general_web(recs, mode, available=gw_available, question=_question_text(framed))
     return recs
 
 

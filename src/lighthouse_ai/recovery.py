@@ -109,8 +109,7 @@ def integrity_report(paths: Paths) -> IntegrityReport:
         db_results.append(DbIntegrity(kind, path, result, exists=True))
 
     replicas = tuple(
-        ReplicaFreshness(lag.name, lag.lag_seconds)
-        for lag in litestream.replica_lags(paths)
+        ReplicaFreshness(lag.name, lag.lag_seconds) for lag in litestream.replica_lags(paths)
     )
     return IntegrityReport(databases=tuple(db_results), replicas=replicas)
 

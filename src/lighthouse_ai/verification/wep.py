@@ -17,17 +17,19 @@ class WEPBand:
     label: str
 
     def __contains__(self, p: float) -> bool:
-        return self.low <= p < self.high if self.name != "almost_certain" else (
-            self.low <= p <= self.high
+        return (
+            self.low <= p < self.high
+            if self.name != "almost_certain"
+            else (self.low <= p <= self.high)
         )
 
 
 WEP_BANDS: tuple[WEPBand, ...] = (
-    WEPBand("remote",          0.00, 0.10, "remote"),
-    WEPBand("unlikely",        0.10, 0.40, "unlikely"),
-    WEPBand("even",            0.40, 0.60, "even chance"),
-    WEPBand("likely",          0.60, 0.90, "likely"),
-    WEPBand("almost_certain",  0.90, 1.01, "almost certain"),
+    WEPBand("remote", 0.00, 0.10, "remote"),
+    WEPBand("unlikely", 0.10, 0.40, "unlikely"),
+    WEPBand("even", 0.40, 0.60, "even chance"),
+    WEPBand("likely", 0.60, 0.90, "likely"),
+    WEPBand("almost_certain", 0.90, 1.01, "almost certain"),
 )
 
 

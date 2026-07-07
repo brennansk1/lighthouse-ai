@@ -63,21 +63,31 @@ class DebateResult:
 # --- canonical perspective set (extend per topic in production) ---
 
 PERSPECTIVES: tuple[Perspective, ...] = (
-    Perspective("steelman", "strongest version of the claim",
-                "Strengthen the claim '{claim}' with the best supporting argument."),
-    Perspective("devils_advocate", "strongest counter-claim",
-                "Refute '{claim}' with the strongest counter-argument."),
-    Perspective("base_rate", "reference-class outside view",
-                "What is the historical base rate that bears on '{claim}'?"),
-    Perspective("fragility", "if-wrong analysis",
-                "If '{claim}' is wrong, what fails first?"),
+    Perspective(
+        "steelman",
+        "strongest version of the claim",
+        "Strengthen the claim '{claim}' with the best supporting argument.",
+    ),
+    Perspective(
+        "devils_advocate",
+        "strongest counter-claim",
+        "Refute '{claim}' with the strongest counter-argument.",
+    ),
+    Perspective(
+        "base_rate",
+        "reference-class outside view",
+        "What is the historical base rate that bears on '{claim}'?",
+    ),
+    Perspective("fragility", "if-wrong analysis", "If '{claim}' is wrong, what fails first?"),
 )
 
 
 def _heuristic_response(perspective: Perspective, claim: str, draft: str) -> str:
     """Deterministic perspective response used when no Gateway is wired."""
-    return (f"[{perspective.name}] On '{claim}': {perspective.stance}. "
-            f"Considering the draft ({len(draft)} chars), proceed with caution.")
+    return (
+        f"[{perspective.name}] On '{claim}': {perspective.stance}. "
+        f"Considering the draft ({len(draft)} chars), proceed with caution."
+    )
 
 
 def run_debate(
@@ -120,16 +130,16 @@ def run_debate(
             except Exception:
                 critique = _heuristic_response(p, claim, draft)
         agrees = (agree_predicate or _default_agree)(critique)
-        responses.append(PerspectiveResponse(perspective=p, critique=critique,
-                                             agrees=agrees))
+        responses.append(PerspectiveResponse(perspective=p, critique=critique, agrees=agrees))
 
     agreements = [r.critique for r in responses if r.agrees]
     disputes = [r.critique for r in responses if not r.agrees]
 
     if gateway is None:
         return _heuristic_verdict(claim, draft, responses, agreements, disputes)
-    return _llm_verdict(gateway, claim, draft, responses, agreements, disputes,
-                        job_id=job_id, gate=gate)
+    return _llm_verdict(
+        gateway, claim, draft, responses, agreements, disputes, job_id=job_id, gate=gate
+    )
 
 
 def _heuristic_verdict(
@@ -143,12 +153,21 @@ def _heuristic_verdict(
     format ('N/M perspectives agree. K disputes remain.') so existing callers
     and tests do not regress. The crux is left empty — the heuristic cannot
     reliably tell a load-bearing dispute from a rhetorical one."""
-    summary = (f"{len(agreements)}/{len(responses)} perspectives agree. "
-               f"{len(disputes)} disputes remain.")
-    return DebateResult(claim=claim, draft=draft, responses=responses,
-                        judge_summary=summary, agreements=agreements,
-                        disputes=disputes, crux="", crux_perspective=None,
-                        resolves_with="", judge_backend="heuristic")
+    summary = (
+        f"{len(agreements)}/{len(responses)} perspectives agree. {len(disputes)} disputes remain."
+    )
+    return DebateResult(
+        claim=claim,
+        draft=draft,
+        responses=responses,
+        judge_summary=summary,
+        agreements=agreements,
+        disputes=disputes,
+        crux="",
+        crux_perspective=None,
+        resolves_with="",
+        judge_backend="heuristic",
+    )
 
 
 # Sentinel lines the judge prompt asks the model to emit, so we can parse a
@@ -159,8 +178,7 @@ _RESOLVES_TAG = "RESOLVES_WITH:"
 _SUMMARY_TAG = "SUMMARY:"
 
 
-def _judge_prompt(claim: str, draft: str,
-                  responses: list[PerspectiveResponse]) -> str:
+def _judge_prompt(claim: str, draft: str, responses: list[PerspectiveResponse]) -> str:
     """Build the synthesizer prompt that asks for the load-bearing crux.
 
     We deliberately instruct the judge to ignore rhetorical disagreement
@@ -168,9 +186,7 @@ def _judge_prompt(claim: str, draft: str,
     resolution would flip the conclusion — the trustworthiness north star."""
     blocks = []
     for r in responses:
-        blocks.append(
-            f"[{r.perspective.name}] ({r.perspective.stance})\n{r.critique}"
-        )
+        blocks.append(f"[{r.perspective.name}] ({r.perspective.stance})\n{r.critique}")
     perspectives_text = "\n\n".join(blocks)
     valid_names = ", ".join(r.perspective.name for r in responses)
     return (
@@ -196,20 +212,19 @@ def _judge_prompt(claim: str, draft: str,
 def _parse_judge(text: str, valid_names: set[str]) -> dict:
     """Parse the tagged judge reply. Tolerant of missing/extra lines and of a
     model that ignores the format (returns empties so callers degrade)."""
-    out = {"crux": "", "crux_perspective": None, "resolves_with": "",
-           "summary": ""}
+    out = {"crux": "", "crux_perspective": None, "resolves_with": "", "summary": ""}
     for raw in text.splitlines():
         line = raw.strip()
         if line.upper().startswith(_CRUX_TAG):
-            val = line[len(_CRUX_TAG):].strip()
+            val = line[len(_CRUX_TAG) :].strip()
             out["crux"] = "" if val.lower() in ("none", "n/a", "") else val
         elif line.upper().startswith(_PERSPECTIVE_TAG):
-            val = line[len(_PERSPECTIVE_TAG):].strip()
+            val = line[len(_PERSPECTIVE_TAG) :].strip()
             out["crux_perspective"] = val if val in valid_names else None
         elif line.upper().startswith(_RESOLVES_TAG):
-            out["resolves_with"] = line[len(_RESOLVES_TAG):].strip()
+            out["resolves_with"] = line[len(_RESOLVES_TAG) :].strip()
         elif line.upper().startswith(_SUMMARY_TAG):
-            out["summary"] = line[len(_SUMMARY_TAG):].strip()
+            out["summary"] = line[len(_SUMMARY_TAG) :].strip()
     return out
 
 
@@ -244,22 +259,32 @@ def _llm_verdict(
             f"{len(agreements)}/{len(responses)} perspectives agree; "
             "no load-bearing dispute identified."
         )
-        return DebateResult(claim=claim, draft=draft, responses=responses,
-                            judge_summary=summary, agreements=agreements,
-                            disputes=disputes, crux="",
-                            crux_perspective=parsed["crux_perspective"],
-                            resolves_with=parsed["resolves_with"],
-                            judge_backend="llm")
+        return DebateResult(
+            claim=claim,
+            draft=draft,
+            responses=responses,
+            judge_summary=summary,
+            agreements=agreements,
+            disputes=disputes,
+            crux="",
+            crux_perspective=parsed["crux_perspective"],
+            resolves_with=parsed["resolves_with"],
+            judge_backend="llm",
+        )
 
-    summary = parsed["summary"] or (
-        f"Load-bearing crux: {crux}"
+    summary = parsed["summary"] or (f"Load-bearing crux: {crux}")
+    return DebateResult(
+        claim=claim,
+        draft=draft,
+        responses=responses,
+        judge_summary=summary,
+        agreements=agreements,
+        disputes=disputes,
+        crux=crux,
+        crux_perspective=parsed["crux_perspective"],
+        resolves_with=parsed["resolves_with"],
+        judge_backend="llm",
     )
-    return DebateResult(claim=claim, draft=draft, responses=responses,
-                        judge_summary=summary, agreements=agreements,
-                        disputes=disputes, crux=crux,
-                        crux_perspective=parsed["crux_perspective"],
-                        resolves_with=parsed["resolves_with"],
-                        judge_backend="llm")
 
 
 def _default_agree(critique: str) -> bool:

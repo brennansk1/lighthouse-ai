@@ -82,11 +82,16 @@ class AdmissionConfig:
 
 
 def replace_timeout(cfg: AdmissionConfig, wait_timeout_s: float) -> AdmissionConfig:
-    return AdmissionConfig(enabled=cfg.enabled, wait_timeout_s=wait_timeout_s,
-                           poll_s=cfg.poll_s, margin_gb=cfg.margin_gb)
+    return AdmissionConfig(
+        enabled=cfg.enabled,
+        wait_timeout_s=wait_timeout_s,
+        poll_s=cfg.poll_s,
+        margin_gb=cfg.margin_gb,
+    )
 
 
 # --- platform-native brief mutex ----------------------------------------
+
 
 @contextmanager
 def _file_mutex(lock_path: Path) -> Iterator[None]:
@@ -123,9 +128,11 @@ def _have_file_lock() -> bool:
 
 # --- reservation ledger --------------------------------------------------
 
+
 def _pid_alive(pid: int) -> bool:
     try:
         import psutil
+
         return psutil.pid_exists(pid)
     except Exception:
         # Best effort without psutil: signal 0 probes the process.
@@ -156,8 +163,7 @@ def _read_ledger(path: Path) -> list[dict]:
         return []
     if not isinstance(entries, list):
         return []
-    return [e for e in entries
-            if isinstance(e, dict) and "pid" in e and _pid_alive(int(e["pid"]))]
+    return [e for e in entries if isinstance(e, dict) and "pid" in e and _pid_alive(int(e["pid"]))]
 
 
 def _write_ledger(path: Path, entries: list[dict]) -> None:
@@ -173,6 +179,7 @@ def _reserved_gb(entries: list[dict]) -> float:
 def _available_gb() -> float:
     try:
         import psutil
+
         return psutil.virtual_memory().available / 1e9
     except Exception:
         return float("inf")  # can't measure → don't block (caller's RAM guard still applies)
@@ -227,8 +234,9 @@ def ollama_slot(
         with _file_mutex(lock_path):
             entries = _read_ledger(ledger)
             if _reserved_gb(entries) + need + cfg.margin_gb <= available_gb_fn():
-                entries.append({"rid": rid, "pid": os.getpid(),
-                                "gb": need, "model": model, "ts": time.time()})
+                entries.append(
+                    {"rid": rid, "pid": os.getpid(), "gb": need, "model": model, "ts": time.time()}
+                )
                 _write_ledger(ledger, entries)
                 admitted = True
         if admitted:

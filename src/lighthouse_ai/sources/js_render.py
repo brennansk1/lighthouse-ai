@@ -87,6 +87,7 @@ def render_html(
     # degrades to static fetch" contract. (NB: when airgap is *off*, Tier-B
     # rendering is still not host-allowlisted — see docs/SECURITY_POSTURE.md.)
     from ..governor.egress_proxy import airgap_enabled
+
     if airgap_enabled():
         log.debug("js_render: LIGHTHOUSE_AIRGAP set; refusing to render %s", url)
         return None

@@ -112,9 +112,7 @@ CROSSREF_JSON = {
 
 CROSSREF_EMPTY_JSON = {"message": {"items": []}}
 
-CROSSREF_NOTITLE_JSON = {
-    "message": {"items": [{"DOI": "10.1/n", "type": "journal-article"}]}
-}
+CROSSREF_NOTITLE_JSON = {"message": {"items": [{"DOI": "10.1/n", "type": "journal-article"}]}}
 
 
 @pytest.fixture
@@ -125,9 +123,11 @@ def mocked_http():
 
 def _pubmed_ok(m, *, search=ESEARCH_XML, fetch=EFETCH_XML):
     m.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi").respond(
-        200, content=search, headers={"content-type": "text/xml"})
+        200, content=search, headers={"content-type": "text/xml"}
+    )
     m.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi").respond(
-        200, content=fetch, headers={"content-type": "text/xml"})
+        200, content=fetch, headers={"content-type": "text/xml"}
+    )
 
 
 def _crossref_ok(m, payload=CROSSREF_JSON):
@@ -135,6 +135,7 @@ def _crossref_ok(m, payload=CROSSREF_JSON):
 
 
 # --- PubMed ---
+
 
 def test_pubmed_returns_documents(mocked_http):
     _pubmed_ok(mocked_http)
@@ -184,23 +185,23 @@ def test_pubmed_published_date_year_only(mocked_http):
 
 
 def test_pubmed_respects_max_results_param(mocked_http):
-    route = mocked_http.get(
-        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi").respond(
-        200, content=ESEARCH_XML)
-    mocked_http.get(
-        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi").respond(
-        200, content=EFETCH_XML)
+    route = mocked_http.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi").respond(
+        200, content=ESEARCH_XML
+    )
+    mocked_http.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi").respond(
+        200, content=EFETCH_XML
+    )
     search_pubmed("crispr", max_results=3)
     assert route.calls.last.request.url.params["retmax"] == "3"
 
 
 def test_pubmed_empty_search_skips_efetch(mocked_http):
-    mocked_http.get(
-        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi").respond(
-        200, content=ESEARCH_EMPTY_XML)
+    mocked_http.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi").respond(
+        200, content=ESEARCH_EMPTY_XML
+    )
     fetch_route = mocked_http.get(
-        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi").respond(
-        200, content=EFETCH_XML)
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    ).respond(200, content=EFETCH_XML)
     docs = search_pubmed("nothing")
     assert docs == []
     assert not fetch_route.called
@@ -217,18 +218,16 @@ def test_pubmed_malformed_efetch_returns_empty(mocked_http):
 
 
 def test_pubmed_raises_on_esearch_http_error(mocked_http):
-    mocked_http.get(
-        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi").respond(500)
+    mocked_http.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi").respond(500)
     with pytest.raises(httpx.HTTPStatusError):
         search_pubmed("x")
 
 
 def test_pubmed_raises_on_efetch_http_error(mocked_http):
-    mocked_http.get(
-        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi").respond(
-        200, content=ESEARCH_XML)
-    mocked_http.get(
-        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi").respond(404)
+    mocked_http.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi").respond(
+        200, content=ESEARCH_XML
+    )
+    mocked_http.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi").respond(404)
     with pytest.raises(httpx.HTTPStatusError):
         search_pubmed("x")
 
@@ -243,6 +242,7 @@ def test_pubmed_uses_injected_client(mocked_http):
 
 
 # --- Crossref ---
+
 
 def test_crossref_returns_documents(mocked_http):
     _crossref_ok(mocked_http)
@@ -302,8 +302,9 @@ def test_crossref_skips_items_without_title(mocked_http):
 
 
 def test_crossref_respects_max_results(mocked_http):
-    route = _crossref_ok_route = mocked_http.get(
-        "https://api.crossref.org/works").respond(200, json=CROSSREF_JSON)
+    route = _crossref_ok_route = mocked_http.get("https://api.crossref.org/works").respond(
+        200, json=CROSSREF_JSON
+    )
     search_crossref("protein", max_results=7)
     assert route.calls.last.request.url.params["rows"] == "7"
 

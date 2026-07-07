@@ -45,6 +45,7 @@ def submit_for_archiving(
         available, or the SPN response URL).  Returns None if the request fails.
     """
     from .cdx import _pct_encode
+
     save_url = _SPN_BASE.format(url=_pct_encode(url))
     try:
         resp = ctx.fetch(save_url)

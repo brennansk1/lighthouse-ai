@@ -32,16 +32,19 @@ def client(migrated_paths):
 def _seed_key(paths, key_name: str, value: str) -> None:
     """Write a secret directly to the TOML file, bypassing the OS keychain."""
     from lighthouse_ai.secrets import SecretStore
+
     SecretStore(paths.data_dir, prefer_keyring=False).put(key_name, value)
 
 
 def _delete_key(paths, key_name: str) -> None:
     """Remove a secret from the TOML file."""
     from lighthouse_ai.secrets import SecretStore
+
     SecretStore(paths.data_dir, prefer_keyring=False).delete(key_name)
 
 
 # ====================== /api/sources/keys ========================
+
 
 def test_sources_keys_lists_all_sources(client):
     r = client.get("/api/sources/keys")
@@ -50,8 +53,16 @@ def test_sources_keys_lists_all_sources(client):
     sources = body["sources"]
     ids = {s["source_id"] for s in sources}
     assert ids >= {
-        "fred", "bea", "bls", "census", "congress_gov", "govinfo",
-        "courtlistener", "semantic_scholar", "regulations_gov", "guardian",
+        "fred",
+        "bea",
+        "bls",
+        "census",
+        "congress_gov",
+        "govinfo",
+        "courtlistener",
+        "semantic_scholar",
+        "regulations_gov",
+        "guardian",
     }
 
 
@@ -96,6 +107,7 @@ def test_post_secret_then_sources_keys_shows_configured(migrated_paths, client):
 
 
 # ====================== DELETE /api/secrets/{key_name} ===========
+
 
 def test_delete_secret_removes_it(migrated_paths, client):
     key_name = "FRED_API_KEY"
@@ -142,6 +154,7 @@ def test_delete_secret_404_when_absent(migrated_paths, client):
 
 
 # ====================== /api/steerability ========================
+
 
 def test_steerability_get_defaults(client):
     r = client.get("/api/steerability")

@@ -30,12 +30,12 @@ def initted_env(cli_env):
 @pytest.fixture
 def mock_ollama():
     """Stub the Ollama HTTP API for `models` commands."""
-    with respx.mock(base_url="http://127.0.0.1:11434",
-                    assert_all_called=False) as mock:
+    with respx.mock(base_url="http://127.0.0.1:11434", assert_all_called=False) as mock:
         yield mock
 
 
 # --- secrets ---
+
 
 def test_secrets_set_and_get(initted_env):
     runner = CliRunner()
@@ -61,6 +61,7 @@ def test_secrets_get_missing_exits_nonzero(initted_env):
 
 # --- audit verify ---
 
+
 def test_audit_verify_passes_on_empty_chain(initted_env):
     runner = CliRunner()
     r = runner.invoke(app, ["audit", "verify"])
@@ -69,8 +70,10 @@ def test_audit_verify_passes_on_empty_chain(initted_env):
 
 def test_audit_verify_passes_with_signed_events(initted_env):
     from lighthouse_ai.verification.audit_chain import append_event
-    append_event(initted_env / "audit.db", actor="t", event_type="e",
-                 payload={"k": 1}, data_dir=initted_env)
+
+    append_event(
+        initted_env / "audit.db", actor="t", event_type="e", payload={"k": 1}, data_dir=initted_env
+    )
     runner = CliRunner()
     r = runner.invoke(app, ["audit", "verify"])
     assert r.exit_code == 0
@@ -81,13 +84,16 @@ def test_audit_verify_fails_on_broken_chain(initted_env):
 
     from lighthouse_ai.persistence import open_db
     from lighthouse_ai.verification.audit_chain import append_event
-    append_event(initted_env / "audit.db", actor="t", event_type="e",
-                 payload={"k": 1}, data_dir=initted_env)
+
+    append_event(
+        initted_env / "audit.db", actor="t", event_type="e", payload={"k": 1}, data_dir=initted_env
+    )
     # Tamper.
     conn = open_db(initted_env / "audit.db")
     try:
-        conn.execute("UPDATE audit_events SET payload_json = ? WHERE seq = 1",
-                     (json.dumps({"k": 99}),))
+        conn.execute(
+            "UPDATE audit_events SET payload_json = ? WHERE seq = 1", (json.dumps({"k": 99}),)
+        )
     finally:
         conn.close()
     runner = CliRunner()
@@ -97,6 +103,7 @@ def test_audit_verify_fails_on_broken_chain(initted_env):
 
 # --- sandbox redteam ---
 
+
 def test_sandbox_redteam_passes(initted_env):
     runner = CliRunner()
     r = runner.invoke(app, ["sandbox", "redteam"])
@@ -105,6 +112,7 @@ def test_sandbox_redteam_passes(initted_env):
 
 
 # --- quarantine ---
+
 
 def test_quarantine_list_empty(initted_env):
     runner = CliRunner()
@@ -137,11 +145,21 @@ def test_quarantine_purge_with_confirm(initted_env):
 
 # --- models (mocked HTTP) ---
 
+
 def test_models_list_via_mocked_ollama(initted_env, mock_ollama):
-    mock_ollama.get("/api/tags").respond(200, json={
-        "models": [{"name": "qwen3:8b", "size": 5_500_000_000,
-                    "digest": "sha256:abc", "modified_at": ""}]
-    })
+    mock_ollama.get("/api/tags").respond(
+        200,
+        json={
+            "models": [
+                {
+                    "name": "qwen3:8b",
+                    "size": 5_500_000_000,
+                    "digest": "sha256:abc",
+                    "modified_at": "",
+                }
+            ]
+        },
+    )
     runner = CliRunner()
     r = runner.invoke(app, ["models", "list"])
     assert r.exit_code == 0
@@ -166,15 +184,17 @@ def test_models_list_errors_when_ollama_down(initted_env, mock_ollama):
 def _fake_disk(free_gb: float):
     """A shutil.disk_usage stand-in exposing .free in bytes."""
     from types import SimpleNamespace
+
     return lambda _p: SimpleNamespace(total=int(1000e9), used=0, free=int(free_gb * 1e9))
 
 
 def test_models_pull_streams_status(initted_env, mock_ollama, monkeypatch):
     import shutil
+
     monkeypatch.setattr(shutil, "disk_usage", _fake_disk(200.0))  # plenty of disk
-    mock_ollama.post("/api/pull").respond(200, text=(
-        '{"status":"pulling manifest"}\n{"status":"success"}\n'
-    ))
+    mock_ollama.post("/api/pull").respond(
+        200, text=('{"status":"pulling manifest"}\n{"status":"success"}\n')
+    )
     runner = CliRunner()
     r = runner.invoke(app, ["models", "pull", "qwen3.5-9b", "--yes"])
     assert r.exit_code == 0, r.stdout
@@ -185,6 +205,7 @@ def test_models_pull_refuses_when_disk_low(initted_env, mock_ollama, monkeypatch
     """The 35B-A3B pull (~17 GB) must be refused with only ~10 GB free —
     and must NOT hit the Ollama /api/pull endpoint at all."""
     import shutil
+
     monkeypatch.setattr(shutil, "disk_usage", _fake_disk(10.0))
     pull_route = mock_ollama.post("/api/pull").respond(200, text='{"status":"success"}\n')
     runner = CliRunner()
@@ -195,6 +216,7 @@ def test_models_pull_refuses_when_disk_low(initted_env, mock_ollama, monkeypatch
 
 def test_models_pull_force_overrides_low_disk(initted_env, mock_ollama, monkeypatch):
     import shutil
+
     monkeypatch.setattr(shutil, "disk_usage", _fake_disk(10.0))
     mock_ollama.post("/api/pull").respond(200, text='{"status":"success"}\n')
     runner = CliRunner()
@@ -206,6 +228,7 @@ def test_models_pull_force_overrides_low_disk(initted_env, mock_ollama, monkeypa
 def test_models_pull_large_prompts_without_yes(initted_env, mock_ollama, monkeypatch):
     """A large pull asks for confirmation; declining aborts without download."""
     import shutil
+
     monkeypatch.setattr(shutil, "disk_usage", _fake_disk(500.0))
     pull_route = mock_ollama.post("/api/pull").respond(200, text='{"status":"success"}\n')
     runner = CliRunner()
@@ -223,6 +246,7 @@ def test_models_prune_succeeds_on_200(initted_env, mock_ollama):
 
 
 # --- audit egress ---
+
 
 def test_audit_egress_empty_reports_clean(initted_env):
     """With no fetch/egress events the report is the airplane-mode all-clear."""
@@ -262,9 +286,11 @@ def test_audit_egress_summary_is_plain_english(initted_env):
     """--summary gives a one-paragraph verdict naming hosts, not a table."""
     from lighthouse_ai.verification.audit_chain import append_event
 
-    for url in ("https://example.com/feed.xml",
-                "https://example.com/page2",
-                "https://api.crossref.org/works/x"):
+    for url in (
+        "https://example.com/feed.xml",
+        "https://example.com/page2",
+        "https://api.crossref.org/works/x",
+    ):
         append_event(
             initted_env / "audit.db",
             actor="ingest",
@@ -293,6 +319,7 @@ def test_audit_egress_summary_empty_still_all_clear(initted_env):
 
 
 # --- doctor: privacy & secrets section ----------------------------------
+
 
 def test_doctor_reports_airgap_on(initted_env, monkeypatch):
     """With the kill switch set, doctor states plainly that egress is refused."""
@@ -328,14 +355,21 @@ def test_doctor_flags_loose_secrets_file_permissions(initted_env):
 
 # --- init: zero-friction first run -------------------------------------
 
+
 def _fake_profile(total_ram_gb: float, tier: str):
     """A HardwareProfile stand-in so init is deterministic + offline."""
     from lighthouse_ai.hardware import HardwareProfile
+
     return HardwareProfile(
-        platform="darwin", arch="arm64", apple_silicon=True,
-        total_ram_gb=total_ram_gb, free_ram_gb=total_ram_gb / 2,
-        cpu_cores_physical=8, cpu_cores_logical=8,
-        available_backends=["mlx", "ollama"], suggested_tier=tier,
+        platform="darwin",
+        arch="arm64",
+        apple_silicon=True,
+        total_ram_gb=total_ram_gb,
+        free_ram_gb=total_ram_gb / 2,
+        cpu_cores_physical=8,
+        cpu_cores_logical=8,
+        available_backends=["mlx", "ollama"],
+        suggested_tier=tier,
     )
 
 
@@ -343,18 +377,17 @@ def test_init_writes_no_docker_default_config(cli_env, monkeypatch):
     """Cold init must produce a usable config with the in-memory vector store —
     no Docker/Qdrant required. Offline: probe() is mocked."""
     import lighthouse_ai.cli as cli
+
     monkeypatch.setattr(cli, "probe", lambda: _fake_profile(16.0, "T1"))
 
     runner = CliRunner()
-    r = runner.invoke(app, ["init", "--data-dir", str(cli_env),
-                            "--no-install-service"])
+    r = runner.invoke(app, ["init", "--data-dir", str(cli_env), "--no-install-service"])
     assert r.exit_code == 0, r.stdout
 
     cfg_text = (cli_env / "config.toml").read_text()
     # The default vector store is the in-memory/SQLite spine, not Qdrant. Check
     # the actual active assignment (ignore the explanatory comment lines).
-    active = [ln for ln in cfg_text.splitlines()
-              if ln.strip().startswith("vector_store")]
+    active = [ln for ln in cfg_text.splitlines() if ln.strip().startswith("vector_store")]
     assert active == ['vector_store = "memory"'], active
     # Qdrant is explicitly optional in the generated config.
     assert "OPTIONAL" in cfg_text or "optional" in cfg_text
@@ -368,12 +401,12 @@ def test_init_prints_ram_appropriate_model_recommendation(cli_env, monkeypatch):
     print the single `ollama pull <tag>` the user still needs — not a hardcoded
     qwen3:14b on a smaller box."""
     import lighthouse_ai.cli as cli
+
     # 16 GB box → T1; the budget-aware tag ladder lands below 14b.
     monkeypatch.setattr(cli, "probe", lambda: _fake_profile(16.0, "T1"))
 
     runner = CliRunner()
-    r = runner.invoke(app, ["init", "--data-dir", str(cli_env),
-                            "--no-install-service"])
+    r = runner.invoke(app, ["init", "--data-dir", str(cli_env), "--no-install-service"])
     assert r.exit_code == 0, r.stdout
 
     # A model recommendation + the single pull command are printed.
@@ -391,8 +424,8 @@ def test_init_pull_tag_scales_with_ram(cli_env, monkeypatch):
     def _run(ram, tier):
         monkeypatch.setattr(cli, "probe", lambda: _fake_profile(ram, tier))
         out = CliRunner().invoke(
-            app, ["init", "--data-dir", str(cli_env),
-                  "--no-install-service", "--force"])
+            app, ["init", "--data-dir", str(cli_env), "--no-install-service", "--force"]
+        )
         assert out.exit_code == 0, out.stdout
         return out.stdout
 
@@ -408,11 +441,11 @@ def test_init_pull_tag_scales_with_ram(cli_env, monkeypatch):
 def test_init_prints_three_step_card(cli_env, monkeypatch):
     """init ends with the three-step first-run card and the dashboard URL."""
     import lighthouse_ai.cli as cli
+
     monkeypatch.setattr(cli, "probe", lambda: _fake_profile(16.0, "T1"))
 
     runner = CliRunner()
-    r = runner.invoke(app, ["init", "--data-dir", str(cli_env),
-                            "--no-install-service"])
+    r = runner.invoke(app, ["init", "--data-dir", str(cli_env), "--no-install-service"])
     assert r.exit_code == 0, r.stdout
     assert "three steps" in r.stdout
     assert "lighthouse start" in r.stdout
@@ -425,6 +458,7 @@ def test_init_honors_data_dir_env(cli_env, monkeypatch):
     """Without --data-dir, init must honor $LIGHTHOUSE_DATA_DIR like every
     other command (it used to silently write to ~/.lighthouse instead)."""
     import lighthouse_ai.cli as cli
+
     monkeypatch.setattr(cli, "probe", lambda: _fake_profile(16.0, "T1"))
 
     runner = CliRunner()
@@ -437,15 +471,17 @@ def test_init_honors_data_dir_env(cli_env, monkeypatch):
 def test_init_model_recommendation_is_best_effort(cli_env, monkeypatch):
     """If model selection blows up, init still completes (never a hard fail)."""
     import lighthouse_ai.cli as cli
+
     monkeypatch.setattr(cli, "probe", lambda: _fake_profile(16.0, "T1"))
 
     import lighthouse_ai.gateway as gw
-    monkeypatch.setattr(gw, "recommend_pull_tag",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    monkeypatch.setattr(
+        gw, "recommend_pull_tag", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
 
     runner = CliRunner()
-    r = runner.invoke(app, ["init", "--data-dir", str(cli_env),
-                            "--no-install-service"])
+    r = runner.invoke(app, ["init", "--data-dir", str(cli_env), "--no-install-service"])
     assert r.exit_code == 0, r.stdout
     assert "init complete" in r.stdout
     assert "model recommendation unavailable" in r.stdout
@@ -453,16 +489,24 @@ def test_init_model_recommendation_is_best_effort(cli_env, monkeypatch):
 
 # --- export: standalone Markdown with provenance -------------------------
 
+
 def _stage_draft(data_dir: Path, draft_id: str = "d-exp001") -> str:
     from lighthouse_ai.persistence import open_db
+
     conn = open_db(data_dir / "state.db")
     try:
         conn.execute(
             "INSERT INTO drafts (id, topic, title, body_html, wep_phrase, "
             "source_count, status) VALUES (?, ?, ?, ?, ?, ?, 'staged')",
-            (draft_id, "Quantum", "Quantum readiness",
-             "<p>Qubits are fragile [1].</p><p>Error correction helps [2].</p>",
-             "likely", 2))
+            (
+                draft_id,
+                "Quantum",
+                "Quantum readiness",
+                "<p>Qubits are fragile [1].</p><p>Error correction helps [2].</p>",
+                "likely",
+                2,
+            ),
+        )
     finally:
         conn.close()
     return draft_id
@@ -473,8 +517,13 @@ def test_export_markdown_includes_body_and_provenance(initted_env, tmp_path):
 
     draft_id = _stage_draft(initted_env)
     sidecar = build_run_sidecar(
-        draft_id=draft_id, job_id="j-exp", question="Quantum?",
-        mode="deep-dive", backends={"synthesizer": "qwen3:8b"}, source_count=2)
+        draft_id=draft_id,
+        job_id="j-exp",
+        question="Quantum?",
+        mode="deep-dive",
+        backends={"synthesizer": "qwen3:8b"},
+        source_count=2,
+    )
     write_run_sidecar(initted_env / "staging" / f"{draft_id}.prov.json", sidecar)
 
     out = tmp_path / "report.md"
@@ -484,7 +533,7 @@ def test_export_markdown_includes_body_and_provenance(initted_env, tmp_path):
     assert text.startswith("# Quantum readiness")
     assert "Qubits are fragile [1]." in text
     assert "## Provenance" in text
-    assert "synthesizer=qwen3:8b" in text       # model summary line
+    assert "synthesizer=qwen3:8b" in text  # model summary line
     assert '"lighthouse:jobId": "j-exp"' in text  # embedded manifest
 
 
@@ -503,8 +552,16 @@ def test_export_requires_exactly_one_target(initted_env, tmp_path):
     r = CliRunner().invoke(app, ["export", draft_id])
     assert r.exit_code == 2
     r2 = CliRunner().invoke(
-        app, ["export", draft_id, "--markdown", str(tmp_path / "a.md"),
-              "--logseq", str(tmp_path / "graph")])
+        app,
+        [
+            "export",
+            draft_id,
+            "--markdown",
+            str(tmp_path / "a.md"),
+            "--logseq",
+            str(tmp_path / "graph"),
+        ],
+    )
     assert r2.exit_code == 2
 
 

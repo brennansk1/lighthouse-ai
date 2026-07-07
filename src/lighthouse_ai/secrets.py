@@ -28,6 +28,7 @@ SERVICE = "lighthouse"
 
 # --- TOML fallback ------------------------------------------------------
 
+
 def _fallback_path(data_dir: Path) -> Path:
     return data_dir / "secrets.toml"
 
@@ -51,11 +52,18 @@ def _write_fallback(path: Path, data: dict[str, str]) -> None:
 
 # --- public API ---------------------------------------------------------
 
+
 class SecretStore:
     """Get/put/delete with keychain primary, TOML fallback."""
 
-    def __init__(self, data_dir: Path, *, service: str = SERVICE,
-                 keyring_module=None, prefer_keyring: bool = True):
+    def __init__(
+        self,
+        data_dir: Path,
+        *,
+        service: str = SERVICE,
+        keyring_module=None,
+        prefer_keyring: bool = True,
+    ):
         self.data_dir = data_dir
         self.service = service
         self._kr = keyring_module
@@ -67,6 +75,7 @@ class SecretStore:
         if self._kr is None:
             try:
                 import keyring as _kr
+
                 self._kr = _kr
             except ImportError:
                 return None

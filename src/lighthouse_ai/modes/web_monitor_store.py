@@ -192,8 +192,7 @@ def list_web_monitors(state_db: str | Path) -> list[dict[str, Any]]:
     try:
         _ensure_table(conn)
         rows = conn.execute(
-            f"SELECT {_SELECT_COLS} FROM web_monitors "
-            "ORDER BY created_at DESC, id DESC"
+            f"SELECT {_SELECT_COLS} FROM web_monitors ORDER BY created_at DESC, id DESC"
         ).fetchall()
     finally:
         conn.close()
@@ -247,9 +246,7 @@ def delete_web_monitor(state_db: str | Path, monitor_id: str) -> bool:
     try:
         _ensure_table(conn)
         cur = conn.execute("DELETE FROM web_monitors WHERE id = ?", (monitor_id,))
-        conn.execute(
-            "DELETE FROM web_monitor_alerts WHERE monitor_id = ?", (monitor_id,)
-        )
+        conn.execute("DELETE FROM web_monitor_alerts WHERE monitor_id = ?", (monitor_id,))
         deleted = cur.rowcount > 0
     finally:
         conn.close()
@@ -349,11 +346,7 @@ def run_web_monitor_tick(
             f"SELECT {_SELECT_COLS} FROM web_monitors WHERE status = 'active'"
         ).fetchall()
         monitors = [_row_to_dict(r) for r in rows]
-        due = [
-            m
-            for m in monitors
-            if _is_due(m["last_checked_at"], m["cadence_seconds"], now)
-        ]
+        due = [m for m in monitors if _is_due(m["last_checked_at"], m["cadence_seconds"], now)]
 
         for monitor in due:
             outcome = _run_one(conn, monitor, fetch=fetch, now=now, alert_sink=alert_sink)
@@ -396,8 +389,7 @@ def _run_one(
 
     # Persist the new snapshot + checked-at regardless of outcome.
     conn.execute(
-        "UPDATE web_monitors SET last_snapshot_json = ?, last_checked_at = ? "
-        "WHERE id = ?",
+        "UPDATE web_monitors SET last_snapshot_json = ?, last_checked_at = ? WHERE id = ?",
         (json.dumps(new_snap.as_dict()), now, mid),
     )
 

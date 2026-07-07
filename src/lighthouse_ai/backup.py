@@ -60,8 +60,9 @@ def _default_runner(
     code paths are the only ones that ever reach it. ``stdin`` is closed so a
     misconfigured restic fails fast instead of prompting for a password.
     """
-    return subprocess.run(list(argv), capture_output=True, text=True, check=False,
-                          env=env, stdin=subprocess.DEVNULL)
+    return subprocess.run(
+        list(argv), capture_output=True, text=True, check=False, env=env, stdin=subprocess.DEVNULL
+    )
 
 
 @dataclass(frozen=True)
@@ -88,8 +89,9 @@ class ResticBackup:
         """
         return ["restic", "--repo", repo]
 
-    def _run(self, argv: Sequence[str], *, passphrase: str | None = None
-             ) -> subprocess.CompletedProcess[str]:
+    def _run(
+        self, argv: Sequence[str], *, passphrase: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         if not restic_installed():
             raise ResticUnavailable(
                 "restic binary not found on PATH; install restic to enable "
@@ -97,8 +99,7 @@ class ResticBackup:
             )
         secret = passphrase or self.passphrase
         if secret:
-            result = self.runner(
-                list(argv), env={**os.environ, "RESTIC_PASSWORD": secret})
+            result = self.runner(list(argv), env={**os.environ, "RESTIC_PASSWORD": secret})
         else:
             # No secret to inject — call with argv only so simple recording
             # fakes (and pre-existing callers) keep working unchanged.
@@ -107,7 +108,8 @@ class ResticBackup:
             detail = (result.stderr or result.stdout or "").strip()
             raise ResticError(
                 f"restic exited {result.returncode}: {' '.join(argv[:4])}…"
-                + (f" — {detail}" if detail else ""))
+                + (f" — {detail}" if detail else "")
+            )
         return result
 
     def init_argv(self, repo: str) -> list[str]:
@@ -136,18 +138,21 @@ class ResticBackup:
         """
         return self._run(self.init_argv(repo), passphrase=passphrase)
 
-    def backup(self, paths: Sequence[str | Path], *, repo: str,
-               passphrase: str | None = None) -> subprocess.CompletedProcess[str]:
+    def backup(
+        self, paths: Sequence[str | Path], *, repo: str, passphrase: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         """Back up the given filesystem paths into ``repo``."""
         return self._run(self.backup_argv(repo, paths), passphrase=passphrase)
 
-    def check(self, repo: str, *, passphrase: str | None = None
-              ) -> subprocess.CompletedProcess[str]:
+    def check(
+        self, repo: str, *, passphrase: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         """Run ``restic check`` to validate stored data integrity."""
         return self._run(self.check_argv(repo), passphrase=passphrase)
 
-    def snapshots(self, repo: str, *, passphrase: str | None = None
-                  ) -> subprocess.CompletedProcess[str]:
+    def snapshots(
+        self, repo: str, *, passphrase: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         """List repository snapshots (JSON)."""
         return self._run(self.snapshots_argv(repo), passphrase=passphrase)
 

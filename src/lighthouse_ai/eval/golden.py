@@ -283,9 +283,7 @@ def load_golden_from_json(path: str | Path) -> GoldenSet:
         rel_ids = frozenset(str(r) for r in rel)
         dangling = rel_ids - doc_ids
         if dangling:
-            raise ValueError(
-                f"query[{i}] references unknown doc ids: {sorted(dangling)}"
-            )
+            raise ValueError(f"query[{i}] references unknown doc ids: {sorted(dangling)}")
         cases.append(GoldenCase(query=str(q["query"]), relevant_doc_ids=rel_ids))
 
     contradictions: list[ContradictionCase] = []
@@ -321,12 +319,10 @@ def golden_to_json_dict(golden: GoldenSet, *, name: str | None = None) -> dict:
     if name is not None:
         out["name"] = name
     out["documents"] = [
-        {"id": d.id, "text": d.text, "metadata": dict(d.metadata)}
-        for d in golden.documents
+        {"id": d.id, "text": d.text, "metadata": dict(d.metadata)} for d in golden.documents
     ]
     out["queries"] = [
-        {"query": c.query, "relevant_doc_ids": sorted(c.relevant_doc_ids)}
-        for c in golden.cases
+        {"query": c.query, "relevant_doc_ids": sorted(c.relevant_doc_ids)} for c in golden.cases
     ]
     if golden.contradictions:
         out["contradictions"] = [
@@ -341,9 +337,7 @@ def golden_to_json_dict(golden: GoldenSet, *, name: str | None = None) -> dict:
     return out
 
 
-def save_golden_to_json(
-    golden: GoldenSet, path: str | Path, *, name: str | None = None
-) -> None:
+def save_golden_to_json(golden: GoldenSet, path: str | Path, *, name: str | None = None) -> None:
     """Write ``golden`` to ``path`` as UTF-8 JSON following the documented schema."""
     payload = golden_to_json_dict(golden, name=name)
     Path(path).write_text(
@@ -403,9 +397,7 @@ def _retrieved_doc_ids(hybrid: HybridSearch, query: str, top_k: int) -> list[str
     return [r.chunk.document_id for r in results]
 
 
-def evaluate(
-    hybrid: HybridSearch, golden: GoldenSet, *, k: int = 5
-) -> dict[str, float]:
+def evaluate(hybrid: HybridSearch, golden: GoldenSet, *, k: int = 5) -> dict[str, float]:
     """Run every golden query and return aggregate retrieval metrics.
 
     Returns a dict keyed ``"precision@5"``, ``"recall@5"``, ``"mrr"`` (the key

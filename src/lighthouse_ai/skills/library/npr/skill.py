@@ -27,18 +27,18 @@ if TYPE_CHECKING:
 
 # NPR public RSS feeds (no API key required)
 _TOPIC_FEEDS: dict[str, str] = {
-    "top":          "https://feeds.npr.org/1001/rss.xml",
-    "news":         "https://feeds.npr.org/1001/rss.xml",
-    "us":           "https://feeds.npr.org/1003/rss.xml",
-    "world":        "https://feeds.npr.org/1004/rss.xml",
-    "politics":     "https://feeds.npr.org/1014/rss.xml",
-    "business":     "https://feeds.npr.org/1006/rss.xml",
-    "technology":   "https://feeds.npr.org/1019/rss.xml",
-    "science":      "https://feeds.npr.org/1007/rss.xml",
-    "health":       "https://feeds.npr.org/1128/rss.xml",
-    "arts":         "https://feeds.npr.org/1008/rss.xml",
-    "education":    "https://feeds.npr.org/1013/rss.xml",
-    "culture":      "https://feeds.npr.org/1008/rss.xml",
+    "top": "https://feeds.npr.org/1001/rss.xml",
+    "news": "https://feeds.npr.org/1001/rss.xml",
+    "us": "https://feeds.npr.org/1003/rss.xml",
+    "world": "https://feeds.npr.org/1004/rss.xml",
+    "politics": "https://feeds.npr.org/1014/rss.xml",
+    "business": "https://feeds.npr.org/1006/rss.xml",
+    "technology": "https://feeds.npr.org/1019/rss.xml",
+    "science": "https://feeds.npr.org/1007/rss.xml",
+    "health": "https://feeds.npr.org/1128/rss.xml",
+    "arts": "https://feeds.npr.org/1008/rss.xml",
+    "education": "https://feeds.npr.org/1013/rss.xml",
+    "culture": "https://feeds.npr.org/1008/rss.xml",
 }
 _DEFAULT_FEED = _TOPIC_FEEDS["top"]
 _SEARCH_BASE = "https://www.npr.org/search"

@@ -57,14 +57,15 @@ _API_BASE = "https://www.wikidata.org/w/api.php"
 
 # Property IDs for commonly-requested identifiers (subset from parsers/entity.py)
 _ORCID_PROP = "P496"
-_VIAF_PROP  = "P214"
-_IMDB_PROP  = "P345"
-_ISNI_PROP  = "P213"
+_VIAF_PROP = "P214"
+_IMDB_PROP = "P345"
+_ISNI_PROP = "P213"
 
 
 # ---------------------------------------------------------------------------
 # Public entrypoint
 # ---------------------------------------------------------------------------
+
 
 def run(
     ctx: SkillContext,
@@ -142,6 +143,7 @@ def run(
 # Named tools (used by run() and can be called directly in tests / planner)
 # ---------------------------------------------------------------------------
 
+
 def search_entity(
     ctx: SkillContext,
     query: str,
@@ -175,13 +177,15 @@ def search_entity(
 
     results: list[dict] = []
     for item in data.get("search", []):
-        results.append({
-            "id": item.get("id", ""),
-            "label": item.get("label", ""),
-            "description": item.get("description", ""),
-            "url": item.get("url", f"https://www.wikidata.org/wiki/{item.get('id', '')}"),
-            "match": item.get("match", {}),
-        })
+        results.append(
+            {
+                "id": item.get("id", ""),
+                "label": item.get("label", ""),
+                "description": item.get("description", ""),
+                "url": item.get("url", f"https://www.wikidata.org/wiki/{item.get('id', '')}"),
+                "match": item.get("match", {}),
+            }
+        )
     return results
 
 
@@ -283,6 +287,7 @@ def resolve_identifier(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _entity_to_document(
     ctx: SkillContext,
     qid: str,
@@ -355,12 +360,7 @@ def _is_egress_blocked(exc: BaseException) -> bool:
 
 def _url_encode(text: str) -> str:
     """Percent-encode a string for a URL query parameter (stdlib only)."""
-    safe = (
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789"
-        "-_.~"
-    )
+    safe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"
     encoded: list[str] = []
     for ch in text.encode("utf-8"):
         c = chr(ch)

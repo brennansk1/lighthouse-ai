@@ -12,10 +12,15 @@ def test_session_round_trip_preserves_all_turn_fields(migrated_paths):
     silently resetting every reloaded turn to no-skills / no-adjudicate."""
     s = QUCSession(id="a-rt1", topic="Rates")
     s.history.append(Turn(role="user", text="How does the Fed set rates?"))
-    s.history.append(Turn(
-        role="assistant", text="Via the discount window [1].",
-        citations=["c1"], skill_ids_used=["fred", "bls"],
-        adjudicate_flag=True))
+    s.history.append(
+        Turn(
+            role="assistant",
+            text="Via the discount window [1].",
+            citations=["c1"],
+            skill_ids_used=["fred", "bls"],
+            adjudicate_flag=True,
+        )
+    )
     save_session(migrated_paths.state_db, s, title="Rates chat")
 
     loaded = load_session(migrated_paths.state_db, "a-rt1")
@@ -37,7 +42,8 @@ def test_load_tolerates_rows_saved_before_zone_s_fields(migrated_paths):
         conn.execute(
             "INSERT INTO ask_sessions (id, topic, title, turns_json, status) "
             "VALUES ('a-old1', 't', 't', ?, 'open')",
-            (json.dumps([{"role": "user", "text": "hi", "citations": []}]),))
+            (json.dumps([{"role": "user", "text": "hi", "citations": []}]),),
+        )
     finally:
         conn.close()
     loaded = load_session(migrated_paths.state_db, "a-old1")

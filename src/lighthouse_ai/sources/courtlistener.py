@@ -56,18 +56,20 @@ def _parse(data: dict) -> list[Document]:
         cluster_id = result.get("cluster_id") or result.get("id") or ""
         date_filed = result.get("dateFiled") or result.get("date_filed") or ""
         court = result.get("court") or result.get("court_id") or ""
-        out.append(Document(
-            id=f"cl:{cluster_id}" if cluster_id else f"cl:{case_name[:40]}",
-            text=text,
-            metadata={
-                "source": "courtlistener",
-                "url": url,
-                "grade": "B",
-                "published_date": date_filed,
-                "title": case_name,
-                "court": court,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"cl:{cluster_id}" if cluster_id else f"cl:{case_name[:40]}",
+                text=text,
+                metadata={
+                    "source": "courtlistener",
+                    "url": url,
+                    "grade": "B",
+                    "published_date": date_filed,
+                    "title": case_name,
+                    "court": court,
+                },
+            )
+        )
     return out
 
 
@@ -100,8 +102,7 @@ def search_courtlistener(
             _API,
             allowed_domains=_ALLOWED_HOSTS,
             headers=headers,
-            params={"q": query, "type": "o", "page_size": max_results,
-                    "order_by": "score desc"},
+            params={"q": query, "type": "o", "page_size": max_results, "order_by": "score desc"},
             client=client,
         )
         r.raise_for_status()

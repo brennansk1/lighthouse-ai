@@ -84,9 +84,7 @@ def _install_logging_request(
     monkeypatch.setattr(module, "guarded_request", _shim)
 
 
-def _install_logging_get(
-    monkeypatch: pytest.MonkeyPatch, module: object, tmp_path: Path
-) -> None:
+def _install_logging_get(monkeypatch: pytest.MonkeyPatch, module: object, tmp_path: Path) -> None:
     """Route ``module.guarded_get`` through the same logging proxy as above."""
 
     def _shim(
@@ -129,9 +127,7 @@ def test_telegram_send_routes_through_guard(
 
 
 @respx.mock
-def test_telegram_send_blocked_by_airgap(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_telegram_send_blocked_by_airgap(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """LIGHTHOUSE_AIRGAP=1 blocks the send with no socket opened."""
     _install_logging_request(monkeypatch, telegram, tmp_path)
     monkeypatch.setenv("LIGHTHOUSE_AIRGAP", "1")
@@ -150,23 +146,17 @@ def test_telegram_send_blocked_by_airgap(
 
 
 @respx.mock
-def test_confirmation_routes_through_guard(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_confirmation_routes_through_guard(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The §24.10 airlock POST (prompt) and GET (poll) both route through the guard."""
     _install_logging_request(monkeypatch, telegram, tmp_path)
     _install_logging_get(monkeypatch, telegram, tmp_path)
-    send_route = respx.post(SEND_URL).mock(
-        return_value=httpx.Response(200, json={"ok": True})
-    )
+    send_route = respx.post(SEND_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
     poll_route = respx.get(UPDATES_URL).mock(
         return_value=httpx.Response(
             200,
             json={
                 "ok": True,
-                "result": [
-                    {"update_id": 1, "message": {"chat": {"id": CHAT}, "text": "YES"}}
-                ],
+                "result": [{"update_id": 1, "message": {"chat": {"id": CHAT}, "text": "YES"}}],
             },
         )
     )
@@ -186,16 +176,12 @@ def test_confirmation_routes_through_guard(
 
 
 @respx.mock
-def test_confirmation_blocked_by_airgap(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_confirmation_blocked_by_airgap(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """With AIRGAP on, the airlock cannot deliver its prompt → aborts, no socket."""
     _install_logging_request(monkeypatch, telegram, tmp_path)
     _install_logging_get(monkeypatch, telegram, tmp_path)
     monkeypatch.setenv("LIGHTHOUSE_AIRGAP", "1")
-    send_route = respx.post(SEND_URL).mock(
-        return_value=httpx.Response(200, json={"ok": True})
-    )
+    send_route = respx.post(SEND_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
 
     with httpx.Client() as client:
         confirmed = request_confirmation(
@@ -211,9 +197,7 @@ def test_confirmation_blocked_by_airgap(
 
 
 @respx.mock
-def test_discord_send_routes_through_guard(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_discord_send_routes_through_guard(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A Discord webhook send succeeds and writes an allowed=true audit record.
 
     The webhook host is user-configured and not in DEFAULT_ALLOWED_DOMAINS; it is
@@ -234,9 +218,7 @@ def test_discord_send_routes_through_guard(
 
 
 @respx.mock
-def test_discord_send_blocked_by_airgap(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_discord_send_blocked_by_airgap(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """LIGHTHOUSE_AIRGAP=1 blocks the Discord send with no socket opened."""
     _install_logging_request(monkeypatch, channels, tmp_path)
     monkeypatch.setenv("LIGHTHOUSE_AIRGAP", "1")

@@ -33,8 +33,9 @@ def test_zero_need_admits_immediately_without_locking(tmp_path):
 def test_admits_when_reservation_fits_available(tmp_path):
     lock = tmp_path / "ollama.lock"
     cfg = AdmissionConfig(enabled=True, margin_gb=1.0)
-    with ollama_slot(lock, "m", need_gb_fn=lambda _m: 4.0, cfg=cfg,
-                     available_gb_fn=lambda: 100.0) as admitted:
+    with ollama_slot(
+        lock, "m", need_gb_fn=lambda _m: 4.0, cfg=cfg, available_gb_fn=lambda: 100.0
+    ) as admitted:
         assert admitted is True
         # While held, our reservation is recorded in the ledger.
         entries = json.loads(_ledger(lock).read_text())
@@ -48,8 +49,14 @@ def test_falls_back_when_never_enough_ram(tmp_path):
     lock = tmp_path / "ollama.lock"
     slept: list[float] = []
     cfg = AdmissionConfig(enabled=True, wait_timeout_s=1.0, poll_s=0.25)
-    with ollama_slot(lock, "m", need_gb_fn=lambda _m: 50.0, cfg=cfg,
-                     available_gb_fn=lambda: 8.0, sleep=slept.append) as admitted:
+    with ollama_slot(
+        lock,
+        "m",
+        need_gb_fn=lambda _m: 50.0,
+        cfg=cfg,
+        available_gb_fn=lambda: 8.0,
+        sleep=slept.append,
+    ) as admitted:
         assert admitted is False
     # Polled a few times before giving up, never hung.
     assert len(slept) >= 1
@@ -66,8 +73,14 @@ def test_admits_once_headroom_appears(tmp_path):
         return 100.0 if calls["n"] >= 3 else 1.0  # RAM frees up on 3rd probe
 
     cfg = AdmissionConfig(enabled=True, wait_timeout_s=10.0, poll_s=0.01)
-    with ollama_slot(lock, "m", need_gb_fn=lambda _m: 10.0, cfg=cfg,
-                     available_gb_fn=available, sleep=lambda _s: None) as admitted:
+    with ollama_slot(
+        lock,
+        "m",
+        need_gb_fn=lambda _m: 10.0,
+        cfg=cfg,
+        available_gb_fn=available,
+        sleep=lambda _s: None,
+    ) as admitted:
         assert admitted is True
     assert calls["n"] == 3
 
@@ -76,25 +89,31 @@ def test_existing_reservation_counts_against_budget(tmp_path):
     """A second cold load is refused while the first reservation still books RAM."""
     lock = tmp_path / "ollama.lock"
     cfg = AdmissionConfig(enabled=True, wait_timeout_s=0.2, poll_s=0.05, margin_gb=1.0)
-    with ollama_slot(lock, "a", need_gb_fn=lambda _m: 10.0, cfg=cfg,
-                     available_gb_fn=lambda: 14.0):
+    with ollama_slot(lock, "a", need_gb_fn=lambda _m: 10.0, cfg=cfg, available_gb_fn=lambda: 14.0):
         # 10 (reserved) + 10 (need) + 1 margin = 21 > 14 → must time out.
-        with ollama_slot(lock, "b", need_gb_fn=lambda _m: 10.0, cfg=cfg,
-                         available_gb_fn=lambda: 14.0,
-                         sleep=lambda _s: None) as second:
+        with ollama_slot(
+            lock,
+            "b",
+            need_gb_fn=lambda _m: 10.0,
+            cfg=cfg,
+            available_gb_fn=lambda: 14.0,
+            sleep=lambda _s: None,
+        ) as second:
             assert second is False
 
 
 def test_disabled_skips_ledger_but_still_checks_ram(tmp_path):
     lock = tmp_path / "ollama.lock"
     cfg = AdmissionConfig(enabled=False, margin_gb=1.0)
-    with ollama_slot(lock, "m", need_gb_fn=lambda _m: 4.0, cfg=cfg,
-                     available_gb_fn=lambda: 100.0) as admitted:
+    with ollama_slot(
+        lock, "m", need_gb_fn=lambda _m: 4.0, cfg=cfg, available_gb_fn=lambda: 100.0
+    ) as admitted:
         assert admitted is True
     # No ledger/lock files when the queue is disabled.
     assert not _ledger(lock).exists()
-    with ollama_slot(lock, "m", need_gb_fn=lambda _m: 50.0, cfg=cfg,
-                     available_gb_fn=lambda: 8.0) as admitted:
+    with ollama_slot(
+        lock, "m", need_gb_fn=lambda _m: 50.0, cfg=cfg, available_gb_fn=lambda: 8.0
+    ) as admitted:
         assert admitted is False
 
 
@@ -102,8 +121,9 @@ def test_no_file_lock_degrades_gracefully(tmp_path, monkeypatch):
     monkeypatch.setattr(oq, "fcntl", None)
     monkeypatch.setattr(oq, "msvcrt", None)
     lock = tmp_path / "ollama.lock"
-    with ollama_slot(lock, "m", need_gb_fn=lambda _m: 4.0,
-                     available_gb_fn=lambda: 100.0) as admitted:
+    with ollama_slot(
+        lock, "m", need_gb_fn=lambda _m: 4.0, available_gb_fn=lambda: 100.0
+    ) as admitted:
         assert admitted is True
     assert not _ledger(lock).exists()
 
@@ -116,8 +136,9 @@ def test_dead_pid_reservations_are_pruned(tmp_path, monkeypatch):
     monkeypatch.setattr(oq, "_pid_alive", lambda pid: pid == __import__("os").getpid())
     cfg = AdmissionConfig(enabled=True, margin_gb=1.0)
     # Ghost's 99 GB would block us, but it's pruned because its PID is dead.
-    with ollama_slot(lock, "m", need_gb_fn=lambda _m: 4.0, cfg=cfg,
-                     available_gb_fn=lambda: 100.0) as admitted:
+    with ollama_slot(
+        lock, "m", need_gb_fn=lambda _m: 4.0, cfg=cfg, available_gb_fn=lambda: 100.0
+    ) as admitted:
         assert admitted is True
 
 
@@ -131,8 +152,9 @@ def test_concurrent_cold_loads_respect_budget(tmp_path):
     guard = threading.Lock()
 
     def worker() -> None:
-        with ollama_slot(lock, "m", need_gb_fn=lambda _m: 10.0, cfg=cfg,
-                         available_gb_fn=lambda: 25.0) as admitted:
+        with ollama_slot(
+            lock, "m", need_gb_fn=lambda _m: 10.0, cfg=cfg, available_gb_fn=lambda: 25.0
+        ) as admitted:
             if not admitted:
                 return
             with guard:

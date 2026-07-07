@@ -49,8 +49,7 @@ def _parse_studies(data: dict) -> list[Document]:
         cond_mod = ps.get("conditionsModule") or {}
 
         nct_id = (id_mod.get("nctId") or "").strip()
-        title = " ".join((id_mod.get("officialTitle") or
-                          id_mod.get("briefTitle") or "").split())
+        title = " ".join((id_mod.get("officialTitle") or id_mod.get("briefTitle") or "").split())
         if not title:
             continue
 
@@ -64,20 +63,22 @@ def _parse_studies(data: dict) -> list[Document]:
         if summary:
             text = f"{title}. {summary}"
 
-        out.append(Document(
-            id=f"clinicaltrials:{nct_id}" if nct_id else f"clinicaltrials:{title[:40]}",
-            text=text,
-            metadata={
-                "source": "clinicaltrials",
-                "url": url,
-                "grade": "A",
-                "title": title,
-                "nct_id": nct_id,
-                "conditions": conditions,
-                "overall_status": overall_status,
-                "start_date": start_date,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"clinicaltrials:{nct_id}" if nct_id else f"clinicaltrials:{title[:40]}",
+                text=text,
+                metadata={
+                    "source": "clinicaltrials",
+                    "url": url,
+                    "grade": "A",
+                    "title": title,
+                    "nct_id": nct_id,
+                    "conditions": conditions,
+                    "overall_status": overall_status,
+                    "start_date": start_date,
+                },
+            )
+        )
     return out
 
 

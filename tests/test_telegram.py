@@ -55,9 +55,7 @@ def _updates_body(*messages: dict) -> dict:
     """Wrap message dicts in a Telegram getUpdates envelope."""
     return {
         "ok": True,
-        "result": [
-            {"update_id": 100 + i, "message": msg} for i, msg in enumerate(messages)
-        ],
+        "result": [{"update_id": 100 + i, "message": msg} for i, msg in enumerate(messages)],
     }
 
 
@@ -165,14 +163,10 @@ def test_channel_satisfies_protocol():
 @respx.mock
 def test_confirmation_yes_returns_true():
     respx.post(SEND_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
-    respx.get(UPDATES_URL).mock(
-        return_value=httpx.Response(200, json=_updates_body(_msg("YES")))
-    )
+    respx.get(UPDATES_URL).mock(return_value=httpx.Response(200, json=_updates_body(_msg("YES"))))
     clock = _FakeClock()
     assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep
-        )
+        request_confirmation(TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep)
         is True
     )
 
@@ -184,12 +178,7 @@ def test_confirmation_yes_case_insensitive():
         return_value=httpx.Response(200, json=_updates_body(_msg("yes do it")))
     )
     clock = _FakeClock()
-    assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", now=clock, sleep=_noop_sleep
-        )
-        is True
-    )
+    assert request_confirmation(TOKEN, CHAT, "confirm?", now=clock, sleep=_noop_sleep) is True
 
 
 @respx.mock
@@ -203,9 +192,7 @@ def test_confirmation_yes_after_some_empty_polls():
     respx.get(UPDATES_URL).mock(side_effect=bodies)
     clock = _FakeClock()
     assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep
-        )
+        request_confirmation(TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep)
         is True
     )
 
@@ -225,9 +212,7 @@ def test_confirmation_timeout_returns_false():
 
     respx.get(UPDATES_URL).mock(side_effect=advancing_handler)
     assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep
-        )
+        request_confirmation(TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep)
         is False
     )
 
@@ -243,9 +228,7 @@ def test_confirmation_non_yes_reply_returns_false():
 
     respx.get(UPDATES_URL).mock(side_effect=handler)
     assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep
-        )
+        request_confirmation(TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep)
         is False
     )
 
@@ -262,9 +245,7 @@ def test_confirmation_yes_from_other_chat_returns_false():
     respx.get(UPDATES_URL).mock(side_effect=handler)
     # A YES from a non-whitelisted chat must never authorise the action.
     assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep
-        )
+        request_confirmation(TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep)
         is False
     )
 
@@ -277,12 +258,7 @@ def test_confirmation_prompt_send_failure_returns_false():
         return_value=httpx.Response(200, json=_updates_body(_msg("YES")))
     )
     clock = _FakeClock()
-    assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", now=clock, sleep=_noop_sleep
-        )
-        is False
-    )
+    assert request_confirmation(TOKEN, CHAT, "confirm?", now=clock, sleep=_noop_sleep) is False
     assert not updates.called
 
 
@@ -290,12 +266,7 @@ def test_confirmation_prompt_send_failure_returns_false():
 def test_confirmation_prompt_network_error_returns_false():
     respx.post(SEND_URL).mock(side_effect=httpx.ConnectError("down"))
     clock = _FakeClock()
-    assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", now=clock, sleep=_noop_sleep
-        )
-        is False
-    )
+    assert request_confirmation(TOKEN, CHAT, "confirm?", now=clock, sleep=_noop_sleep) is False
 
 
 @respx.mock
@@ -309,9 +280,7 @@ def test_confirmation_transient_poll_error_then_timeout_false():
 
     respx.get(UPDATES_URL).mock(side_effect=handler)
     assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep
-        )
+        request_confirmation(TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep)
         is False
     )
 
@@ -328,9 +297,7 @@ def test_confirmation_malformed_json_does_not_crash():
     respx.get(UPDATES_URL).mock(side_effect=handler)
     # A garbled payload degrades to "no confirmation" -> abort, never raises.
     assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep
-        )
+        request_confirmation(TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep)
         is False
     )
 
@@ -362,9 +329,7 @@ def test_confirmation_advances_offset_to_skip_seen_updates():
     respx.get(UPDATES_URL).mock(side_effect=handler)
     clock = _FakeClock()
     assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep
-        )
+        request_confirmation(TOKEN, CHAT, "confirm?", timeout_s=60, now=clock, sleep=_noop_sleep)
         is True
     )
     # The first poll has no offset; subsequent polls would carry one.
@@ -374,15 +339,11 @@ def test_confirmation_advances_offset_to_skip_seen_updates():
 @respx.mock
 def test_confirmation_uses_injected_client_not_closed():
     respx.post(SEND_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
-    respx.get(UPDATES_URL).mock(
-        return_value=httpx.Response(200, json=_updates_body(_msg("YES")))
-    )
+    respx.get(UPDATES_URL).mock(return_value=httpx.Response(200, json=_updates_body(_msg("YES"))))
     client = httpx.Client()
     clock = _FakeClock()
     assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", client=client, now=clock, sleep=_noop_sleep
-        )
+        request_confirmation(TOKEN, CHAT, "confirm?", client=client, now=clock, sleep=_noop_sleep)
         is True
     )
     assert client.is_closed is False
@@ -393,14 +354,10 @@ def test_confirmation_uses_injected_client_not_closed():
 def test_confirmation_immediate_yes_with_zero_timeout():
     # timeout_s=0 must still honour an already-waiting YES (loop runs once).
     respx.post(SEND_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
-    respx.get(UPDATES_URL).mock(
-        return_value=httpx.Response(200, json=_updates_body(_msg("YES")))
-    )
+    respx.get(UPDATES_URL).mock(return_value=httpx.Response(200, json=_updates_body(_msg("YES"))))
     clock = _FakeClock()
     assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", timeout_s=0, now=clock, sleep=_noop_sleep
-        )
+        request_confirmation(TOKEN, CHAT, "confirm?", timeout_s=0, now=clock, sleep=_noop_sleep)
         is True
     )
 
@@ -408,14 +365,10 @@ def test_confirmation_immediate_yes_with_zero_timeout():
 @respx.mock
 def test_confirmation_empty_then_zero_timeout_aborts():
     respx.post(SEND_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
-    respx.get(UPDATES_URL).mock(
-        return_value=httpx.Response(200, json={"ok": True, "result": []})
-    )
+    respx.get(UPDATES_URL).mock(return_value=httpx.Response(200, json={"ok": True, "result": []}))
     clock = _FakeClock()
     # Deadline already reached after the single poll -> abort.
     assert (
-        request_confirmation(
-            TOKEN, CHAT, "confirm?", timeout_s=0, now=clock, sleep=_noop_sleep
-        )
+        request_confirmation(TOKEN, CHAT, "confirm?", timeout_s=0, now=clock, sleep=_noop_sleep)
         is False
     )

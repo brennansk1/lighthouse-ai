@@ -137,6 +137,7 @@ def test_run_skill_no_community_tag_for_signed_skill(monkeypatch, arxiv_skill, b
 
 def test_run_skill_swallows_search_exception(monkeypatch, arxiv_skill, broker):
     """A failing search_arxiv call must not propagate; skill returns []."""
+
     def _raise(*a, **kw):
         raise RuntimeError("network error")
 
@@ -212,6 +213,7 @@ def test_run_watchable_documents_tagged(monkeypatch, arxiv_skill, broker):
 
 def test_run_watchable_swallows_exception(monkeypatch, arxiv_skill, broker):
     """A failing search_arxiv in run_watchable must not propagate."""
+
     def _raise(*a, **kw):
         raise ConnectionError("timeout")
 

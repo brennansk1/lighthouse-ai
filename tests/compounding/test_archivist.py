@@ -48,8 +48,7 @@ def test_clean_drops_tool_and_system_turns() -> None:
 
 def test_clean_strips_tool_call_json_fence() -> None:
     turns = [
-        _Turn("assistant",
-              'Let me search.\n```json\n{"tool": "search", "q": "x"}\n```\nDone.'),
+        _Turn("assistant", 'Let me search.\n```json\n{"tool": "search", "q": "x"}\n```\nDone.'),
     ]
     cleaned = clean_turns(turns)
     assert "tool" not in cleaned[0].text.lower() or "search" not in cleaned[0].text
@@ -88,8 +87,7 @@ def test_compose_md_is_deterministic() -> None:
 def test_report_to_markdown_includes_sections_and_open_questions() -> None:
     report = _Report(
         question="How does X work?",
-        sections=[_Section("Mechanism", "It works via Y."),
-                  _Section("Caveats", "Except when Z.")],
+        sections=[_Section("Mechanism", "It works via Y."), _Section("Caveats", "Except when Z.")],
         open_questions=["What about W?"],
     )
     md = report_to_markdown(report)
@@ -123,20 +121,18 @@ def test_archive_report_is_idempotent(tmp_path) -> None:
 
 
 def test_archive_report_writes_logseq_when_requested(tmp_path) -> None:
-    report = _Report(question="Solar power basics",
-                     sections=[_Section("PV", "Photovoltaics convert light.")])
-    outcome = archive_report(report, corpus_dir=tmp_path / "corpus",
-                             logseq_dir=tmp_path / "graph")
+    report = _Report(
+        question="Solar power basics", sections=[_Section("PV", "Photovoltaics convert light.")]
+    )
+    outcome = archive_report(report, corpus_dir=tmp_path / "corpus", logseq_dir=tmp_path / "graph")
     assert outcome.logseq_path is not None
     assert outcome.logseq_path.exists()
     assert "lighthouse-draft" in outcome.logseq_path.read_text()
 
 
 def test_archive_conversation_round_trip(tmp_path) -> None:
-    turns = [_Turn("system", "sys"), _Turn("user", "hi"),
-             _Turn("assistant", "hello")]
-    outcome = archive_conversation(turns, corpus_dir=tmp_path / "c",
-                                   title="My chat")
+    turns = [_Turn("system", "sys"), _Turn("user", "hi"), _Turn("assistant", "hello")]
+    outcome = archive_conversation(turns, corpus_dir=tmp_path / "c", title="My chat")
     assert outcome.corpus_path.exists()
     text = outcome.corpus_path.read_text()
     assert "# My chat" in text

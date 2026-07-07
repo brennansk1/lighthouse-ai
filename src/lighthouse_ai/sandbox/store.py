@@ -138,8 +138,7 @@ class SandboxStore:
         Defaults to :data:`DEFAULT_MAX_BYTES`.
     """
 
-    def __init__(self, data_dir: Path,
-                 max_bytes: int | None = DEFAULT_MAX_BYTES) -> None:
+    def __init__(self, data_dir: Path, max_bytes: int | None = DEFAULT_MAX_BYTES) -> None:
         self.root = (Path(data_dir) / "sandbox").resolve()
         self.db_path = self.root / "sandbox.db"
         self.max_bytes = max_bytes
@@ -183,13 +182,10 @@ class SandboxStore:
             raise ValueError(f"invalid sandbox filename: {name!r}")
         candidate = (zone_root / leaf).resolve()
         if candidate != zone_root and zone_root not in candidate.parents:
-            raise ValueError(
-                f"path escapes sandbox zone root: {name!r} -> {candidate}"
-            )
+            raise ValueError(f"path escapes sandbox zone root: {name!r} -> {candidate}")
         return candidate
 
-    def _stored_name(self, sha256: str, filename: str | None,
-                     content_type: str | None) -> str:
+    def _stored_name(self, sha256: str, filename: str | None, content_type: str | None) -> str:
         """sha-derived, collision-free, traversal-proof on-disk leaf name."""
         return f"{sha256}{_ext_for(filename, content_type)}"
 
@@ -212,9 +208,18 @@ class SandboxStore:
     # Add / write
     # ------------------------------------------------------------------ #
 
-    def add(self, payload: bytes, *, zone: Zone, filename: str | None,
-            content_type: str | None, source: str, broker: SandboxBroker,
-            now: str, pinned: bool = False) -> SandboxItem | None:
+    def add(
+        self,
+        payload: bytes,
+        *,
+        zone: Zone,
+        filename: str | None,
+        content_type: str | None,
+        source: str,
+        broker: SandboxBroker,
+        now: str,
+        pinned: bool = False,
+    ) -> SandboxItem | None:
         """Broker-gate, then store ``payload`` in ``zone``.
 
         The broker runs **first**.  ``REJECT`` ⇒ nothing is written and ``None``
@@ -227,8 +232,7 @@ class SandboxStore:
         if zone not in self._zone_roots:
             raise ValueError(f"unknown sandbox zone: {zone!r}")
 
-        outcome = broker.admit(payload, url=None, filename=filename,
-                               content_type=content_type)
+        outcome = broker.admit(payload, url=None, filename=filename, content_type=content_type)
         verdict = outcome.verdict.value
         if verdict == "reject":
             return None
@@ -251,8 +255,20 @@ class SandboxStore:
                      saved_path, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                 """,
-                (item_id, sha, zone, filename, content_type, len(payload),
-                 source, verdict, preview_type, int(pinned), str(dst), now),
+                (
+                    item_id,
+                    sha,
+                    zone,
+                    filename,
+                    content_type,
+                    len(payload),
+                    source,
+                    verdict,
+                    preview_type,
+                    int(pinned),
+                    str(dst),
+                    now,
+                ),
             )
         finally:
             conn.close()
@@ -264,10 +280,17 @@ class SandboxStore:
         item = self.stat(item_id)
         return item
 
-    def write_artifact(self, payload: bytes, *, filename: str | None,
-                       content_type: str | None, source: str,
-                       broker: SandboxBroker, now: str,
-                       pinned: bool = False) -> SandboxItem | None:
+    def write_artifact(
+        self,
+        payload: bytes,
+        *,
+        filename: str | None,
+        content_type: str | None,
+        source: str,
+        broker: SandboxBroker,
+        now: str,
+        pinned: bool = False,
+    ) -> SandboxItem | None:
         """LLM-facing writer — artifacts may ONLY land in the workspace zone.
 
         This is the natural API expression of the uploads-are-read-only rule:
@@ -275,9 +298,16 @@ class SandboxStore:
         ``uploads``.  (Enforcing *which* callers may write is SB2's contract;
         the store just makes the safe path the only path.)
         """
-        return self.add(payload, zone="workspace", filename=filename,
-                        content_type=content_type, source=source,
-                        broker=broker, now=now, pinned=pinned)
+        return self.add(
+            payload,
+            zone="workspace",
+            filename=filename,
+            content_type=content_type,
+            source=source,
+            broker=broker,
+            now=now,
+            pinned=pinned,
+        )
 
     # ------------------------------------------------------------------ #
     # Read / list / stat
@@ -294,8 +324,7 @@ class SandboxStore:
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    f"SELECT {_COLS} FROM sandbox_items "
-                    "ORDER BY created_at DESC, id DESC"
+                    f"SELECT {_COLS} FROM sandbox_items ORDER BY created_at DESC, id DESC"
                 ).fetchall()
         finally:
             conn.close()
@@ -305,7 +334,8 @@ class SandboxStore:
         conn = open_db(self.db_path)
         try:
             row = conn.execute(
-                f"SELECT {_COLS} FROM sandbox_items WHERE id = ?", (item_id,),
+                f"SELECT {_COLS} FROM sandbox_items WHERE id = ?",
+                (item_id,),
             ).fetchone()
         finally:
             conn.close()
@@ -325,15 +355,12 @@ class SandboxStore:
             raise FileNotFoundError(f"payload evicted: {item_id}")
         if item.scan_verdict == "quarantine" and not allow_quarantined:
             raise PermissionError(
-                f"item {item_id} is quarantined; pass allow_quarantined=True "
-                "to read it"
+                f"item {item_id} is quarantined; pass allow_quarantined=True to read it"
             )
         # Re-validate containment before touching disk (defence in depth).
         path = Path(item.saved_path).resolve()
         zone_root = self._zone_roots.get(item.zone)
-        if zone_root is None or (
-            path != zone_root and zone_root not in path.parents
-        ):
+        if zone_root is None or (path != zone_root and zone_root not in path.parents):
             raise PermissionError(f"stored path escapes sandbox: {path}")
         return path.read_bytes()
 
@@ -414,8 +441,7 @@ class SandboxStore:
             conn2 = open_db(self.db_path)
             try:
                 conn2.execute(
-                    "UPDATE sandbox_items SET evicted = 1, saved_path = NULL "
-                    "WHERE id = ?",
+                    "UPDATE sandbox_items SET evicted = 1, saved_path = NULL WHERE id = ?",
                     (item_id,),
                 )
             finally:
@@ -433,8 +459,7 @@ class SandboxStore:
         conn = open_db(self.db_path)
         try:
             total_row = conn.execute(
-                "SELECT COALESCE(SUM(size_bytes), 0) FROM sandbox_items "
-                "WHERE evicted = 0"
+                "SELECT COALESCE(SUM(size_bytes), 0) FROM sandbox_items WHERE evicted = 0"
             ).fetchone()
             zone_rows = conn.execute(
                 "SELECT zone, COALESCE(SUM(size_bytes), 0) FROM sandbox_items "
@@ -480,10 +505,7 @@ class SandboxStore:
             conn.close()
 
         def _shape(rows: _List[Any]) -> _List[_Dict[str, object]]:
-            return [
-                {"key": r[0], "count": int(r[1]), "bytes": int(r[2])}
-                for r in rows
-            ]
+            return [{"key": r[0], "count": int(r[1]), "bytes": int(r[2])} for r in rows]
 
         return {
             "by_zone": _shape(zone_rows),
@@ -520,8 +542,7 @@ def _row_to_item(row: Any) -> SandboxItem:
     )
 
 
-def _preview_type(payload: bytes, content_type: str | None,
-                  filename: str | None) -> str:
+def _preview_type(payload: bytes, content_type: str | None, filename: str | None) -> str:
     """Derive a coarse previewable type for the dashboard.
 
     Reuses :func:`lighthouse_ai.ingest.extract_text`: if we can pull any

@@ -46,14 +46,29 @@ class Intent:
 
 def _row_to_intent(row: sqlite3.Row | tuple) -> Intent:
     (
-        rid, key, target, op, payload, status, attempts,
-        job_id, node_id, write_id, compensator,
+        rid,
+        key,
+        target,
+        op,
+        payload,
+        status,
+        attempts,
+        job_id,
+        node_id,
+        write_id,
+        compensator,
     ) = row
     return Intent(
-        id=rid, idempotency_key=key, target=target, op=op,
+        id=rid,
+        idempotency_key=key,
+        target=target,
+        op=op,
         payload=json.loads(payload) if payload else {},
-        status=status, attempts=attempts,
-        job_id=job_id, node_id=node_id, write_id=write_id,
+        status=status,
+        attempts=attempts,
+        job_id=job_id,
+        node_id=node_id,
+        write_id=write_id,
         compensator=json.loads(compensator) if compensator else None,
     )
 
@@ -98,9 +113,16 @@ def write_intent(
             ON CONFLICT(idempotency_key) DO NOTHING
             RETURNING id
             """,
-            (idempotency_key, target, op, json.dumps(payload),
-             job_id, node_id, write_id,
-             json.dumps(compensator) if compensator else None),
+            (
+                idempotency_key,
+                target,
+                op,
+                json.dumps(payload),
+                job_id,
+                node_id,
+                write_id,
+                json.dumps(compensator) if compensator else None,
+            ),
         )
         row = cur.fetchone()
         if row:
@@ -128,7 +150,8 @@ def claim_one(db_path: Path, target: str | None = None) -> Intent | None:
                 row = conn.execute(
                     f"SELECT {_SELECT_COLS} FROM intents "
                     "WHERE status = 'pending' AND target = ? "
-                    "ORDER BY id LIMIT 1", (target,),
+                    "ORDER BY id LIMIT 1",
+                    (target,),
                 ).fetchone()
             else:
                 row = conn.execute(
@@ -141,11 +164,13 @@ def claim_one(db_path: Path, target: str | None = None) -> Intent | None:
             intent = _row_to_intent(row)
             conn.execute(
                 "UPDATE intents SET status = 'in_flight', claimed_at = datetime('now'), "
-                "attempts = attempts + 1 WHERE id = ?", (intent.id,),
+                "attempts = attempts + 1 WHERE id = ?",
+                (intent.id,),
             )
             conn.execute("COMMIT")
             # Return the post-update view: status flipped, attempts bumped.
             from dataclasses import replace
+
             return replace(intent, status="in_flight", attempts=intent.attempts + 1)
         except Exception:
             conn.execute("ROLLBACK")
@@ -159,7 +184,8 @@ def mark_applied(db_path: Path, intent_id: int) -> None:
     try:
         conn.execute(
             "UPDATE intents SET status = 'applied', applied_at = datetime('now'), "
-            "updated_at = datetime('now') WHERE id = ?", (intent_id,),
+            "updated_at = datetime('now') WHERE id = ?",
+            (intent_id,),
         )
     finally:
         conn.close()
@@ -185,12 +211,14 @@ def mark_failed(db_path: Path, intent_id: int, error: str, *, dead: bool = False
                     conn.execute(
                         "INSERT INTO dead_intents "
                         "(original_id, target, payload_json, last_error) "
-                        "VALUES (?, ?, ?, ?)", (intent_id, row[0], row[1], error),
+                        "VALUES (?, ?, ?, ?)",
+                        (intent_id, row[0], row[1], error),
                     )
                 conn.execute(
                     "UPDATE intents SET status = 'dead', last_error = ?, "
                     "last_attempt_at = datetime('now'), updated_at = datetime('now') "
-                    "WHERE id = ?", (error, intent_id),
+                    "WHERE id = ?",
+                    (error, intent_id),
                 )
                 conn.execute("COMMIT")
             except Exception:
@@ -200,7 +228,8 @@ def mark_failed(db_path: Path, intent_id: int, error: str, *, dead: bool = False
             conn.execute(
                 "UPDATE intents SET status = 'pending', last_error = ?, "
                 "last_attempt_at = datetime('now'), updated_at = datetime('now') "
-                "WHERE id = ?", (error, intent_id),
+                "WHERE id = ?",
+                (error, intent_id),
             )
     finally:
         conn.close()
@@ -245,9 +274,14 @@ def list_dead(db_path: Path) -> list[dict[str, Any]]:
     finally:
         conn.close()
     return [
-        {"id": r[0], "original_id": r[1], "target": r[2],
-         "payload": json.loads(r[3]) if r[3] else {},
-         "last_error": r[4], "moved_at": r[5]}
+        {
+            "id": r[0],
+            "original_id": r[1],
+            "target": r[2],
+            "payload": json.loads(r[3]) if r[3] else {},
+            "last_error": r[4],
+            "moved_at": r[5],
+        }
         for r in rows
     ]
 

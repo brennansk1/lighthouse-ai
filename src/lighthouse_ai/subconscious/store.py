@@ -75,7 +75,10 @@ class ReflectionStore:
                 "(id, kind, body, proposed_action, source_refs, source_chunks, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
-                    r.id, r.kind.value, r.body, r.proposed_action,
+                    r.id,
+                    r.kind.value,
+                    r.body,
+                    r.proposed_action,
                     json.dumps(r.source_refs),
                     json.dumps([_chunk_to_dict(c) for c in r.source_chunks]),
                     r.created_at,
@@ -107,8 +110,14 @@ class ReflectionStore:
                 "(id, kind, body, priority, status, source_refs, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    e.id, e.kind.value, e.body, e.priority.value, e.status.value,
-                    json.dumps(e.source_refs), e.created_at, e.updated_at,
+                    e.id,
+                    e.kind.value,
+                    e.body,
+                    e.priority.value,
+                    e.status.value,
+                    json.dumps(e.source_refs),
+                    e.created_at,
+                    e.updated_at,
                 ),
             )
         finally:
@@ -137,9 +146,7 @@ class ReflectionStore:
             conn.close()
         return [_row_to_escalation(row) for row in rows]
 
-    def update_escalation_status(
-        self, escalation_id: str, status: EscalationStatus
-    ) -> bool:
+    def update_escalation_status(self, escalation_id: str, status: EscalationStatus) -> bool:
         conn = open_db(self.db_path)
         try:
             cur = conn.execute(

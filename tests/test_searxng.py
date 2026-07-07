@@ -1,4 +1,5 @@
 """Tests for the SearXNG source adapter."""
+
 from __future__ import annotations
 
 import httpx
@@ -58,9 +59,7 @@ def test_search_scholarly_filters_non_academic():
 
 @respx.mock
 def test_search_raises_on_http_error():
-    respx.get("http://localhost:8888/search").mock(
-        return_value=httpx.Response(500)
-    )
+    respx.get("http://localhost:8888/search").mock(return_value=httpx.Response(500))
     with pytest.raises(SearXNGUnavailable):
         search("test")
 
@@ -90,9 +89,7 @@ def test_search_as_documents_empty_on_unavailable():
 
 @respx.mock
 def test_available_true_on_200():
-    respx.get("http://localhost:8888/healthz").mock(
-        return_value=httpx.Response(200)
-    )
+    respx.get("http://localhost:8888/healthz").mock(return_value=httpx.Response(200))
     assert available() is True
 
 

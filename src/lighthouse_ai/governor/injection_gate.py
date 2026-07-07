@@ -387,11 +387,7 @@ def spotlight(text: str, variant: SpotlightVariant = "delimiting") -> str:
     """
 
     if variant == "delimiting":
-        return (
-            "<<UNTRUSTED_CONTENT>>\n"
-            f"{text}\n"
-            "<<END_UNTRUSTED_CONTENT>>"
-        )
+        return f"<<UNTRUSTED_CONTENT>>\n{text}\n<<END_UNTRUSTED_CONTENT>>"
 
     if variant == "datamarking":
         # Replace runs of whitespace with the marker glyph so the content reads

@@ -28,6 +28,7 @@ class _HasPermit(Protocol):
 
     def permit(self) -> AbstractContextManager[Any]: ...
 
+
 PreambleFn = Callable[[Chunk], str]
 
 
@@ -47,10 +48,12 @@ def default_preamble(chunk: Chunk) -> str:
     return "[" + "; ".join(parts) + "] "
 
 
-def prepend_context(chunks: Iterable[Chunk], *,
-                    preamble_fn: PreambleFn = default_preamble) -> list[Chunk]:
+def prepend_context(
+    chunks: Iterable[Chunk], *, preamble_fn: PreambleFn = default_preamble
+) -> list[Chunk]:
     """Return new Chunk objects with the preamble prepended to each text."""
     from dataclasses import replace
+
     out: list[Chunk] = []
     for c in chunks:
         preamble = preamble_fn(c)
@@ -96,4 +99,5 @@ def llm_preamble_fn(
         except Exception:
             pass
         return default_preamble(chunk)
+
     return _fn

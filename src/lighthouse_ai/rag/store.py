@@ -28,8 +28,9 @@ class SearchResult:
 class VectorStore(Protocol):
     def upsert(self, chunks: Iterable[Chunk], vectors: Iterable[list[float]]) -> None: ...
 
-    def search(self, query_vector: list[float], *, k: int = 10,
-               filter: dict[str, Any] | None = None) -> list[SearchResult]: ...
+    def search(
+        self, query_vector: list[float], *, k: int = 10, filter: dict[str, Any] | None = None
+    ) -> list[SearchResult]: ...
 
     def delete(self, chunk_ids: Iterable[str]) -> int: ...
 
@@ -60,8 +61,9 @@ class InMemoryStore:
                 return False
         return True
 
-    def search(self, query_vector: list[float], *, k: int = 10,
-               filter: dict[str, Any] | None = None) -> list[SearchResult]:
+    def search(
+        self, query_vector: list[float], *, k: int = 10, filter: dict[str, Any] | None = None
+    ) -> list[SearchResult]:
         scored: list[tuple[float, _Entry]] = []
         for entry in self._entries.values():
             if not self._match(entry, filter):
@@ -72,8 +74,7 @@ class InMemoryStore:
                 continue
             scored.append((s, entry))
         scored.sort(key=lambda t: t[0], reverse=True)
-        return [SearchResult(chunk_id=e.chunk.id, score=s, chunk=e.chunk)
-                for s, e in scored[:k]]
+        return [SearchResult(chunk_id=e.chunk.id, score=s, chunk=e.chunk) for s, e in scored[:k]]
 
     def delete(self, chunk_ids: Iterable[str]) -> int:
         n = 0

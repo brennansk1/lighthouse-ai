@@ -32,8 +32,7 @@ class Digest:
     total_items: int = 0
 
 
-def aggregate_digest(reports: list[MonitorReport], *,
-                     period_label: str | None = None) -> Digest:
+def aggregate_digest(reports: list[MonitorReport], *, period_label: str | None = None) -> Digest:
     by_topic: dict[str, list[MonitorReport]] = defaultdict(list)
     for r in reports:
         by_topic[r.topic].append(r)
@@ -46,16 +45,22 @@ def aggregate_digest(reports: list[MonitorReport], *,
         suppressed = sum(r.suppressed_duplicates for r in rs)
         seen = sum(r.total_seen for r in rs)
         items = alerts + digest[:5]  # top 5 of digest per topic
-        sections.append(DigestSection(
-            topic=topic, alert_count=len(alerts),
-            digest_count=len(digest), suppressed=suppressed, items=items,
-        ))
+        sections.append(
+            DigestSection(
+                topic=topic,
+                alert_count=len(alerts),
+                digest_count=len(digest),
+                suppressed=suppressed,
+                items=items,
+            )
+        )
         total_alerts += len(alerts)
         total_items += seen
     sections.sort(key=lambda s: s.alert_count, reverse=True)
     return Digest(
         period_label=period_label or date.today().isoformat(),
         generated_at=date.today().isoformat(),
-        sections=sections, total_alerts=total_alerts,
+        sections=sections,
+        total_alerts=total_alerts,
         total_items=total_items,
     )

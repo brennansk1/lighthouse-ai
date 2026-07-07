@@ -396,9 +396,7 @@ def apply_migrations(conn: sqlite3.Connection, migrations: list[Migration]) -> l
         try:
             for stmt in _split_statements(m.sql):
                 conn.execute(stmt)
-            conn.execute(
-                "INSERT INTO schema_migrations (id) VALUES (?)", (m.id,)
-            )
+            conn.execute("INSERT INTO schema_migrations (id) VALUES (?)", (m.id,))
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")

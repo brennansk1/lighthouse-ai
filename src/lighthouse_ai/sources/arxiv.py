@@ -30,25 +30,32 @@ def _parse(payload: bytes) -> list[Document]:
     out: list[Document] = []
     for entry in root.findall("atom:entry", _NS):
         arxiv_id = (entry.findtext("atom:id", default="", namespaces=_NS) or "").strip()
-        title = " ".join((entry.findtext("atom:title", default="", namespaces=_NS)
-                          or "").split())
-        summary = " ".join((entry.findtext("atom:summary", default="", namespaces=_NS)
-                            or "").split())
+        title = " ".join((entry.findtext("atom:title", default="", namespaces=_NS) or "").split())
+        summary = " ".join(
+            (entry.findtext("atom:summary", default="", namespaces=_NS) or "").split()
+        )
         published = entry.findtext("atom:published", default="", namespaces=_NS)
         if not title:
             continue
-        out.append(Document(
-            id=arxiv_id or f"arxiv:{title[:40]}",
-            text=f"{title}. {summary}",
-            metadata={"source": "arxiv", "url": arxiv_id, "grade": "A",
-                      "published_date": published, "title": title},
-        ))
+        out.append(
+            Document(
+                id=arxiv_id or f"arxiv:{title[:40]}",
+                text=f"{title}. {summary}",
+                metadata={
+                    "source": "arxiv",
+                    "url": arxiv_id,
+                    "grade": "A",
+                    "published_date": published,
+                    "title": title,
+                },
+            )
+        )
     return out
 
 
-def search_arxiv(query: str, *, max_results: int = 5,
-                 client: httpx.Client | None = None,
-                 timeout: float = 30.0) -> list[Document]:
+def search_arxiv(
+    query: str, *, max_results: int = 5, client: httpx.Client | None = None, timeout: float = 30.0
+) -> list[Document]:
     """Search arXiv and return up to ``max_results`` papers as Documents.
 
     Pass ``client`` to reuse a connection (and to make the request mockable in
@@ -60,9 +67,13 @@ def search_arxiv(query: str, *, max_results: int = 5,
     _q = query.strip()
     _field_prefixes = ("all:", "cat:", "au:", "ti:", "abs:", "id:", "co:", "jr:", "rn:")
     _search_query = _q if _q.lower().startswith(_field_prefixes) else f"all:{query}"
-    params: dict[str, str | int] = {"search_query": _search_query, "start": 0,
-                                    "max_results": max_results,
-                                    "sortBy": "relevance", "sortOrder": "descending"}
+    params: dict[str, str | int] = {
+        "search_query": _search_query,
+        "start": 0,
+        "max_results": max_results,
+        "sortBy": "relevance",
+        "sortOrder": "descending",
+    }
     owns_client = client is None
     if client is None:
         client = httpx.Client(timeout=timeout, follow_redirects=True)

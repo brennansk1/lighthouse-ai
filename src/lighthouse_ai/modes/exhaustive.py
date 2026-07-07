@@ -299,9 +299,14 @@ def _default_research_fn(question: str) -> tuple[str, list[int], bool]:
 # --- value-of-information scoring (gap #14) --------------------------------
 
 
-def _voi_score(node: TreeNode, *, parent_grounded: bool, gateway=None,
-               job_id: str | None = None,
-               gate: SchedulerGate | None = None) -> float:
+def _voi_score(
+    node: TreeNode,
+    *,
+    parent_grounded: bool,
+    gateway=None,
+    job_id: str | None = None,
+    gate: SchedulerGate | None = None,
+) -> float:
     """Decision-impact score in [0, 1+] for a pending node — higher = research first.
 
     Deterministic heuristic (the always-on, must-be-correct path):
@@ -325,16 +330,16 @@ def _voi_score(node: TreeNode, *, parent_grounded: bool, gateway=None,
 
     if gateway is not None:
         try:
-            nudge = _voi_gateway_nudge(node, gateway=gateway, job_id=job_id,
-                                       gate=gate)
+            nudge = _voi_gateway_nudge(node, gateway=gateway, job_id=job_id, gate=gate)
             score += 0.1 * nudge  # bounded influence: ranking stays deterministic-led
         except Exception:
             pass
     return round(score, 6)
 
 
-def _voi_gateway_nudge(node: TreeNode, *, gateway, job_id: str | None,
-                       gate: SchedulerGate | None = None) -> float:
+def _voi_gateway_nudge(
+    node: TreeNode, *, gateway, job_id: str | None, gate: SchedulerGate | None = None
+) -> float:
     """Ask the model for a 0..1 impact estimate; bounded, best-effort, optional."""
     prompt = (
         "Rate, as a single number between 0 and 1, how decision-relevant this "
@@ -412,8 +417,7 @@ def run_exhaustive(
         seen = set(state.seen) or {_norm(n.question) for n in all_nodes}
         pg_map = _parent_grounded_map(root)
         order_map = _order_map(root)
-        pending = [(n, pg_map.get(id(n), False), order_map.get(id(n), 0))
-                   for n in state.pending]
+        pending = [(n, pg_map.get(id(n), False), order_map.get(id(n), 0)) for n in state.pending]
         # ``order`` continues past the highest assigned index so freshly created
         # children keep getting monotonically larger (later) creation counters.
         order = max(order_map.values(), default=0)
@@ -421,8 +425,9 @@ def run_exhaustive(
         pruned = state.pruned
         done = state.done
     else:
-        root = TreeNode(question=question, depth=0, status="known_unknown",
-                        load_bearing=True)  # the root question is load-bearing by definition
+        root = TreeNode(
+            question=question, depth=0, status="known_unknown", load_bearing=True
+        )  # the root question is load-bearing by definition
         seen = {_norm(question)}
         all_nodes = [root]
         # Pending frontier: (node, parent_grounded). We pop the highest-VOI node.
@@ -451,8 +456,9 @@ def run_exhaustive(
         for i, (node, parent_grounded, ordr) in enumerate(pending):
             voi = voi_memo.get(id(node))
             if voi is None:
-                voi = _voi_score(node, parent_grounded=parent_grounded,
-                                 gateway=gateway, job_id=job_id, gate=gate)
+                voi = _voi_score(
+                    node, parent_grounded=parent_grounded, gateway=gateway, job_id=job_id, gate=gate
+                )
                 voi_memo[id(node)] = voi
             key = (voi, -ordr)  # higher VOI first; earlier creation breaks ties
             if best_key is None or key > best_key:
@@ -505,12 +511,15 @@ def run_exhaustive(
                     break
                 sq_key = _norm(sq)
                 if not sq_key or sq_key in seen:
-                    continue              # dedup → guarantees termination
+                    continue  # dedup → guarantees termination
                 seen.add(sq_key)
                 order += 1
-                child = TreeNode(question=sq, depth=node.depth + 1,
-                                 status="known_unknown",
-                                 load_bearing=sq_key in load_bearing_set)
+                child = TreeNode(
+                    question=sq,
+                    depth=node.depth + 1,
+                    status="known_unknown",
+                    load_bearing=sq_key in load_bearing_set,
+                )
                 node.children.append(child)
                 all_nodes.append(child)
                 pending.append((child, grounded, order))
@@ -521,14 +530,16 @@ def run_exhaustive(
         # a checkpoint failure must never abort the run.
         if on_checkpoint is not None:
             try:
-                on_checkpoint(TreeState(
-                    root=root,
-                    pending=[n for n, _pg, _o in pending],
-                    seen=set(seen),
-                    done=done,
-                    truncated=truncated,
-                    pruned=pruned,
-                ))
+                on_checkpoint(
+                    TreeState(
+                        root=root,
+                        pending=[n for n, _pg, _o in pending],
+                        seen=set(seen),
+                        done=done,
+                        truncated=truncated,
+                        pruned=pruned,
+                    )
+                )
             except Exception:
                 pass
 
@@ -540,14 +551,12 @@ def run_exhaustive(
         grounded=grounded_count,
         known_unknowns=len(all_nodes) - grounded_count,
         max_depth_reached=max((n.depth for n in all_nodes), default=0),
-        budget={"max_nodes": max_nodes, "max_depth": max_depth,
-                "voi_floor": voi_floor},
+        budget={"max_nodes": max_nodes, "max_depth": max_depth, "voi_floor": voi_floor},
         truncated=truncated,
         pruned=pruned,
     )
     if synthesize:
-        report.synthesis = synthesize_tree(root, gateway=gateway, job_id=job_id,
-                                           gate=gate)
+        report.synthesis = synthesize_tree(root, gateway=gateway, job_id=job_id, gate=gate)
     return report
 
 
@@ -571,8 +580,9 @@ def _iter_tree(node: TreeNode):
     return out
 
 
-def synthesize_tree(root: TreeNode, *, gateway=None, job_id: str | None = None,
-                    gate: SchedulerGate | None = None) -> str:
+def synthesize_tree(
+    root: TreeNode, *, gateway=None, job_id: str | None = None, gate: SchedulerGate | None = None
+) -> str:
     """Weave the tree's node bodies into one coherent narrative (gap #8).
 
     With a ``gateway`` we hand the synthesizer role a structured outline of every

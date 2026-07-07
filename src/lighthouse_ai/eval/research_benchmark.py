@@ -60,8 +60,7 @@ class Scorecard:
 
 def grounding_catches_hallucination() -> Scorecard:
     """The headline proof: the gate flags the fabricated [9] citation."""
-    rep = check(PLANTED_DRAFT, evidence_chunks=BENCH_CORPUS, high_stakes=True,
-                min_coverage=0.6)
+    rep = check(PLANTED_DRAFT, evidence_chunks=BENCH_CORPUS, high_stakes=True, min_coverage=0.6)
     card = Scorecard()
     card.checks["fabricated_citation_caught"] = rep.fabricated_citations >= 1
     card.checks["high_stakes_gate_fails_on_fabrication"] = rep.passed is False
@@ -92,8 +91,9 @@ def score_artifact(body_json: dict, *, depth: str | None = None) -> Scorecard:
     card.checks["adversarial_ran"] = "adversarial" in body_json
     card.checks["coverage_ran"] = "coverage" in body_json
     card.checks["citation_coverage_>=0.95"] = card.metrics["citation_coverage"] >= 0.95
-    card.checks["no_contested_unflagged"] = "contested_claims" in body_json or \
-        body_json.get("adversarial", {}).get("contested", 0) == 0
+    card.checks["no_contested_unflagged"] = (
+        "contested_claims" in body_json or body_json.get("adversarial", {}).get("contested", 0) == 0
+    )
     if depth:
         card.checks["depth_honored"] = body_json.get("depth") == depth
     return card
@@ -106,4 +106,5 @@ def run() -> dict:
 
 if __name__ == "__main__":  # pragma: no cover
     import json
+
     print(json.dumps(run(), indent=2))

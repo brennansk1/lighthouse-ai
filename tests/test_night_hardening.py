@@ -14,10 +14,12 @@ import pytest
 
 # --- C3: no pynvml deprecation warning on macOS ------------------------------
 
+
 def test_detect_nvidia_returns_empty_on_darwin_without_warning(monkeypatch):
     """On darwin, GPU detection must not import pynvml (which prints a
     FutureWarning on every command). It returns [] cleanly."""
     import lighthouse_ai.hardware as hw
+
     monkeypatch.setattr(sys, "platform", "darwin")
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # any warning becomes an exception
@@ -25,6 +27,7 @@ def test_detect_nvidia_returns_empty_on_darwin_without_warning(monkeypatch):
 
 
 # --- P1: entailment scorer caches a construction failure ---------------------
+
 
 def test_entailment_caches_load_failure(monkeypatch):
     """If MiniCheck is importable but construction throws, the failure is cached
@@ -54,6 +57,7 @@ def test_entailment_caches_load_failure(monkeypatch):
 
 # --- P3: a mid-run retrieval failure degrades the section, not the job -------
 
+
 def test_research_section_degrades_when_retrieval_raises():
     """If hybrid.search raises mid-run (Qdrant restart / dim mismatch), the
     section degrades to no-evidence instead of the whole job crashing."""
@@ -65,12 +69,14 @@ def test_research_section_degrades_when_retrieval_raises():
 
     section = Section(title="S1", sub_question="what changed?", body="")
     out_section, evidence = _research_section(
-        section, _BoomHybrid(), None, job_id="j1")  # gateway=None → stub body
-    assert evidence == []                 # degraded, not raised
-    assert out_section.body               # still produced a (stub) body
+        section, _BoomHybrid(), None, job_id="j1"
+    )  # gateway=None → stub body
+    assert evidence == []  # degraded, not raised
+    assert out_section.body  # still produced a (stub) body
 
 
 # --- W1: one malformed JSON row must not 500 a whole list endpoint -----------
+
 
 def test_json_field_degrades_malformed_row_to_empty():
     """_json_field returns {} on malformed JSON instead of raising (which would
@@ -85,6 +91,7 @@ def test_json_field_degrades_malformed_row_to_empty():
 
 
 # --- C1: disk-pull preflight sizes real Ollama tags, not just class names ----
+
 
 def test_preflight_sizes_real_ollama_tags():
     """The disk-safety preflight must estimate a size for the REAL tags
@@ -103,13 +110,13 @@ def test_preflight_sizes_real_ollama_tags():
 
 # --- W2: an empty-but-present table still exports its headers ----------------
 
+
 def test_empty_survey_table_csv_keeps_headers():
     """A survey whose screening kept zero rows must still export the attribute
     headers, not silently collapse to a one-column title CSV."""
     from lighthouse_ai.web.api import _artifact_to_csv
 
-    body = {"rows": [], "attributes": [{"label": "sample size"},
-                                       {"label": "outcome"}]}
+    body = {"rows": [], "attributes": [{"label": "sample size"}, {"label": "outcome"}]}
     csv_text = _artifact_to_csv({"title": "Empty Survey"}, body)
     header = csv_text.splitlines()[0]
     assert "doc_id" in header and "sample size" in header and "outcome" in header
@@ -118,6 +125,7 @@ def test_empty_survey_table_csv_keeps_headers():
 
 # --- W4: an overflowed SSE subscriber gets a reconnect sentinel -------------
 
+
 def test_sse_overflow_enqueues_reconnect_sentinel():
     """When a subscriber's queue fills, the bus must enqueue the overflow
     sentinel (so the stream closes + client reconnects) rather than silently
@@ -125,13 +133,14 @@ def test_sse_overflow_enqueues_reconnect_sentinel():
     from lighthouse_ai.web.events import _OVERFLOW, EventBus
 
     bus = EventBus(max_queue=1)
-    q = bus.subscribe()               # no running loop → publish delivers inline
+    q = bus.subscribe()  # no running loop → publish delivers inline
     bus.publish("job.step", {"n": 1})  # fills the depth-1 queue
     bus.publish("job.step", {"n": 2})  # overflow → drop oldest, enqueue sentinel
     assert q.get_nowait() is _OVERFLOW
 
 
 # --- Phase E: SSRF / DNS-rebinding egress guard -----------------------------
+
 
 def test_egress_blocks_link_local_metadata_endpoint():
     """The cloud-metadata endpoint (link-local) is never a legitimate target,
@@ -146,8 +155,8 @@ def test_egress_blocks_public_name_resolving_to_private(monkeypatch):
     """A public hostname that resolves into internal space is the DNS-rebinding
     attack the hostname-only allowlist misses — it must be refused."""
     from lighthouse_ai import net
-    monkeypatch.setattr(net.socket, "getaddrinfo",
-                        lambda *a, **k: [(2, 1, 6, "", ("10.0.0.5", 0))])
+
+    monkeypatch.setattr(net.socket, "getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("10.0.0.5", 0))])
     with pytest.raises(net.EgressBlocked):
         net._reject_non_public_host("http://evil.example.com/x")
 
@@ -156,6 +165,7 @@ def test_egress_allows_intentional_local_services():
     """Literal loopback/LAN IPs and localhost are legitimate local targets
     (SearXNG, Qdrant) — the guard must not block them."""
     from lighthouse_ai.net import _reject_non_public_host
+
     # None of these raise.
     _reject_non_public_host("http://127.0.0.1:8888/search")
     _reject_non_public_host("http://192.168.1.10:6333/collections")
@@ -165,7 +175,7 @@ def test_egress_allows_intentional_local_services():
 
 def test_egress_private_guard_opt_out(monkeypatch):
     from lighthouse_ai import net
+
     monkeypatch.setenv("LIGHTHOUSE_ALLOW_PRIVATE_EGRESS", "1")
-    monkeypatch.setattr(net.socket, "getaddrinfo",
-                        lambda *a, **k: [(2, 1, 6, "", ("10.0.0.5", 0))])
+    monkeypatch.setattr(net.socket, "getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("10.0.0.5", 0))])
     net._reject_non_public_host("http://evil.example.com/x")  # opted out → no raise

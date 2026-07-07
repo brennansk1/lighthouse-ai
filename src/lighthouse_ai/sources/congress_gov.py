@@ -43,7 +43,7 @@ def _build_params(api_key: str | None, extra: dict) -> dict:
 
 def _parse_bills(data: dict) -> list[Document]:
     """Parse a /bill response into Documents."""
-    bills = (data.get("bills") or [])
+    bills = data.get("bills") or []
     out: list[Document] = []
     for bill in bills:
         title = " ".join((bill.get("title") or "").split())
@@ -53,38 +53,44 @@ def _parse_bills(data: dict) -> list[Document]:
         bill_number = str(bill.get("number") or "").strip()
         congress = str(bill.get("congress") or "").strip()
         origin_chamber = (bill.get("originChamber") or "").strip()
-        latest_action = (bill.get("latestAction") or {})
+        latest_action = bill.get("latestAction") or {}
         latest_action_date = (latest_action.get("actionDate") or "").strip()
         latest_action_text = (latest_action.get("text") or "").strip()
         url = (bill.get("url") or "").strip()
 
-        bill_id = f"{congress}-{bill_type}-{bill_number}" if all([congress, bill_type, bill_number]) else title[:40]
+        bill_id = (
+            f"{congress}-{bill_type}-{bill_number}"
+            if all([congress, bill_type, bill_number])
+            else title[:40]
+        )
         text = title
         if latest_action_text:
             text = f"{title}. Latest action: {latest_action_text}"
 
-        out.append(Document(
-            id=f"congress:{bill_id}",
-            text=text,
-            metadata={
-                "source": "congress_gov",
-                "url": url,
-                "grade": "A",
-                "title": title,
-                "bill_type": bill_type,
-                "bill_number": bill_number,
-                "congress": congress,
-                "origin_chamber": origin_chamber,
-                "latest_action_date": latest_action_date,
-                "latest_action_text": latest_action_text,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"congress:{bill_id}",
+                text=text,
+                metadata={
+                    "source": "congress_gov",
+                    "url": url,
+                    "grade": "A",
+                    "title": title,
+                    "bill_type": bill_type,
+                    "bill_number": bill_number,
+                    "congress": congress,
+                    "origin_chamber": origin_chamber,
+                    "latest_action_date": latest_action_date,
+                    "latest_action_text": latest_action_text,
+                },
+            )
+        )
     return out
 
 
 def _parse_vote_actions(data: dict) -> list[Document]:
     """Parse vote/action records into Documents."""
-    actions = (data.get("actions") or [])
+    actions = data.get("actions") or []
     out: list[Document] = []
     for action in actions:
         action_date = (action.get("actionDate") or "").strip()
@@ -94,18 +100,20 @@ def _parse_vote_actions(data: dict) -> list[Document]:
         action_type = (action.get("type") or "").strip()
         url = (action.get("url") or "").strip()
 
-        out.append(Document(
-            id=f"congress:action:{action_date}:{action_text[:30]}",
-            text=f"{action_date}: {action_text}",
-            metadata={
-                "source": "congress_gov",
-                "url": url,
-                "grade": "A",
-                "action_date": action_date,
-                "action_text": action_text,
-                "action_type": action_type,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"congress:action:{action_date}:{action_text[:30]}",
+                text=f"{action_date}: {action_text}",
+                metadata={
+                    "source": "congress_gov",
+                    "url": url,
+                    "grade": "A",
+                    "action_date": action_date,
+                    "action_text": action_text,
+                    "action_type": action_type,
+                },
+            )
+        )
     return out
 
 
@@ -134,11 +142,14 @@ def search_bills(
             f"{_BASE}/bill",
             allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
-            params=_build_params(api_key, {
-                "query": query,
-                "limit": max_results,
-                "sort": "updateDate+desc",
-            }),
+            params=_build_params(
+                api_key,
+                {
+                    "query": query,
+                    "limit": max_results,
+                    "sort": "updateDate+desc",
+                },
+            ),
             client=client,
         )
         resp.raise_for_status()
@@ -250,10 +261,13 @@ def track_committee(
             f"{_BASE}/committee/{committee_code}/bills",
             allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
-            params=_build_params(api_key, {
-                "limit": max_results,
-                "sort": "updateDate+desc",
-            }),
+            params=_build_params(
+                api_key,
+                {
+                    "limit": max_results,
+                    "sort": "updateDate+desc",
+                },
+            ),
             client=client,
         )
         resp.raise_for_status()

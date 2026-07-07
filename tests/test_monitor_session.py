@@ -31,8 +31,9 @@ def _loud_items(n: int = 1) -> list[MonitorItem]:
 
 
 def test_create_and_get(migrated_paths):
-    s = create_session(migrated_paths.state_db, SessionSpec(
-        label="Hearing", source_urls=["https://x/feed"]))
+    s = create_session(
+        migrated_paths.state_db, SessionSpec(label="Hearing", source_urls=["https://x/feed"])
+    )
     assert s.status == "active"
     assert s.label == "Hearing"
     assert s.source_urls == ["https://x/feed"]
@@ -70,13 +71,16 @@ def test_stop_session_is_manual(migrated_paths):
 def test_inactive_session_cycle_returns_none(migrated_paths):
     s = create_session(migrated_paths.state_db, SessionSpec(label="W"))
     stop_session(migrated_paths.state_db, s.id)
-    assert run_session_cycle(migrated_paths.state_db, s.id,
-                             fetch_fn=lambda _s: _loud_items(1)) is None
+    assert (
+        run_session_cycle(migrated_paths.state_db, s.id, fetch_fn=lambda _s: _loud_items(1)) is None
+    )
 
 
 def test_auto_stop_after_quiet_cycles(migrated_paths):
-    s = create_session(migrated_paths.state_db, SessionSpec(
-        label="Quiet", auto=AutoStopConfig(quiet_cycles=2, salience_floor=0.5)))
+    s = create_session(
+        migrated_paths.state_db,
+        SessionSpec(label="Quiet", auto=AutoStopConfig(quiet_cycles=2, salience_floor=0.5)),
+    )
     # Empty feed → max salience 0.0 < floor → quiet each cycle.
     run_session_cycle(migrated_paths.state_db, s.id, fetch_fn=lambda _s: [])
     mid = get_session(migrated_paths.state_db, s.id)
@@ -88,10 +92,14 @@ def test_auto_stop_after_quiet_cycles(migrated_paths):
 
 
 def test_loud_cycle_resets_quiet_counter(migrated_paths):
-    s = create_session(migrated_paths.state_db, SessionSpec(
-        label="Noisy", auto=AutoStopConfig(quiet_cycles=2, salience_floor=0.5)))
+    s = create_session(
+        migrated_paths.state_db,
+        SessionSpec(label="Noisy", auto=AutoStopConfig(quiet_cycles=2, salience_floor=0.5)),
+    )
     run_session_cycle(migrated_paths.state_db, s.id, fetch_fn=lambda _s: [])  # quiet
-    run_session_cycle(migrated_paths.state_db, s.id, fetch_fn=lambda _s: _loud_items(1))  # loud → reset
+    run_session_cycle(
+        migrated_paths.state_db, s.id, fetch_fn=lambda _s: _loud_items(1)
+    )  # loud → reset
     run_session_cycle(migrated_paths.state_db, s.id, fetch_fn=lambda _s: [])  # quiet again
     still = get_session(migrated_paths.state_db, s.id)
     assert still.status == "active"  # counter was reset by the loud cycle
@@ -99,8 +107,9 @@ def test_loud_cycle_resets_quiet_counter(migrated_paths):
 
 def test_end_at_time(migrated_paths):
     past = (datetime.now(UTC) - timedelta(minutes=1)).isoformat(timespec="seconds")
-    s = create_session(migrated_paths.state_db, SessionSpec(
-        label="Timed", ends_at=past, auto_stop=False))
+    s = create_session(
+        migrated_paths.state_db, SessionSpec(label="Timed", ends_at=past, auto_stop=False)
+    )
     run_session_cycle(migrated_paths.state_db, s.id, fetch_fn=lambda _s: _loud_items(1))
     done = get_session(migrated_paths.state_db, s.id)
     assert done.status == "ended"
@@ -108,8 +117,10 @@ def test_end_at_time(migrated_paths):
 
 
 def test_max_duration_cap(migrated_paths):
-    s = create_session(migrated_paths.state_db, SessionSpec(
-        label="Capped", auto_stop=False, auto=AutoStopConfig(max_duration_s=0)))
+    s = create_session(
+        migrated_paths.state_db,
+        SessionSpec(label="Capped", auto_stop=False, auto=AutoStopConfig(max_duration_s=0)),
+    )
     run_session_cycle(migrated_paths.state_db, s.id, fetch_fn=lambda _s: _loud_items(1))
     done = get_session(migrated_paths.state_db, s.id)
     assert done.status == "ended"

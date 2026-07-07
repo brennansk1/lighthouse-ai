@@ -11,9 +11,7 @@ from lighthouse_ai.sandbox.store import SandboxStore
 NOW = "2026-05-29T00:00:00+00:00"
 
 # EICAR test string → REJECT (never stored). HTML w/ <script> → QUARANTINE.
-EICAR = (
-    br"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
-)
+EICAR = rb"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
 
 
 @pytest.fixture
@@ -24,18 +22,30 @@ def ctx(tmp_path):
     store.add(
         b"Attention is all you need. The transformer architecture changed NLP. "
         b"It was published in 2017 by researchers at Google Brain.",
-        zone="uploads", filename="paper.txt", content_type="text/plain",
-        source="user", broker=broker, now=NOW,
+        zone="uploads",
+        filename="paper.txt",
+        content_type="text/plain",
+        source="user",
+        broker=broker,
+        now=NOW,
     )
     store.add(
         b"name,score\nAlice,91\nBob,72\nCarol,85\n",
-        zone="uploads", filename="scores.csv", content_type="text/csv",
-        source="user", broker=broker, now=NOW,
+        zone="uploads",
+        filename="scores.csv",
+        content_type="text/csv",
+        source="user",
+        broker=broker,
+        now=NOW,
     )
     q = store.add(
         b"<html><body><script>steal()</script>hi</body></html>",
-        zone="uploads", filename="evil.html", content_type="text/html",
-        source="user", broker=broker, now=NOW,
+        zone="uploads",
+        filename="evil.html",
+        content_type="text/html",
+        source="user",
+        broker=broker,
+        now=NOW,
     )
     # The HTML-script scanner should have quarantined it (not admitted).
     return SandboxAnalysisContext(store, audit=None), store, broker, q
@@ -44,8 +54,15 @@ def ctx(tmp_path):
 def test_eicar_rejected_never_stored(tmp_path):
     store = SandboxStore(tmp_path, max_bytes=None)
     broker = build_default_broker(tmp_path)
-    item = store.add(EICAR, zone="uploads", filename="x.com", content_type=None,
-                     source="user", broker=broker, now=NOW)
+    item = store.add(
+        EICAR,
+        zone="uploads",
+        filename="x.com",
+        content_type=None,
+        source="user",
+        broker=broker,
+        now=NOW,
+    )
     assert item is None
     assert store.list() == []
 
@@ -138,8 +155,7 @@ def test_summarize_uses_injected_gateway(ctx):
 
 def test_write_artifact_lands_in_workspace_only(ctx):
     context, store, broker, _q = ctx
-    result = context.write_artifact("finding.md", "Key result: it works.",
-                                    broker=broker, now=NOW)
+    result = context.write_artifact("finding.md", "Key result: it works.", broker=broker, now=NOW)
     assert result["zone"] == "workspace"
     # The analysis surface exposes no way to write into uploads.
     assert not hasattr(context, "write_upload")

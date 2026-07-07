@@ -33,9 +33,15 @@ from lighthouse_ai.schema import migrate_path
 # --- fixtures / helpers ---------------------------------------------------
 
 
-def _make_payload(job_id: str, model: str, digest: str, *,
-                  prompt_tokens: int = 10, completion_tokens: int = 20,
-                  backend: str = "ollama") -> dict:
+def _make_payload(
+    job_id: str,
+    model: str,
+    digest: str,
+    *,
+    prompt_tokens: int = 10,
+    completion_tokens: int = 20,
+    backend: str = "ollama",
+) -> dict:
     """Mirror the gateway ``_record`` payload shape for a model_call event."""
     return {
         "role": "researcher",
@@ -56,8 +62,9 @@ def _make_payload(job_id: str, model: str, digest: str, *,
     }
 
 
-def _insert(conn, payload: dict, *, actor: str = "gateway:researcher",
-            event_type: str = "model_call") -> None:
+def _insert(
+    conn, payload: dict, *, actor: str = "gateway:researcher", event_type: str = "model_call"
+) -> None:
     conn.execute(
         "INSERT INTO audit_events (actor, event_type, payload_json) VALUES (?, ?, ?)",
         (actor, event_type, json.dumps(payload, sort_keys=True)),
@@ -139,9 +146,12 @@ def test_replay_job_ignores_non_model_call_events(audit_db: Path) -> None:
 def test_replay_job_captures_tokens_and_backend(audit_db: Path) -> None:
     conn = open_db(audit_db)
     try:
-        _insert(conn, _make_payload("job-tok", "m", "d",
-                                    prompt_tokens=7, completion_tokens=13,
-                                    backend="ollama"))
+        _insert(
+            conn,
+            _make_payload(
+                "job-tok", "m", "d", prompt_tokens=7, completion_tokens=13, backend="ollama"
+            ),
+        )
     finally:
         conn.close()
     step = replay_job(audit_db, "job-tok").steps[0]
@@ -187,7 +197,8 @@ def test_verify_all_replayable(audit_db: Path) -> None:
     finally:
         conn.close()
     report = verify_replayable(
-        audit_db, "job-r",
+        audit_db,
+        "job-r",
         installed_digests={"m1": "dig1", "m2": "dig2"},
     )
     assert isinstance(report, ReplayReport)
@@ -205,8 +216,7 @@ def test_verify_flags_drift_and_raises(audit_db: Path) -> None:
     finally:
         conn.close()
     with pytest.raises(ReplayDriftError) as exc:
-        verify_replayable(audit_db, "job-d",
-                          installed_digests={"m1": "dig1", "m2": "NEW"})
+        verify_replayable(audit_db, "job-d", installed_digests={"m1": "dig1", "m2": "NEW"})
     report = exc.value.report
     assert not report.fully_replayable
     assert len(report.drifted_steps) == 1
@@ -219,9 +229,9 @@ def test_verify_allow_drift_returns_report(audit_db: Path) -> None:
         _insert(conn, _make_payload("job-ad", "m1", "OLD"))
     finally:
         conn.close()
-    report = verify_replayable(audit_db, "job-ad",
-                               installed_digests={"m1": "NEW"},
-                               allow_drift=True)
+    report = verify_replayable(
+        audit_db, "job-ad", installed_digests={"m1": "NEW"}, allow_drift=True
+    )
     assert not report.fully_replayable
     assert report.verdicts[0].drifted is True
     assert report.verdicts[0].replayable is False
@@ -233,9 +243,12 @@ def test_verify_missing_model_is_not_drift_but_not_replayable(audit_db: Path) ->
         _insert(conn, _make_payload("job-miss", "ghost", "dig"))
     finally:
         conn.close()
-    report = verify_replayable(audit_db, "job-miss",
-                               installed_digests={},  # nothing installed
-                               allow_drift=True)
+    report = verify_replayable(
+        audit_db,
+        "job-miss",
+        installed_digests={},  # nothing installed
+        allow_drift=True,
+    )
     verdict = report.verdicts[0]
     assert verdict.replayable is False
     assert verdict.drifted is False  # absent != drifted
@@ -252,7 +265,8 @@ def test_verify_first_divergence_is_earliest(audit_db: Path) -> None:
     finally:
         conn.close()
     report = verify_replayable(
-        audit_db, "job-fd",
+        audit_db,
+        "job-fd",
         installed_digests={"m1": "ok1", "m2": "GOOD", "m3": "GOOD3"},
         allow_drift=True,
     )
@@ -268,9 +282,9 @@ def test_verify_verdict_reason_strings(audit_db: Path) -> None:
         _insert(conn, _make_payload("job-rsn", "m2", "old"))
     finally:
         conn.close()
-    report = verify_replayable(audit_db, "job-rsn",
-                               installed_digests={"m1": "same", "m2": "new"},
-                               allow_drift=True)
+    report = verify_replayable(
+        audit_db, "job-rsn", installed_digests={"m1": "same", "m2": "new"}, allow_drift=True
+    )
     reasons = {v.step.model: v.reason for v in report.verdicts}
     assert "byte-exact" in reasons["m1"]
     assert "drifted" in reasons["m2"]
@@ -278,8 +292,7 @@ def test_verify_verdict_reason_strings(audit_db: Path) -> None:
 
 def test_verify_empty_job_is_fully_replayable(audit_db: Path) -> None:
     # A job with no model calls vacuously replays.
-    report = verify_replayable(audit_db, "job-empty",
-                               installed_digests={})
+    report = verify_replayable(audit_db, "job-empty", installed_digests={})
     assert report.fully_replayable
     assert report.verdicts == ()
 
@@ -331,8 +344,7 @@ def test_prov_activity_preserves_full_urns() -> None:
 
 
 def test_prov_activity_naive_datetime_treated_as_utc() -> None:
-    rec = prov_activity(activity_id="x", agent="a",
-                        started_at=datetime(2026, 1, 1, 0, 0, 0))
+    rec = prov_activity(activity_id="x", agent="a", started_at=datetime(2026, 1, 1, 0, 0, 0))
     assert rec["prov:startedAtTime"] == "2026-01-01T00:00:00Z"
 
 

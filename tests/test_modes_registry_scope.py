@@ -108,7 +108,7 @@ def test_shipped_template_carries_wedge_defaults():
     from importlib.resources import files
 
     raw = (files("lighthouse_ai.templates") / "config.toml").read_text()
-    assert '[modes]' in raw
+    assert "[modes]" in raw
     assert 'enabled = ["investigate"]' in raw
     assert 'enabled_tiers = ["quick", "standard", "thorough"]' in raw
     assert '"deep"' not in raw.split("enabled_tiers")[1].split("\n")[0]

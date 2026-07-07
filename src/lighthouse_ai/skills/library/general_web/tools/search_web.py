@@ -60,7 +60,11 @@ def search_web(
         try:
             doc = ctx.fetch_and_document(
                 result.url,
-                extra_meta={"title": result.title, "snippet": result.content, "engine": result.engine},
+                extra_meta={
+                    "title": result.title,
+                    "snippet": result.content,
+                    "engine": result.engine,
+                },
             )
         except Exception:
             # EgressBlocked, timeout, or any fetch error → fall back to snippet

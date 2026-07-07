@@ -31,4 +31,5 @@ def broker(tmp_path: Path):
     fixture, which shadows this one by pytest's resolution order.
     """
     from lighthouse_ai.sandbox.broker import build_default_broker
+
     return build_default_broker(tmp_path)

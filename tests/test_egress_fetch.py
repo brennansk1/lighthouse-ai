@@ -205,9 +205,7 @@ def test_redirect_to_disallowed_host_blocked(
     proxy = EgressProxy(frozenset({"arxiv.org"}), egress_log)
 
     respx.get("https://arxiv.org/start").mock(
-        return_value=httpx.Response(
-            302, headers={"location": "https://evil.example/secret"}
-        )
+        return_value=httpx.Response(302, headers={"location": "https://evil.example/secret"})
     )
     respx.get("https://evil.example/secret").mock(
         return_value=httpx.Response(200, text="LEAKED ATTACKER CONTENT")

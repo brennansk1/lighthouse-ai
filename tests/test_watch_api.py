@@ -26,7 +26,9 @@ class _FakeResp:
 
 _GOOD_HTML = (
     b"<html><head><title>News</title></head><body>"
-    + b"<p>" + (b"word " * 80) + b"</p>"
+    + b"<p>"
+    + (b"word " * 80)
+    + b"</p>"
     + b"</body></html>"
 )
 
@@ -36,15 +38,11 @@ _GOOD_HTML = (
 
 def test_verify_good(client, monkeypatch):
     def fake_fetch(url: str):
-        return _FakeResp(
-            200, {"content-type": "text/html", "etag": '"abc"'}, _GOOD_HTML
-        )
+        return _FakeResp(200, {"content-type": "text/html", "etag": '"abc"'}, _GOOD_HTML)
 
     monkeypatch.setattr("lighthouse_ai.web.api._watch_fetch", fake_fetch)
     # A trusted (allowlisted) host so the verdict is reachable → can_watch True.
-    r = client.post(
-        "/api/watch/verify", json={"url": "https://en.wikipedia.org/wiki/News"}
-    )
+    r = client.post("/api/watch/verify", json={"url": "https://en.wikipedia.org/wiki/News"})
     assert r.status_code == 200
     body = r.json()
     assert body["can_watch"] is True
@@ -62,9 +60,7 @@ def test_verify_blocked_no_readable_content(client, monkeypatch):
         return _FakeResp(200, {"content-type": "text/html"}, b"")
 
     monkeypatch.setattr("lighthouse_ai.web.api._watch_fetch", fake_fetch)
-    r = client.post(
-        "/api/watch/verify", json={"url": "https://en.wikipedia.org/empty"}
-    )
+    r = client.post("/api/watch/verify", json={"url": "https://en.wikipedia.org/empty"})
     assert r.status_code == 200
     body = r.json()
     assert body["can_watch"] is False
@@ -81,9 +77,7 @@ def test_verify_untrusted_host_prompts_trust(client, monkeypatch):
         return _FakeResp(200, {"content-type": "text/html"}, _GOOD_HTML)
 
     monkeypatch.setattr("lighthouse_ai.web.api._watch_fetch", fake_fetch)
-    r = client.post(
-        "/api/watch/verify", json={"url": "https://newsite.example/page"}
-    )
+    r = client.post("/api/watch/verify", json={"url": "https://newsite.example/page"})
     assert r.status_code == 200
     body = r.json()
     assert body["can_watch"] is False

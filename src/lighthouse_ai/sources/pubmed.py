@@ -40,8 +40,7 @@ def _parse_pmids(payload: bytes) -> list[str]:
         root = ET.fromstring(payload)
     except ET.ParseError:
         return []
-    return [el.text.strip() for el in root.findall(".//IdList/Id")
-            if el.text and el.text.strip()]
+    return [el.text.strip() for el in root.findall(".//IdList/Id") if el.text and el.text.strip()]
 
 
 def _abstract_text(article: ET.Element) -> str:
@@ -83,18 +82,25 @@ def _parse_articles(payload: bytes) -> list[Document]:
             day = (date_el.findtext("Day") or "").strip()
             published = "-".join(p for p in (year, month, day) if p)
         url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else ""
-        out.append(Document(
-            id=f"pubmed:{pmid}" if pmid else f"pubmed:{title[:40]}",
-            text=f"{title}. {abstract}" if abstract else title,
-            metadata={"source": "pubmed", "url": url, "grade": "A",
-                      "published_date": published, "title": title},
-        ))
+        out.append(
+            Document(
+                id=f"pubmed:{pmid}" if pmid else f"pubmed:{title[:40]}",
+                text=f"{title}. {abstract}" if abstract else title,
+                metadata={
+                    "source": "pubmed",
+                    "url": url,
+                    "grade": "A",
+                    "published_date": published,
+                    "title": title,
+                },
+            )
+        )
     return out
 
 
-def search_pubmed(query: str, *, max_results: int = 5,
-                  client: httpx.Client | None = None,
-                  timeout: float = 30.0) -> list[Document]:
+def search_pubmed(
+    query: str, *, max_results: int = 5, client: httpx.Client | None = None, timeout: float = 30.0
+) -> list[Document]:
     """Search PubMed and return up to ``max_results`` articles as Documents.
 
     Pass ``client`` to reuse a connection (and to make both the esearch and
@@ -104,18 +110,30 @@ def search_pubmed(query: str, *, max_results: int = 5,
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        search = guarded_get(_ESEARCH, allowed_domains=_ALLOWED_HOSTS,
-                             headers=_HEADERS, client=client, params={
-            "db": "pubmed", "term": query, "retmax": max_results,
-            "retmode": "xml", "sort": "relevance"})
+        search = guarded_get(
+            _ESEARCH,
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_HEADERS,
+            client=client,
+            params={
+                "db": "pubmed",
+                "term": query,
+                "retmax": max_results,
+                "retmode": "xml",
+                "sort": "relevance",
+            },
+        )
         search.raise_for_status()
         pmids = _parse_pmids(search.content)
         if not pmids:
             return []
-        fetch = guarded_get(_EFETCH, allowed_domains=_ALLOWED_HOSTS,
-                            headers=_HEADERS, client=client, params={
-            "db": "pubmed", "id": ",".join(pmids), "retmode": "xml",
-            "rettype": "abstract"})
+        fetch = guarded_get(
+            _EFETCH,
+            allowed_domains=_ALLOWED_HOSTS,
+            headers=_HEADERS,
+            client=client,
+            params={"db": "pubmed", "id": ",".join(pmids), "retmode": "xml", "rettype": "abstract"},
+        )
         fetch.raise_for_status()
         return _parse_articles(fetch.content)
     finally:

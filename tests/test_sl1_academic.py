@@ -62,8 +62,8 @@ _PUBMED_DOCS = [
     Document(
         id="pubmed:38245678",
         text="OBJECTIVE: Assess SGLT2 inhibitors in HFrEF. "
-             "RESULTS: Significant reduction in hospitalization. "
-             "CONCLUSIONS: SGLT2 inhibitors improve outcomes.",
+        "RESULTS: Significant reduction in hospitalization. "
+        "CONCLUSIONS: SGLT2 inhibitors improve outcomes.",
         metadata={
             "source": "pubmed",
             "title": "SGLT2 Inhibitors in Heart Failure with Reduced Ejection Fraction",
@@ -89,7 +89,7 @@ _CROSSREF_DOCS = [
     Document(
         id="crossref:10.1056/nejmoa1810480",
         text="Dapagliflozin in Patients with Heart Failure and Reduced Ejection Fraction. "
-             "Significant reduction in worsening heart failure.",
+        "Significant reduction in worsening heart failure.",
         metadata={
             "source": "crossref",
             "title": "Dapagliflozin in Patients with Heart Failure",
@@ -130,7 +130,7 @@ _RW_DOCS = [
     Document(
         id="retraction_watch:10.1016/j.retraction.001",
         text="Retraction of: Ileal-lymphoid-nodular hyperplasia, non-specific colitis, "
-             "and pervasive developmental disorder in children",
+        "and pervasive developmental disorder in children",
         metadata={
             "source": "retraction_watch",
             "retracted_doi": "10.1016/s0140-6736(97)11096-0",
@@ -272,7 +272,7 @@ class TestOpenAlexWatchable:
         result = run_watchable(openalex_skill, "vaccine", since=since, broker=broker)
         assert result.ok
         ids = {doc.id for doc in result.documents}
-        assert "https://openalex.org/W2963748456" in ids   # 2021 → kept
+        assert "https://openalex.org/W2963748456" in ids  # 2021 → kept
         assert "https://openalex.org/W1234567890" not in ids  # 2019 → filtered
 
     def test_documents_tagged(self, monkeypatch, openalex_skill, broker):
@@ -368,7 +368,7 @@ class TestPubMedWatchable:
         result = run_watchable(pubmed_skill, "heart failure", since=since, broker=broker)
         assert result.ok
         ids = {doc.id for doc in result.documents}
-        assert "pubmed:38245678" in ids   # 2024 → kept
+        assert "pubmed:38245678" in ids  # 2024 → kept
         assert "pubmed:22345678" not in ids  # 2010 → filtered
 
     def test_documents_tagged(self, monkeypatch, pubmed_skill, broker):
@@ -568,9 +568,7 @@ class TestRetractionWatchRun:
                     {
                         "DOI": "10.1016/j.retraction.001",
                         "title": ["Retraction notice"],
-                        "relation": {
-                            "is-retraction-of": [{"id": "10.1016/s0140-6736(97)11096-0"}]
-                        },
+                        "relation": {"is-retraction-of": [{"id": "10.1016/s0140-6736(97)11096-0"}]},
                         "deposited": {"date-parts": [[2010, 2]]},
                         "update-to": [{"type": "retraction"}],
                     }
@@ -611,7 +609,9 @@ class TestRetractionWatchRun:
         from lighthouse_ai.skills.library.retraction_watch.skill import run
 
         ctx = build_context(rw_skill.manifest, broker=broker)
-        monkeypatch.setattr(ctx, "fetch", lambda url: (_ for _ in ()).throw(RuntimeError("timeout")))
+        monkeypatch.setattr(
+            ctx, "fetch", lambda url: (_ for _ in ()).throw(RuntimeError("timeout"))
+        )
         docs = run(ctx, "10.1234/test.doi")
         assert docs == []
 
@@ -640,12 +640,15 @@ class TestRetractionWatchRun:
     not os.environ.get("LIGHTHOUSE_REAL_BACKEND"),
     reason="set LIGHTHOUSE_REAL_BACKEND=1 to run live tests",
 )
-@pytest.mark.parametrize("skill_id,query", [
-    ("openalex", "mRNA vaccine efficacy randomized trial"),
-    ("pubmed", "SGLT2 inhibitors heart failure randomized controlled trial[pt]"),
-    ("crossref", "dapagliflozin heart failure reduced ejection fraction"),
-    ("semantic_scholar", "attention mechanism self-supervised learning"),
-])
+@pytest.mark.parametrize(
+    "skill_id,query",
+    [
+        ("openalex", "mRNA vaccine efficacy randomized trial"),
+        ("pubmed", "SGLT2 inhibitors heart failure randomized controlled trial[pt]"),
+        ("crossref", "dapagliflozin heart failure reduced ejection fraction"),
+        ("semantic_scholar", "attention mechanism self-supervised learning"),
+    ],
+)
 def test_live_run_returns_documents(skill_id, query, tmp_path):
     """Real network: each skill returns at least one Document."""
     skill = load_skill(skill_id)

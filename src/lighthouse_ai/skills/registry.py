@@ -260,9 +260,7 @@ def load_skill(skill_id: str, library_dir: Path | None = None) -> LoadedSkill:
         ) from exc
     entry = getattr(module, func_name, None)
     if entry is None or not callable(entry):
-        raise SkillLoadError(
-            f"skill {skill_id!r}: entrypoint {manifest.entrypoint!r} not callable"
-        )
+        raise SkillLoadError(f"skill {skill_id!r}: entrypoint {manifest.entrypoint!r} not callable")
 
     watch_entry = None
     if manifest.watchable:

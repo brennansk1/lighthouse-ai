@@ -28,6 +28,7 @@ import pytest
 # Shared skip guard
 # ---------------------------------------------------------------------------
 
+
 def _ollama_reachable() -> bool:
     try:
         with httpx.Client(timeout=2.0) as c:
@@ -36,13 +37,8 @@ def _ollama_reachable() -> bool:
         return False
 
 
-_REAL_BACKEND_OK = (
-    os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1"
-    and _ollama_reachable()
-)
-_SKIP_REASON = (
-    "set LIGHTHOUSE_REAL_BACKEND=1 and have ollama running on 127.0.0.1:11434"
-)
+_REAL_BACKEND_OK = os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1" and _ollama_reachable()
+_SKIP_REASON = "set LIGHTHOUSE_REAL_BACKEND=1 and have ollama running on 127.0.0.1:11434"
 
 pytestmark = pytest.mark.skipif(not _REAL_BACKEND_OK, reason=_SKIP_REASON)
 
@@ -57,8 +53,7 @@ def _insert_job(state_db, jid: str, mode: str, meta: dict) -> None:
     conn = open_db(state_db)
     try:
         conn.execute(
-            "INSERT INTO jobs (id, mode, status, metadata_json) "
-            "VALUES (?, ?, 'queued', ?)",
+            "INSERT INTO jobs (id, mode, status, metadata_json) VALUES (?, ?, 'queued', ?)",
             (jid, mode, json.dumps(meta)),
         )
     finally:
@@ -91,8 +86,9 @@ def _get_gateway(paths):
     return gw
 
 
-def _assert_artifact(state_db, draft_id: str, expected_type: str,
-                     *, allow_deterministic: bool = False) -> dict:
+def _assert_artifact(
+    state_db, draft_id: str, expected_type: str, *, allow_deterministic: bool = False
+) -> dict:
     """Return the body dict after validating type + provenance.
 
     ``allow_deterministic`` accepts ``backend="none"`` — a legitimate state for
@@ -100,9 +96,7 @@ def _assert_artifact(state_db, draft_id: str, expected_type: str,
     (deterministic digest when no interest-relative salience is triggered).
     """
     atype, body = _read_draft(state_db, draft_id)
-    assert atype == expected_type, (
-        f"Expected artifact type {expected_type!r}, got {atype!r}"
-    )
+    assert atype == expected_type, f"Expected artifact type {expected_type!r}, got {atype!r}"
     prov = body.get("provenance") or {}
     # Backend must be recorded; when a real Ollama round-trip happens it is
     # "ollama". Accept "mock" / "mock-lowmem" as graceful fallback so the
@@ -125,6 +119,7 @@ def _assert_artifact(state_db, draft_id: str, expected_type: str,
 # ---------------------------------------------------------------------------
 # Mode E2E tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.slow
 def test_investigate_mode_e2e(migrated_paths):
@@ -157,14 +152,22 @@ def test_survey_mode_e2e(migrated_paths):
         {
             "topic": "Comparison of Python web frameworks",
             "documents": [
-                {"doc_id": "d1", "title": "Flask", "text": (
-                    "Flask is a lightweight WSGI micro-framework for Python. "
-                    "It is unopinionated and ideal for small to medium projects."
-                )},
-                {"doc_id": "d2", "title": "Django", "text": (
-                    "Django is a batteries-included web framework for Python. "
-                    "It includes ORM, admin, auth, and a full template engine."
-                )},
+                {
+                    "doc_id": "d1",
+                    "title": "Flask",
+                    "text": (
+                        "Flask is a lightweight WSGI micro-framework for Python. "
+                        "It is unopinionated and ideal for small to medium projects."
+                    ),
+                },
+                {
+                    "doc_id": "d2",
+                    "title": "Django",
+                    "text": (
+                        "Django is a batteries-included web framework for Python. "
+                        "It includes ORM, admin, auth, and a full template engine."
+                    ),
+                },
             ],
             "attributes": [{"label": "scalability"}, {"label": "ease of use"}],
         },
@@ -187,11 +190,15 @@ def test_reconstruct_mode_e2e(migrated_paths):
         {
             "topic": "History of the World Wide Web",
             "documents": [
-                {"doc_id": "d1", "title": "WWW invention", "text": (
-                    "Tim Berners-Lee invented the World Wide Web in 1989 at CERN. "
-                    "The first website went live on 6 August 1991. "
-                    "Mosaic, the first graphical browser, was released in 1993."
-                )},
+                {
+                    "doc_id": "d1",
+                    "title": "WWW invention",
+                    "text": (
+                        "Tim Berners-Lee invented the World Wide Web in 1989 at CERN. "
+                        "The first website went live on 6 August 1991. "
+                        "Mosaic, the first graphical browser, was released in 1993."
+                    ),
+                },
             ],
         },
     )
@@ -244,9 +251,7 @@ def test_adjudicate_mode_e2e(migrated_paths):
     assert draft_id is not None, "dispatch_once returned None (job failed)"
     body = _assert_artifact(migrated_paths.state_db, draft_id, "verdict")
     # An adjudicate report must include a judge summary.
-    assert body.get("judge_summary"), (
-        f"No judge_summary in verdict body: {list(body.keys())}"
-    )
+    assert body.get("judge_summary"), f"No judge_summary in verdict body: {list(body.keys())}"
 
 
 @pytest.mark.slow
@@ -267,9 +272,7 @@ def test_ask_mode_e2e(migrated_paths):
     turns = body.get("turns") or []
     assert isinstance(turns, list), f"Expected turns list, got {type(turns)}"
     # At minimum the assistant must have replied once.
-    assert any(t.get("role") == "assistant" for t in turns), (
-        "No assistant turn in ask transcript"
-    )
+    assert any(t.get("role") == "assistant" for t in turns), "No assistant turn in ask transcript"
 
 
 @pytest.mark.slow
@@ -308,5 +311,4 @@ def test_watch_mode_e2e(migrated_paths):
     assert draft_id is not None, "dispatch_once returned None (job failed)"
     # Watch can legitimately produce a deterministic digest (backend="none") when
     # the LLM salience scorer falls back; accept that alongside a real round-trip.
-    _assert_artifact(migrated_paths.state_db, draft_id, "digest",
-                     allow_deterministic=True)
+    _assert_artifact(migrated_paths.state_db, draft_id, "digest", allow_deterministic=True)

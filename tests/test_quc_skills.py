@@ -31,6 +31,7 @@ FIXED_TS = datetime(2026, 5, 29, 12, 0, 0)
 # Parsing helpers
 # --------------------------------------------------------------------------- #
 
+
 def test_parse_sources_pin_extracts_skills():
     result = _parse_sources_pin("/sources arxiv,pubmed")
     assert result == ["arxiv", "pubmed"]
@@ -79,6 +80,7 @@ def test_has_adjudicate_case_insensitive():
 # --------------------------------------------------------------------------- #
 # _select_skills priority ordering
 # --------------------------------------------------------------------------- #
+
 
 def _session(id_: str = "s1") -> QUCSession:
     return QUCSession(id=id_)
@@ -158,6 +160,7 @@ def test_empty_skills_when_nothing_provided():
 # ask() — gateway=None path unchanged
 # --------------------------------------------------------------------------- #
 
+
 def test_ask_no_gateway_draft_answer():
     session = QUCSession(id="sess-1")
     turn = ask(session, "What is quantum computing?")
@@ -197,6 +200,7 @@ def test_ask_history_appended():
 # ask() — skill selection integration
 # --------------------------------------------------------------------------- #
 
+
 def test_ask_sources_pin_updates_session():
     session = QUCSession(id="sess-skill")
     ask(session, "/sources arxiv,pubmed find me papers on CRISPR")
@@ -211,8 +215,11 @@ def test_ask_at_skill_recorded_in_turn():
 
 def test_ask_recommended_skills_passed_through():
     session = QUCSession(id="sess-rec")
-    turn = ask(session, "What are the latest papers on climate change?",
-               recommended_skills=["openalex", "semantic_scholar", "arxiv"])
+    turn = ask(
+        session,
+        "What are the latest papers on climate change?",
+        recommended_skills=["openalex", "semantic_scholar", "arxiv"],
+    )
     # Without a gateway, skill_ids_used should reflect the top-3 recommended.
     assert turn.skill_ids_used == ["openalex", "semantic_scholar", "arxiv"]
 
@@ -226,6 +233,7 @@ def test_ask_no_skills_when_nothing_provided():
 # --------------------------------------------------------------------------- #
 # ask() — /adjudicate directive
 # --------------------------------------------------------------------------- #
+
 
 def test_ask_adjudicate_flag_set():
     session = QUCSession(id="sess-adj")
@@ -242,6 +250,7 @@ def test_ask_adjudicate_flag_false_by_default():
 # --------------------------------------------------------------------------- #
 # ask() — contradiction statement in answer
 # --------------------------------------------------------------------------- #
+
 
 class _FakeChunk:
     def __init__(self, cid: str, text: str, skill_id: str, entailment: float) -> None:
@@ -327,6 +336,7 @@ def test_ask_no_contradiction_without_timestamp():
 # --------------------------------------------------------------------------- #
 # Turn dataclass stability
 # --------------------------------------------------------------------------- #
+
 
 def test_turn_has_skill_ids_used_field():
     session = QUCSession(id="s")

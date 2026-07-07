@@ -99,9 +99,10 @@ def _skeleton(framed: FramedQuestion) -> list[Section]:
     sections: list[Section] = []
     for i, sq in enumerate(framed.sub_questions):
         load_bearing = sq in framed.load_bearing
-        title = f"Section {i+1}: {sq[:60]}"
-        sections.append(Section(title=title, sub_question=sq,
-                                body="", is_load_bearing=load_bearing))
+        title = f"Section {i + 1}: {sq[:60]}"
+        sections.append(
+            Section(title=title, sub_question=sq, body="", is_load_bearing=load_bearing)
+        )
     return sections
 
 
@@ -121,8 +122,9 @@ def _research_section(
     evidence: list[HybridResult] = []
     if hybrid is not None:
         try:
-            evidence = hybrid.search(section.sub_question, top_k=top_k,
-                                     rerank_candidates=rerank_candidates)
+            evidence = hybrid.search(
+                section.sub_question, top_k=top_k, rerank_candidates=rerank_candidates
+            )
         except Exception:
             # A retrieval failure mid-run (Qdrant restart, embedder/dimension
             # mismatch, transient store error) degrades THIS section to "no
@@ -136,8 +138,9 @@ def _research_section(
             f"- {e.chunk.text[:200]}…" for e in evidence
         )
     else:
-        evidence_lines = "\n".join(f"[{i+1}] {e.chunk.text[:300]}"
-                                   for i, e in enumerate(evidence))
+        evidence_lines = "\n".join(
+            f"[{i + 1}] {e.chunk.text[:300]}" for i, e in enumerate(evidence)
+        )
         # §5 wiring: deterministic, LLM-free compaction of evidence payload
         # before it enters the researcher prompt.  Only applied when the
         # evidence is non-trivial (>200 chars or more than 3 chunks) to avoid
@@ -146,9 +149,7 @@ def _research_section(
             evidence_lines, _compact_stats = compact_evidence(evidence_lines)
         if working_context is not None:
             open_qs = ", ".join(working_context.open_questions[:5])
-            facts = "; ".join(
-                f[0][:80] for f in working_context.established_facts[:5]
-            )
+            facts = "; ".join(f[0][:80] for f in working_context.established_facts[:5])
             ruled_out = ", ".join(working_context.ruled_out[:3])
             prompt = (
                 f"Prior research context:\n"
@@ -163,8 +164,7 @@ def _research_section(
         else:
             prompt = (
                 f"Sub-question: {section.sub_question}\n\n"
-                f"Evidence:\n" + evidence_lines
-                + f"\n\n{_CITE_INSTRUCTION}"
+                f"Evidence:\n" + evidence_lines + f"\n\n{_CITE_INSTRUCTION}"
             )
         with gate_ctx(gate):
             resp = gateway.complete("researcher", prompt, job_id=job_id)
@@ -184,13 +184,13 @@ def _research_section(
             )
             try:
                 with gate_ctx(gate):
-                    resp2 = gateway.complete("researcher", retry_prompt,
-                                             job_id=job_id)
+                    resp2 = gateway.complete("researcher", retry_prompt, job_id=job_id)
                 if _HAS_CITATION.search(resp2.text):
                     body = resp2.text
             except Exception:
                 pass
     from dataclasses import replace
+
     return replace(section, body=body, citations=citations), evidence
 
 
@@ -311,6 +311,7 @@ def _parse_synthesizer_sections(text: str, originals: list[Section]) -> list[Sec
     """Parse synthesizer output back into Section objects by matching ### headings."""
     import re
     from dataclasses import replace as dc_replace
+
     heading_re = re.compile(r"^###\s+(.+)$", re.MULTILINE)
     parts = heading_re.split(text)
     title_to_body: dict[str, str] = {}
@@ -337,6 +338,7 @@ def _denoise(
     job_id: str | None,
     gate: SchedulerGate | None = None,
     section_evidence: dict[str, list[HybridResult]] | None = None,
+    depth_tier: str = "standard",
 ) -> list[Section]:
     """The TTD-DR denoiser — "the single biggest report-quality lever".
 
@@ -345,22 +347,17 @@ def _denoise(
     * **gateway is None** (offline / tests): the historical citation-dedup
       fallback. Each section keeps its body; duplicate citation ids are
       collapsed in first-seen order. No prose is changed.
-    * **gateway present**: a real ``synthesizer`` pass. We hand the synthesizer
-      every section draft *with its evidence* and instruct it to (1) merge the
-      drafts into coherent cross-referenced prose, (2) resolve or explicitly
-      mark ``[CONTRADICTION]`` between sections, and (3) mark ``[GAP]`` where a
-      sub-question is left unanswered. The result is parsed back into the same
-      section skeleton (titles preserved); citations are then deduped.
-
-    ``section_evidence`` maps ``section.title`` → its evidence chunks so the
-    synthesizer can ground the merge. Missing entries degrade gracefully.
+    * **gateway present**: a real ``synthesizer`` pass with quality amplification (Best-of-N
+      and verifier-guided regeneration for Thorough/Deep).
     """
     from dataclasses import replace as dc_replace
 
+    from ..eval.metrics import faithfulness
+    from ..verification.discipline import check as discipline_check
+
     # Stub path: gateway absent (tests, offline mode) — pure citation dedup.
     if gateway is None:
-        return [dc_replace(s, citations=list(dict.fromkeys(s.citations)))
-                for s in sections]
+        return [dc_replace(s, citations=list(dict.fromkeys(s.citations))) for s in sections]
 
     section_evidence = section_evidence or {}
 
@@ -397,15 +394,71 @@ def _denoise(
         "### <original title>\n<revised body>\n\n"
         "Do not add new sections or change section titles."
     )
-    try:
-        with gate_ctx(gate):
-            resp = gateway.complete("synthesizer", prompt, job_id=job_id)
-        revised = _parse_synthesizer_sections(resp.text, sections)
-    except Exception:
-        revised = sections
 
-    return [dc_replace(s, citations=list(dict.fromkeys(s.citations)))
-            for s in revised]
+    is_amplified = depth_tier.lower() in ("thorough", "deep")
+    N = 3 if is_amplified else 1
+
+    candidates = []
+    for _i in range(N):
+        try:
+            with gate_ctx(gate):
+                resp = gateway.complete("synthesizer", prompt, job_id=job_id)
+            candidates.append(resp.text)
+        except Exception:
+            continue
+
+    if not candidates:
+        revised = sections
+    else:
+        all_evidence = []
+        for evid_list in section_evidence.values():
+            all_evidence.extend([e.chunk.text for e in evid_list])
+
+        best_candidate = candidates[0]
+        if len(candidates) > 1 and all_evidence:
+            best_score = -1.0
+            for cand in candidates:
+                score = faithfulness(cand, all_evidence)
+                if score > best_score:
+                    best_score = score
+                    best_candidate = cand
+
+        try:
+            revised = _parse_synthesizer_sections(best_candidate, sections)
+        except Exception:
+            revised = sections
+
+    # 2. Verifier-guided regeneration on discipline check failure (only for Thorough/Deep)
+    if is_amplified and gateway is not None:
+        for idx, s in enumerate(revised):
+            if not s.body:
+                continue
+            evid_list = section_evidence.get(s.title, [])
+            chunks = [e.chunk for e in evid_list]
+            if not chunks:
+                continue
+
+            # Run the verifier/discipline check
+            rep = discipline_check(s.body, evidence_chunks=chunks, high_stakes=True)
+            if not rep.passed and rep.fabricated_citations > 0:
+                refine_prompt = (
+                    f"Your synthesis for section '### {s.title}' contains claims that are "
+                    f"not supported by the evidence or uses fabricated citation markers.\n"
+                    f"Evidence:\n{_evidence_block(s)}\n\n"
+                    f"Current text:\n{s.body}\n\n"
+                    "Rewrite this section's body to strictly ground all claims in the evidence. "
+                    "Remove any ungrounded assertions or fabricated citations. Return only the revised body text, "
+                    "retaining the valid citation markers."
+                )
+                try:
+                    with gate_ctx(gate):
+                        refine_resp = gateway.complete("synthesizer", refine_prompt, job_id=job_id)
+                    if refine_resp.text.strip():
+                        revised[idx] = dc_replace(s, body=refine_resp.text.strip())
+                except Exception:
+                    pass
+
+    return [dc_replace(s, citations=list(dict.fromkeys(s.citations))) for s in revised]
 
 
 def _extract_debate_subquestions(
@@ -546,7 +599,10 @@ def run_deepdive(
         section_evidence: dict[str, list[HybridResult]] = {}
         for sec in sections:
             sec2, evid = _research_section(
-                sec, hybrid, gateway, job_id=job_id,
+                sec,
+                hybrid,
+                gateway,
+                job_id=job_id,
                 top_k=top_k,
                 rerank_candidates=rerank_candidates,
                 working_context=working_context,
@@ -555,19 +611,28 @@ def run_deepdive(
             new_sections.append(sec2)
             section_evidence[sec2.title] = evid
             round_evidence.extend(evid)
-        sections = _denoise(new_sections, gateway=gateway, job_id=job_id,
-                            gate=gate, section_evidence=section_evidence)
+        sections = _denoise(
+            new_sections,
+            gateway=gateway,
+            job_id=job_id,
+            gate=gate,
+            section_evidence=section_evidence,
+            depth_tier=depth_tier,
+        )
 
         # Debate auto-wiring: trigger on load-bearing sections with contradictions
         if gateway is not None and round_idx < max_rounds:
-            new_subs = _extract_debate_subquestions(sections, gateway, job_id,
-                                                    gate=gate)
+            new_subs = _extract_debate_subquestions(sections, gateway, job_id, gate=gate)
             if new_subs:
                 for sq in new_subs:
-                    sections.append(Section(
-                        title=f"Section {len(sections)+1}: {sq[:60]}",
-                        sub_question=sq, body="", is_load_bearing=True,
-                    ))
+                    sections.append(
+                        Section(
+                            title=f"Section {len(sections) + 1}: {sq[:60]}",
+                            sub_question=sq,
+                            body="",
+                            is_load_bearing=True,
+                        )
+                    )
 
         evidence_rounds.append(round_evidence)
         rounds_used = round_idx
@@ -581,9 +646,12 @@ def run_deepdive(
 
         # Build compacted context for next round
         provisional = DraftReport(
-            question=question, framing=framed, sections=sections,
+            question=question,
+            framing=framed,
+            sections=sections,
             open_questions=[s.sub_question for s in sections if not s.body.strip()],
-            rounds_used=round_idx, evidence_chunks=round_evidence,
+            rounds_used=round_idx,
+            evidence_chunks=round_evidence,
         )
         working_context = compact(provisional)
 
@@ -597,8 +665,9 @@ def run_deepdive(
         # unique findings — a run that stops yielding new evidence flattens out
         # and is stopped.
         open_count = sum(1 for s in sections if not s.body.strip())
-        stuck = _saturated(cumulative_unique, slope_floor=saturation_slope_floor,
-                           round_idx=round_idx)
+        stuck = _saturated(
+            cumulative_unique, slope_floor=saturation_slope_floor, round_idx=round_idx
+        )
         open_unchanged = prev_open_count is not None and open_count == prev_open_count
         # Entailment gate: a saturated draft must not stop early while its
         # sections are unfaithful to their own evidence. Sections are scored
@@ -608,14 +677,18 @@ def run_deepdive(
         entailment_ok = True
         if min_entailment_for_early_stop > 0.0:
             entailment_ok = _entailment_early_stop_ok(
-                sections, section_evidence,
-                floor=min_entailment_for_early_stop)
+                sections, section_evidence, floor=min_entailment_for_early_stop
+            )
         if stuck and open_unchanged and entailment_ok and round_idx > 1:
             # Stuck-but-open: before giving up on open questions, acquire new
             # evidence for them once and keep going — the corpus was the
             # bottleneck, not the question. No new evidence → stop as before.
-            if (acquire_fn is not None and open_count > 0
-                    and not stuck_acquired and round_idx < max_rounds):
+            if (
+                acquire_fn is not None
+                and open_count > 0
+                and not stuck_acquired
+                and round_idx < max_rounds
+            ):
                 stuck_acquired = True
                 gained = 0
                 for sec in sections:
@@ -639,15 +712,20 @@ def run_deepdive(
     # ones that meet the §6.4 auto-Adjudicate preconditions (load-bearing,
     # balanced, cross_skill, Thorough+). Sub-job spawn is dispatcher-side.
     contradictions, auto_candidates = _emit_contradictions(
-        sections, all_evidence,
-        job_id=job_id, detected_at=detected_at,
+        sections,
+        all_evidence,
+        job_id=job_id,
+        detected_at=detected_at,
         depth_tier=depth_tier,
         auto_adjudicate_disabled=auto_adjudicate_disabled,
     )
 
     return DraftReport(
-        question=question, framing=framed, sections=sections,
-        open_questions=open_questions, ruled_out=[],
+        question=question,
+        framing=framed,
+        sections=sections,
+        open_questions=open_questions,
+        ruled_out=[],
         rounds_used=rounds_used,
         evidence_chunks=all_evidence,
         contradictions=contradictions,
@@ -656,6 +734,7 @@ def run_deepdive(
 
 
 # --- ReSum-style compaction (§14.11) ---
+
 
 @dataclass(frozen=True)
 class CompactedContext:
@@ -674,9 +753,11 @@ def compact(report: DraftReport, *, max_facts: int = 10) -> CompactedContext:
         claim = sec.body.split(".")[0].strip()
         if claim:
             facts.append((claim, sec.citations))
-    plan = (f"Continue rounds 2..{report.rounds_used + 1}; "
-            f"prioritize load-bearing sub-questions: "
-            f"{report.framing.load_bearing}")
+    plan = (
+        f"Continue rounds 2..{report.rounds_used + 1}; "
+        f"prioritize load-bearing sub-questions: "
+        f"{report.framing.load_bearing}"
+    )
     return CompactedContext(
         open_questions=report.open_questions,
         established_facts=facts,

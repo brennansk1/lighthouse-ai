@@ -37,8 +37,13 @@ _log = structlog.get_logger(__name__)
 
 #: The ordered phase vocabulary. Other zones key off these exact strings.
 PHASES = (
-    "framing", "sources", "retrieval", "drafting",
-    "verification", "synthesis", "done",
+    "framing",
+    "sources",
+    "retrieval",
+    "drafting",
+    "verification",
+    "synthesis",
+    "done",
 )
 
 
@@ -61,8 +66,9 @@ class ProgressEmitter:
 
     # ── core ────────────────────────────────────────────────────────────────
 
-    def emit(self, phase: str, kind: str, label: str, pct: float,
-             data: dict[str, Any] | None = None) -> None:
+    def emit(
+        self, phase: str, kind: str, label: str, pct: float, data: dict[str, Any] | None = None
+    ) -> None:
         """Record one progress step. Swallows every error (logs + continues)."""
         try:
             payload = data if isinstance(data, dict) else {}
@@ -74,36 +80,38 @@ class ProgressEmitter:
             self._update_progress(pct)
             if self.bus is not None:
                 try:
-                    self.bus.publish("job.step", {
-                        "job_id": self.job_id,
-                        "seq": seq,
-                        "phase": phase,
-                        "kind": kind,
-                        "label": label,
-                        "pct": pct,
-                        "data": payload,
-                    })
+                    self.bus.publish(
+                        "job.step",
+                        {
+                            "job_id": self.job_id,
+                            "seq": seq,
+                            "phase": phase,
+                            "kind": kind,
+                            "label": label,
+                            "pct": pct,
+                            "data": payload,
+                        },
+                    )
                 except Exception as exc:  # pragma: no cover - defensive
-                    _log.warning("progress.publish_failed",
-                                 job_id=self.job_id, error=repr(exc))
+                    _log.warning("progress.publish_failed", job_id=self.job_id, error=repr(exc))
         except Exception as exc:  # pragma: no cover - defensive
-            _log.warning("progress.emit_failed", job_id=self.job_id,
-                         error=repr(exc))
+            _log.warning("progress.emit_failed", job_id=self.job_id, error=repr(exc))
 
-    def _insert_event(self, phase: str, kind: str, label: str, pct: float,
-                      payload: dict[str, Any]) -> int | None:
+    def _insert_event(
+        self, phase: str, kind: str, label: str, pct: float, payload: dict[str, Any]
+    ) -> int | None:
         conn = open_db(self.paths.state_db)
         try:
             row = conn.execute(
-                "SELECT COALESCE(MAX(seq), 0) FROM job_events WHERE job_id = ?",
-                (self.job_id,)).fetchone()
+                "SELECT COALESCE(MAX(seq), 0) FROM job_events WHERE job_id = ?", (self.job_id,)
+            ).fetchone()
             seq = int(row[0]) + 1 if row else 1
             conn.execute(
                 "INSERT INTO job_events "
                 "(job_id, seq, ts, phase, kind, label, pct, payload_json) "
                 "VALUES (?, ?, datetime('now'), ?, ?, ?, ?, ?)",
-                (self.job_id, seq, phase, kind, label, float(pct),
-                 json.dumps(payload)))
+                (self.job_id, seq, phase, kind, label, float(pct), json.dumps(payload)),
+            )
             return seq
         finally:
             conn.close()
@@ -117,8 +125,8 @@ class ProgressEmitter:
         conn = open_db(self.paths.state_db)
         try:
             row = conn.execute(
-                "SELECT metadata_json FROM jobs WHERE id = ?",
-                (self.job_id,)).fetchone()
+                "SELECT metadata_json FROM jobs WHERE id = ?", (self.job_id,)
+            ).fetchone()
             if row is None:
                 return
             try:
@@ -129,8 +137,9 @@ class ProgressEmitter:
                 meta = {}
             meta["progress"] = frac
             conn.execute(
-                "UPDATE jobs SET metadata_json = ?, updated_at = datetime('now') "
-                "WHERE id = ?", (json.dumps(meta), self.job_id))
+                "UPDATE jobs SET metadata_json = ?, updated_at = datetime('now') WHERE id = ?",
+                (json.dumps(meta), self.job_id),
+            )
         finally:
             conn.close()
 
@@ -150,24 +159,31 @@ class ProgressEmitter:
         """
         try:
             secs = list(sections or [])
-            grounded = [s for s in secs
-                        if getattr(s, "citations", None)]
+            grounded = [s for s in secs if getattr(s, "citations", None)]
             pct = min(70.0, 35.0 + round_idx * 10.0)
-            self.emit("drafting", "round",
-                      f"Drafting round {round_idx}", pct,
-                      {"round": round_idx, "sections": len(secs),
-                       "grounded": len(grounded)})
+            self.emit(
+                "drafting",
+                "round",
+                f"Drafting round {round_idx}",
+                pct,
+                {"round": round_idx, "sections": len(secs), "grounded": len(grounded)},
+            )
             for s in grounded:
                 title = getattr(s, "title", "") or getattr(s, "sub_question", "")
-                self.emit("drafting", "section_drafted", str(title), pct, {
-                    "title": getattr(s, "title", ""),
-                    "sub_question": getattr(s, "sub_question", ""),
-                    "is_load_bearing": bool(getattr(s, "is_load_bearing", False)),
-                    "citations": len(getattr(s, "citations", []) or []),
-                })
+                self.emit(
+                    "drafting",
+                    "section_drafted",
+                    str(title),
+                    pct,
+                    {
+                        "title": getattr(s, "title", ""),
+                        "sub_question": getattr(s, "sub_question", ""),
+                        "is_load_bearing": bool(getattr(s, "is_load_bearing", False)),
+                        "citations": len(getattr(s, "citations", []) or []),
+                    },
+                )
         except Exception as exc:  # pragma: no cover - defensive
-            _log.warning("progress.round_cb_failed", job_id=self.job_id,
-                         error=repr(exc))
+            _log.warning("progress.round_cb_failed", job_id=self.job_id, error=repr(exc))
 
     def node_cb(self, node: Any, done: int, total: int) -> None:
         """Exhaustive ``on_node(node, done, total)``.
@@ -179,17 +195,23 @@ class ProgressEmitter:
             frac = (int(done) / total) if total else 0.0
             pct = 20.0 + max(0.0, min(1.0, frac)) * 45.0
             question = str(getattr(node, "question", "") or "")
-            self.emit("retrieval", "node", question[:120], pct, {
-                "question": question,
-                "depth": getattr(node, "depth", None),
-                "status": getattr(node, "status", None),
-                "voi": getattr(node, "voi", None),
-                "children": len(getattr(node, "children", []) or []),
-                "done": int(done), "total": total,
-            })
+            self.emit(
+                "retrieval",
+                "node",
+                question[:120],
+                pct,
+                {
+                    "question": question,
+                    "depth": getattr(node, "depth", None),
+                    "status": getattr(node, "status", None),
+                    "voi": getattr(node, "voi", None),
+                    "children": len(getattr(node, "children", []) or []),
+                    "done": int(done),
+                    "total": total,
+                },
+            )
         except Exception as exc:  # pragma: no cover - defensive
-            _log.warning("progress.node_cb_failed", job_id=self.job_id,
-                         error=repr(exc))
+            _log.warning("progress.node_cb_failed", job_id=self.job_id, error=repr(exc))
 
     def checkpoint_cb(self, tree_state: Any) -> None:
         """Exhaustive ``on_checkpoint(TreeState)``.
@@ -202,10 +224,16 @@ class ProgressEmitter:
             total = done + pending
             frac = (done / total) if total else 0.0
             pct = 20.0 + max(0.0, min(1.0, frac)) * 45.0
-            self.emit("retrieval", "checkpoint",
-                      f"Checkpoint: {done} researched", pct,
-                      {"done": done, "pending": pending,
-                       "truncated": bool(getattr(tree_state, "truncated", False))})
+            self.emit(
+                "retrieval",
+                "checkpoint",
+                f"Checkpoint: {done} researched",
+                pct,
+                {
+                    "done": done,
+                    "pending": pending,
+                    "truncated": bool(getattr(tree_state, "truncated", False)),
+                },
+            )
         except Exception as exc:  # pragma: no cover - defensive
-            _log.warning("progress.checkpoint_cb_failed", job_id=self.job_id,
-                         error=repr(exc))
+            _log.warning("progress.checkpoint_cb_failed", job_id=self.job_id, error=repr(exc))

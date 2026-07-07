@@ -29,6 +29,7 @@ FIXED_TS = datetime(2026, 5, 29, 12, 0, 0)
 # Helpers / fakes
 # --------------------------------------------------------------------------- #
 
+
 def _item(url: str, title: str, body: str, source: str = "src") -> MonitorItem:
     return MonitorItem(source=source, url=url, title=title, body=body)
 
@@ -55,11 +56,13 @@ class _FakeGateway:
         self.calls.append(role)
         # Extract the title line to score only the item title, not the interests string.
         import re
+
         title_match = re.search(r"Item title:\s*(.+)", prompt)
         title = title_match.group(1).strip() if title_match else ""
         score = 0.9 if self._kw.lower() in title.lower() else 0.1
         category = "alert" if score >= 0.7 else "noise"
         import json
+
         return _FakeCompletionResponse(json.dumps({"score": score, "category": category}))
 
 
@@ -73,6 +76,7 @@ class _BrokenGateway:
 # --------------------------------------------------------------------------- #
 # make_gateway_salience
 # --------------------------------------------------------------------------- #
+
 
 def test_gateway_salience_high_score_for_matching_interest():
     gw = _FakeGateway(interest_keyword="policy")
@@ -127,6 +131,7 @@ def test_gateway_salience_clamps_score_to_0_1():
 # run_monitor: gateway path reranks vs heuristic
 # --------------------------------------------------------------------------- #
 
+
 def test_run_monitor_gateway_scorer_reranks_by_interest():
     """Gateway-backed salience should put the on-topic item first."""
     gw = _FakeGateway(interest_keyword="policy")
@@ -179,6 +184,7 @@ def test_run_monitor_explicit_salience_fn_takes_precedence():
 # --------------------------------------------------------------------------- #
 # Cross-source contradiction escalation
 # --------------------------------------------------------------------------- #
+
 
 def test_escalate_contradictions_promotes_disagreeing_sources():
     """Items from different sources with contradicting titles → escalation."""
@@ -256,10 +262,18 @@ def test_escalate_contradictions_single_item_is_noop():
 def test_run_monitor_contradiction_escalation_end_to_end():
     """run_monitor with contradiction_timestamp fires the escalation hook."""
     items = [
-        _item("https://a/1", "Remote work increases team productivity",
-              "body about productivity", source="source_a"),
-        _item("https://a/2", "Remote work decreases team productivity",
-              "body about productivity", source="source_b"),
+        _item(
+            "https://a/1",
+            "Remote work increases team productivity",
+            "body about productivity",
+            source="source_a",
+        ),
+        _item(
+            "https://a/2",
+            "Remote work decreases team productivity",
+            "body about productivity",
+            source="source_b",
+        ),
     ]
     report = run_monitor(
         "remote work",
@@ -274,10 +288,8 @@ def test_run_monitor_contradiction_escalation_end_to_end():
 def test_run_monitor_no_escalation_without_timestamp():
     """Without contradiction_timestamp the escalation step is skipped."""
     items = [
-        _item("https://a/1", "Remote work increases team productivity",
-              "body", source="source_a"),
-        _item("https://a/2", "Remote work decreases team productivity",
-              "body", source="source_b"),
+        _item("https://a/1", "Remote work increases team productivity", "body", source="source_a"),
+        _item("https://a/2", "Remote work decreases team productivity", "body", source="source_b"),
     ]
     report = run_monitor("remote work", items)  # no contradiction_timestamp
     all_classified = report.alerts + report.digest
@@ -287,10 +299,8 @@ def test_run_monitor_no_escalation_without_timestamp():
 
 def test_run_monitor_escalation_can_be_disabled():
     items = [
-        _item("https://a/1", "Remote work increases team productivity",
-              "body", source="source_a"),
-        _item("https://a/2", "Remote work decreases team productivity",
-              "body", source="source_b"),
+        _item("https://a/1", "Remote work increases team productivity", "body", source="source_a"),
+        _item("https://a/2", "Remote work decreases team productivity", "body", source="source_b"),
     ]
     report = run_monitor(
         "remote work",
@@ -306,6 +316,7 @@ def test_run_monitor_escalation_can_be_disabled():
 # --------------------------------------------------------------------------- #
 # Signatures remain stable
 # --------------------------------------------------------------------------- #
+
 
 def test_default_salience_signature_stable():
     """default_salience(item) -> (float, str) — no extra args required."""
@@ -327,6 +338,7 @@ def test_run_monitor_existing_signature_still_works():
 # --------------------------------------------------------------------------- #
 # Hotness-backed salience (make_hotness_salience)
 # --------------------------------------------------------------------------- #
+
 
 def test_hotness_salience_custom_extractor_untracked_entity_is_noise():
     """A custom extractor returning only entities NOT in ``tracked`` must not
@@ -351,12 +363,11 @@ def test_hotness_salience_mixed_tracked_and_untracked():
     from lighthouse_ai.modes.monitor import make_hotness_salience
 
     tracked = {
-        "alpha": EntityStats(mention_count_30d=50, distinct_sources=8,
-                             last_seen_ms=0, query_hits_30d=10),
+        "alpha": EntityStats(
+            mention_count_30d=50, distinct_sources=8, last_seen_ms=0, query_hits_30d=10
+        ),
     }
-    sal = make_hotness_salience(
-        tracked, extract_entities=lambda it: ["alpha", "ghost"], now_ms=0
-    )
+    sal = make_hotness_salience(tracked, extract_entities=lambda it: ["alpha", "ghost"], now_ms=0)
     score, category = sal(_item("u", "title", "body"))
     assert 0.0 < score <= 1.0
     assert category in ("alert", "informational")

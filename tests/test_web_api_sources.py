@@ -20,6 +20,7 @@ def client(migrated_paths):
 
 # ============================ SOURCES ============================
 
+
 def test_sources_returns_catalog(client):
     """GET /api/sources returns the skill catalog with picker-ready fields."""
     body = client.get("/api/sources").json()
@@ -34,9 +35,17 @@ def test_sources_returns_catalog(client):
         # Hidden verticals (outside the wedge) are not offered by default.
         assert "youtube" not in ids
         for s in sources:
-            for key in ("id", "name", "description", "category", "tier",
-                        "default_grade", "community", "enabled_by_default",
-                        "hidden"):
+            for key in (
+                "id",
+                "name",
+                "description",
+                "category",
+                "tier",
+                "default_grade",
+                "community",
+                "enabled_by_default",
+                "hidden",
+            ):
                 assert key in s, f"missing {key} in source payload"
             assert s["hidden"] is False
 
@@ -55,11 +64,13 @@ def test_sources_include_hidden_surfaces_full_catalog(client):
 
 # ======================= RECOMMEND-SOURCES =======================
 
+
 def test_recommend_sources_returns_list(client):
     """GET /api/recommend-sources returns a ranked recommended list."""
-    r = client.get("/api/recommend-sources",
-                   params={"q": "What does arXiv say about transformers?",
-                           "mode": "investigate"})
+    r = client.get(
+        "/api/recommend-sources",
+        params={"q": "What does arXiv say about transformers?", "mode": "investigate"},
+    )
     assert r.status_code == 200
     body = r.json()
     assert "recommended" in body
@@ -73,9 +84,10 @@ def test_recommend_sources_returns_list(client):
 
 def test_recommend_sources_with_depth(client):
     """The optional depth param is accepted and stays offline-safe."""
-    r = client.get("/api/recommend-sources",
-                   params={"q": "history of the EU AI Act",
-                           "mode": "reconstruct", "depth": "deep"})
+    r = client.get(
+        "/api/recommend-sources",
+        params={"q": "history of the EU AI Act", "mode": "reconstruct", "depth": "deep"},
+    )
     assert r.status_code == 200
     assert isinstance(r.json()["recommended"], list)
 
@@ -96,11 +108,17 @@ def test_recommend_sources_never_500(client):
 
 # ===================== SELECTED_SKILLS ON JOBS ===================
 
+
 def test_job_persists_selected_skills(client):
     """POST /api/jobs with selected_skills stores them in metadata.selected_skills."""
-    r = client.post("/api/jobs", json={
-        "mode": "investigate", "topic": "transformers",
-        "selected_skills": ["arxiv", "general_web"]})
+    r = client.post(
+        "/api/jobs",
+        json={
+            "mode": "investigate",
+            "topic": "transformers",
+            "selected_skills": ["arxiv", "general_web"],
+        },
+    )
     assert r.status_code == 200
     jid = r.json()["id"]
     meta = client.get(f"/api/jobs/{jid}").json()["metadata"]

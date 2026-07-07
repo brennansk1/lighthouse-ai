@@ -43,6 +43,7 @@ DEFAULT_PORT = 8765
 
 def _paths_from_env() -> Paths:
     from .paths import paths_from_env
+
     return paths_from_env()
 
 
@@ -63,6 +64,7 @@ def _notify_event(event: str, title: str, body: str) -> None:
             return
         from .notify import DesktopChannel, DiscordChannel, Notifier
         from .notify.channels import Channel
+
         channels: list[tuple[str, Channel]] = [("desktop", DesktopChannel())]
         if cfg.get("discord_webhook_url"):
             channels.append(("discord", DiscordChannel(cfg["discord_webhook_url"])))
@@ -72,6 +74,7 @@ def _notify_event(event: str, title: str, body: str) -> None:
 
 
 # ---------------------------------------------------------------- init --
+
 
 @app.command()
 def init(
@@ -88,17 +91,22 @@ def init(
 
     profile = probe()
     write_profile(profile, paths.hardware_file)
-    console.print(f"Hardware: {profile.platform}/{profile.arch} "
-                  f"{profile.total_ram_gb} GB RAM → tier [bold]{profile.suggested_tier}[/bold]")
+    console.print(
+        f"Hardware: {profile.platform}/{profile.arch} "
+        f"{profile.total_ram_gb} GB RAM → tier [bold]{profile.suggested_tier}[/bold]"
+    )
 
     cfg_dest = paths.config_file
     if cfg_dest.exists() and not force:
         console.print(f"  [yellow]skip[/yellow] {cfg_dest} (exists; pass --force)")
     else:
         write_rendered(
-            "config.toml", cfg_dest,
-            data_dir=paths.data_dir, detected_tier=profile.suggested_tier,
-            total_ram_gb=profile.total_ram_gb, litestream_config=paths.litestream_config,
+            "config.toml",
+            cfg_dest,
+            data_dir=paths.data_dir,
+            detected_tier=profile.suggested_tier,
+            total_ram_gb=profile.total_ram_gb,
+            litestream_config=paths.litestream_config,
         )
         console.print(f"  [green]wrote[/green] {cfg_dest}")
 
@@ -122,30 +130,36 @@ def init(
     # Next steps: zero-friction first run. The default config uses the in-memory
     # vector store (SQLite spine) so nothing external is required to start.
     console.print("\n[bold]Next steps[/bold]")
-    console.print("  [green]✓[/green] No Docker needed to start — "
-                  "default vector store is in-memory (SQLite spine).")
+    console.print(
+        "  [green]✓[/green] No Docker needed to start — "
+        "default vector store is in-memory (SQLite spine)."
+    )
 
     # Auto-select a RAM-appropriate reasoning model and print the one pull the
     # user still needs. Budget-aware via gateway.recommend_models / the tag
     # ladder, so a small box gets a small tag instead of a hardcoded qwen3:14b.
     try:
         from .gateway import estimate_download_gb, recommend_pull_tag
+
         # Show the ONE real, pullable Ollama tag sized to this machine's RAM —
         # not the catalog's internal capability-class name, which isn't
         # `ollama pull`-able and only confused first-run users.
         pull_tag = recommend_pull_tag(profile)
         est = estimate_download_gb(pull_tag)
         size_hint = f", ~{est:.0f} GB download" if est > 0 else ""
-        console.print(f"  recommended model for your hardware "
-                      f"(tier {profile.suggested_tier}, {profile.total_ram_gb} GB RAM): "
-                      f"[bold cyan]{pull_tag}[/bold cyan]{size_hint}")
-        console.print(f"  [bold]ollama pull {pull_tag}[/bold]   "
-                      "(the only model you need to start)")
+        console.print(
+            f"  recommended model for your hardware "
+            f"(tier {profile.suggested_tier}, {profile.total_ram_gb} GB RAM): "
+            f"[bold cyan]{pull_tag}[/bold cyan]{size_hint}"
+        )
+        console.print(f"  [bold]ollama pull {pull_tag}[/bold]   (the only model you need to start)")
     except Exception as exc:  # never let model selection break init
         console.print(f"  [yellow]-[/yellow] model recommendation unavailable: {exc!r}")
 
-    console.print("  Qdrant/Docker are [bold]optional[/bold] — only for the "
-                  "production HNSW index (see scripts/lh-stack.docker-compose.yml).")
+    console.print(
+        "  Qdrant/Docker are [bold]optional[/bold] — only for the "
+        "production HNSW index (see scripts/lh-stack.docker-compose.yml)."
+    )
 
     if not ls.litestream_installed():
         console.print(f"[yellow]warning:[/yellow] {ls.install_hint()}")
@@ -154,11 +168,14 @@ def init(
     console.print("\n[bold]Your first research run, in three steps:[/bold]")
     console.print("  1. pull the model shown above:  [cyan]ollama pull <model>[/cyan]")
     console.print("  2. start Lighthouse:            [cyan]lighthouse start[/cyan]")
-    console.print("  3. ask your first question:     "
-                  "[cyan]lighthouse research 'your question'[/cyan]")
-    console.print(f"  Dashboard: [cyan]http://localhost:{DEFAULT_PORT}[/cyan] — "
-                  "drafts appear there for review. "
-                  "Stuck? [cyan]lighthouse doctor[/cyan] explains what's missing.")
+    console.print(
+        "  3. ask your first question:     [cyan]lighthouse research 'your question'[/cyan]"
+    )
+    console.print(
+        f"  Dashboard: [cyan]http://localhost:{DEFAULT_PORT}[/cyan] — "
+        "drafts appear there for review. "
+        "Stuck? [cyan]lighthouse doctor[/cyan] explains what's missing."
+    )
 
 
 def _install_service(paths: Paths, *, force: bool) -> None:
@@ -173,39 +190,49 @@ def _install_service(paths: Paths, *, force: bool) -> None:
             console.print(f"  [yellow]skip[/yellow] {dest} (exists; pass --force)")
             return
         write_rendered(
-            "com.lighthouse.supervisor.plist", dest,
-            supervisor_bin=supervisor_bin, path_env=path_env,
-            data_dir=paths.data_dir, stdout_log=stdout_log, stderr_log=stderr_log,
+            "com.lighthouse.supervisor.plist",
+            dest,
+            supervisor_bin=supervisor_bin,
+            path_env=path_env,
+            data_dir=paths.data_dir,
+            stdout_log=stdout_log,
+            stderr_log=stderr_log,
         )
         console.print(f"  [green]wrote[/green] {dest}")
-        console.print("    load with: [cyan]launchctl load -w "
-                      f"{dest}[/cyan]")
+        console.print(f"    load with: [cyan]launchctl load -w {dest}[/cyan]")
     elif sys.platform.startswith("linux"):
         dest = Path.home() / ".config" / "systemd" / "user" / "lighthouse.service"
         if dest.exists() and not force:
             console.print(f"  [yellow]skip[/yellow] {dest} (exists; pass --force)")
             return
         write_rendered(
-            "lighthouse.service", dest,
-            supervisor_bin=supervisor_bin, data_dir=paths.data_dir,
-            stdout_log=stdout_log, stderr_log=stderr_log,
+            "lighthouse.service",
+            dest,
+            supervisor_bin=supervisor_bin,
+            data_dir=paths.data_dir,
+            stdout_log=stdout_log,
+            stderr_log=stderr_log,
         )
         console.print(f"  [green]wrote[/green] {dest}")
-        console.print("    enable with: [cyan]systemctl --user daemon-reload && "
-                      "systemctl --user enable --now lighthouse[/cyan]")
+        console.print(
+            "    enable with: [cyan]systemctl --user daemon-reload && "
+            "systemctl --user enable --now lighthouse[/cyan]"
+        )
     else:
         console.print(f"  [yellow]warning:[/yellow] auto-install not supported on {sys.platform}")
 
 
 # ----------------------------------------------------- start / stop --
 
+
 def _launchctl(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["launchctl", *args], capture_output=True, text=True, check=False)
 
 
 def _systemctl(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["systemctl", "--user", *args], capture_output=True, text=True,
-                          check=False)
+    return subprocess.run(
+        ["systemctl", "--user", *args], capture_output=True, text=True, check=False
+    )
 
 
 @app.command()
@@ -253,6 +280,7 @@ def stop() -> None:
 
 # --------------------------------------------------------- status --
 
+
 @app.command()
 def status(port: int = DEFAULT_PORT, json_out: bool = typer.Option(False, "--json")) -> None:
     """Query /health on the control plane."""
@@ -267,16 +295,19 @@ def status(port: int = DEFAULT_PORT, json_out: bool = typer.Option(False, "--jso
         console.print_json(data=data)
         return
     sup = data["supervisor"]
-    console.print(f"[bold]Lighthouse[/bold] v{data['version']} — "
-                  f"uptime {data['uptime_seconds']}s — supervisor [bold]{sup['status']}[/bold] "
-                  f"(pid {sup.get('pid')})")
+    console.print(
+        f"[bold]Lighthouse[/bold] v{data['version']} — "
+        f"uptime {data['uptime_seconds']}s — supervisor [bold]{sup['status']}[/bold] "
+        f"(pid {sup.get('pid')})"
+    )
     table = Table("db", "present", "integrity", "size", show_lines=False)
     for kind, info in data["databases"].items():
         if not info.get("present"):
             table.add_row(kind, "no", "-", "-")
         else:
-            table.add_row(kind, "yes", str(info.get("integrity_check", "?")),
-                          str(info.get("size_bytes", "-")))
+            table.add_row(
+                kind, "yes", str(info.get("integrity_check", "?")), str(info.get("size_bytes", "-"))
+            )
     console.print(table)
     lit = data["litestream"]
     if lit.get("present"):
@@ -328,12 +359,15 @@ def doctor() -> None:
         usage = shutil.disk_usage(disk_probe)
         free_gb = usage.free / 1e9
         if free_gb < 5:
-            console.print(f"  disk: [red]✗ {free_gb:.1f} GB free[/red] — "
-                          "research runs and model pulls need room; free up space")
+            console.print(
+                f"  disk: [red]✗ {free_gb:.1f} GB free[/red] — "
+                "research runs and model pulls need room; free up space"
+            )
             issues.append(f"disk space {free_gb:.1f} GB free (<5 GB)")
         elif free_gb < 20:
-            console.print(f"  disk: [yellow]{free_gb:.1f} GB free[/yellow] "
-                          "(model pulls take 1-9 GB each)")
+            console.print(
+                f"  disk: [yellow]{free_gb:.1f} GB free[/yellow] (model pulls take 1-9 GB each)"
+            )
         else:
             console.print(f"  disk: [green]✓[/green] {free_gb:.0f} GB free")
     except Exception as exc:
@@ -345,14 +379,17 @@ def doctor() -> None:
         current_policy,
         sample_signals,
     )
+
     gate_cfg = SchedulerGateConfig.from_config_file(paths.config_file)
     sig = sample_signals(gate_cfg)
     policy, reason = current_policy(gate_cfg, sig)
     batt = "n/a" if sig.battery_charge is None else f"{sig.battery_charge * 100:.0f}%"
-    console.print(f"  scheduler gate: [bold]{policy.value}[/bold]"
-                  + (f" ({reason.value})" if reason else "")
-                  + f" — ac={sig.on_ac_power} batt={batt} "
-                  f"cpu={sig.cpu_usage_pct:.0f}% mode={gate_cfg.mode}")
+    console.print(
+        f"  scheduler gate: [bold]{policy.value}[/bold]"
+        + (f" ({reason.value})" if reason else "")
+        + f" — ac={sig.on_ac_power} batt={batt} "
+        f"cpu={sig.cpu_usage_pct:.0f}% mode={gate_cfg.mode}"
+    )
 
     # Section: package versions
     console.rule("[bold]packages[/bold]")
@@ -372,8 +409,17 @@ def doctor() -> None:
 
     # Section: directory structure
     console.rule("[bold]directories[/bold]")
-    for name in ("data_dir", "corpus_dir", "staging_dir", "quarantine_dir",
-                 "worm_dir", "skills_dir", "logs_dir", "run_dir", "replicas_dir"):
+    for name in (
+        "data_dir",
+        "corpus_dir",
+        "staging_dir",
+        "quarantine_dir",
+        "worm_dir",
+        "skills_dir",
+        "logs_dir",
+        "run_dir",
+        "replicas_dir",
+    ):
         d = getattr(paths, name)
         if d.exists():
             console.print(f"  [green]✓[/green] {name}: {d}")
@@ -422,51 +468,67 @@ def doctor() -> None:
     console.rule("[bold]external services (optional)[/bold]")
     try:
         from .backends.ollama import OllamaBackend
+
         ollama_ok = OllamaBackend().available()
     except Exception:
         ollama_ok = False
     if ollama_ok:
         console.print("  [green]✓[/green] ollama at 127.0.0.1:11434")
     else:
-        console.print("  [yellow]-[/yellow] ollama not reachable "
-                      "(start Ollama.app or `ollama serve` to enable real LLM)")
+        console.print(
+            "  [yellow]-[/yellow] ollama not reachable "
+            "(start Ollama.app or `ollama serve` to enable real LLM)"
+        )
     try:
         from .rag.qdrant_store import QdrantStore
+
         qdrant_ok = QdrantStore(dim=8).available()
     except Exception:
         qdrant_ok = False
     if qdrant_ok:
         console.print("  [green]✓[/green] qdrant at 127.0.0.1:6333")
     else:
-        console.print("  [dim]·[/dim] qdrant: optional — not required to start "
-                      "(default vector store is in-memory; boot the production "
-                      "HNSW index via scripts/lh-stack.docker-compose.yml only if "
-                      "you want it)")
+        console.print(
+            "  [dim]·[/dim] qdrant: optional — not required to start "
+            "(default vector store is in-memory; boot the production "
+            "HNSW index via scripts/lh-stack.docker-compose.yml only if "
+            "you want it)"
+        )
 
     # Section: privacy & secrets — the regulated-setting checks. Plain language:
     # the reader here may be a lawyer/clinician verifying the box, not a dev.
     console.rule("[bold]privacy & secrets[/bold]")
     from .governor.egress_proxy import airgap_enabled
+
     if airgap_enabled():
-        console.print("  [green]✓[/green] airgap kill switch is ON "
-                      "(LIGHTHOUSE_AIRGAP) — every outbound network call is refused")
+        console.print(
+            "  [green]✓[/green] airgap kill switch is ON "
+            "(LIGHTHOUSE_AIRGAP) — every outbound network call is refused"
+        )
     else:
-        console.print("  [dim]·[/dim] airgap off (normal) — external fetches allowed "
-                      "per the egress allowlist; set LIGHTHOUSE_AIRGAP=1 to refuse all")
+        console.print(
+            "  [dim]·[/dim] airgap off (normal) — external fetches allowed "
+            "per the egress allowlist; set LIGHTHOUSE_AIRGAP=1 to refuse all"
+        )
     try:
         from .secrets import SecretStore, _fallback_path
+
         backend = SecretStore(paths.data_dir).backend_status()
         if backend == "keyring":
             console.print("  [green]✓[/green] secrets: OS keychain in use")
         else:
-            console.print("  [yellow]-[/yellow] secrets: no OS keychain available — "
-                          f"falling back to {_fallback_path(paths.data_dir)} (mode 0600)")
+            console.print(
+                "  [yellow]-[/yellow] secrets: no OS keychain available — "
+                f"falling back to {_fallback_path(paths.data_dir)} (mode 0600)"
+            )
         fb = _fallback_path(paths.data_dir)
         if fb.exists():
             mode = fb.stat().st_mode & 0o777
             if mode != 0o600:
-                console.print(f"  [red]✗[/red] {fb} permissions are {mode:o}, "
-                              "expected 600 — other users on this machine can read it")
+                console.print(
+                    f"  [red]✗[/red] {fb} permissions are {mode:o}, "
+                    "expected 600 — other users on this machine can read it"
+                )
                 issues.append(f"secrets.toml permissions {mode:o} != 600")
     except Exception as exc:
         console.print(f"  [yellow]-[/yellow] secrets: could not probe: {exc!r}")
@@ -476,6 +538,7 @@ def doctor() -> None:
     if paths.audit_db.exists():
         try:
             from .verification.audit_chain import resolve_secret, verify_audit_chain
+
             try:
                 secret = resolve_secret(None, data_dir=paths.data_dir)
                 bad = verify_audit_chain(paths.audit_db, secret=secret)
@@ -494,6 +557,7 @@ def doctor() -> None:
     if paths.intents_db.exists():
         try:
             from .intents import outbox_depth
+
             depth = outbox_depth(paths.intents_db)
             if depth < 100:
                 console.print(f"  [green]✓[/green] depth = {depth}")
@@ -509,15 +573,19 @@ def doctor() -> None:
     console.rule("[bold]models[/bold]")
     try:
         from .gateway import budget_report
+
         rep = budget_report(profile)
-        console.print(f"  budget: [bold]{rep['budget_gb']} GB[/bold] "
-                      f"(tier {profile.suggested_tier})")
+        console.print(
+            f"  budget: [bold]{rep['budget_gb']} GB[/bold] (tier {profile.suggested_tier})"
+        )
         for role, info in rep["roles"].items():
             mark = "[yellow]pages SSD[/yellow]" if info["pages_from_ssd"] else "[green]fits[/green]"
             console.print(f"    {role:12} {info['model']:20} {info['footprint_gb']}G  {mark}")
         if rep["paging"]:
-            console.print(f"  [yellow]note:[/yellow] {', '.join(rep['paging'])} "
-                          f"page from SSD on this RAM — slower but functional.")
+            console.print(
+                f"  [yellow]note:[/yellow] {', '.join(rep['paging'])} "
+                f"page from SSD on this RAM — slower but functional."
+            )
     except Exception as exc:
         console.print(f"  [yellow]-[/yellow] could not compute budget: {exc!r}")
 
@@ -525,11 +593,14 @@ def doctor() -> None:
     if chosen.exists():
         try:
             from .gateway import check_drift
+
             drift = check_drift(chosen, allow_drift=True)
             if drift:
                 for d in drift:
-                    console.print(f"  [yellow]drift[/yellow] {d['model']}: "
-                                  f"recorded {d['recorded'][:12]} != installed {d['installed'][:12]}")
+                    console.print(
+                        f"  [yellow]drift[/yellow] {d['model']}: "
+                        f"recorded {d['recorded'][:12]} != installed {d['installed'][:12]}"
+                    )
             else:
                 console.print("  [green]✓[/green] no fingerprint drift")
         except Exception as exc:
@@ -546,8 +617,9 @@ def doctor() -> None:
 
 @doctor_app.command("news")
 def doctor_news(
-    live: bool = typer.Option(False, "--live",
-                              help="Attempt real network checks (requires egress)."),
+    live: bool = typer.Option(
+        False, "--live", help="Attempt real network checks (requires egress)."
+    ),
 ) -> None:
     """Check reachability of all trusted news outlets; prints the trust matrix.
 
@@ -639,7 +711,11 @@ def doctor_news(
 
     console.print(table)
 
-    mode_label = "[yellow]offline (pass --live to check egress)[/yellow]" if not do_live else "[green]live[/green]"
+    mode_label = (
+        "[yellow]offline (pass --live to check egress)[/yellow]"
+        if not do_live
+        else "[green]live[/green]"
+    )
     console.print(f"\n  mode: {mode_label}")
     console.print(
         "  Seed outlets (Reuters, AP, BBC, NPR, Guardian, ProPublica) are "
@@ -655,6 +731,7 @@ def doctor_news(
 
 # ---------------------------------------------------- pause / resume --
 
+
 @app.command()
 def pause(hard: bool = typer.Option(False, "--hard", help="Hard pause (drain in-flight)")) -> None:
     """Pause the supervisor (soft by default; hard drains intents)."""
@@ -665,8 +742,10 @@ def pause(hard: bool = typer.Option(False, "--hard", help="Hard pause (drain in-
     new_status = "paused_hard" if hard else "paused_soft"
     conn = open_db(paths.state_db)
     try:
-        conn.execute("UPDATE supervisor_state SET status = ?, updated_at = datetime('now') "
-                     "WHERE id = 1", (new_status,))
+        conn.execute(
+            "UPDATE supervisor_state SET status = ?, updated_at = datetime('now') WHERE id = 1",
+            (new_status,),
+        )
     finally:
         conn.close()
     console.print(f"[yellow]supervisor → {new_status}[/yellow]")
@@ -681,8 +760,10 @@ def resume() -> None:
         raise typer.Exit(1)
     conn = open_db(paths.state_db)
     try:
-        conn.execute("UPDATE supervisor_state SET status = 'running', "
-                     "updated_at = datetime('now') WHERE id = 1")
+        conn.execute(
+            "UPDATE supervisor_state SET status = 'running', "
+            "updated_at = datetime('now') WHERE id = 1"
+        )
     finally:
         conn.close()
     console.print("[green]supervisor → running[/green]")
@@ -696,11 +777,13 @@ def version() -> None:
 
 # --------------------------------------------------- research --
 
+
 @app.command()
 def research(
     question: str = typer.Argument(..., help="The research question."),
-    doc: list[Path] = typer.Option(None, "--doc", "-d",
-                                   help="File(s) to ingest into the corpus first."),
+    doc: list[Path] = typer.Option(
+        None, "--doc", "-d", help="File(s) to ingest into the corpus first."
+    ),
     arxiv: str = typer.Option(None, "--arxiv", help="arXiv query to ingest abstracts."),
     openalex: str = typer.Option(None, "--openalex", help="OpenAlex query to ingest."),
     pubmed: str = typer.Option(None, "--pubmed", help="PubMed query to ingest abstracts."),
@@ -709,8 +792,7 @@ def research(
     sources: int = typer.Option(5, help="Max papers per source query."),
     mode: str = typer.Option("deep-dive", help="deep-dive | quc"),
     rounds: int = typer.Option(2, help="Deep-dive refinement rounds."),
-    offline: bool = typer.Option(False, "--offline",
-                                 help="Use stub backends — no model load."),
+    offline: bool = typer.Option(False, "--offline", help="Use stub backends — no model load."),
 ) -> None:
     """Run the research pipeline end-to-end and stage a draft.
 
@@ -722,26 +804,31 @@ def research(
     paths = _paths_from_env()
     paths.ensure()
     from .schema import kinds_for, migrate_all
+
     migrate_all(kinds_for(paths))
     from .pipeline import PipelineConfig, ResearchPipeline
 
     console.print(f"[bold]Researching:[/bold] {question}")
     if offline:
         console.print("[yellow]offline mode[/yellow] — stub backends, no model load.")
-    pipe = ResearchPipeline(paths, config=PipelineConfig(
-        offline=offline, mode=mode, max_rounds=rounds))
-    console.print(f"  backends: embedder={pipe.backends['embedder']} · "
-                  f"store={pipe.backends['vector_store']} · "
-                  f"gateway={pipe.backends['gateway']}")
+    pipe = ResearchPipeline(
+        paths, config=PipelineConfig(offline=offline, mode=mode, max_rounds=rounds)
+    )
+    console.print(
+        f"  backends: embedder={pipe.backends['embedder']} · "
+        f"store={pipe.backends['vector_store']} · "
+        f"gateway={pipe.backends['gateway']}"
+    )
 
     ingested = 0
-    for d in (doc or []):
+    for d in doc or []:
         if not d.exists():
             err_console.print(f"[red]no such file:[/red] {d}")
             raise typer.Exit(1)
         ingested += pipe.ingest_path(d)
     if arxiv:
         from .sources.arxiv import search_arxiv
+
         try:
             docs = search_arxiv(arxiv, max_results=sources)
             for dd in docs:
@@ -751,6 +838,7 @@ def research(
             err_console.print(f"[yellow]arXiv fetch failed:[/yellow] {exc}")
     if openalex:
         from .sources.openalex import search_openalex
+
         try:
             docs = search_openalex(openalex, max_results=sources)
             for dd in docs:
@@ -758,8 +846,10 @@ def research(
             console.print(f"  OpenAlex '{openalex}': ingested {len(docs)} work(s)")
         except Exception as exc:
             err_console.print(f"[yellow]OpenAlex fetch failed:[/yellow] {exc}")
-    for q, name, fn_path in [(pubmed, "PubMed", "pubmed.search_pubmed"),
-                             (crossref, "Crossref", "crossref.search_crossref")]:
+    for q, name, fn_path in [
+        (pubmed, "PubMed", "pubmed.search_pubmed"),
+        (crossref, "Crossref", "crossref.search_crossref"),
+    ]:
         if not q:
             continue
         mod, fn = fn_path.split(".")
@@ -774,6 +864,7 @@ def research(
     if url:
         from .ingest import fetch_and_ingest
         from .sandbox.broker import build_default_broker
+
         broker = build_default_broker(paths.data_dir)
         for u in url:
             try:
@@ -781,8 +872,7 @@ def research(
                 if doc_obj is None:
                     err_console.print(f"[yellow]rejected/empty (sandbox):[/yellow] {u}")
                     continue
-                ingested += pipe.ingest_text(doc_obj.id, doc_obj.text,
-                                             metadata=doc_obj.metadata)
+                ingested += pipe.ingest_text(doc_obj.id, doc_obj.text, metadata=doc_obj.metadata)
                 console.print(f"  fetched + sandbox-admitted: {u}")
             except Exception as exc:
                 err_console.print(f"[yellow]fetch failed:[/yellow] {u}: {exc}")
@@ -799,24 +889,26 @@ def research(
         err_console.print(f"[yellow]⚠ backend warning:[/yellow] {w}")
 
     disc: dict = result.discipline or {}
-    console.print(f"\n[green]staged draft {result.draft_id}[/green] "
-                  f"({result.mode}, {result.sections} section(s), "
-                  f"{result.chunks_ingested} corpus chunks)")
+    console.print(
+        f"\n[green]staged draft {result.draft_id}[/green] "
+        f"({result.mode}, {result.sections} section(s), "
+        f"{result.chunks_ingested} corpus chunks)"
+    )
     if disc:
         verdict = "[green]passed[/green]" if disc.get("passed") else "[yellow]flagged[/yellow]"
-        console.print(f"  discipline: {verdict} — {disc.get('sourced', 0)}/{disc.get('claims', 0)} "
-                      f"claims sourced ({disc.get('coverage', 0):.0%} coverage); "
-                      f"{disc.get('claims', 0)} claim(s) recorded as calibration positions")
-    _notify_event("draft_ready", "Draft staged",
-                  f"{question[:60]} → {result.draft_id}")
+        console.print(
+            f"  discipline: {verdict} — {disc.get('sourced', 0)}/{disc.get('claims', 0)} "
+            f"claims sourced ({disc.get('coverage', 0):.0%} coverage); "
+            f"{disc.get('claims', 0)} claim(s) recorded as calibration positions"
+        )
+    _notify_event("draft_ready", "Draft staged", f"{question[:60]} → {result.draft_id}")
     console.print("  review it: dashboard → Drafts, or `lighthouse status`")
 
 
 @app.command("eval")
 def eval_retrieval(
     k: int = typer.Option(5, help="Cutoff for precision@k / recall@k."),
-    offline: bool = typer.Option(False, "--offline",
-                                 help="Force test-tier stubs (no model load)."),
+    offline: bool = typer.Option(False, "--offline", help="Force test-tier stubs (no model load)."),
     json_out: bool = typer.Option(False, "--json", help="Emit metrics as JSON."),
 ) -> None:
     """Run the golden-set retrieval eval and report precision@k / recall@k / MRR.
@@ -841,20 +933,24 @@ def eval_retrieval(
         from .pipeline import make_embedder, make_vector_store
         from .rag.flag_reranker import make_reranker
         from .rag.rerank import Reranker
+
         embedder, emb_name, warns = make_embedder(offline=False)
         store, store_name, store_warns = make_vector_store(embedder.dim, offline=False)
         warns = warns + store_warns
         reranker: Reranker = cast(Reranker, make_reranker(prefer_real=True))
         hybrid = build_index(golden, embedder=embedder, store=store, reranker=reranker)
-        backends = {"embedder": emb_name, "vector_store": store_name,
-                    "reranker": type(reranker).__name__}
+        backends = {
+            "embedder": emb_name,
+            "vector_store": store_name,
+            "reranker": type(reranker).__name__,
+        }
 
     report = evaluate(hybrid, golden, k=k)
 
     if json_out:
         import json
-        console.print(json.dumps({"metrics": report, "backends": backends,
-                                  "warnings": warns}))
+
+        console.print(json.dumps({"metrics": report, "backends": backends, "warnings": warns}))
         return
 
     for w in warns:
@@ -864,14 +960,13 @@ def eval_retrieval(
     mrr = report.get("mrr", 0.0)
     recall = report.get(f"recall@{k}", 0.0)
     bar = (
-        "[green]✓[/green]" if (mrr >= 0.75 and recall >= 0.83)
+        "[green]✓[/green]"
+        if (mrr >= 0.75 and recall >= 0.83)
         else "[yellow]below ranking bar (recall@k≥0.83, MRR≥0.75)[/yellow]"
     )
     for name, val in report.items():
         console.print(f"  {name:<14} {val:.3f}")
-    console.print(
-        f"\n  ranking quality: recall@{k} {recall:.3f} · MRR {mrr:.3f} — {bar}"
-    )
+    console.print(f"\n  ranking quality: recall@{k} {recall:.3f} · MRR {mrr:.3f} — {bar}")
     console.print(
         f"  [dim](precision@{k} ceiling is 0.20 here — one relevant doc per "
         "query; MRR/recall are the meaningful metrics.)[/dim]"
@@ -883,13 +978,12 @@ def export(
     draft_id: str = typer.Argument(..., help="Draft id to export."),
     logseq: Path = typer.Option(None, "--logseq", help="Logseq graph directory."),
     markdown: Path = typer.Option(
-        None, "--markdown",
-        help="Write a standalone .md report (with the provenance manifest)."),
+        None, "--markdown", help="Write a standalone .md report (with the provenance manifest)."
+    ),
 ) -> None:
     """Export a staged/published draft (Logseq graph or standalone Markdown)."""
     if (logseq is None) == (markdown is None):
-        err_console.print("[red]pick exactly one target: --logseq DIR "
-                          "or --markdown FILE[/red]")
+        err_console.print("[red]pick exactly one target: --logseq DIR or --markdown FILE[/red]")
         raise typer.Exit(2)
     paths = _paths_from_env()
     conn = open_db(paths.state_db)
@@ -897,15 +991,16 @@ def export(
         rows = conn.execute(
             "SELECT id, topic, title, body_html, wep_phrase, source_count, "
             "body_json, artifact_type FROM drafts WHERE id=?",
-            (draft_id,)).fetchall()
+            (draft_id,),
+        ).fetchall()
     finally:
         conn.close()
     if not rows:
         err_console.print(f"[red]no draft {draft_id}[/red]")
         raise typer.Exit(1)
-    (_id, topic, title, body_html, wep_phrase, source_count,
-     body_json_raw, artifact_type) = rows[0]
+    (_id, topic, title, body_html, wep_phrase, source_count, body_json_raw, artifact_type) = rows[0]
     import json as _json
+
     body_json = None
     if body_json_raw:
         try:
@@ -924,20 +1019,34 @@ def export(
             except Exception:
                 provenance = None
         from .targets.markdown import export_markdown
-        out = export_markdown(markdown, draft_id=_id, title=title,
-                              body_html=body_html, topic=topic,
-                              wep_phrase=wep_phrase,
-                              source_count=source_count or 0,
-                              provenance=provenance)
+
+        out = export_markdown(
+            markdown,
+            draft_id=_id,
+            title=title,
+            body_html=body_html,
+            topic=topic,
+            wep_phrase=wep_phrase,
+            source_count=source_count or 0,
+            provenance=provenance,
+        )
         suffix = " (provenance included)" if provenance else ""
         console.print(f"[green]wrote Markdown report →[/green] {out}{suffix}")
         return
 
     from .targets.logseq import export_draft
-    page = export_draft(logseq, draft_id=_id, title=title, body_html=body_html,
-                        topic=topic, wep_phrase=wep_phrase,
-                        source_count=source_count or 0,
-                        body_json=body_json, artifact_type=artifact_type)
+
+    page = export_draft(
+        logseq,
+        draft_id=_id,
+        title=title,
+        body_html=body_html,
+        topic=topic,
+        wep_phrase=wep_phrase,
+        source_count=source_count or 0,
+        body_json=body_json,
+        artifact_type=artifact_type,
+    )
     console.print(f"[green]wrote Logseq page →[/green] {page.path}")
 
 
@@ -946,12 +1055,14 @@ def positions_due() -> None:
     """List positions awaiting resolution (the calibration to-do)."""
     paths = _paths_from_env()
     from .verification.positions import _ensure_extras
+
     _ensure_extras(paths.positions_db)
     conn = open_db(paths.positions_db)
     try:
         rows = conn.execute(
             "SELECT id, claim, wep_band, confidence FROM positions "
-            "WHERE outcome IS NULL ORDER BY created_at DESC LIMIT 50").fetchall()
+            "WHERE outcome IS NULL ORDER BY created_at DESC LIMIT 50"
+        ).fetchall()
     finally:
         conn.close()
     if not rows:
@@ -975,6 +1086,7 @@ app.add_typer(budget_app, name="budget")
 def cost_report(json_out: bool = typer.Option(False, "--json")) -> None:
     """Print remaining budget per dimension × period and the degradation tier."""
     from .governor import BUDGET_DEFAULTS, Governor
+
     paths = _paths_from_env()
     g = Governor(paths.state_db, BUDGET_DEFAULTS)
     report = g.cost_report()
@@ -984,19 +1096,20 @@ def cost_report(json_out: bool = typer.Option(False, "--json")) -> None:
     console.print(f"[bold]Tier:[/bold] {report['tier']}")
     table = Table("dimension", "monthly", "weekly", "daily")
     for dim, periods in report["remaining"].items():
-        table.add_row(dim, str(periods["monthly"]), str(periods["weekly"]),
-                      str(periods["daily"]))
+        table.add_row(dim, str(periods["monthly"]), str(periods["weekly"]), str(periods["daily"]))
     console.print(table)
 
 
 @budget_app.command("reset")
-def budget_reset(confirm: bool = typer.Option(False, "--confirm",
-                                              help="Required for safety.")) -> None:
+def budget_reset(
+    confirm: bool = typer.Option(False, "--confirm", help="Required for safety."),
+) -> None:
     """Clear all governor buckets — typed confirmation required."""
     if not confirm:
         err_console.print("[red]refusing without --confirm[/red]")
         raise typer.Exit(2)
     from .governor import BUDGET_DEFAULTS, Governor
+
     paths = _paths_from_env()
     g = Governor(paths.state_db, BUDGET_DEFAULTS)
     n = g.reset()
@@ -1011,6 +1124,7 @@ app.add_typer(models_app, name="models")
 
 def _ollama_backend():
     from .backends.ollama import OllamaBackend, OllamaUnavailable
+
     return OllamaBackend(), OllamaUnavailable
 
 
@@ -1041,10 +1155,10 @@ def _ollama_models_dir() -> Path:
 @models_app.command("pull")
 def models_pull(
     model: str = typer.Argument(...),
-    force: bool = typer.Option(False, "--force", "-f",
-                               help="Bypass the disk-safety preflight."),
-    yes: bool = typer.Option(False, "--yes", "-y",
-                             help="Skip the confirmation prompt for large pulls."),
+    force: bool = typer.Option(False, "--force", "-f", help="Bypass the disk-safety preflight."),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the confirmation prompt for large pulls."
+    ),
 ) -> None:
     """Pull a model via Ollama, with a disk-safety preflight.
 
@@ -1067,15 +1181,17 @@ def models_pull(
     free_gb = _shutil.disk_usage(probe_dir).free / 1e9
     pf = preflight_pull(model, free_disk_gb=free_gb)
 
-    size_str = (f"~{pf.estimated_download_gb:.1f} GB" if pf.estimated_download_gb
-                else "unknown size")
-    console.print(f"Pull [bold]{model}[/bold] ({size_str}) — "
-                  f"{pf.free_disk_gb:.1f} GB free on {probe_dir.anchor or probe_dir}")
+    size_str = f"~{pf.estimated_download_gb:.1f} GB" if pf.estimated_download_gb else "unknown size"
+    console.print(
+        f"Pull [bold]{model}[/bold] ({size_str}) — "
+        f"{pf.free_disk_gb:.1f} GB free on {probe_dir.anchor or probe_dir}"
+    )
 
     if not pf.ok and not force:
         err_console.print(f"[red]refusing:[/red] {pf.reason}")
-        err_console.print("  Free up disk space, or re-run with [bold]--force[/bold] "
-                          "if you understand the risk.")
+        err_console.print(
+            "  Free up disk space, or re-run with [bold]--force[/bold] if you understand the risk."
+        )
         raise typer.Exit(1)
     if not pf.ok and force:
         console.print(f"[yellow]--force:[/yellow] proceeding despite: {pf.reason}")
@@ -1084,9 +1200,11 @@ def models_pull(
     try:
         rep = budget_report(probe())
         if model_pages(model, rep["budget_gb"]):
-            console.print(f"[yellow]note:[/yellow] at runtime this model pages from "
-                          f"SSD on your {rep['budget_gb']:.1f} GB budget — it will run, "
-                          f"but slower. Pulling does not load it into RAM.")
+            console.print(
+                f"[yellow]note:[/yellow] at runtime this model pages from "
+                f"SSD on your {rep['budget_gb']:.1f} GB budget — it will run, "
+                f"but slower. Pulling does not load it into RAM."
+            )
     except Exception:
         pass
 
@@ -1119,6 +1237,7 @@ def models_pull(
 def models_info(model: str = typer.Argument(...)) -> None:
     """Show fingerprint info for a model."""
     from .gateway import fingerprint_ollama
+
     fp = fingerprint_ollama(model)
     if fp is None:
         err_console.print(f"[red]ollama not available or model {model!r} missing[/red]")
@@ -1149,6 +1268,7 @@ def models_bind() -> None:
     """
     from .gateway import resolve_against_installed
     from .hardware import probe as _probe
+
     paths = _paths_from_env()
     paths.ensure()
     backend, _ = _ollama_backend()
@@ -1160,8 +1280,10 @@ def models_bind() -> None:
     profile = _probe()
     resolved = resolve_against_installed(profile, installed)
     if not resolved:
-        err_console.print("[yellow]no installed models matched the catalog roles. "
-                          "Pull one first, e.g. `lighthouse models pull qwen3:14b`.[/yellow]")
+        err_console.print(
+            "[yellow]no installed models matched the catalog roles. "
+            "Pull one first, e.g. `lighthouse models pull qwen3:14b`.[/yellow]"
+        )
         raise typer.Exit(1)
     # Write chosen_models.yaml using these real tags as overrides.
     import time as _time
@@ -1169,14 +1291,17 @@ def models_bind() -> None:
     import yaml as _yaml
 
     from .gateway import bindings_for_tier, fingerprint
+
     bindings = bindings_for_tier(profile.suggested_tier)
     for role, tag in resolved.items():
         if role in bindings:
             b = bindings[role]
             from .gateway import ModelBinding
+
             backend_name = "native" if role in ("embedding", "reranker") else "ollama"
-            bindings[role] = ModelBinding(role=role, model=tag, backend=backend_name,
-                                          sampling=b.sampling)
+            bindings[role] = ModelBinding(
+                role=role, model=tag, backend=backend_name, sampling=b.sampling
+            )
     now = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime())
     fps: dict = {}
     roles_out: dict = {}
@@ -1184,9 +1309,14 @@ def models_bind() -> None:
         fp = fingerprint(b.model, b.backend)
         fps[b.model] = {**fp.to_dict(), "pulled_at": now}
         roles_out[role] = {"model": b.model, "backend": b.backend, "sampling": b.sampling}
-    doc = {"version": 1, "hardware_tier": profile.suggested_tier,
-           "detected_at": now, "resolved_from_installed": True,
-           "fingerprints": fps, "roles": roles_out}
+    doc = {
+        "version": 1,
+        "hardware_tier": profile.suggested_tier,
+        "detected_at": now,
+        "resolved_from_installed": True,
+        "fingerprints": fps,
+        "roles": roles_out,
+    }
     dest = paths.data_dir / "chosen_models.yaml"
     dest.write_text(_yaml.safe_dump(doc, sort_keys=False))
     console.print(f"[green]bound {len(resolved)} role(s) to installed tags →[/green] {dest}")
@@ -1203,8 +1333,8 @@ app.add_typer(quarantine_app, name="quarantine")
 def _open_quarantine():
     paths = _paths_from_env()
     from .sandbox import Quarantine
-    return Quarantine(paths.data_dir / "quarantine.db",
-                      paths.data_dir / "quarantine")
+
+    return Quarantine(paths.data_dir / "quarantine.db", paths.data_dir / "quarantine")
 
 
 @quarantine_app.command("list")
@@ -1217,14 +1347,14 @@ def quarantine_list(verdict: str = typer.Option(None, help="Filter by verdict"))
         return
     table = Table("sha256", "verdict", "filename", "size", "seen")
     for r in rows:
-        table.add_row(r["sha256"][:12], r["verdict"], r["filename"] or "—",
-                      str(r["bytes_size"]), r["seen_at"])
+        table.add_row(
+            r["sha256"][:12], r["verdict"], r["filename"] or "—", str(r["bytes_size"]), r["seen_at"]
+        )
     console.print(table)
 
 
 @quarantine_app.command("restore")
-def quarantine_restore(sha: str = typer.Argument(...),
-                       dest: Path = typer.Argument(...)) -> None:
+def quarantine_restore(sha: str = typer.Argument(...), dest: Path = typer.Argument(...)) -> None:
     """Copy a quarantined artifact out to ``dest``."""
     q = _open_quarantine()
     try:
@@ -1236,8 +1366,9 @@ def quarantine_restore(sha: str = typer.Argument(...),
 
 
 @quarantine_app.command("purge")
-def quarantine_purge(verdict: str = typer.Option("quarantine"),
-                     confirm: bool = typer.Option(False, "--confirm")) -> None:
+def quarantine_purge(
+    verdict: str = typer.Option("quarantine"), confirm: bool = typer.Option(False, "--confirm")
+) -> None:
     """Delete every artifact with the given verdict. Typed confirmation required."""
     if not confirm:
         err_console.print("[red]refusing without --confirm[/red]")
@@ -1257,6 +1388,7 @@ app.add_typer(audit_app, name="audit")
 def audit_verify() -> None:
     """Re-compute every audit HMAC and report any breakage."""
     from .verification.audit_chain import resolve_secret, verify_audit_chain
+
     paths = _paths_from_env()
     try:
         secret = resolve_secret(None, data_dir=paths.data_dir)
@@ -1285,6 +1417,7 @@ def sandbox_redteam() -> None:
     from .sandbox import Verdict
     from .sandbox.broker import build_default_broker
     from .sandbox.scanners import EICAR_SIGNATURE
+
     paths = _paths_from_env()
     paths.ensure()
     broker = build_default_broker(paths.data_dir)
@@ -1297,11 +1430,15 @@ def sandbox_redteam() -> None:
         return buf.getvalue()
 
     cases = [
-        ("eicar.bin",   EICAR_SIGNATURE,                              "text/plain",       Verdict.REJECT),
-        ("bomb.zip",    _zip_bomb(),                                  "application/zip",  Verdict.REJECT),
-        ("xss.html",    b"<script>alert(1)</script>",                 "text/html",        Verdict.QUARANTINE),
-        ("jspdf.pdf",   b"%PDF-1.4\n/OpenAction << /S /JavaScript /JS (a) >>\n",
-         "application/pdf", Verdict.QUARANTINE),
+        ("eicar.bin", EICAR_SIGNATURE, "text/plain", Verdict.REJECT),
+        ("bomb.zip", _zip_bomb(), "application/zip", Verdict.REJECT),
+        ("xss.html", b"<script>alert(1)</script>", "text/html", Verdict.QUARANTINE),
+        (
+            "jspdf.pdf",
+            b"%PDF-1.4\n/OpenAction << /S /JavaScript /JS (a) >>\n",
+            "application/pdf",
+            Verdict.QUARANTINE,
+        ),
     ]
     failed: list[str] = []
     for name, payload, ct, expected in cases:
@@ -1318,14 +1455,14 @@ def sandbox_redteam() -> None:
 
 # --------------------------------------------------- secrets --
 
-secrets_app = typer.Typer(help="Manage Lighthouse secrets (keychain + TOML).",
-                          no_args_is_help=True)
+secrets_app = typer.Typer(help="Manage Lighthouse secrets (keychain + TOML).", no_args_is_help=True)
 app.add_typer(secrets_app, name="secrets")
 
 
 @secrets_app.command("set")
 def secrets_set(key: str, value: str = typer.Argument(..., help="Value to store")) -> None:
     from .secrets import SecretStore
+
     paths = _paths_from_env()
     backend = SecretStore(paths.data_dir).put(key, value)
     console.print(f"[green]stored {key} (backend={backend}).[/green]")
@@ -1334,6 +1471,7 @@ def secrets_set(key: str, value: str = typer.Argument(..., help="Value to store"
 @secrets_app.command("get")
 def secrets_get(key: str) -> None:
     from .secrets import SecretStore
+
     paths = _paths_from_env()
     v = SecretStore(paths.data_dir).get(key)
     if v is None:
@@ -1345,6 +1483,7 @@ def secrets_get(key: str) -> None:
 @secrets_app.command("list")
 def secrets_list() -> None:
     from .secrets import SecretStore
+
     paths = _paths_from_env()
     keys = SecretStore(paths.data_dir).list()
     if not keys:
@@ -1357,6 +1496,7 @@ def secrets_list() -> None:
 @secrets_app.command("rm")
 def secrets_rm(key: str) -> None:
     from .secrets import SecretStore
+
     paths = _paths_from_env()
     if SecretStore(paths.data_dir).delete(key):
         console.print(f"[green]removed {key}.[/green]")
@@ -1386,6 +1526,7 @@ def monitor_run(
     from .output.html import render_monitor_html
     from .sandbox.broker import build_default_broker
     from .sources.rss import fetch_feed
+
     broker = build_default_broker(paths.data_dir)
     try:
         items = fetch_feed(source_url, broker=broker)
@@ -1396,18 +1537,21 @@ def monitor_run(
         console.print("[yellow]feed produced no items (or sandbox rejected).[/yellow]")
         raise typer.Exit(0)
     from .governor.scheduler_gate import SchedulerGate, SchedulerGateConfig
+
     gate = SchedulerGate(SchedulerGateConfig.from_config_file(paths.config_file))
     report = run_monitor(topic, items, gate=gate)
     html = render_monitor_html(report)
-    dest = (out_dir or paths.staging_dir)
+    dest = out_dir or paths.staging_dir
     dest.mkdir(parents=True, exist_ok=True)
     safe_topic = "".join(c if c.isalnum() else "-" for c in topic).strip("-")
     fname = dest / f"monitor-{safe_topic}-{report.generated_at.replace(':', '')}.html"
     fname.write_text(html)
     console.print(f"[green]wrote {fname}[/green]")
-    console.print(f"  [bold]{len(report.alerts)}[/bold] alert(s), "
-                  f"[bold]{len(report.digest)}[/bold] digest, "
-                  f"{report.suppressed_duplicates} duplicate(s) suppressed.")
+    console.print(
+        f"  [bold]{len(report.alerts)}[/bold] alert(s), "
+        f"[bold]{len(report.digest)}[/bold] digest, "
+        f"{report.suppressed_duplicates} duplicate(s) suppressed."
+    )
 
 
 @app.command()
@@ -1415,19 +1559,23 @@ def tui(port: int = DEFAULT_PORT) -> None:
     """Launch the terminal dashboard (Textual)."""
     from .tui.app import LighthouseTUI
     from .tui.client import LighthouseClient
+
     LighthouseTUI(client=LighthouseClient(f"http://127.0.0.1:{port}")).run()
 
 
 # --------------------------------------------------- replay --
 
+
 @app.command()
-def replay(job_id: str = typer.Argument(..., help="Job id to replay/inspect."),
-           allow_drift: bool = typer.Option(False, "--allow-drift",
-                                             help="Don't fail on model drift.")) -> None:
+def replay(
+    job_id: str = typer.Argument(..., help="Job id to replay/inspect."),
+    allow_drift: bool = typer.Option(False, "--allow-drift", help="Don't fail on model drift."),
+) -> None:
     """Reconstruct a job's model-call trace from the audit log and report
     whether it can be replayed byte-exact against the installed models (§27.8)."""
     paths = _paths_from_env()
     from .replay import ReplayDriftError, replay_job, verify_replayable
+
     trace = replay_job(paths.audit_db, job_id)
     if not trace.steps:
         console.print(f"[yellow]no model calls recorded for job {job_id}[/yellow]")
@@ -1439,29 +1587,37 @@ def replay(job_id: str = typer.Argument(..., help="Job id to replay/inspect."),
     installed: dict[str, str] = {}
     try:
         from .gateway import fingerprint
+
         for m in trace.models:
             installed[m] = fingerprint(m, "ollama").registry_digest_sha256
     except Exception:
         pass
     try:
-        report = verify_replayable(paths.audit_db, job_id,
-                                   installed_digests=installed, allow_drift=allow_drift)
+        report = verify_replayable(
+            paths.audit_db, job_id, installed_digests=installed, allow_drift=allow_drift
+        )
     except ReplayDriftError as exc:
         err_console.print(f"[red]drift detected — not byte-exact replayable:[/red] {exc}")
         raise typer.Exit(1) from None
-    console.print(f"[green]replayable: {report.fully_replayable}[/green] "
-                  f"({len(report.replayable_steps)} byte-exact, "
-                  f"{len(report.drifted_steps)} drifted)")
+    console.print(
+        f"[green]replayable: {report.fully_replayable}[/green] "
+        f"({len(report.replayable_steps)} byte-exact, "
+        f"{len(report.drifted_steps)} drifted)"
+    )
 
 
 # --------------------------------------------------- backup / integrity --
 
+
 @app.command()
-def backup(repo: str = typer.Option(None, help="restic repo path (default: data_dir/backups/restic)"),
-           init: bool = typer.Option(False, "--init", help="Initialize the repo first."),
-           passphrase: str = typer.Option(None, help="restic passphrase (else from keychain).")) -> None:
+def backup(
+    repo: str = typer.Option(None, help="restic repo path (default: data_dir/backups/restic)"),
+    init: bool = typer.Option(False, "--init", help="Initialize the repo first."),
+    passphrase: str = typer.Option(None, help="restic passphrase (else from keychain)."),
+) -> None:
     """Back up the data dir with restic (§26.3)."""
     from .backup import ResticBackup, ResticError, ResticUnavailable, restic_installed
+
     if not restic_installed():
         err_console.print("[red]restic not installed.[/red] brew install restic")
         raise typer.Exit(1)
@@ -1469,15 +1625,25 @@ def backup(repo: str = typer.Option(None, help="restic repo path (default: data_
     repo = repo or str(paths.data_dir / "backups" / "restic")
     if passphrase is None:
         from .secrets import SecretStore
+
         passphrase = SecretStore(paths.data_dir).get_or_create("restic.passphrase")
     rb = ResticBackup(passphrase=passphrase)
     try:
         if init:
             rb.init(repo, passphrase)
             console.print(f"[green]initialized restic repo[/green] {repo}")
-        rb.backup([paths.state_db, paths.audit_db, paths.positions_db,
-                   paths.hypotheses_db, paths.intents_db,
-                   paths.reflections_db, paths.entity_hotness_db], repo=repo)
+        rb.backup(
+            [
+                paths.state_db,
+                paths.audit_db,
+                paths.positions_db,
+                paths.hypotheses_db,
+                paths.intents_db,
+                paths.reflections_db,
+                paths.entity_hotness_db,
+            ],
+            repo=repo,
+        )
     except (ResticUnavailable, ResticError) as exc:
         err_console.print(f"[red]backup failed:[/red] {exc}")
         raise typer.Exit(1) from None
@@ -1489,6 +1655,7 @@ def integrity() -> None:
     """Run the periodic integrity check (§26.5): DB PRAGMA checks + replica lag."""
     paths = _paths_from_env()
     from .recovery import integrity_report
+
     rep = integrity_report(paths)
     for d in rep.databases:
         mark = "[green]OK[/green]" if d.ok else "[red]BAD[/red]"
@@ -1503,13 +1670,14 @@ def integrity() -> None:
 
 # --------------------------------------------------- audit-egress --
 
+
 @app.command("audit-egress")
 def audit_egress(
     since: str = typer.Option("24h", help="Time window: '24h', '7d', '30d'"),
     output: str = typer.Option(None, help="Write report to file"),
     summary: bool = typer.Option(
-        False, "--summary",
-        help="Print a plain-English verdict instead of the full table."),
+        False, "--summary", help="Print a plain-English verdict instead of the full table."
+    ),
 ) -> None:
     """Produce a signed report of all network calls in the audit log."""
     paths = _paths_from_env()
@@ -1517,6 +1685,7 @@ def audit_egress(
         err_console.print("[yellow]No audit log found. Run 'lighthouse init' first.[/yellow]")
         raise typer.Exit(1)
     from .persistence import open_db
+
     conn = open_db(paths.audit_db)
     try:
         # Column is `ts` (schema.py AUDIT_MIGRATIONS), not `created_at`.
@@ -1537,6 +1706,7 @@ def audit_egress(
         # meant to be checkable by a lawyer or clinician, not just a developer).
         import json
         from urllib.parse import urlsplit
+
         hosts: dict[str, int] = {}
         for _event_type, payload_json, _ts in rows:
             try:
@@ -1544,8 +1714,9 @@ def audit_egress(
             except Exception:
                 payload = {}
             url = payload.get("url") or ""
-            host = (urlsplit(url).hostname or payload.get("host")
-                    or payload.get("source") or "unknown")
+            host = (
+                urlsplit(url).hostname or payload.get("host") or payload.get("source") or "unknown"
+            )
             hosts[host] = hosts.get(host, 0) + 1
         top = sorted(hosts.items(), key=lambda kv: -kv[1])
         host_phrase = ", ".join(f"{h} ({n})" for h, n in top[:5])
@@ -1553,18 +1724,21 @@ def audit_egress(
             host_phrase += f", and {len(top) - 5} more"
         console.print(
             f"In the last {since}, Lighthouse made [bold]{len(rows)}[/bold] "
-            f"external network call(s), to: {host_phrase}.")
+            f"external network call(s), to: {host_phrase}."
+        )
         console.print(
             "  Your corpus documents are never uploaded — these calls are "
             "source fetches and notifications recorded in the tamper-evident "
             "audit log. Run [cyan]lighthouse audit-egress[/cyan] (without "
-            "--summary) for the full call-by-call table.")
+            "--summary) for the full call-by-call table."
+        )
         return
     table = Table(title=f"Egress audit ({since})", show_lines=True)
     table.add_column("Time", style="dim")
     table.add_column("Event")
     table.add_column("Details")
     import json
+
     for event_type, payload_json, ts in rows:
         payload = {}
         try:
@@ -1576,7 +1750,9 @@ def audit_egress(
     console.print(table)
     if output:
         with open(output, "w") as f:
-            f.write(f"Lighthouse Egress Audit Report\nGenerated: {__import__('datetime').datetime.now().isoformat()}\n\n")
+            f.write(
+                f"Lighthouse Egress Audit Report\nGenerated: {__import__('datetime').datetime.now().isoformat()}\n\n"
+            )
             for event_type, payload_json, ts in rows:
                 f.write(f"{ts} | {event_type} | {payload_json}\n")
         console.print(f"[green]Report written to {output}[/green]")
@@ -1590,7 +1766,9 @@ app.add_typer(resolver_app, name="resolver")
 
 @resolver_app.command("run")
 def resolver_run(
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be resolved without writing."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be resolved without writing."
+    ),
     confidence: float = typer.Option(0.7, help="Minimum confidence to auto-resolve."),
     offline: bool = typer.Option(False, "--offline", help="Skip LLM; only report past-deadline."),
 ) -> None:
@@ -1600,17 +1778,21 @@ def resolver_run(
         console.print("[yellow]No positions database found.[/yellow]")
         raise typer.Exit(0)
     from .verification.resolver import run_resolver_pass
+
     gateway = None
     if not offline:
         try:
             from .hardware import probe
             from .pipeline import make_gateway
+
             gateway = make_gateway(paths, probe())
         except Exception:
             pass
     results = run_resolver_pass(
-        paths.positions_db, gateway=gateway,
-        confidence_threshold=confidence, dry_run=dry_run,
+        paths.positions_db,
+        gateway=gateway,
+        confidence_threshold=confidence,
+        dry_run=dry_run,
     )
     if not results:
         console.print("[green]No past-deadline positions to resolve.[/green]")
@@ -1624,7 +1806,9 @@ def resolver_run(
         console.print("[dim](dry-run — no changes written)[/dim]")
     for r in auto:
         outcome_str = "[green]TRUE[/green]" if r.outcome else "[red]FALSE[/red]"
-        console.print(f"  • {r.claim[:60]}… → {outcome_str} (conf={r.confidence:.2f}, Brier={r.brier:.3f})")
+        console.print(
+            f"  • {r.claim[:60]}… → {outcome_str} (conf={r.confidence:.2f}, Brier={r.brier:.3f})"
+        )
 
 
 # --------------------------------------------------- subconscious --
@@ -1640,6 +1824,7 @@ def subconscious_tick() -> None:
     paths.ensure()
     from .subconscious import ReflectionStore, SubconsciousEngine, stale_position_escalations
     from .subconscious.engine import TickResult
+
     store = ReflectionStore(paths.reflections_db)
     engine = SubconsciousEngine(
         store,
@@ -1658,7 +1843,9 @@ def subconscious_tick() -> None:
 
 # --------------------------------------------------- skill --
 
-skill_app = typer.Typer(help="Skill library management — scaffold, list, validate.", no_args_is_help=True)
+skill_app = typer.Typer(
+    help="Skill library management — scaffold, list, validate.", no_args_is_help=True
+)
 app.add_typer(skill_app, name="skill")
 
 
@@ -1666,13 +1853,18 @@ app.add_typer(skill_app, name="skill")
 def skill_new(
     skill_id: str = typer.Argument(..., help="New skill id (Python identifier, no hyphens)."),
     dest_dir: str = typer.Option(
-        None, "--dir",
+        None,
+        "--dir",
         help="Parent directory for the new skill folder. Defaults to the in-tree library.",
     ),
     name: str = typer.Option(None, "--name", help="Human-readable display name."),
-    category: str = typer.Option("general", "--category", help="Skill category (e.g. academic, news, government)."),
+    category: str = typer.Option(
+        "general", "--category", help="Skill category (e.g. academic, news, government)."
+    ),
     tier: str = typer.Option("A", "--tier", help="Fetch tier: A (default), B, or C."),
-    watchable: bool = typer.Option(False, "--watchable", help="Add run_watchable stub (Pattern-2)."),
+    watchable: bool = typer.Option(
+        False, "--watchable", help="Add run_watchable stub (Pattern-2)."
+    ),
 ) -> None:
     """Scaffold a new research skill into the library (or a custom directory).
 
@@ -1689,8 +1881,12 @@ def skill_new(
     target = Path(dest_dir) if dest_dir else LIBRARY_DIR
     try:
         skill_dir = scaffold_skill(
-            skill_id, target,
-            name=name, category=category, tier=tier, watchable=watchable,
+            skill_id,
+            target,
+            name=name,
+            category=category,
+            tier=tier,
+            watchable=watchable,
         )
     except ScaffoldError as exc:
         err_console.print(f"[red]scaffold error:[/red] {exc}")
@@ -1704,14 +1900,18 @@ def skill_new(
     console.print("     — implement run() using ctx.fetch / ctx.make_document.")
     console.print(f"  3. Edit [cyan]{skill_dir / 'SKILL.md'}[/cyan]")
     console.print("     — complete the planner guide (when to use, query translation, biases).")
-    console.print(f"  4. Validate: [cyan]lighthouse skill validate {skill_id}"
-                  + (f" --dir {dest_dir}" if dest_dir else "") + "[/cyan]")
+    console.print(
+        f"  4. Validate: [cyan]lighthouse skill validate {skill_id}"
+        + (f" --dir {dest_dir}" if dest_dir else "")
+        + "[/cyan]"
+    )
 
 
 @skill_app.command("list")
 def skill_list(
     dest_dir: str = typer.Option(
-        None, "--dir",
+        None,
+        "--dir",
         help="Custom skill library directory. Defaults to the in-tree library.",
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
@@ -1744,7 +1944,8 @@ def skill_list(
 def skill_validate(
     skill_id: str = typer.Argument(..., help="Skill id to validate."),
     dest_dir: str = typer.Option(
-        None, "--dir",
+        None,
+        "--dir",
         help="Custom skill library directory containing the skill folder.",
     ),
 ) -> None:
@@ -1759,8 +1960,7 @@ def skill_validate(
     try:
         loaded = load_skill(skill_id, library_dir=target)
     except SkillNotFound:
-        err_console.print(f"[red]skill not found:[/red] {skill_id!r} "
-                          f"in {target or LIBRARY_DIR}")
+        err_console.print(f"[red]skill not found:[/red] {skill_id!r} in {target or LIBRARY_DIR}")
         raise typer.Exit(1) from None
     except SkillManifestError as exc:
         err_console.print(f"[red]manifest error:[/red] {exc}")
@@ -1797,19 +1997,27 @@ def skill_validate(
 @app.command("install-extras")
 def install_extras(
     extra: list[str] = typer.Argument(
-        None, help="Extra(s) to install (e.g. faithfulness reranker). "
-        "Omit to install every optional feature."),
-    list_only: bool = typer.Option(False, "--list", "-l",
-                                    help="List the optional features + status and exit."),
+        None,
+        help="Extra(s) to install (e.g. faithfulness reranker). "
+        "Omit to install every optional feature.",
+    ),
+    list_only: bool = typer.Option(
+        False, "--list", "-l", help="List the optional features + status and exit."
+    ),
 ) -> None:
     """Install optional feature bundles (ML reranker, faithfulness, JS render, …).
 
     Keeps the base install lightweight; pulls the heavy stacks only when asked.
     """
     from .setup_extras import EXTRAS, extras_status, install_extras_blocking
-    if list_only or (not extra and not typer.confirm(
-            "Install ALL optional features? This downloads several GB "
-            "(torch, Chromium, …)", default=False)):
+
+    if list_only or (
+        not extra
+        and not typer.confirm(
+            "Install ALL optional features? This downloads several GB (torch, Chromium, …)",
+            default=False,
+        )
+    ):
         for s in extras_status():
             mark = "[green]✓ installed[/green]" if s["installed"] else "[dim]not installed[/dim]"
             console.print(f"  {s['name']:<18} {mark}  — {s['description']}")
@@ -1821,8 +2029,10 @@ def install_extras(
     console.print("[cyan]Installing optional features… (this can take several minutes)[/cyan]")
     state = install_extras_blocking(names)
     if state.state == "done":
-        console.print("[bold green]✓ done.[/bold green] Installed: "
-                      f"{', '.join(state.extras) or 'nothing new'}")
+        console.print(
+            "[bold green]✓ done.[/bold green] Installed: "
+            f"{', '.join(state.extras) or 'nothing new'}"
+        )
     else:
         err_console.print(f"[red]install failed:[/red] {state.error}")
         for line in state.log_tail[-8:]:
@@ -1841,17 +2051,22 @@ def reset(
     running supervisor — stop it first if one is up.
     """
     paths = _paths_from_env()
-    console.print(f"[bold red]This permanently deletes all data under "
-                  f"{paths.data_dir}[/bold red] (jobs, drafts, library, sandbox, "
-                  "watches, positions, config). Ollama models are kept.")
+    console.print(
+        f"[bold red]This permanently deletes all data under "
+        f"{paths.data_dir}[/bold red] (jobs, drafts, library, sandbox, "
+        "watches, positions, config). Ollama models are kept."
+    )
     if not yes and not typer.confirm("Are you sure?", default=False):
         console.print("Aborted.")
         raise typer.Exit(0)
     from .reset import factory_reset
+
     summary = factory_reset(paths)
-    console.print(f"[green]✓ reset complete.[/green] Cleared "
-                  f"{summary.tables_cleared} table(s), "
-                  f"{len(summary.dirs_removed)} store(s); kept models.")
+    console.print(
+        f"[green]✓ reset complete.[/green] Cleared "
+        f"{summary.tables_cleared} table(s), "
+        f"{len(summary.dirs_removed)} store(s); kept models."
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -19,23 +19,23 @@ from enum import Enum
 
 
 class ArtifactType(str, Enum):
-    REPORT = "report"        # prose investigation
-    DIGEST = "digest"        # rolled-up feed of items
-    TABLE = "table"          # evidence/comparison grid (Survey)
-    TIMELINE = "timeline"    # sourced chronology (Reconstruct)
-    MATRIX = "matrix"        # options x criteria scoring (Decide)
-    VERDICT = "verdict"      # adjudicated debate
+    REPORT = "report"  # prose investigation
+    DIGEST = "digest"  # rolled-up feed of items
+    TABLE = "table"  # evidence/comparison grid (Survey)
+    TIMELINE = "timeline"  # sourced chronology (Reconstruct)
+    MATRIX = "matrix"  # options x criteria scoring (Decide)
+    VERDICT = "verdict"  # adjudicated debate
     TRANSCRIPT = "transcript"  # conversational Q&A (Ask)
 
 
 @dataclass(frozen=True)
 class ModeSpec:
-    key: str                       # canonical internal key (stable; do not rename)
-    label: str                     # display label for the UI
-    verb: str                      # short imperative verb
+    key: str  # canonical internal key (stable; do not rename)
+    label: str  # display label for the UI
+    verb: str  # short imperative verb
     artifact_type: ArtifactType
-    engine: str                    # "module:function" dotted path
-    summary: str                   # one-sentence purpose (Info tab + picker)
+    engine: str  # "module:function" dotted path
+    summary: str  # one-sentence purpose (Info tab + picker)
     aliases: tuple[str, ...] = ()  # legacy keys that normalize to this mode
     requires: tuple[str, ...] = ()  # required input fields beyond topic/question
 
@@ -54,47 +54,61 @@ class ModeSpec:
 # Order here is the canonical display order in the Research picker / Info tab.
 _SPECS: tuple[ModeSpec, ...] = (
     ModeSpec(
-        key="watch", label="Watch", verb="Monitor",
+        key="watch",
+        label="Watch",
+        verb="Monitor",
         artifact_type=ArtifactType.DIGEST,
         engine="lighthouse_ai.modes.monitor:run_monitor",
         summary="Monitor named entities and sources over time, surfacing salient items.",
         aliases=("monitor",),
     ),
     ModeSpec(
-        key="ask", label="Ask", verb="Ask",
+        key="ask",
+        label="Ask",
+        verb="Ask",
         artifact_type=ArtifactType.TRANSCRIPT,
         engine="lighthouse_ai.modes.quc:ask",
         summary="Hold a cited, conversational Q&A grounded in the corpus.",
         aliases=("quc", "quick-answer", "quick_answer"),
     ),
     ModeSpec(
-        key="investigate", label="Investigate", verb="Investigate",
+        key="investigate",
+        label="Investigate",
+        verb="Investigate",
         artifact_type=ArtifactType.REPORT,
         engine="lighthouse_ai.modes.deepdive:run_deepdive",
         summary="Produce a bounded, sourced report answering a research question.",
         aliases=("deepdive", "deep-dive", "deep_dive"),
     ),
     ModeSpec(
-        key="survey", label="Survey", verb="Survey",
+        key="survey",
+        label="Survey",
+        verb="Survey",
         artifact_type=ArtifactType.TABLE,
         engine="lighthouse_ai.modes.survey:run_survey",
         summary="Screen many documents into a sortable evidence table with a PRISMA flow.",
     ),
     ModeSpec(
-        key="reconstruct", label="Reconstruct", verb="Reconstruct",
+        key="reconstruct",
+        label="Reconstruct",
+        verb="Reconstruct",
         artifact_type=ArtifactType.TIMELINE,
         engine="lighthouse_ai.modes.reconstruct:run_reconstruct",
         summary="Assemble a sourced chronology of events from the corpus.",
     ),
     ModeSpec(
-        key="decide", label="Decide", verb="Decide",
+        key="decide",
+        label="Decide",
+        verb="Decide",
         artifact_type=ArtifactType.MATRIX,
         engine="lighthouse_ai.modes.decide:run_decide",
         summary="Score options against weighted criteria and surface the decisive crux.",
         requires=("options", "criteria"),
     ),
     ModeSpec(
-        key="adjudicate", label="Adjudicate", verb="Adjudicate",
+        key="adjudicate",
+        label="Adjudicate",
+        verb="Adjudicate",
         artifact_type=ArtifactType.VERDICT,
         engine="lighthouse_ai.modes.debate:run_debate",
         summary="Run a structured multi-perspective debate and name the crux of disagreement.",
@@ -103,7 +117,9 @@ _SPECS: tuple[ModeSpec, ...] = (
     # Digest is a derived rollup, not a primary picker mode, but it is a real
     # mode key that jobs may carry — register it so canonical() resolves it.
     ModeSpec(
-        key="digest", label="Digest", verb="Digest",
+        key="digest",
+        label="Digest",
+        verb="Digest",
         artifact_type=ArtifactType.DIGEST,
         engine="lighthouse_ai.modes.digest:aggregate_digest",
         summary="Aggregate monitor reports into a periodic digest.",

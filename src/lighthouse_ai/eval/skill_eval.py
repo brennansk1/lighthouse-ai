@@ -284,15 +284,13 @@ def per_skill_calibration(positions_db: Path) -> dict:
         conn = sqlite3.connect(str(positions_db))
         try:
             rows = conn.execute(
-                "SELECT confidence, outcome, metadata_json FROM positions "
-                "WHERE outcome IS NOT NULL"
+                "SELECT confidence, outcome, metadata_json FROM positions WHERE outcome IS NOT NULL"
             ).fetchall()
         except Exception:
             # Try alternate column name used in older schema variants.
             try:
                 rows = conn.execute(
-                    "SELECT confidence, outcome, metadata FROM positions "
-                    "WHERE outcome IS NOT NULL"
+                    "SELECT confidence, outcome, metadata FROM positions WHERE outcome IS NOT NULL"
                 ).fetchall()
             except Exception:
                 return {}

@@ -66,9 +66,9 @@ class _FakeGateway:
 # 1. No-gateway denoise: still dedups, no regression
 # --------------------------------------------------------------------------- #
 
+
 def test_denoise_offline_still_dedups_citations():
-    secs = [Section(title="S1", sub_question="q1", body="body",
-                    citations=["c1", "c2", "c1", "c2"])]
+    secs = [Section(title="S1", sub_question="q1", body="body", citations=["c1", "c2", "c1", "c2"])]
     result = _denoise(secs, gateway=None, job_id=None)
     assert result[0].citations == ["c1", "c2"]
     assert result[0].body == "body"  # offline path never rewrites prose
@@ -91,12 +91,21 @@ def test_run_deepdive_offline_no_regression():
 # 2. Synthesizer pass: sections merge, [CONTRADICTION]/[GAP] markers survive
 # --------------------------------------------------------------------------- #
 
+
 def test_denoise_synthesizer_merges_and_preserves_markers():
     secs = [
-        Section(title="Section 1: alpha", sub_question="What is alpha?",
-                body="alpha draft", citations=["c1", "c1"]),
-        Section(title="Section 2: beta", sub_question="What is beta?",
-                body="beta draft", citations=["c2"]),
+        Section(
+            title="Section 1: alpha",
+            sub_question="What is alpha?",
+            body="alpha draft",
+            citations=["c1", "c1"],
+        ),
+        Section(
+            title="Section 2: beta",
+            sub_question="What is beta?",
+            body="beta draft",
+            citations=["c2"],
+        ),
     ]
     canned = (
         "### Section 1: alpha\n"
@@ -122,10 +131,12 @@ def test_denoise_synthesizer_merges_and_preserves_markers():
 
 def test_denoise_synthesizer_prompt_includes_evidence():
     secs = [Section(title="Section 1: x", sub_question="q", body="d", citations=[])]
-    chunk = Chunk(id="ev1", document_id="d", text="grounding evidence text",
-                  position=0, metadata={})
-    section_evidence = {"Section 1: x": [HybridResult(chunk=chunk, score=1.0,
-                                                       dense_rank=0, sparse_rank=0)]}
+    chunk = Chunk(
+        id="ev1", document_id="d", text="grounding evidence text", position=0, metadata={}
+    )
+    section_evidence = {
+        "Section 1: x": [HybridResult(chunk=chunk, score=1.0, dense_rank=0, sparse_rank=0)]
+    }
     gw = _FakeGateway("### Section 1: x\nrevised\n")
     _denoise(secs, gateway=gw, job_id=None, section_evidence=section_evidence)
     prompt = gw.calls[0][1]
@@ -147,17 +158,27 @@ def test_denoise_synthesizer_falls_back_on_exception():
 # 3. Contradiction emission across skill_id
 # --------------------------------------------------------------------------- #
 
+
 def _ev(chunk_id: str, skill_id: str, entailment: float) -> HybridResult:
-    chunk = Chunk(id=chunk_id, document_id=chunk_id, text=f"evidence {chunk_id}",
-                  position=0, metadata={"skill_id": skill_id,
-                                        "entailment_score": entailment})
+    chunk = Chunk(
+        id=chunk_id,
+        document_id=chunk_id,
+        text=f"evidence {chunk_id}",
+        position=0,
+        metadata={"skill_id": skill_id, "entailment_score": entailment},
+    )
     return HybridResult(chunk=chunk, score=1.0, dense_rank=0, sparse_rank=0)
 
 
 def test_contradictions_attach_when_evidence_disagrees_cross_skill():
-    sections = [Section(title="S1", sub_question="Does X hold?",
-                        body="X holds according to the data.",
-                        is_load_bearing=True)]
+    sections = [
+        Section(
+            title="S1",
+            sub_question="Does X hold?",
+            body="X holds according to the data.",
+            is_load_bearing=True,
+        )
+    ]
     # support from skill A, oppose from skill B -> cross_skill disagreement.
     evidence = [
         _ev("a1", "skill_a", 0.9),
@@ -166,8 +187,12 @@ def test_contradictions_attach_when_evidence_disagrees_cross_skill():
         _ev("b2", "skill_b", 0.2),
     ]
     found, candidates = _emit_contradictions(
-        sections, evidence, job_id="job1", detected_at=FIXED_TS,
-        depth_tier="thorough", auto_adjudicate_disabled=False,
+        sections,
+        evidence,
+        job_id="job1",
+        detected_at=FIXED_TS,
+        depth_tier="thorough",
+        auto_adjudicate_disabled=False,
     )
     cross = [c for c in found if c.detection_layer == "cross_skill"]
     assert cross, "expected a cross_skill contradiction"
@@ -179,12 +204,17 @@ def test_contradictions_attach_when_evidence_disagrees_cross_skill():
 
 
 def test_no_auto_adjudicate_when_user_disabled():
-    sections = [Section(title="S1", sub_question="Does X hold?",
-                        body="X holds.", is_load_bearing=True)]
+    sections = [
+        Section(title="S1", sub_question="Does X hold?", body="X holds.", is_load_bearing=True)
+    ]
     evidence = [_ev("a1", "skill_a", 0.9), _ev("b1", "skill_b", 0.1)]
     _, candidates = _emit_contradictions(
-        sections, evidence, job_id="job1", detected_at=FIXED_TS,
-        depth_tier="thorough", auto_adjudicate_disabled=True,
+        sections,
+        evidence,
+        job_id="job1",
+        detected_at=FIXED_TS,
+        depth_tier="thorough",
+        auto_adjudicate_disabled=True,
     )
     assert candidates == []
 
@@ -193,8 +223,12 @@ def test_no_contradiction_when_evidence_agrees():
     sections = [Section(title="S1", sub_question="Does X hold?", body="X holds.")]
     evidence = [_ev("a1", "skill_a", 0.9), _ev("b1", "skill_b", 0.85)]
     found, candidates = _emit_contradictions(
-        sections, evidence, job_id="job1", detected_at=FIXED_TS,
-        depth_tier="thorough", auto_adjudicate_disabled=False,
+        sections,
+        evidence,
+        job_id="job1",
+        detected_at=FIXED_TS,
+        depth_tier="thorough",
+        auto_adjudicate_disabled=False,
     )
     assert [c for c in found if c.detection_layer in ("claim", "cross_skill")] == []
     assert candidates == []
@@ -204,10 +238,11 @@ def test_no_contradiction_when_evidence_agrees():
 # 4. Evidence-saturation learning curve
 # --------------------------------------------------------------------------- #
 
+
 def test_saturation_slope_flattens():
     # cumulative unique findings: round1=10, then +5, +1, +0
-    assert _saturation_slope([10]) == 1.0          # not enough history
-    assert _saturation_slope([10, 15]) == 5 / 15   # marginal/total
+    assert _saturation_slope([10]) == 1.0  # not enough history
+    assert _saturation_slope([10, 15]) == 5 / 15  # marginal/total
     assert _saturation_slope([10, 15, 16]) == 1 / 16
     assert _saturation_slope([10, 15, 16, 16]) == 0.0  # fully saturated
 
@@ -225,8 +260,7 @@ def test_run_terminates_when_findings_stop_growing():
     """A corpus that yields the same chunks every round saturates and stops
     before max_rounds because the cumulative-unique curve flattens."""
     hs = _hybrid_with_docs()
-    r = run_deepdive("What is decoherence?", hybrid=hs, max_rounds=8,
-                     saturation_slope_floor=0.2)
+    r = run_deepdive("What is decoherence?", hybrid=hs, max_rounds=8, saturation_slope_floor=0.2)
     # Same evidence every round -> after round 2 the slope is 0 -> terminate.
     assert r.rounds_used < 8
     assert r.rounds_used <= 3

@@ -16,23 +16,39 @@ from typing import Any
 #: Per-tier engine knobs. ``recursive`` marks the Deep tier (exhaustive engine).
 DEPTH_TIERS: dict[str, dict[str, Any]] = {
     "quick": {
-        "max_rounds": 2, "top_k": 4, "auto_fetch_max_results": 3,
-        "high_stakes": False, "adversarial": False, "coverage_critic": False,
+        "max_rounds": 2,
+        "top_k": 4,
+        "auto_fetch_max_results": 3,
+        "high_stakes": False,
+        "adversarial": False,
+        "coverage_critic": False,
         "recursive": False,
     },
     "standard": {
-        "max_rounds": 4, "top_k": 5, "auto_fetch_max_results": 5,
-        "high_stakes": False, "adversarial": False, "coverage_critic": True,
+        "max_rounds": 4,
+        "top_k": 5,
+        "auto_fetch_max_results": 5,
+        "high_stakes": False,
+        "adversarial": False,
+        "coverage_critic": True,
         "recursive": False,
     },
     "thorough": {
-        "max_rounds": 6, "top_k": 8, "auto_fetch_max_results": 8,
-        "high_stakes": True, "adversarial": True, "coverage_critic": True,
+        "max_rounds": 6,
+        "top_k": 8,
+        "auto_fetch_max_results": 8,
+        "high_stakes": True,
+        "adversarial": True,
+        "coverage_critic": True,
         "recursive": False,
     },
     "deep": {
-        "max_rounds": 12, "top_k": 10, "auto_fetch_max_results": 12,
-        "high_stakes": True, "adversarial": True, "coverage_critic": True,
+        "max_rounds": 12,
+        "top_k": 10,
+        "auto_fetch_max_results": 12,
+        "high_stakes": True,
+        "adversarial": True,
+        "coverage_critic": True,
         "recursive": True,
     },
 }
@@ -41,10 +57,18 @@ DEFAULT_TIER = "standard"
 
 #: Accept display labels, legacy values, and a few synonyms.
 _ALIASES = {
-    "quick": "quick", "fast": "quick",
-    "standard": "standard", "balanced": "standard", "normal": "standard",
-    "thorough": "thorough", "exhaustive": "thorough", "deep-ish": "thorough",
-    "deep": "deep", "professional": "deep", "overnight": "deep", "max": "deep",
+    "quick": "quick",
+    "fast": "quick",
+    "standard": "standard",
+    "balanced": "standard",
+    "normal": "standard",
+    "thorough": "thorough",
+    "exhaustive": "thorough",
+    "deep-ish": "thorough",
+    "deep": "deep",
+    "professional": "deep",
+    "overnight": "deep",
+    "max": "deep",
 }
 
 

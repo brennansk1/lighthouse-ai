@@ -260,6 +260,7 @@ class TestCourtListenerSkillLoad:
         # load_skill() already ran the guard; if we got here it passed.
         # Verify explicitly by re-running the guard function.
         from lighthouse_ai.skills.registry import _audit_skill_imports
+
         # Should raise nothing.
         _audit_skill_imports(cl_skill.path)
 
@@ -299,6 +300,7 @@ class TestCourtListenerRun:
 
     def test_run_swallows_exception(self, monkeypatch, cl_skill, broker):
         """A failing search_courtlistener call must not propagate; returns []."""
+
         def _raise(*a, **kw):
             raise RuntimeError("network error")
 
@@ -371,7 +373,7 @@ class TestCourtListenerWatchable:
         result = run_watchable(cl_skill, "Roe v. Wade overruling", since=since, broker=broker)
         assert result.ok
         ids = {doc.id for doc in result.documents}
-        assert "cl:7654321" in ids   # 2022, after cutoff → included
+        assert "cl:7654321" in ids  # 2022, after cutoff → included
         assert "cl:1234567" not in ids  # 1973, before cutoff → excluded
         assert "cl:9999999" not in ids  # 2020, before cutoff → excluded
 
@@ -399,6 +401,7 @@ class TestCourtListenerWatchable:
 
     def test_watchable_swallows_exception(self, monkeypatch, cl_skill, broker):
         """A failing search_courtlistener in run_watchable must not propagate."""
+
         def _raise(*a, **kw):
             raise ConnectionError("timeout")
 
@@ -428,6 +431,7 @@ class TestCourtListenerWatchable:
 def test_load_skill_courtlistener_via_module():
     """Confirm load_skill('courtlistener') works from a clean import path."""
     from lighthouse_ai.skills import load_skill as _ls
+
     skill = _ls("courtlistener")
     assert skill.manifest.id == "courtlistener"
     assert skill.manifest.category == "legal"

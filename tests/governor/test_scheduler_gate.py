@@ -32,18 +32,29 @@ CFG = SchedulerGateConfig()  # defaults: floor 80%, ceiling 70%
 
 
 def _sig(*, ac=True, batt=None, cpu=10.0, server=False) -> Signals:
-    return Signals(on_ac_power=ac, battery_charge=batt, cpu_usage_pct=cpu,
-                   server_mode=server)
+    return Signals(on_ac_power=ac, battery_charge=batt, cpu_usage_pct=cpu, server_mode=server)
 
 
 # --- env override parsing (truthy / falsy / garbage→None) ------------------
 
 
-@pytest.mark.parametrize("raw,expected", [
-    ("1", True), ("true", True), ("YES", True), ("On", True),
-    ("0", False), ("false", False), ("no", False), ("OFF", False),
-    ("maybe", None), ("", None), ("  ", None), ("2", None),
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("1", True),
+        ("true", True),
+        ("YES", True),
+        ("On", True),
+        ("0", False),
+        ("false", False),
+        ("no", False),
+        ("OFF", False),
+        ("maybe", None),
+        ("", None),
+        ("  ", None),
+        ("2", None),
+    ],
+)
 def test_env_bool_parsing(monkeypatch, raw, expected) -> None:
     monkeypatch.setenv("LIGHTHOUSE_TEST_BOOL", raw)
     assert _env_bool("LIGHTHOUSE_TEST_BOOL") is expected
@@ -54,9 +65,16 @@ def test_env_bool_absent_is_none(monkeypatch) -> None:
     assert _env_bool("LIGHTHOUSE_TEST_BOOL") is None
 
 
-@pytest.mark.parametrize("raw,expected", [
-    ("0.8", 0.8), ("80", 80.0), ("  0.5 ", 0.5), ("garbage", None), ("", None),
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("0.8", 0.8),
+        ("80", 80.0),
+        ("  0.5 ", 0.5),
+        ("garbage", None),
+        ("", None),
+    ],
+)
 def test_env_float_parsing(monkeypatch, raw, expected) -> None:
     monkeypatch.setenv("LIGHTHOUSE_TEST_FLOAT", raw)
     assert _env_float("LIGHTHOUSE_TEST_FLOAT") == expected
@@ -100,11 +118,14 @@ def test_server_mode_bypasses() -> None:
     assert current_policy(CFG, _sig(server=True, cpu=99))[0] == Policy.AGGRESSIVE
 
 
-@pytest.mark.parametrize("batt,expected", [
-    (0.79, Policy.THROTTLED),  # below floor
-    (0.80, Policy.NORMAL),     # at floor → not throttled
-    (0.81, Policy.NORMAL),     # above floor
-])
+@pytest.mark.parametrize(
+    "batt,expected",
+    [
+        (0.79, Policy.THROTTLED),  # below floor
+        (0.80, Policy.NORMAL),  # at floor → not throttled
+        (0.81, Policy.NORMAL),  # above floor
+    ],
+)
 def test_battery_floor_boundary(batt, expected) -> None:
     policy, reason = current_policy(CFG, _sig(ac=False, batt=batt, cpu=10))
     assert policy == expected
@@ -112,11 +133,14 @@ def test_battery_floor_boundary(batt, expected) -> None:
         assert reason is PauseReason.ON_BATTERY
 
 
-@pytest.mark.parametrize("cpu,expected", [
-    (69.0, Policy.NORMAL),
-    (70.0, Policy.NORMAL),     # at ceiling → not throttled
-    (71.0, Policy.THROTTLED),  # above ceiling
-])
+@pytest.mark.parametrize(
+    "cpu,expected",
+    [
+        (69.0, Policy.NORMAL),
+        (70.0, Policy.NORMAL),  # at ceiling → not throttled
+        (71.0, Policy.THROTTLED),  # above ceiling
+    ],
+)
 def test_cpu_ceiling_boundary(cpu, expected) -> None:
     policy, reason = current_policy(CFG, _sig(ac=True, cpu=cpu))
     assert policy == expected
@@ -151,8 +175,7 @@ def test_current_policy_is_total(ac, batt, cpu, server, mode) -> None:
 
 def test_normal_acquires_immediately_without_sleep() -> None:
     slept: list[float] = []
-    gate = SchedulerGate(CFG, signals_provider=lambda: _sig(cpu=10),
-                         sleep=slept.append)
+    gate = SchedulerGate(CFG, signals_provider=lambda: _sig(cpu=10), sleep=slept.append)
     with gate.permit():
         pass
     assert slept == []  # NORMAL never sleeps
@@ -160,9 +183,11 @@ def test_normal_acquires_immediately_without_sleep() -> None:
 
 def test_throttled_sleeps_backoff_before_permit() -> None:
     slept: list[float] = []
-    gate = SchedulerGate(SchedulerGateConfig(throttled_backoff_ms=2000),
-                         signals_provider=lambda: _sig(cpu=99),
-                         sleep=slept.append)
+    gate = SchedulerGate(
+        SchedulerGateConfig(throttled_backoff_ms=2000),
+        signals_provider=lambda: _sig(cpu=99),
+        sleep=slept.append,
+    )
     with gate.permit():
         pass
     assert slept == [2.0]  # throttled_backoff_ms / 1000
@@ -172,9 +197,11 @@ def test_paused_repolls_then_resumes_on_flip() -> None:
     # First poll PAUSED, then flips to NORMAL; permit resumes after exactly one
     # paused_poll sleep.
     flips = {"n": 0}
-    gate = SchedulerGate(SchedulerGateConfig(paused_poll_ms=5000),
-                         signals_provider=lambda: _sig(cpu=10),
-                         sleep=lambda s: None)
+    gate = SchedulerGate(
+        SchedulerGateConfig(paused_poll_ms=5000),
+        signals_provider=lambda: _sig(cpu=10),
+        sleep=lambda s: None,
+    )
 
     seq = [(Policy.PAUSED, PauseReason.USER_DISABLED), (Policy.NORMAL, None)]
     sleeps: list[float] = []
@@ -192,9 +219,11 @@ def test_paused_repolls_then_resumes_on_flip() -> None:
 
 def test_max_concurrent_one_serialises() -> None:
     # With one slot, two threads cannot hold permits simultaneously.
-    gate = SchedulerGate(SchedulerGateConfig(max_concurrent_llm=1),
-                         signals_provider=lambda: _sig(cpu=10),
-                         sleep=lambda s: None)
+    gate = SchedulerGate(
+        SchedulerGateConfig(max_concurrent_llm=1),
+        signals_provider=lambda: _sig(cpu=10),
+        sleep=lambda s: None,
+    )
     concurrent = 0
     max_seen = 0
     lock = threading.Lock()
@@ -263,9 +292,11 @@ def test_throttled_serialises_even_with_multi_slot_config() -> None:
 
 
 def test_two_slots_allow_two_holders() -> None:
-    gate = SchedulerGate(SchedulerGateConfig(max_concurrent_llm=2),
-                         signals_provider=lambda: _sig(cpu=10),
-                         sleep=lambda s: None)
+    gate = SchedulerGate(
+        SchedulerGateConfig(max_concurrent_llm=2),
+        signals_provider=lambda: _sig(cpu=10),
+        sleep=lambda s: None,
+    )
     barrier = threading.Barrier(2, timeout=2)
     ok: list[bool] = []
 
@@ -290,35 +321,34 @@ def test_two_slots_allow_two_holders() -> None:
 
 def test_ram_aware_concurrency_clamps_down_when_tight() -> None:
     # Configured for 4 slots, but only ~13 GB usable / 7 GB footprint ⇒ 1 fits.
-    n = ram_aware_concurrency(configured_max=4, free_ram_gb=14.5,
-                              model_footprint_gb=7.0, margin_gb=1.5)
+    n = ram_aware_concurrency(
+        configured_max=4, free_ram_gb=14.5, model_footprint_gb=7.0, margin_gb=1.5
+    )
     assert n == 1
 
 
 def test_ram_aware_concurrency_allows_two_when_room() -> None:
     # 16.5 usable / 7 GB footprint ⇒ 2 fit; configured cap of 4 allows it.
-    n = ram_aware_concurrency(configured_max=4, free_ram_gb=18.0,
-                              model_footprint_gb=7.0, margin_gb=1.5)
+    n = ram_aware_concurrency(
+        configured_max=4, free_ram_gb=18.0, model_footprint_gb=7.0, margin_gb=1.5
+    )
     assert n == 2
 
 
 def test_ram_aware_concurrency_never_exceeds_configured() -> None:
     # Plenty of RAM but configured cap is the ceiling — never raise it.
-    n = ram_aware_concurrency(configured_max=2, free_ram_gb=200.0,
-                              model_footprint_gb=7.0)
+    n = ram_aware_concurrency(configured_max=2, free_ram_gb=200.0, model_footprint_gb=7.0)
     assert n == 2
 
 
 def test_ram_aware_concurrency_floor_is_one() -> None:
     # Even when nothing really fits, return 1 (ollama_slot/mock handle the rest).
-    assert ram_aware_concurrency(configured_max=4, free_ram_gb=2.0,
-                                 model_footprint_gb=20.0) == 1
+    assert ram_aware_concurrency(configured_max=4, free_ram_gb=2.0, model_footprint_gb=20.0) == 1
 
 
 def test_ram_aware_concurrency_unknown_footprint_keeps_cap() -> None:
     # Hot/SSD-paging model (footprint 0) doesn't constrain the cap.
-    assert ram_aware_concurrency(configured_max=3, free_ram_gb=5.0,
-                                 model_footprint_gb=0.0) == 3
+    assert ram_aware_concurrency(configured_max=3, free_ram_gb=5.0, model_footprint_gb=0.0) == 3
 
 
 def test_gate_applies_ram_aware_clamp_to_semaphore() -> None:
@@ -356,9 +386,11 @@ def test_gate_applies_ram_aware_clamp_to_semaphore() -> None:
 
 def test_gate_default_unchanged_without_ram_args() -> None:
     # No RAM args ⇒ behaviour identical to before (uses configured cap).
-    gate = SchedulerGate(SchedulerGateConfig(max_concurrent_llm=3),
-                         signals_provider=lambda: _sig(cpu=10),
-                         sleep=lambda s: None)
+    gate = SchedulerGate(
+        SchedulerGateConfig(max_concurrent_llm=3),
+        signals_provider=lambda: _sig(cpu=10),
+        sleep=lambda s: None,
+    )
     assert gate.effective_max_concurrent == 3
 
 
@@ -366,8 +398,7 @@ def test_gate_default_unchanged_without_ram_args() -> None:
 
 
 def test_config_from_mapping_ignores_unknown_keys() -> None:
-    cfg = SchedulerGateConfig.from_mapping({"mode": "off", "bogus": 123,
-                                            "battery_floor_pct": 50})
+    cfg = SchedulerGateConfig.from_mapping({"mode": "off", "bogus": 123, "battery_floor_pct": 50})
     assert cfg.mode == "off"
     assert cfg.battery_floor_pct == 50
 
@@ -379,10 +410,7 @@ def test_config_from_missing_file_is_defaults(tmp_path) -> None:
 
 def test_config_from_file_reads_table(tmp_path) -> None:
     p = tmp_path / "config.toml"
-    p.write_text(
-        "[governor.scheduler_gate]\nmode = \"aggressive\"\n"
-        "max_concurrent_llm = 4\n"
-    )
+    p.write_text('[governor.scheduler_gate]\nmode = "aggressive"\nmax_concurrent_llm = 4\n')
     cfg = SchedulerGateConfig.from_config_file(p)
     assert cfg.mode == "aggressive"
     assert cfg.max_concurrent_llm == 4

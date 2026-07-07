@@ -38,13 +38,8 @@ def _ollama_reachable() -> bool:
         return False
 
 
-_REAL_BACKEND_OK = (
-    os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1"
-    and _ollama_reachable()
-)
-_SKIP_REASON = (
-    "set LIGHTHOUSE_REAL_BACKEND=1 and have ollama running on 127.0.0.1:11434"
-)
+_REAL_BACKEND_OK = os.environ.get("LIGHTHOUSE_REAL_BACKEND") == "1" and _ollama_reachable()
+_SKIP_REASON = "set LIGHTHOUSE_REAL_BACKEND=1 and have ollama running on 127.0.0.1:11434"
 
 # entailment.available() now requires a *real* entailment scorer (MiniCheck).
 # The old cosine-similarity HHEM fallback (sentence_transformers) was removed
@@ -212,8 +207,7 @@ def test_faithfulness_golden_set_mean_score() -> None:
 
     if not available():
         pytest.skip(
-            "entailment.available() returned False — "
-            "install minicheck or sentence_transformers"
+            "entailment.available() returned False — install minicheck or sentence_transformers"
         )
 
     scores: list[float] = []

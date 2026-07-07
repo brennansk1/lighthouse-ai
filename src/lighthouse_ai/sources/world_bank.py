@@ -55,18 +55,20 @@ def _parse_indicator_list(data: list, query: str) -> list[Document]:
         if source_note:
             text = f"{name}. {source_note[:300]}"
         url = f"https://data.worldbank.org/indicator/{indicator_id}"
-        out.append(Document(
-            id=f"worldbank:indicator:{indicator_id}",
-            text=text,
-            metadata={
-                "source": "world_bank",
-                "url": url,
-                "grade": "A",
-                "title": name,
-                "indicator_id": indicator_id,
-                "source_note": source_note[:200] if source_note else "",
-            },
-        ))
+        out.append(
+            Document(
+                id=f"worldbank:indicator:{indicator_id}",
+                text=text,
+                metadata={
+                    "source": "world_bank",
+                    "url": url,
+                    "grade": "A",
+                    "title": name,
+                    "indicator_id": indicator_id,
+                    "source_note": source_note[:200] if source_note else "",
+                },
+            )
+        )
     return out
 
 
@@ -96,20 +98,22 @@ def _parse_indicator_data(data: list, country: str, indicator: str) -> list[Docu
     recent = values[:10]
     text = f"{indicator_name} — {country_name}: {'; '.join(recent)}"
     url = f"https://data.worldbank.org/indicator/{indicator}?locations={country}"
-    return [Document(
-        id=f"worldbank:{indicator}:{country}",
-        text=text,
-        metadata={
-            "source": "world_bank",
-            "url": url,
-            "grade": "A",
-            "title": f"{indicator_name} — {country_name}",
-            "indicator_id": indicator,
-            "country_code": country,
-            "country_name": country_name,
-            "observation_count": len(values),
-        },
-    )]
+    return [
+        Document(
+            id=f"worldbank:{indicator}:{country}",
+            text=text,
+            metadata={
+                "source": "world_bank",
+                "url": url,
+                "grade": "A",
+                "title": f"{indicator_name} — {country_name}",
+                "indicator_id": indicator,
+                "country_code": country,
+                "country_name": country_name,
+                "observation_count": len(values),
+            },
+        )
+    ]
 
 
 def search_indicator(
@@ -234,7 +238,8 @@ def compare_countries(
         out: list[Document] = []
         for country in country_codes[:max_results]:
             docs = fetch_indicator(
-                indicator, country,
+                indicator,
+                country,
                 max_results=max_results,
                 client=client,
                 timeout=timeout,
@@ -287,21 +292,23 @@ def get_country_metadata(
                 f"{name} ({iso3}/{iso2}). "
                 f"Region: {region}. Income: {income_level}. Capital: {capital}."
             )
-            out.append(Document(
-                id=f"worldbank:country:{iso3}",
-                text=text,
-                metadata={
-                    "source": "world_bank",
-                    "url": f"https://data.worldbank.org/country/{iso3}",
-                    "grade": "A",
-                    "title": name,
-                    "country_code": iso3,
-                    "iso2": iso2,
-                    "region": region,
-                    "income_level": income_level,
-                    "capital": capital,
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"worldbank:country:{iso3}",
+                    text=text,
+                    metadata={
+                        "source": "world_bank",
+                        "url": f"https://data.worldbank.org/country/{iso3}",
+                        "grade": "A",
+                        "title": name,
+                        "country_code": iso3,
+                        "iso2": iso2,
+                        "region": region,
+                        "income_level": income_level,
+                        "capital": capital,
+                    },
+                )
+            )
         return out
     finally:
         if owns_client:

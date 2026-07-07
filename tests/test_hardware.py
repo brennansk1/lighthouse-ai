@@ -17,6 +17,7 @@ from lighthouse_ai.hardware import (
 
 # --- tier classification (pure function) ---
 
+
 def test_t1_baseline_16gb_unified():
     assert classify_tier(16.0, [GPUInfo("Apple M4", 16.0, "apple")], unified=True) == "T1"
 
@@ -61,6 +62,7 @@ def test_cpu_only_fat_box_lifts_to_t3():
 
 # --- probe + profile serialization ---
 
+
 def test_probe_returns_well_formed_profile():
     p = probe()
     assert isinstance(p, HardwareProfile)
@@ -96,6 +98,7 @@ def test_write_profile_creates_parents(tmp_path: Path):
 
 
 # --- backend detection edge case ---
+
 
 def test_backends_always_include_cpu():
     p = probe()

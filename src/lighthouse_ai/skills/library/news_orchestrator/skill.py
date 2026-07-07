@@ -35,15 +35,16 @@ if TYPE_CHECKING:
 # Outlets table — id, AllSides bias rating, primary RSS feeds
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _OutletSpec:
     """Static descriptor for one trusted news outlet."""
 
     id: str
     name: str
-    allsides_rating: str          # e.g. "center", "lean_left", "left"
-    feeds: list[str]              # default / primary feed URLs (in priority order)
-    enabled: bool = True          # set False via validate_outlet_access on hard failures
+    allsides_rating: str  # e.g. "center", "lean_left", "left"
+    feeds: list[str]  # default / primary feed URLs (in priority order)
+    enabled: bool = True  # set False via validate_outlet_access on hard failures
 
 
 # Feed URLs match the per-outlet skills' _TOPIC_FEEDS / _DEFAULT_FEED constants.
@@ -103,6 +104,7 @@ def _all_outlets(outlet_ids: list[str] | None) -> list[_OutletSpec]:
 # Internal fetch helper — fetch + filter for a single outlet
 # ---------------------------------------------------------------------------
 
+
 def _fetch_outlet(
     ctx: SkillContext,
     outlet: _OutletSpec,
@@ -121,9 +123,7 @@ def _fetch_outlet(
 
     for feed_url in outlet.feeds:
         try:
-            raw = _news.fetch_outlet_feed(
-                feed_url, client=ctx.fetch, max_results=max_results * 3
-            )
+            raw = _news.fetch_outlet_feed(feed_url, client=ctx.fetch, max_results=max_results * 3)
         except _news.EgressBlocked:
             return []
         except Exception:
@@ -232,12 +232,14 @@ def compare_coverage(
             docs = _fetch_outlet(ctx, outlet, query, max_results=5)
         except Exception:
             docs = []
-        result_outlets.append({
-            "outlet_id": outlet.id,
-            "outlet_name": outlet.name,
-            "allsides_rating": outlet.allsides_rating,
-            "documents": docs,
-        })
+        result_outlets.append(
+            {
+                "outlet_id": outlet.id,
+                "outlet_name": outlet.name,
+                "allsides_rating": outlet.allsides_rating,
+                "documents": docs,
+            }
+        )
 
     return {
         "outlets": result_outlets,
@@ -316,14 +318,18 @@ def validate_outlet_access(
     results: list[dict[str, object]] = []
     for outlet in targets:
         if not outlet.feeds:
-            results.append({"outlet_id": outlet.id, "reachable": False, "error": "no feeds configured"})
+            results.append(
+                {"outlet_id": outlet.id, "reachable": False, "error": "no feeds configured"}
+            )
             continue
         feed_url = outlet.feeds[0]
         try:
             _news.fetch_outlet_feed(feed_url, client=ctx.fetch, max_results=1)
             results.append({"outlet_id": outlet.id, "reachable": True, "error": None})
         except _news.EgressBlocked as exc:
-            results.append({"outlet_id": outlet.id, "reachable": False, "error": f"EgressBlocked: {exc}"})
+            results.append(
+                {"outlet_id": outlet.id, "reachable": False, "error": f"EgressBlocked: {exc}"}
+            )
         except Exception as exc:
             results.append({"outlet_id": outlet.id, "reachable": False, "error": str(exc)})
     return results

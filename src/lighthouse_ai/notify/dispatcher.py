@@ -87,8 +87,7 @@ class Notifier:
             try:
                 delivered = bool(channel.send(title, body))
             except Exception:
-                _log.warning("notify channel %r raised; treating as failed", name,
-                             exc_info=True)
+                _log.warning("notify channel %r raised; treating as failed", name, exc_info=True)
                 delivered = False
             results.append(ChannelResult(name, attempted=True, delivered=delivered))
         return results

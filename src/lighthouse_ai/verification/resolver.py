@@ -38,15 +38,15 @@ ResearchFn = Callable[[str, "str | None"], "tuple[bool | None, float, str]"]
 class ResolutionResult:
     position_id: int
     claim: str
-    outcome: bool | None           # None = deferred to human
-    confidence: float              # resolver's confidence in the verdict, 0.0-1.0
+    outcome: bool | None  # None = deferred to human
+    confidence: float  # resolver's confidence in the verdict, 0.0-1.0
     rationale: str
     auto_resolved: bool
     brier: float | None = None
-    resolver_kind: str = "deferred"     # machine_retrieval | human | deferred
+    resolver_kind: str = "deferred"  # machine_retrieval | human | deferred
     evidence_snapshot: str | None = None
     resolution_source: str | None = None
-    resolved_via: str | None = None     # 'retrieval' | None
+    resolved_via: str | None = None  # 'retrieval' | None
     defer_reason: str | None = None
 
 
@@ -82,10 +82,30 @@ def classify_resolution_kind(claim: str) -> str:
     """
     lower = claim.lower()
     # Numeric / Yes-No signals
-    machine_signals = ["will ", "does ", "did ", "is there ", "has ", "by 20",
-                       "approved", "published", "released", "exceeded", "reached"]
-    human_signals = ["should", "better", "worse", "best", "right", "ethical",
-                     "eventually", "long run", "ultimately"]
+    machine_signals = [
+        "will ",
+        "does ",
+        "did ",
+        "is there ",
+        "has ",
+        "by 20",
+        "approved",
+        "published",
+        "released",
+        "exceeded",
+        "reached",
+    ]
+    human_signals = [
+        "should",
+        "better",
+        "worse",
+        "best",
+        "right",
+        "ethical",
+        "eventually",
+        "long run",
+        "ultimately",
+    ]
     if any(s in lower for s in human_signals):
         return "human"
     if any(s in lower for s in machine_signals):
@@ -135,11 +155,18 @@ def attempt_auto_resolve(
     can be gathered (offline / nothing found), or the verdict is uncertain/low
     confidence, it **defers** (``outcome=None``) so a person decides.
     """
+
     def defer(reason: str, kind: str = "deferred") -> ResolutionResult:
         return ResolutionResult(
-            position_id=position_id, claim=claim, outcome=None, confidence=0.0,
-            rationale=reason, auto_resolved=False, resolver_kind=kind,
-            defer_reason=reason)
+            position_id=position_id,
+            claim=claim,
+            outcome=None,
+            confidence=0.0,
+            rationale=reason,
+            auto_resolved=False,
+            resolver_kind=kind,
+            defer_reason=reason,
+        )
 
     if not criterion:
         return defer("no machine-checkable criterion — needs a human", kind="human")
@@ -176,17 +203,27 @@ def attempt_auto_resolve(
     if outcome is None or confidence < confidence_threshold:
         return defer(rationale or "evidence inconclusive / low resolver confidence")
     from .brier import brier_score
+
     brier = brier_score(probability, outcome)
     return ResolutionResult(
-        position_id=position_id, claim=claim, outcome=outcome,
-        confidence=confidence, rationale=rationale, auto_resolved=True, brier=brier,
-        resolver_kind="machine_retrieval", evidence_snapshot=evidence_text[:2000],
-        resolution_source=source_id, resolved_via="retrieval")
+        position_id=position_id,
+        claim=claim,
+        outcome=outcome,
+        confidence=confidence,
+        rationale=rationale,
+        auto_resolved=True,
+        brier=brier,
+        resolver_kind="machine_retrieval",
+        evidence_snapshot=evidence_text[:2000],
+        resolution_source=source_id,
+        resolved_via="retrieval",
+    )
 
 
 def _parse_resolution(text: str) -> tuple[bool | None, float, str]:
     """Parse LLM resolution response into (outcome, confidence, rationale)."""
     import re
+
     text = text.strip()
     m = re.match(r"(TRUE|FALSE):\s*([\d.]+)\s*[—\-]\s*(.+)", text, re.IGNORECASE)
     if m:
@@ -241,9 +278,14 @@ def run_resolver_pass(
         if not is_past_deadline(resolve_by):
             continue
         result = attempt_auto_resolve(
-            pos_id, claim, float(prob or 0.5),
-            criterion=criterion, retriever=retriever, gateway=gateway,
-            confidence_threshold=confidence_threshold, resolve_by=resolve_by,
+            pos_id,
+            claim,
+            float(prob or 0.5),
+            criterion=criterion,
+            retriever=retriever,
+            gateway=gateway,
+            confidence_threshold=confidence_threshold,
+            resolve_by=resolve_by,
         )
         results.append(result)
         if dry_run:
@@ -258,16 +300,22 @@ def run_resolver_pass(
                     "UPDATE positions SET outcome=?, brier=?, resolver_kind=?, "
                     "evidence_snapshot=?, resolution_source=?, resolver_confidence=?, "
                     "resolved_via=?, resolved_at=datetime('now') WHERE id=?",
-                    (1 if result.outcome else 0, result.brier, result.resolver_kind,
-                     result.evidence_snapshot, result.resolution_source,
-                     result.confidence, result.resolved_via, pos_id),
+                    (
+                        1 if result.outcome else 0,
+                        result.brier,
+                        result.resolver_kind,
+                        result.evidence_snapshot,
+                        result.resolution_source,
+                        result.confidence,
+                        result.resolved_via,
+                        pos_id,
+                    ),
                 )
             finally:
                 conn.close()
         else:
             # Deferred — route to the human queue rather than leave it silent.
-            enqueue_human_resolution(positions_db, pos_id,
-                                     result.defer_reason or "deferred")
+            enqueue_human_resolution(positions_db, pos_id, result.defer_reason or "deferred")
     return results
 
 
@@ -360,20 +408,30 @@ def resolve_positions(
         try:
             verdict, confidence, rationale = research_fn(claim, criterion)
         except Exception as exc:
-            results.append(ResolutionResult(
-                position_id=pos_id, claim=claim, outcome=None,
-                confidence=0.0, rationale=f"error: {exc!r}", auto_resolved=False,
-            ))
+            results.append(
+                ResolutionResult(
+                    position_id=pos_id,
+                    claim=claim,
+                    outcome=None,
+                    confidence=0.0,
+                    rationale=f"error: {exc!r}",
+                    auto_resolved=False,
+                )
+            )
             continue
 
         if verdict is None or confidence < confidence_threshold:
             # Ambiguous → defer to a human; do NOT write an outcome.
-            results.append(ResolutionResult(
-                position_id=pos_id, claim=claim, outcome=None,
-                confidence=confidence or 0.0,
-                rationale=rationale or "ambiguous — deferred",
-                auto_resolved=False,
-            ))
+            results.append(
+                ResolutionResult(
+                    position_id=pos_id,
+                    claim=claim,
+                    outcome=None,
+                    confidence=confidence or 0.0,
+                    rationale=rationale or "ambiguous — deferred",
+                    auto_resolved=False,
+                )
+            )
             continue
 
         # A newer pass started while we were researching → discard our writes.
@@ -381,9 +439,15 @@ def resolve_positions(
             break
 
         resolved = positions_mod.resolve_position(positions_db, pos_id, verdict)
-        results.append(ResolutionResult(
-            position_id=pos_id, claim=claim, outcome=verdict,
-            confidence=confidence, rationale=rationale,
-            auto_resolved=True, brier=resolved.brier,
-        ))
+        results.append(
+            ResolutionResult(
+                position_id=pos_id,
+                claim=claim,
+                outcome=verdict,
+                confidence=confidence,
+                rationale=rationale,
+                auto_resolved=True,
+                brier=resolved.brier,
+            )
+        )
     return results

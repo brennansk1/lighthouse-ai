@@ -23,6 +23,7 @@ from lighthouse_ai.sandbox.scanners import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _is_yara_available() -> bool:
     try:
         import yara  # noqa: F401
@@ -49,9 +50,7 @@ def _is_pikepdf_available() -> bool:
 class TestYaraScannerDegradation:
     """YaraScanner degrades cleanly when yara-python is not installed."""
 
-    def test_supports_returns_false_without_yara_and_no_injected_rules(
-        self, monkeypatch
-    ):
+    def test_supports_returns_false_without_yara_and_no_injected_rules(self, monkeypatch):
         """When yara cannot be imported, supports() should return False."""
         # Patch _yara_available to simulate absent library
         import lighthouse_ai.sandbox.scanners as scanners_mod
@@ -90,10 +89,7 @@ class TestPikePdfScannerDegradation:
         monkeypatch.setattr(scanners_mod, "_pikepdf_available", lambda: False)
         scanner = PikePdfScanner()
         assert scanner.supports(content_type="application/pdf") is False
-        assert (
-            scanner.supports(content_type="application/pdf", filename="doc.pdf")
-            is False
-        )
+        assert scanner.supports(content_type="application/pdf", filename="doc.pdf") is False
 
     def test_scan_returns_clean_without_pikepdf(self, monkeypatch):
         import lighthouse_ai.sandbox.scanners as scanners_mod
@@ -238,9 +234,7 @@ class TestPikePdfScannerWithLibrary:
         assert result.verdict == "quarantine", result.reason
         assert result.details is not None
         findings = result.details["findings"]
-        assert any(
-            "/OpenAction" in f or "dangerous action" in f for f in findings
-        ), findings
+        assert any("/OpenAction" in f or "dangerous action" in f for f in findings), findings
 
     def test_malformed_pdf_is_quarantined(self):
         pytest.importorskip("pikepdf")

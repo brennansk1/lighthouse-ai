@@ -123,12 +123,8 @@ def run(
     return docs
 
 
-def _verdict_document(
-    ctx: SkillContext, url: str, verdict: ScrapeVerdict
-) -> Document:
-    symbol = {"good": "✓", "limited": "◐", "blocked": "✗"}.get(
-        verdict.verdict, "?"
-    )
+def _verdict_document(ctx: SkillContext, url: str, verdict: ScrapeVerdict) -> Document:
+    symbol = {"good": "✓", "limited": "◐", "blocked": "✗"}.get(verdict.verdict, "?")
     text = f"{symbol} {verdict.verdict}: {verdict.reason} ({url})"
     meta: dict[str, Any] = {
         "url": url,
@@ -180,9 +176,7 @@ def run_watchable(
 
     docs: list[Document] = []
     for url in urls:
-        doc = ctx.fetch_and_document(
-            url, extra_meta={"type": "web_monitor_fetch", "url": url}
-        )
+        doc = ctx.fetch_and_document(url, extra_meta={"type": "web_monitor_fetch", "url": url})
         if doc is None:
             continue
         new_snap = Snapshot(text=doc.text, fetched_at=fetched_at, url=url)
@@ -193,8 +187,12 @@ def run_watchable(
             # Baseline tick: record the snapshot, do not alert.
             docs.append(
                 _change_document(
-                    ctx, url, new_snap, changed=False,
-                    reason="baseline snapshot captured", diff={},
+                    ctx,
+                    url,
+                    new_snap,
+                    changed=False,
+                    reason="baseline snapshot captured",
+                    diff={},
                 )
             )
             continue
@@ -202,17 +200,19 @@ def run_watchable(
             diff = content_diff(old_snap.text, new_snap.text)
             docs.append(
                 _change_document(
-                    ctx, url, new_snap, changed=True,
-                    reason=result.reason, diff=diff,
+                    ctx,
+                    url,
+                    new_snap,
+                    changed=True,
+                    reason=result.reason,
+                    diff=diff,
                     trigger=result.as_dict(),
                 )
             )
     return docs
 
 
-def _snapshot_for(
-    prior: dict[str, dict[str, Any]], url: str
-) -> Snapshot | None:
+def _snapshot_for(prior: dict[str, dict[str, Any]], url: str) -> Snapshot | None:
     data = prior.get(url)
     if not data:
         return None

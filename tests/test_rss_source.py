@@ -46,6 +46,7 @@ MALFORMED_FIXTURE = b"<not valid xml &"
 
 # --- parse_feed_bytes ---
 
+
 def test_parse_atom_returns_two_items():
     items = parse_feed_bytes(ATOM_FIXTURE)
     assert len(items) == 2
@@ -103,6 +104,7 @@ def test_parse_html_in_body_is_stripped():
 
 # --- fetch_feed (mocked) ---
 
+
 @pytest.fixture
 def mocked_http():
     with respx.mock(assert_all_called=False) as m:
@@ -114,7 +116,8 @@ def test_fetch_feed_returns_parsed_items(mocked_http):
     # fetch; the RSS adapter has no fixed host of its own (it points at any
     # registered feed, bounded by the platform allowlist).
     mocked_http.get("https://bbc.co.uk/feed.xml").respond(
-        200, content=ATOM_FIXTURE, headers={"content-type": "application/atom+xml"})
+        200, content=ATOM_FIXTURE, headers={"content-type": "application/atom+xml"}
+    )
     items = fetch_feed("https://bbc.co.uk/feed.xml")
     assert len(items) == 2
 
@@ -122,8 +125,10 @@ def test_fetch_feed_returns_parsed_items(mocked_http):
 def test_fetch_feed_with_broker_rejects_eicar(tmp_path, mocked_http):
     from lighthouse_ai.sandbox import Quarantine, SandboxBroker
     from lighthouse_ai.sandbox.scanners import EICAR_SIGNATURE, EICARScanner
+
     mocked_http.get("https://bbc.co.uk/evil.xml").respond(
-        200, content=EICAR_SIGNATURE, headers={"content-type": "text/xml"})
+        200, content=EICAR_SIGNATURE, headers={"content-type": "text/xml"}
+    )
     q = Quarantine(tmp_path / "q.db", tmp_path / "Q")
     broker = SandboxBroker(q, [EICARScanner()])
     items = fetch_feed("https://bbc.co.uk/evil.xml", broker=broker)
@@ -137,6 +142,7 @@ def test_fetch_feed_raises_on_http_error(mocked_http):
 
 
 # --- CLI: monitor run ---
+
 
 @pytest.fixture
 def cli_env(tmp_path: Path, monkeypatch):
@@ -154,12 +160,20 @@ def initted_env(cli_env):
 
 def test_monitor_run_writes_html(initted_env, mocked_http, tmp_path):
     mocked_http.get("https://bbc.co.uk/feed.xml").respond(
-        200, content=ATOM_FIXTURE, headers={"content-type": "application/atom+xml"})
+        200, content=ATOM_FIXTURE, headers={"content-type": "application/atom+xml"}
+    )
     runner = CliRunner()
-    r = runner.invoke(app, [
-        "monitor", "run", "--source-url", "https://bbc.co.uk/feed.xml",
-        "--topic", "test-topic",
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "monitor",
+            "run",
+            "--source-url",
+            "https://bbc.co.uk/feed.xml",
+            "--topic",
+            "test-topic",
+        ],
+    )
     assert r.exit_code == 0, r.stdout
     # Find the produced HTML file.
     staging = initted_env / "staging"
@@ -171,12 +185,21 @@ def test_monitor_run_writes_html(initted_env, mocked_http, tmp_path):
 
 
 def test_monitor_run_handles_empty_feed(initted_env, mocked_http):
-    mocked_http.get("https://bbc.co.uk/empty.xml").respond(200, content=b"<rss><channel></channel></rss>")
+    mocked_http.get("https://bbc.co.uk/empty.xml").respond(
+        200, content=b"<rss><channel></channel></rss>"
+    )
     runner = CliRunner()
-    r = runner.invoke(app, [
-        "monitor", "run", "--source-url", "https://bbc.co.uk/empty.xml",
-        "--topic", "empty",
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "monitor",
+            "run",
+            "--source-url",
+            "https://bbc.co.uk/empty.xml",
+            "--topic",
+            "empty",
+        ],
+    )
     assert r.exit_code == 0
     assert "no items" in r.stdout.lower()
 
@@ -184,8 +207,15 @@ def test_monitor_run_handles_empty_feed(initted_env, mocked_http):
 def test_monitor_run_handles_fetch_failure(initted_env, mocked_http):
     mocked_http.get("https://bbc.co.uk/down.xml").side_effect = httpx.ConnectError("down")
     runner = CliRunner()
-    r = runner.invoke(app, [
-        "monitor", "run", "--source-url", "https://bbc.co.uk/down.xml",
-        "--topic", "down",
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "monitor",
+            "run",
+            "--source-url",
+            "https://bbc.co.uk/down.xml",
+            "--topic",
+            "down",
+        ],
+    )
     assert r.exit_code != 0

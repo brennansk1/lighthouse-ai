@@ -69,18 +69,102 @@ _ACRONYM_RE = re.compile(r"\b[A-Z]{2,6}\b")
 # Tiny offline stopword set (mirrors analysis.py's spirit; lowercased).
 _STOPWORDS = frozenset(
     [
-        "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "for",
-        "with", "at", "by", "from", "as", "is", "are", "was", "were", "be",
-        "been", "being", "this", "that", "these", "those", "it", "its", "he",
-        "she", "they", "we", "you", "i", "not", "no", "can", "will", "would",
-        "could", "should", "may", "might", "must", "do", "does", "did", "have",
-        "has", "had", "how", "what", "when", "which", "who", "whom", "whose",
-        "than", "then", "there", "here", "their", "our", "your", "his", "her",
-        "them", "us", "if", "so", "such", "also", "into", "over", "under",
-        "about", "after", "before", "between", "across", "within", "while",
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "but",
+        "of",
+        "to",
+        "in",
+        "on",
+        "for",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "he",
+        "she",
+        "they",
+        "we",
+        "you",
+        "i",
+        "not",
+        "no",
+        "can",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "must",
+        "do",
+        "does",
+        "did",
+        "have",
+        "has",
+        "had",
+        "how",
+        "what",
+        "when",
+        "which",
+        "who",
+        "whom",
+        "whose",
+        "than",
+        "then",
+        "there",
+        "here",
+        "their",
+        "our",
+        "your",
+        "his",
+        "her",
+        "them",
+        "us",
+        "if",
+        "so",
+        "such",
+        "also",
+        "into",
+        "over",
+        "under",
+        "about",
+        "after",
+        "before",
+        "between",
+        "across",
+        "within",
+        "while",
         # Sentence-initial capitalized function words that pollute phrase hits.
-        "however", "therefore", "thus", "moreover", "meanwhile", "first",
-        "second", "third", "next", "finally", "because", "although",
+        "however",
+        "therefore",
+        "thus",
+        "moreover",
+        "meanwhile",
+        "first",
+        "second",
+        "third",
+        "next",
+        "finally",
+        "because",
+        "although",
     ]
 )
 
@@ -140,7 +224,7 @@ def extract_entities(text: str, *, max_entities: int | None = None) -> list[str]
         return []
 
     seen: dict[str, str] = {}  # normalized -> first-seen display form
-    order: list[str] = []      # normalized keys in first-appearance order
+    order: list[str] = []  # normalized keys in first-appearance order
 
     def _consider(raw: str) -> None:
         display = re.sub(r"\s+", " ", raw).strip()
@@ -262,9 +346,7 @@ class CorpusGraph:
     def entities(self) -> list[tuple[str, int]]:
         """All entities as ``(display_label, weight)``, sorted by weight desc
         then label asc (stable, deterministic)."""
-        nodes = sorted(
-            self._nodes.values(), key=lambda n: (-n.weight, n.id)
-        )
+        nodes = sorted(self._nodes.values(), key=lambda n: (-n.weight, n.id))
         return [(n.label, n.weight) for n in nodes]
 
     # ------------------------------------------------------------------ #
@@ -330,8 +412,7 @@ class CorpusGraph:
             return {"entities": [], "chunk_ids": []}
 
         query_entities = [
-            _normalize(e)
-            for e in extract_entities(text, max_entities=self.MAX_ENTITIES_PER_CHUNK)
+            _normalize(e) for e in extract_entities(text, max_entities=self.MAX_ENTITIES_PER_CHUNK)
         ]
         matched = [e for e in query_entities if e in self._nodes]
 
@@ -507,7 +588,7 @@ def build_corpus_graph(
     )
 
     # First pass: per-entity chunk membership + co-occurrence pair counts.
-    entity_label: dict[str, str] = {}          # key -> display label (first seen)
+    entity_label: dict[str, str] = {}  # key -> display label (first seen)
     entity_chunk_set: dict[str, list[str]] = defaultdict(list)  # key -> chunk ids
     entity_chunk_seen: dict[str, set[str]] = defaultdict(set)
     pair_counts: Counter[tuple[str, str]] = Counter()
@@ -554,9 +635,7 @@ def build_corpus_graph(
         g._adj[key] = {}
 
     # Select kept edges (heaviest first), bounded by MAX_EDGES, both ends kept.
-    ranked_pairs = sorted(
-        pair_counts.items(), key=lambda kv: (-kv[1], kv[0][0], kv[0][1])
-    )
+    ranked_pairs = sorted(pair_counts.items(), key=lambda kv: (-kv[1], kv[0][0], kv[0][1]))
     edge_budget = g.MAX_EDGES
     for (src, tgt), w in ranked_pairs:
         if edge_budget <= 0:

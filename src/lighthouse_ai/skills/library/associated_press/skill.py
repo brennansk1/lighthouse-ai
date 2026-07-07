@@ -22,15 +22,15 @@ if TYPE_CHECKING:
 
 # AP RSS feed URLs (public, no key required)
 _TOPIC_FEEDS: dict[str, str] = {
-    "top":          "https://feeds.apnews.com/apnews/us-politics",
-    "politics":     "https://feeds.apnews.com/apnews/us-politics",
-    "technology":   "https://feeds.apnews.com/apnews/technology",
-    "business":     "https://feeds.apnews.com/apnews/business",
-    "sports":       "https://feeds.apnews.com/apnews/sports",
-    "science":      "https://feeds.apnews.com/apnews/science",
-    "health":       "https://feeds.apnews.com/apnews/health",
+    "top": "https://feeds.apnews.com/apnews/us-politics",
+    "politics": "https://feeds.apnews.com/apnews/us-politics",
+    "technology": "https://feeds.apnews.com/apnews/technology",
+    "business": "https://feeds.apnews.com/apnews/business",
+    "sports": "https://feeds.apnews.com/apnews/sports",
+    "science": "https://feeds.apnews.com/apnews/science",
+    "health": "https://feeds.apnews.com/apnews/health",
     "entertainment": "https://feeds.apnews.com/apnews/entertainment",
-    "world":        "https://feeds.apnews.com/apnews/worldnews",
+    "world": "https://feeds.apnews.com/apnews/worldnews",
 }
 _DEFAULT_FEED = _TOPIC_FEEDS["top"]
 _SEARCH_BASE = "https://apnews.com/search"

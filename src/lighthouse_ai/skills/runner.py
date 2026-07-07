@@ -82,8 +82,10 @@ def _missing_key_message(manifest: Any) -> str | None:
     if not envs or any(os.environ.get(e) for e in envs):
         return None
     primary = envs[0]
-    return (f"{manifest.name} needs a free API key to fetch. Set the {primary} "
-            f"environment variable (see this source's guide), then try again.")
+    return (
+        f"{manifest.name} needs a free API key to fetch. Set the {primary} "
+        f"environment variable (see this source's guide), then try again."
+    )
 
 
 def run_skill(

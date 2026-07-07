@@ -48,6 +48,7 @@ def _fetch_url_js_module():
     """
     # Ensure the module has been imported at least once.
     import lighthouse_ai.skills.library.general_web.tools  # noqa: F401
+
     key = "lighthouse_ai.skills.library.general_web.tools.fetch_url_js"
     mod = sys.modules.get(key)
     if mod is None:
@@ -57,6 +58,7 @@ def _fetch_url_js_module():
 
 def _js_render_module():
     import lighthouse_ai.sources.js_render as m  # noqa: F401
+
     return sys.modules["lighthouse_ai.sources.js_render"]
 
 
@@ -292,9 +294,7 @@ def test_fetch_url_js_no_gate_still_works(tmp_path: Path):
 
     ctx = _ctx(tmp_path)
     # SkillContext has no .gate attribute by default.
-    assert not hasattr(ctx, "gate"), (
-        "SkillContext should not have a .gate attribute by default"
-    )
+    assert not hasattr(ctx, "gate"), "SkillContext should not have a .gate attribute by default"
 
     canned_html_str = CANNED_HTML.decode("utf-8")
 

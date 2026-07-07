@@ -72,8 +72,7 @@ _DETECTED_AT = datetime(2026, 1, 1, tzinfo=UTC)
 
 #: Modes whose engines consume a multi-source corpus (``meta["documents"]``) and
 #: therefore benefit from skill execution feeding documents into the hybrid.
-_MULTISOURCE_MODES = frozenset(
-    {"investigate", "survey", "reconstruct", "decide", "adjudicate"})
+_MULTISOURCE_MODES = frozenset({"investigate", "survey", "reconstruct", "decide", "adjudicate"})
 
 
 @dataclass(frozen=True)
@@ -102,8 +101,9 @@ def claim_one_job(state_db) -> ClaimedJob | None:
                 return None
             jid, mode, meta_json = row[0], row[1], row[2]
             conn.execute(
-                "UPDATE jobs SET status = 'running', updated_at = datetime('now') "
-                "WHERE id = ?", (jid,))
+                "UPDATE jobs SET status = 'running', updated_at = datetime('now') WHERE id = ?",
+                (jid,),
+            )
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
@@ -131,36 +131,36 @@ def reap_stuck_jobs(state_db, *, paths: Paths | None = None) -> list[str]:
     """
     conn = open_db(state_db)
     try:
-        rows = conn.execute(
-            "SELECT id FROM jobs WHERE status = 'running'").fetchall()
+        rows = conn.execute("SELECT id FROM jobs WHERE status = 'running'").fetchall()
         ids = [r[0] for r in rows]
         if ids:
             conn.execute(
                 "UPDATE jobs SET status = 'queued', updated_at = datetime('now') "
-                "WHERE status = 'running'")
+                "WHERE status = 'running'"
+            )
     finally:
         conn.close()
     if paths is not None:
         for jid in ids:
             has_ckpt = _checkpoint_path(paths, jid).exists()
-            _audit(paths, "job.requeued",
-                   {"job_id": jid, "checkpoint": has_ckpt})
+            _audit(paths, "job.requeued", {"job_id": jid, "checkpoint": has_ckpt})
     return ids
 
 
-def _set_status(state_db, job_id: str, status: str,
-                meta: dict[str, Any] | None = None) -> None:
+def _set_status(state_db, job_id: str, status: str, meta: dict[str, Any] | None = None) -> None:
     conn = open_db(state_db)
     try:
         if meta is not None:
             conn.execute(
                 "UPDATE jobs SET status = ?, metadata_json = ?, "
                 "updated_at = datetime('now') WHERE id = ?",
-                (status, json.dumps(meta), job_id))
+                (status, json.dumps(meta), job_id),
+            )
         else:
             conn.execute(
-                "UPDATE jobs SET status = ?, updated_at = datetime('now') "
-                "WHERE id = ?", (status, job_id))
+                "UPDATE jobs SET status = ?, updated_at = datetime('now') WHERE id = ?",
+                (status, job_id),
+            )
     finally:
         conn.close()
 
@@ -216,10 +216,16 @@ def _build_acquirer(meta: dict, *, gateway, hybrid, emitter):
         broker = meta.get(_BROKER_META_KEY)
         if broker is None:
             return None
-        return Acquirer(policy=policy, broker=broker, gateway=gateway,
-                        hybrid=hybrid, meta=meta,
-                        mode=str(meta.get("mode") or "investigate"),
-                        depth=meta.get("depth"), progress=emitter)
+        return Acquirer(
+            policy=policy,
+            broker=broker,
+            gateway=gateway,
+            hybrid=hybrid,
+            meta=meta,
+            mode=str(meta.get("mode") or "investigate"),
+            depth=meta.get("depth"),
+            progress=emitter,
+        )
     except Exception:
         return None
 
@@ -267,6 +273,7 @@ def _build_broker(paths: Paths):
     rather than crashing a job over broker assembly."""
     try:
         from .sandbox.broker import build_default_broker
+
         return build_default_broker(paths.data_dir)
     except Exception as exc:  # pragma: no cover - defensive
         _log.warning("dispatcher.broker.build_failed", error=repr(exc))
@@ -316,15 +323,14 @@ def _maybe_decide_skills(meta: dict, *, gateway) -> list[str]:
                 merged[rec.skill_id] = max(merged.get(rec.skill_id, 0.0), rec.score)
         # Keep originally-selected ids first, then the merged picks by score.
         extra = sorted(
-            (sid for sid in merged if sid not in selected),
-            key=lambda s: merged[s], reverse=True)
+            (sid for sid in merged if sid not in selected), key=lambda s: merged[s], reverse=True
+        )
         return selected + extra
     except Exception:
         return selected
 
 
-def _run_selected_skills(meta: dict, *, gateway, broker,
-                         max_results: int = 5) -> list:
+def _run_selected_skills(meta: dict, *, gateway, broker, max_results: int = 5) -> list:
     """Load + run each selected skill through the broker, aggregate ``.documents``.
 
     Returns a flat ``list[Document]`` (rag chunker Documents, already stamped
@@ -334,9 +340,11 @@ def _run_selected_skills(meta: dict, *, gateway, broker,
     logged and skipped (``run_skill`` already swallows skill-side faults), so
     skill execution can never crash a job.
     """
-    skill_ids = (_maybe_decide_skills(meta, gateway=gateway)
-                 if str(meta.get("mode") or "") == "decide"
-                 else _selected_skill_ids(meta))
+    skill_ids = (
+        _maybe_decide_skills(meta, gateway=gateway)
+        if str(meta.get("mode") or "") == "decide"
+        else _selected_skill_ids(meta)
+    )
     if not skill_ids:
         return []
     if broker is None:
@@ -357,8 +365,7 @@ def _run_selected_skills(meta: dict, *, gateway, broker,
         except Exception as exc:  # SkillNotFound / SkillLoadError
             _log.warning("dispatcher.skills.load_failed", skill=sid, error=repr(exc))
             continue
-        run = run_skill(skill, question, broker=broker, gateway=gateway,
-                        max_results=max_results)
+        run = run_skill(skill, question, broker=broker, gateway=gateway, max_results=max_results)
         if not run.ok:
             _log.warning("dispatcher.skills.run_error", skill=sid, error=run.error)
         if not run.thin:
@@ -373,10 +380,12 @@ def _run_selected_skills(meta: dict, *, gateway, broker,
         except Exception:
             gw = None
         if gw is not None:
-            _log.info("dispatcher.skills.gap_filler", reason="thin_specialty_results",
-                      fallback=_GENERAL_WEB_ID)
-            run = run_skill(gw, question, broker=broker, gateway=gateway,
-                            max_results=max_results)
+            _log.info(
+                "dispatcher.skills.gap_filler",
+                reason="thin_specialty_results",
+                fallback=_GENERAL_WEB_ID,
+            )
+            run = run_skill(gw, question, broker=broker, gateway=gateway, max_results=max_results)
             documents.extend(run.documents)
     return documents
 
@@ -387,15 +396,17 @@ def _skill_docs_to_meta(documents: list) -> list[dict]:
     out: list[dict] = []
     for d in documents:
         meta = getattr(d, "metadata", {}) or {}
-        out.append({
-            "doc_id": getattr(d, "id", None),
-            "id": getattr(d, "id", None),
-            "title": meta.get("title") or meta.get("source") or getattr(d, "id", ""),
-            "text": getattr(d, "text", "") or "",
-            "url": meta.get("url") or meta.get("source"),
-            "source": meta.get("source"),
-            "skill_id": meta.get("skill_id"),
-        })
+        out.append(
+            {
+                "doc_id": getattr(d, "id", None),
+                "id": getattr(d, "id", None),
+                "title": meta.get("title") or meta.get("source") or getattr(d, "id", ""),
+                "text": getattr(d, "text", "") or "",
+                "url": meta.get("url") or meta.get("source"),
+                "source": meta.get("source"),
+                "skill_id": meta.get("skill_id"),
+            }
+        )
     return out
 
 
@@ -408,20 +419,31 @@ def _inject_skill_documents(meta: dict, *, gateway) -> list:
     left untouched and behaviour is UNCHANGED (back-compat).
     """
     if not _selected_skill_ids(meta) and not (
-            str(meta.get("mode") or "") == "decide" and meta.get("options")):
+        str(meta.get("mode") or "") == "decide" and meta.get("options")
+    ):
         return []
     broker = meta.get(_BROKER_META_KEY)
     emitter = meta.get(_PROGRESS_META_KEY)
     if emitter is not None:
-        emitter.emit("sources", "sources_start", "Gathering sources", 12.0,
-                     {"skills": _selected_skill_ids(meta)})
+        emitter.emit(
+            "sources",
+            "sources_start",
+            "Gathering sources",
+            12.0,
+            {"skills": _selected_skill_ids(meta)},
+        )
     documents = _run_selected_skills(meta, gateway=gateway, broker=broker)
     if emitter is not None:
         # One skill_done step per selected skill (best-effort; we don't have a
         # per-skill document split here, so report the aggregate corpus size).
         for sid in _selected_skill_ids(meta):
-            emitter.emit("sources", "skill_done", str(sid), 18.0,
-                         {"skill_id": sid, "documents": len(documents)})
+            emitter.emit(
+                "sources",
+                "skill_done",
+                str(sid),
+                18.0,
+                {"skill_id": sid, "documents": len(documents)},
+            )
     if not documents:
         return []
     existing = _meta_documents(meta)
@@ -461,8 +483,12 @@ def _maybe_flag_auto_adjudicate(meta: dict, summary: dict, documents: list) -> N
             return
         depth_tier = str(meta.get("depth") or "standard")
         contradictions = detect(
-            claims, documents, job_id=str(meta.get("job_id") or "job"),
-            detected_at=_DETECTED_AT, load_bearing=True)
+            claims,
+            documents,
+            job_id=str(meta.get("job_id") or "job"),
+            detected_at=_DETECTED_AT,
+            load_bearing=True,
+        )
         for c in contradictions:
             if should_auto_adjudicate(c, depth_tier=depth_tier):
                 meta["auto_adjudicate"] = c.contradiction_id
@@ -471,9 +497,11 @@ def _maybe_flag_auto_adjudicate(meta: dict, summary: dict, documents: list) -> N
                 # Sub-job spawn is deliberately NOT done here: it needs
                 # loop-guard + budget-inheritance treatment first (tracked in
                 # FUTURE_FEATURES.md §6, "Auto-Adjudicate sub-job spawn").
-                _log.info("dispatcher.auto_adjudicate.flagged",
-                          contradiction=c.contradiction_id,
-                          depth=depth_tier)
+                _log.info(
+                    "dispatcher.auto_adjudicate.flagged",
+                    contradiction=c.contradiction_id,
+                    depth=depth_tier,
+                )
                 return
     except Exception as exc:  # never let detection crash a job
         _log.warning("dispatcher.auto_adjudicate.error", error=repr(exc))
@@ -486,11 +514,12 @@ def _adapt_decide(meta, *, gateway, gate, job_id, positions_db) -> dict:
         meta.get("topic", ""),
         options=meta.get("options", []),
         criteria=meta.get("criteria", []),
-        gateway=gateway, gate=gate, job_id=job_id, positions_db=positions_db,
+        gateway=gateway,
+        gate=gate,
+        job_id=job_id,
+        positions_db=positions_db,
     )
-    body_html = (
-        f"<p><strong>Winner:</strong> {report.winner}</p>"
-        f"<p>{report.crux}</p>")
+    body_html = f"<p><strong>Winner:</strong> {report.winner}</p><p>{report.crux}</p>"
     return {
         "title": meta.get("topic", "Decision"),
         "body_html": body_html,
@@ -508,19 +537,19 @@ def _adapt_survey(meta, *, gateway, gate, job_id, positions_db) -> dict:
     # neither (the common case today) fall back to a deterministic single-doc
     # placeholder so the run yields a (small) table rather than crashing.
     if not documents:
-        documents = [{"doc_id": "topic", "title": topic,
-                      "text": f"Survey scope: {topic}."}]
+        documents = [{"doc_id": "topic", "title": topic, "text": f"Survey scope: {topic}."}]
     attributes = meta.get("attributes") or [{"label": "summary"}]
     report = fn(
         topic,
         documents=documents,
         criteria=meta.get("criteria", []),
         attributes=attributes,
-        gateway=gateway, gate=gate, job_id=job_id, positions_db=positions_db,
+        gateway=gateway,
+        gate=gate,
+        job_id=job_id,
+        positions_db=positions_db,
     )
-    body_html = (
-        f"<p>Included {report.prisma.included} of "
-        f"{report.prisma.identified} documents.</p>")
+    body_html = f"<p>Included {report.prisma.included} of {report.prisma.identified} documents.</p>"
     return {
         "title": topic,
         "body_html": body_html,
@@ -538,12 +567,14 @@ def _adapt_reconstruct(meta, *, gateway, gate, job_id, positions_db) -> dict:
     # the wizard attaches none so the run completes (an empty corpus simply
     # yields an empty timeline rather than raising).
     if not documents:
-        documents = [{"doc_id": "topic", "title": topic,
-                      "text": f"Reconstruction scope: {topic}."}]
+        documents = [{"doc_id": "topic", "title": topic, "text": f"Reconstruction scope: {topic}."}]
     report = fn(
         topic,
         documents=documents,
-        gateway=gateway, gate=gate, job_id=job_id, positions_db=positions_db,
+        gateway=gateway,
+        gate=gate,
+        job_id=job_id,
+        positions_db=positions_db,
     )
     body_html = f"<p>Reconstructed {len(report.events)} dated events.</p>"
     return {
@@ -569,29 +600,38 @@ def _adapt_watch(meta, *, gateway, gate, job_id, positions_db) -> dict:
     items: list[MonitorItem] = []
     for i, d in enumerate(_meta_documents(meta)):
         url = str(d.get("url") or d.get("source") or d.get("id") or f"item-{i}")
-        items.append(MonitorItem(
-            source=str(d.get("source", url)), url=url,
-            title=str(d.get("title", "")), body=str(d.get("text", "")),
-            published_at=d.get("published_at")))
+        items.append(
+            MonitorItem(
+                source=str(d.get("source", url)),
+                url=url,
+                title=str(d.get("title", "")),
+                body=str(d.get("text", "")),
+                published_at=d.get("published_at"),
+            )
+        )
     if not items:
         for url in meta.get("source_urls", []) or []:
-            items.append(MonitorItem(source=str(url), url=str(url),
-                                     title=str(url), body=""))
+            items.append(MonitorItem(source=str(url), url=str(url), title=str(url), body=""))
 
     interests = meta.get("topic_interests") or meta.get("interests") or None
     report = run_monitor(
-        topic, items, gateway=gateway, gate=gate,
+        topic,
+        items,
+        gateway=gateway,
+        gate=gate,
         topic_interests=str(interests) if interests else None,
     )
     rows = "".join(
         f"<li>{_html.escape(c.item.title or c.item.url)} "
         f"<span class='meta'>(salience {c.salience:.2f}, {c.category})</span></li>"
-        for c in (report.alerts + report.digest))
+        for c in (report.alerts + report.digest)
+    )
     body_html = (
         f"<p>{len(report.alerts)} alert(s), {len(report.digest)} digest item(s) "
         f"from {report.total_seen} seen "
         f"({report.suppressed_duplicates} duplicate(s) suppressed).</p>"
-        + (f"<ul>{rows}</ul>" if rows else "<p><em>No items in this cycle.</em></p>"))
+        + (f"<ul>{rows}</ul>" if rows else "<p><em>No items in this cycle.</em></p>")
+    )
     return {
         "title": topic,
         "body_html": body_html,
@@ -613,13 +653,13 @@ def _adapt_ask(meta, *, gateway, gate, job_id, positions_db) -> dict:
     hybrid = _build_hybrid(meta, gateway=gateway)
     quc_ask(session, topic, hybrid=hybrid, gateway=gateway, gate=gate)
     turns = [
-        {"role": t.role, "text": t.text, "citations": list(t.citations)}
-        for t in session.history
+        {"role": t.role, "text": t.text, "citations": list(t.citations)} for t in session.history
     ]
     last = session.history[-1]
     body_html = "".join(
-        f"<p><strong>{_html.escape(t.role.title())}:</strong> "
-        f"{_html.escape(t.text)}</p>" for t in session.history)
+        f"<p><strong>{_html.escape(t.role.title())}:</strong> {_html.escape(t.text)}</p>"
+        for t in session.history
+    )
     return {
         "title": topic,
         "body_html": body_html,
@@ -664,8 +704,7 @@ def _write_checkpoint(paths: Paths, job_id: str, state) -> None:
         tmp.write_text(json.dumps(state.to_dict()), encoding="utf-8")
         tmp.replace(final)  # atomic on POSIX
     except Exception as exc:  # pragma: no cover - defensive
-        _log.warning("dispatcher.checkpoint.write_failed",
-                     job_id=job_id, error=repr(exc))
+        _log.warning("dispatcher.checkpoint.write_failed", job_id=job_id, error=repr(exc))
 
 
 def _load_checkpoint(paths: Paths, job_id: str) -> dict | None:
@@ -677,8 +716,7 @@ def _load_checkpoint(paths: Paths, job_id: str) -> dict | None:
         data = json.loads(path.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else None
     except Exception as exc:  # pragma: no cover - defensive
-        _log.warning("dispatcher.checkpoint.load_failed",
-                     job_id=job_id, error=repr(exc))
+        _log.warning("dispatcher.checkpoint.load_failed", job_id=job_id, error=repr(exc))
         return None
 
 
@@ -687,14 +725,16 @@ def _delete_checkpoint(paths: Paths, job_id: str) -> None:
     try:
         _checkpoint_path(paths, job_id).unlink(missing_ok=True)
     except Exception as exc:  # pragma: no cover - defensive
-        _log.warning("dispatcher.checkpoint.delete_failed",
-                     job_id=job_id, error=repr(exc))
+        _log.warning("dispatcher.checkpoint.delete_failed", job_id=job_id, error=repr(exc))
 
 
 def _serialize_tree(node) -> dict:
     return {
-        "question": node.question, "depth": node.depth, "status": node.status,
-        "body": node.body, "citations": list(node.citations),
+        "question": node.question,
+        "depth": node.depth,
+        "status": node.status,
+        "body": node.body,
+        "citations": list(node.citations),
         "children": [_serialize_tree(c) for c in node.children],
     }
 
@@ -719,16 +759,24 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
     if gateway is not None:
         if hybrid is None:
             hybrid = _empty_hybrid(gateway)
-        acquirer = _build_acquirer(meta, gateway=gateway, hybrid=hybrid,
-                                   emitter=meta.get(_PROGRESS_META_KEY))
+        acquirer = _build_acquirer(
+            meta, gateway=gateway, hybrid=hybrid, emitter=meta.get(_PROGRESS_META_KEY)
+        )
 
     def _research(q: str):
         try:
             if acquirer is not None:
                 if acquirer.acquire(q) > 0:
                     acquirer.follow_links()
-            r = run_deepdive(q, hybrid=hybrid, gateway=gateway, job_id=job_id,
-                             gate=gate, max_rounds=1, top_k=knobs["top_k"])
+            r = run_deepdive(
+                q,
+                hybrid=hybrid,
+                gateway=gateway,
+                job_id=job_id,
+                gate=gate,
+                max_rounds=1,
+                top_k=knobs["top_k"],
+            )
             cites = sorted({c for s in r.sections for c in s.citations})
             body = " ".join(s.body for s in r.sections if s.body.strip())
             return (body or f"[draft] {q}", list(cites), bool(cites))
@@ -746,20 +794,26 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
         if resume_state is not None:
             nodes_done = int(resume_state.get("done", 0))
             pending = len(resume_state.get("pending_paths", []))
-            _log.info("dispatcher.checkpoint.resume", job_id=job_id,
-                      done=nodes_done, pending=pending)
+            _log.info(
+                "dispatcher.checkpoint.resume", job_id=job_id, done=nodes_done, pending=pending
+            )
             # Make resume an OBSERVABLE lifecycle event, not the silent
             # side-effect it was (deployment gap #8): audit it, put it in the
             # job trace, and mark the persisted meta so the dashboard/status
             # can show "resumed from checkpoint" instead of a fresh run.
-            _audit(paths, "job.resumed",
-                   {"job_id": job_id, "nodes_done": nodes_done,
-                    "pending": pending})
+            _audit(
+                paths,
+                "job.resumed",
+                {"job_id": job_id, "nodes_done": nodes_done, "pending": pending},
+            )
             if emitter is not None:
-                emitter.emit("framing", "resumed",
-                             f"Resumed from checkpoint — {nodes_done} done, "
-                             f"{pending} pending", 5.0,
-                             {"nodes_done": nodes_done, "pending": pending})
+                emitter.emit(
+                    "framing",
+                    "resumed",
+                    f"Resumed from checkpoint — {nodes_done} done, {pending} pending",
+                    5.0,
+                    {"nodes_done": nodes_done, "pending": pending},
+                )
             meta["resumed"] = {"nodes_done": nodes_done, "pending": pending}
 
     # Wire the progress trace: a node step per researched node and a checkpoint
@@ -771,22 +825,34 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
             emitter.checkpoint_cb(state)
 
     on_node = emitter.node_cb if emitter is not None else None
-    tree = run_exhaustive(topic, research_fn=_research, gateway=gateway,
-                          job_id=job_id, gate=gate, max_nodes=max_nodes,
-                          max_depth=3, on_node=on_node,
-                          on_checkpoint=on_checkpoint, resume_state=resume_state)
+    tree = run_exhaustive(
+        topic,
+        research_fn=_research,
+        gateway=gateway,
+        job_id=job_id,
+        gate=gate,
+        max_nodes=max_nodes,
+        max_depth=3,
+        on_node=on_node,
+        on_checkpoint=on_checkpoint,
+        resume_state=resume_state,
+    )
 
     # Completed run → drop the checkpoint so a future job with this id starts
     # fresh (and disk doesn't accumulate stale snapshots).
     if paths is not None and job_id:
         _delete_checkpoint(paths, job_id)
     body_json = {
-        "question": topic, "depth": "deep", "engine": "exhaustive",
+        "question": topic,
+        "depth": "deep",
+        "engine": "exhaustive",
         "budget": meta.get("budget"),
         "tree": _serialize_tree(tree.root),
-        "total_nodes": tree.total_nodes, "grounded": tree.grounded,
+        "total_nodes": tree.total_nodes,
+        "grounded": tree.grounded,
         "known_unknowns": tree.known_unknowns,
-        "coverage": tree.coverage_ratio, "truncated": tree.truncated,
+        "coverage": tree.coverage_ratio,
+        "truncated": tree.truncated,
         "max_depth_reached": tree.max_depth_reached,
     }
     if acquirer is not None and acquirer.total_docs:
@@ -800,6 +866,7 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
         for c in node.children:
             _count(c, acc)
         return acc
+
     source_count = len(_count(tree.root, set()))
     # The woven cross-node synthesis IS the deliverable of a Deep run — it
     # must reach the artifact (body_json for the typed viewer, body_html so
@@ -809,15 +876,23 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
     stats_line = (
         f"<p class='meta'>Recursive deep research: {tree.grounded}/{tree.total_nodes} "
         f"nodes grounded (depth {tree.max_depth_reached}"
-        f"{', budget-truncated' if tree.truncated else ''}).</p>")
+        f"{', budget-truncated' if tree.truncated else ''}).</p>"
+    )
     if synthesis:
-        body_html = "".join(
-            f"<p>{_html.escape(p.strip())}</p>"
-            for p in synthesis.split("\n\n") if p.strip()) + stats_line
+        body_html = (
+            "".join(
+                f"<p>{_html.escape(p.strip())}</p>" for p in synthesis.split("\n\n") if p.strip()
+            )
+            + stats_line
+        )
     else:
         body_html = stats_line
-    return {"title": topic, "body_html": body_html, "body_json": body_json,
-            "source_count": source_count}
+    return {
+        "title": topic,
+        "body_html": body_html,
+        "body_json": body_json,
+        "source_count": source_count,
+    }
 
 
 def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
@@ -833,8 +908,7 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
     topic = meta.get("topic", "") or "Investigation"
     knobs = resolve_depth(meta.get("depth"))
     if knobs.get("recursive"):
-        return _adapt_investigate_deep(meta, knobs, gateway=gateway, gate=gate,
-                                       job_id=job_id)
+        return _adapt_investigate_deep(meta, knobs, gateway=gateway, gate=gate, job_id=job_id)
     hybrid = _build_hybrid(meta, gateway=gateway)
     emitter = meta.get(_PROGRESS_META_KEY)
     on_round = emitter.round_cb if emitter is not None else None
@@ -845,12 +919,18 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
     if gateway is not None:
         if hybrid is None:
             hybrid = _empty_hybrid(gateway)
-        acquirer = _build_acquirer(meta, gateway=gateway, hybrid=hybrid,
-                                   emitter=emitter)
-    report = run_deepdive(topic, hybrid=hybrid, gateway=gateway,
-                          job_id=job_id, gate=gate, on_round=on_round,
-                          max_rounds=knobs["max_rounds"], top_k=knobs["top_k"],
-                          acquire_fn=acquirer.acquire if acquirer else None)
+        acquirer = _build_acquirer(meta, gateway=gateway, hybrid=hybrid, emitter=emitter)
+    report = run_deepdive(
+        topic,
+        hybrid=hybrid,
+        gateway=gateway,
+        job_id=job_id,
+        gate=gate,
+        on_round=on_round,
+        max_rounds=knobs["max_rounds"],
+        top_k=knobs["top_k"],
+        acquire_fn=acquirer.acquire if acquirer else None,
+    )
     parts = []
     for s in report.sections:
         parts.append(f"<h3>{_html.escape(s.title)}</h3>")
@@ -858,8 +938,11 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
         if s.citations:
             parts.append(f"<p class='meta'>sources: {len(s.citations)}</p>")
     if report.open_questions:
-        parts.append("<h3>Open questions</h3><ul>" + "".join(
-            f"<li>{_html.escape(q)}</li>" for q in report.open_questions) + "</ul>")
+        parts.append(
+            "<h3>Open questions</h3><ul>"
+            + "".join(f"<li>{_html.escape(q)}</li>" for q in report.open_questions)
+            + "</ul>"
+        )
     body_json = {
         "question": report.question,
         "question_type": report.framing.question_type.value,
@@ -867,9 +950,13 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
         "max_rounds": knobs["max_rounds"],
         "rounds_used": report.rounds_used,
         "sections": [
-            {"title": s.title, "sub_question": s.sub_question,
-             "body": s.body, "citations": list(s.citations),
-             "is_load_bearing": s.is_load_bearing}
+            {
+                "title": s.title,
+                "sub_question": s.sub_question,
+                "body": s.body,
+                "citations": list(s.citations),
+                "is_load_bearing": s.is_load_bearing,
+            }
             for s in report.sections
         ],
         "open_questions": list(report.open_questions),
@@ -886,8 +973,10 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
     if knobs.get("coverage_critic"):
         try:
             from .verification.coverage import assess_coverage
-            subs = [s.sub_question for s in report.sections if s.is_load_bearing] \
-                or list(report.framing.sub_questions)
+
+            subs = [s.sub_question for s in report.sections if s.is_load_bearing] or list(
+                report.framing.sub_questions
+            )
             cov = assess_coverage(subs, report.sections)
             body_json["coverage"] = cov.coverage_ratio
             body_json["coverage_gaps"] = cov.gaps
@@ -899,15 +988,16 @@ def _adapt_investigate(meta, *, gateway, gate, job_id, positions_db) -> dict:
     if knobs.get("adversarial"):
         try:
             from .verification.adversarial import refute_claims, summarize
+
             evidence = "\n".join(s.body for s in report.sections)
-            key_claims = [s.body.split(".")[0].strip() + "."
-                          for s in report.sections
-                          if s.is_load_bearing and s.body.strip()]
-            verdicts = refute_claims(key_claims, evidence, gateway=gateway,
-                                     job_id=job_id)
+            key_claims = [
+                s.body.split(".")[0].strip() + "."
+                for s in report.sections
+                if s.is_load_bearing and s.body.strip()
+            ]
+            verdicts = refute_claims(key_claims, evidence, gateway=gateway, job_id=job_id)
             body_json["adversarial"] = summarize(verdicts)
-            body_json["contested_claims"] = [
-                v.claim for v in verdicts if not v.survives]
+            body_json["contested_claims"] = [v.claim for v in verdicts if not v.survives]
         except Exception:
             pass
 
@@ -930,14 +1020,14 @@ def _adapt_adjudicate(meta, *, gateway, gate, job_id, positions_db) -> dict:
     _inject_skill_documents(meta, gateway=gateway)
     topic = meta.get("topic", "") or "Claim under debate"
     draft = str(meta.get("draft", "")) or topic
-    result = run_debate(claim=topic, draft=draft, gateway=gateway, job_id=job_id,
-                        gate=gate)
+    result = run_debate(claim=topic, draft=draft, gateway=gateway, job_id=job_id, gate=gate)
     persp = "".join(
-        f"<li><strong>{_html.escape(r.perspective.name)}:</strong> "
-        f"{_html.escape(r.critique)}</li>" for r in result.responses)
+        f"<li><strong>{_html.escape(r.perspective.name)}:</strong> {_html.escape(r.critique)}</li>"
+        for r in result.responses
+    )
     body_html = (
-        f"<p><strong>Verdict:</strong> {_html.escape(result.judge_summary)}</p>"
-        f"<ul>{persp}</ul>")
+        f"<p><strong>Verdict:</strong> {_html.escape(result.judge_summary)}</p><ul>{persp}</ul>"
+    )
     return {
         "title": topic,
         "body_html": body_html,
@@ -957,8 +1047,9 @@ _ADAPTERS: dict[str, Callable[..., dict]] = {
 }
 
 
-def _persist_artifact(state_db, *, job_id: str, mode_key: str,
-                      artifact_type: str, summary: dict) -> str:
+def _persist_artifact(
+    state_db, *, job_id: str, mode_key: str, artifact_type: str, summary: dict
+) -> str:
     draft_id = "d-" + uuid.uuid4().hex[:6]
     body_json = json.dumps(summary.get("body_json")) if summary.get("body_json") else None
     conn = open_db(state_db)
@@ -967,17 +1058,33 @@ def _persist_artifact(state_db, *, job_id: str, mode_key: str,
             "INSERT INTO drafts (id, job_id, topic, title, body_html, body_json, "
             "artifact_type, source_count, status) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged')",
-            (draft_id, job_id, summary["title"][:60], summary["title"],
-             summary.get("body_html", ""), body_json, artifact_type,
-             summary.get("source_count", 0)))
+            (
+                draft_id,
+                job_id,
+                summary["title"][:60],
+                summary["title"],
+                summary.get("body_html", ""),
+                body_json,
+                artifact_type,
+                summary.get("source_count", 0),
+            ),
+        )
     finally:
         conn.close()
     return draft_id
 
 
-def _emit_prov_sidecar(paths: Paths, *, draft_id: str, job_id: str,
-                       question: str, mode_key: str, summary: dict,
-                       backends: dict, gateway: Gateway | None) -> None:
+def _emit_prov_sidecar(
+    paths: Paths,
+    *,
+    draft_id: str,
+    job_id: str,
+    question: str,
+    mode_key: str,
+    summary: dict,
+    backends: dict,
+    gateway: Gateway | None,
+) -> None:
     """Write a PROV-O JSON sidecar next to the staged artifact (best-effort).
 
     The dispatcher already embeds a provenance manifest in the artifact body;
@@ -988,6 +1095,7 @@ def _emit_prov_sidecar(paths: Paths, *, draft_id: str, job_id: str,
     """
     try:
         from .provenance import build_run_sidecar, write_run_sidecar
+
         body_html = summary.get("body_html", "") or ""
         content_hash = hashlib.sha256(body_html.encode()).hexdigest()
         sampling = None
@@ -997,9 +1105,15 @@ def _emit_prov_sidecar(paths: Paths, *, draft_id: str, job_id: str,
             except Exception:
                 sampling = None
         sidecar = build_run_sidecar(
-            draft_id=draft_id, job_id=job_id, question=question, mode=mode_key,
-            backends=backends or {}, source_count=summary.get("source_count", 0),
-            content_hash=content_hash, sampling=sampling)
+            draft_id=draft_id,
+            job_id=job_id,
+            question=question,
+            mode=mode_key,
+            backends=backends or {},
+            source_count=summary.get("source_count", 0),
+            content_hash=content_hash,
+            sampling=sampling,
+        )
         write_run_sidecar(paths.staging_dir / f"{draft_id}.prov.json", sidecar)
         _log.info("prov_sidecar.written", draft_id=draft_id)
     except Exception as exc:  # pragma: no cover - defensive
@@ -1015,6 +1129,7 @@ def _is_guard_trip(exc: Exception) -> bool:
     crash.
     """
     from .gateway import LoopTripped
+
     if isinstance(exc, LoopTripped):
         return True
     msg = str(exc).lower()
@@ -1040,6 +1155,7 @@ def _notify_budget_trip(paths: Paths, reason: str) -> None:
         if not ui.get("notify_enabled", False):
             return
         from .notify import notify_budget_trip
+
         notify_budget_trip(
             reason,
             bot_token=str(ui.get("telegram_bot_token", "")),
@@ -1055,9 +1171,14 @@ def _audit(paths: Paths, event_type: str, payload: dict) -> None:
         return
     try:
         from .verification.audit_chain import append_event
-        append_event(paths.audit_db, actor="dispatcher",
-                     event_type=event_type, payload=payload,
-                     data_dir=paths.data_dir)
+
+        append_event(
+            paths.audit_db,
+            actor="dispatcher",
+            event_type=event_type,
+            payload=payload,
+            data_dir=paths.data_dir,
+        )
     except Exception:
         pass
 
@@ -1082,8 +1203,11 @@ def _notify_staged(paths: Paths, *, artifact_type: str, summary: dict) -> None:
         if not ui.get("notify_enabled", False):
             return
         from .notify import notify_artifact_staged
+
         notify_artifact_staged(
-            artifact_type, summary.get("title", ""), summary.get("body_json"),
+            artifact_type,
+            summary.get("title", ""),
+            summary.get("body_json"),
             bot_token=str(ui.get("telegram_bot_token", "")),
             chat_id=str(ui.get("telegram_chat_id", "")),
             enabled=True,
@@ -1092,8 +1216,9 @@ def _notify_staged(paths: Paths, *, artifact_type: str, summary: dict) -> None:
         pass
 
 
-def _provenance_manifest(*, mode_key: str, meta: dict, summary: dict,
-                         gateway: Gateway | None, backends: dict) -> dict:
+def _provenance_manifest(
+    *, mode_key: str, meta: dict, summary: dict, gateway: Gateway | None, backends: dict
+) -> dict:
     """Build a deterministic provenance manifest for an artifact.
 
     Records how the artifact was produced — mode, depth/budget, the backend that
@@ -1127,8 +1252,13 @@ def _provenance_manifest(*, mode_key: str, meta: dict, summary: dict,
                 pass
 
     metrics: dict[str, Any] = {}
-    for key in ("citation_coverage", "entailment_coverage", "rounds_used",
-                "nodes_resolved", "coverage"):
+    for key in (
+        "citation_coverage",
+        "entailment_coverage",
+        "rounds_used",
+        "nodes_resolved",
+        "coverage",
+    ):
         if key in body:
             metrics[key] = body[key]
 
@@ -1143,8 +1273,7 @@ def _provenance_manifest(*, mode_key: str, meta: dict, summary: dict,
         "source_count": summary.get("source_count", 0),
         "metrics": metrics or None,
     }
-    digest = hashlib.sha256(
-        json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()
+    digest = hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()
     payload["content_sha256"] = digest[:16]
     return payload
 
@@ -1161,23 +1290,34 @@ def _emit_verification(progress, summary: dict) -> None:
             return
         if "coverage" in body or "coverage_gaps" in body:
             gaps = body.get("coverage_gaps") or []
-            progress.emit("verification", "coverage", "Coverage check", 82.0, {
-                "coverage": body.get("coverage"),
-                "gaps": len(gaps) if isinstance(gaps, list) else 0,
-            })
+            progress.emit(
+                "verification",
+                "coverage",
+                "Coverage check",
+                82.0,
+                {
+                    "coverage": body.get("coverage"),
+                    "gaps": len(gaps) if isinstance(gaps, list) else 0,
+                },
+            )
         contested = body.get("contested_claims") or []
         if contested or body.get("auto_adjudicate"):
-            progress.emit("verification", "contradiction",
-                          "Contested claims", 84.0, {
-                              "contested": len(contested)
-                              if isinstance(contested, list) else 0,
-                              "auto_adjudicate": body.get("auto_adjudicate"),
-                          })
+            progress.emit(
+                "verification",
+                "contradiction",
+                "Contested claims",
+                84.0,
+                {
+                    "contested": len(contested) if isinstance(contested, list) else 0,
+                    "auto_adjudicate": body.get("auto_adjudicate"),
+                },
+            )
         open_qs = body.get("open_questions") or body.get("known_unknowns") or []
         if isinstance(open_qs, list):
             for q in open_qs:
-                progress.emit("verification", "known_unknown", str(q)[:120],
-                              86.0, {"question": str(q)})
+                progress.emit(
+                    "verification", "known_unknown", str(q)[:120], 86.0, {"question": str(q)}
+                )
     except Exception:  # pragma: no cover - defensive
         pass
 
@@ -1204,10 +1344,14 @@ def _wire_token_stream(gateway, bus) -> None:
         pass
 
 
-def run_job(paths: Paths, job: ClaimedJob, *,
-            gateway: Gateway | None = None,
-            gate: SchedulerGate | None = None,
-            bus=None) -> str | None:
+def run_job(
+    paths: Paths,
+    job: ClaimedJob,
+    *,
+    gateway: Gateway | None = None,
+    gate: SchedulerGate | None = None,
+    bus=None,
+) -> str | None:
     """Run a claimed job's engine and persist its artifact.
 
     On success the job moves to ``review`` and a draft (status ``staged``) is
@@ -1226,8 +1370,11 @@ def run_job(paths: Paths, job: ClaimedJob, *,
     adapter = _ADAPTERS.get(mode_key)
     if adapter is None:
         _set_status(paths.state_db, job.id, "failed")
-        _audit(paths, "job.failed",
-               {"job_id": job.id, "error": f"no dispatcher adapter for {mode_key}"})
+        _audit(
+            paths,
+            "job.failed",
+            {"job_id": job.id, "error": f"no dispatcher adapter for {mode_key}"},
+        )
         if bus is not None:
             bus.publish("job.status", {"id": job.id, "status": "failed"})
         return None
@@ -1245,10 +1392,16 @@ def run_job(paths: Paths, job: ClaimedJob, *,
     # trace failure can never fail the job. The emitter is handed to the
     # investigate adapters (via meta) to wire the engine progress callbacks.
     from .progress import ProgressEmitter
+
     progress = ProgressEmitter(job.id, paths, bus)
     job.meta[_PROGRESS_META_KEY] = progress
-    progress.emit("framing", "start", f"Framing: {mode_key}", 5.0,
-                  {"mode": mode_key, "depth": job.meta.get("depth")})
+    progress.emit(
+        "framing",
+        "start",
+        f"Framing: {mode_key}",
+        5.0,
+        {"mode": mode_key, "depth": job.meta.get("depth")},
+    )
 
     # Live synthesis feed: stream the synthesizer's tokens to the dashboard so
     # a long run shows text being written instead of a frozen progress bar.
@@ -1258,12 +1411,18 @@ def run_job(paths: Paths, job: ClaimedJob, *,
 
     backends: dict = {}
     try:
-        summary = adapter(job.meta, gateway=gateway, gate=gate, job_id=job.id,
-                          positions_db=paths.positions_db)
+        summary = adapter(
+            job.meta, gateway=gateway, gate=gate, job_id=job.id, positions_db=paths.positions_db
+        )
         # Modes without rich engine callbacks (ask/survey/reconstruct/decide/
         # adjudicate/watch) still get a minimal trace: framing→drafting→done.
-        progress.emit("drafting", "drafted", summary.get("title", mode_key),
-                      75.0, {"source_count": summary.get("source_count", 0)})
+        progress.emit(
+            "drafting",
+            "drafted",
+            summary.get("title", mode_key),
+            75.0,
+            {"source_count": summary.get("source_count", 0)},
+        )
         # Verification: surface contradictions/coverage gaps and a known_unknown
         # per open question off the produced artifact body (best-effort).
         _emit_verification(progress, summary)
@@ -1284,18 +1443,32 @@ def run_job(paths: Paths, job: ClaimedJob, *,
             body = summary.get("body_json")
             if isinstance(body, dict):
                 body["provenance"] = _provenance_manifest(
-                    mode_key=mode_key, meta=job.meta, summary=summary,
-                    gateway=gateway, backends=backends)
+                    mode_key=mode_key,
+                    meta=job.meta,
+                    summary=summary,
+                    gateway=gateway,
+                    backends=backends,
+                )
         except Exception:
             pass
         draft_id = _persist_artifact(
-            paths.state_db, job_id=job.id, mode_key=mode_key,
-            artifact_type=spec.artifact_type.value, summary=summary)
+            paths.state_db,
+            job_id=job.id,
+            mode_key=mode_key,
+            artifact_type=spec.artifact_type.value,
+            summary=summary,
+        )
         # PROV-O sidecar travels with the artifact (every run, not just pipeline).
         _emit_prov_sidecar(
-            paths, draft_id=draft_id, job_id=job.id,
-            question=str(job.meta.get("topic", "")), mode_key=mode_key,
-            summary=summary, backends=backends, gateway=gateway)
+            paths,
+            draft_id=draft_id,
+            job_id=job.id,
+            question=str(job.meta.get("topic", "")),
+            mode_key=mode_key,
+            summary=summary,
+            backends=backends,
+            gateway=gateway,
+        )
     except Exception as exc:
         _set_status(paths.state_db, job.id, "failed")
         # A wedged-but-listening backend is a distinct, user-facing failure:
@@ -1303,23 +1476,31 @@ def run_job(paths: Paths, job: ClaimedJob, *,
         # dashboard shows *why* the job died instead of an eternal spinner
         # (incident 2026-06-10).
         if isinstance(exc, BackendStalled):
-            _audit(paths, "backend.stalled",
-                   {"job_id": job.id, "error": str(exc), "model": exc.model,
-                    "stalled_after_s": exc.stalled_after_s, "call": exc.call})
-            progress.emit(progress.last_phase or "framing", "stalled",
-                          "Backend stalled — job aborted",
-                          progress.last_pct,
-                          {"model": exc.model,
-                           "stalled_after_s": exc.stalled_after_s,
-                           "call": exc.call})
+            _audit(
+                paths,
+                "backend.stalled",
+                {
+                    "job_id": job.id,
+                    "error": str(exc),
+                    "model": exc.model,
+                    "stalled_after_s": exc.stalled_after_s,
+                    "call": exc.call,
+                },
+            )
+            progress.emit(
+                progress.last_phase or "framing",
+                "stalled",
+                "Backend stalled — job aborted",
+                progress.last_pct,
+                {"model": exc.model, "stalled_after_s": exc.stalled_after_s, "call": exc.call},
+            )
         _audit(paths, "job.failed", {"job_id": job.id, "error": str(exc)})
         # A budget/loop guard stopping a run is a user-facing event: notify + emit.
         if _is_guard_trip(exc):
             _notify_budget_trip(paths, str(exc))
             _audit(paths, "governor.tripped", {"job_id": job.id, "reason": str(exc)})
             if bus is not None:
-                bus.publish("governor.tripped",
-                            {"job_id": job.id, "reason": str(exc)})
+                bus.publish("governor.tripped", {"job_id": job.id, "reason": str(exc)})
         if bus is not None:
             bus.publish("job.status", {"id": job.id, "status": "failed"})
         return None
@@ -1355,16 +1536,23 @@ def run_job(paths: Paths, job: ClaimedJob, *,
         # Surface a degraded run so the dashboard shows it wasn't fully real,
         # rather than the user discovering it only in provenance metadata.
         if degraded:
-            progress.emit(progress.last_phase or "synthesis", "degraded",
-                          f"Ran partly on the fallback model "
-                          f"({degraded} call(s) degraded — answer may be less reliable)",
-                          progress.last_pct, {"real": real, "degraded": degraded})
-            _audit(paths, "backend.degraded",
-                   {"job_id": job.id, "real": real, "degraded": degraded})
+            progress.emit(
+                progress.last_phase or "synthesis",
+                "degraded",
+                f"Ran partly on the fallback model "
+                f"({degraded} call(s) degraded — answer may be less reliable)",
+                progress.last_pct,
+                {"real": real, "degraded": degraded},
+            )
+            _audit(
+                paths, "backend.degraded", {"job_id": job.id, "real": real, "degraded": degraded}
+            )
     _set_status(paths.state_db, job.id, "review", meta=meta)
-    _audit(paths, "job.review",
-           {"job_id": job.id, "draft_id": draft_id, "mode": mode_key,
-            "backend": meta.get("backend")})
+    _audit(
+        paths,
+        "job.review",
+        {"job_id": job.id, "draft_id": draft_id, "mode": mode_key, "backend": meta.get("backend")},
+    )
     # Best-effort mobile review ping (no-op unless [ui].notify_enabled + token).
     _notify_staged(paths, artifact_type=spec.artifact_type.value, summary=summary)
     if bus is not None:
@@ -1373,8 +1561,9 @@ def run_job(paths: Paths, job: ClaimedJob, *,
     return draft_id
 
 
-def dispatch_once(paths: Paths, *, gateway: Gateway | None = None,
-                  gate: SchedulerGate | None = None, bus=None) -> str | None:
+def dispatch_once(
+    paths: Paths, *, gateway: Gateway | None = None, gate: SchedulerGate | None = None, bus=None
+) -> str | None:
     """Claim and run a single job. Returns the draft id, or None if idle."""
     job = claim_one_job(paths.state_db)
     if job is None:
@@ -1415,8 +1604,7 @@ def build_runtime_gateway(paths: Paths) -> Gateway | None:
             return None
         profile = probe()
         budget = max(0.0, profile.free_ram_gb - RUNTIME_RAM_MARGIN_GB)
-        return make_gateway(paths, profile, offline=False, installed=tags,
-                            budget_gb=budget)
+        return make_gateway(paths, profile, offline=False, installed=tags, budget_gb=budget)
     except Exception:
         return None
 
@@ -1438,11 +1626,14 @@ def runtime_ram_ok(*, min_resident_gb: float | None = None) -> bool:
     try:
         from .gateway import RUNTIME_RAM_MARGIN_GB, smallest_reasoning_resident_gb
         from .hardware import probe
+
         if min_resident_gb is None:
             try:
                 from .pipeline import _ollama_installed_tags
+
                 min_resident_gb = smallest_reasoning_resident_gb(
-                    _ollama_installed_tags(), default_gb=MIN_REASONING_RESIDENT_GB)
+                    _ollama_installed_tags(), default_gb=MIN_REASONING_RESIDENT_GB
+                )
             except Exception:
                 min_resident_gb = MIN_REASONING_RESIDENT_GB
         return probe().free_ram_gb >= (min_resident_gb + RUNTIME_RAM_MARGIN_GB)

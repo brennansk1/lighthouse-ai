@@ -16,6 +16,7 @@ from lighthouse_ai.supervisor import _backup_tick
 # Fake runner (satisfies the _BackupRunner Protocol)
 # ---------------------------------------------------------------------------
 
+
 class _FakeRunner:
     """Record-and-reply stub for ResticBackup, safe for unit tests.
 
@@ -48,8 +49,9 @@ class _FakeRunner:
             raise RuntimeError("backup simulated failure")
         return self._ok_result()
 
-    def check(self, repo: str, *, passphrase: str | None = None
-              ) -> subprocess.CompletedProcess[str]:
+    def check(
+        self, repo: str, *, passphrase: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         self.calls.append(("check", (repo,), {"passphrase": passphrase}))
         if self.fail_check:
             raise RuntimeError("check simulated failure")
@@ -60,15 +62,18 @@ class _FakeRunner:
 # Helper: a minimal gate fake
 # ---------------------------------------------------------------------------
 
+
 def _gate_policy_paused():
     """Return (PAUSED, reason) — used to simulate gate-blocked ticks."""
     from lighthouse_ai.governor.scheduler_gate import PauseReason, Policy
+
     return Policy.PAUSED, PauseReason.USER_DISABLED
 
 
 # ---------------------------------------------------------------------------
 # Test 1: one tick invokes backup + integrity when due and configured
 # ---------------------------------------------------------------------------
+
 
 def test_tick_invokes_backup_and_check_when_configured(migrated_paths):
     """When restic is available and the passphrase is configured, a tick calls
@@ -81,8 +86,7 @@ def test_tick_invokes_backup_and_check_when_configured(migrated_paths):
 
     method_names = [c[0] for c in fake.calls]
     assert method_names == ["init", "backup", "check"], (
-        f"expected [init, backup, check] calls (repo dir absent → turnkey init); "
-        f"got {method_names}"
+        f"expected [init, backup, check] calls (repo dir absent → turnkey init); got {method_names}"
     )
 
     # init seeded the new repo with the configured passphrase
@@ -121,6 +125,7 @@ def test_tick_skips_init_when_repo_already_populated(migrated_paths):
 # ---------------------------------------------------------------------------
 # Test 2: no-op when restic is absent (runner=None) — no crash, no call
 # ---------------------------------------------------------------------------
+
 
 def test_tick_noop_when_runner_is_none(migrated_paths):
     """A None runner (restic binary absent) must be a silent no-op — no call,
@@ -164,6 +169,7 @@ def test_tick_noop_when_passphrase_empty_string(migrated_paths):
 # Test 3: skips while the gate reports PAUSED
 # ---------------------------------------------------------------------------
 
+
 def test_loop_tick_skips_while_gate_paused(migrated_paths):
     """Simulate the PAUSED guard: the loop body checks gate.policy() before
     calling _backup_tick; when PAUSED it continues without calling the runner.
@@ -190,14 +196,13 @@ def test_loop_tick_skips_while_gate_paused(migrated_paths):
     else:
         _backup_tick(migrated_paths, repo=repo, passphrase=passphrase, runner=fake)
 
-    assert fake.calls == [], (
-        "backup runner must not be called while the scheduler gate is PAUSED"
-    )
+    assert fake.calls == [], "backup runner must not be called while the scheduler gate is PAUSED"
 
 
 # ---------------------------------------------------------------------------
 # Test 4: backup failure does NOT prevent check from being skipped gracefully
 # ---------------------------------------------------------------------------
+
 
 def test_tick_backup_failure_does_not_raise(migrated_paths):
     """If backup() raises, the tick logs and returns — check is not called and

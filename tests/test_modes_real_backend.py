@@ -23,11 +23,12 @@ pytestmark = pytest.mark.skipif(
 
 def _draft_body(state_db, draft_id):
     from lighthouse_ai.persistence import open_db
+
     conn = open_db(state_db)
     try:
         row = conn.execute(
-            "SELECT artifact_type, body_json FROM drafts WHERE id=?",
-            (draft_id,)).fetchone()
+            "SELECT artifact_type, body_json FROM drafts WHERE id=?", (draft_id,)
+        ).fetchone()
     finally:
         conn.close()
     return row[0], json.loads(row[1]) if row[1] else {}
@@ -35,22 +36,31 @@ def _draft_body(state_db, draft_id):
 
 def _insert(state_db, jid, mode, meta):
     from lighthouse_ai.persistence import open_db
+
     conn = open_db(state_db)
     try:
         conn.execute(
-            "INSERT INTO jobs (id, mode, status, metadata_json) "
-            "VALUES (?, ?, 'queued', ?)", (jid, mode, json.dumps(meta)))
+            "INSERT INTO jobs (id, mode, status, metadata_json) VALUES (?, ?, 'queued', ?)",
+            (jid, mode, json.dumps(meta)),
+        )
     finally:
         conn.close()
 
 
 # No-corpus modes exercise the LLM meaningfully without ingest setup.
 _REAL_CASES = [
-    ("decide", {"topic": "Postgres vs SQLite for a local-first app?",
-                "options": ["Postgres", "SQLite"],
-                "criteria": [{"label": "Simplicity", "weight": 2.0},
-                             {"label": "Concurrency", "weight": 1.0}]},
-     "matrix"),
+    (
+        "decide",
+        {
+            "topic": "Postgres vs SQLite for a local-first app?",
+            "options": ["Postgres", "SQLite"],
+            "criteria": [
+                {"label": "Simplicity", "weight": 2.0},
+                {"label": "Concurrency", "weight": 1.0},
+            ],
+        },
+        "matrix",
+    ),
     ("adjudicate", {"topic": "Should small teams self-host LLMs?"}, "verdict"),
 ]
 

@@ -43,6 +43,7 @@ def broker(tmp_path: Path) -> SandboxBroker:
 
 # --- extract_text: HTML --------------------------------------------------
 
+
 def test_html_strips_tags() -> None:
     html = b"<html><body><h1>Title</h1><p>Hello world</p></body></html>"
     text = extract_text(html, "text/html", None)
@@ -103,6 +104,7 @@ def test_html_block_boundaries_separate_words() -> None:
 
 # --- extract_text: plain text -------------------------------------------
 
+
 def test_plaintext_passthrough() -> None:
     assert extract_text(b"just some words", "text/plain", None) == "just some words"
 
@@ -130,11 +132,13 @@ def test_normalization_strips_control_chars() -> None:
 
 # --- extract_text: PDF (no extractor installed) -------------------------
 
+
 def test_pdf_without_extractor_returns_empty() -> None:
     # pypdf/pdfminer are optional; with neither installed we get "".
     pytest.importorskip  # marker; we explicitly assert the absent-dep path
     try:
         import pypdf  # noqa: F401
+
         pytest.skip("pypdf is installed; absent-dep path not exercised")
     except ImportError:
         pass
@@ -143,6 +147,7 @@ def test_pdf_without_extractor_returns_empty() -> None:
 
 
 # --- ingest_bytes: sandbox ordering -------------------------------------
+
 
 def test_reject_short_circuits_to_none(broker: SandboxBroker) -> None:
     payload = b"prefix " + EICAR_SIGNATURE + b" suffix"
@@ -157,8 +162,7 @@ def test_reject_records_quarantine_verdict(broker: SandboxBroker) -> None:
 
 
 def test_admit_returns_document(broker: SandboxBroker) -> None:
-    doc = ingest_bytes(b"hello clean content", content_type="text/plain",
-                       broker=broker)
+    doc = ingest_bytes(b"hello clean content", content_type="text/plain", broker=broker)
     assert isinstance(doc, Document)
     assert doc.text == "hello clean content"
     assert doc.metadata["verdict"] == Verdict.ADMIT.value
@@ -166,11 +170,11 @@ def test_admit_returns_document(broker: SandboxBroker) -> None:
 
 # --- ingest_bytes: metadata / provenance --------------------------------
 
+
 def test_document_id_and_sha256_metadata(broker: SandboxBroker) -> None:
     payload = b"deterministic body"
     expected = hashlib.sha256(payload).hexdigest()
-    doc = ingest_bytes(payload, url="https://x.test/a", content_type="text/plain",
-                       broker=broker)
+    doc = ingest_bytes(payload, url="https://x.test/a", content_type="text/plain", broker=broker)
     assert doc is not None
     assert doc.metadata["sha256"] == expected
     assert doc.id == f"sha256:{expected}"
@@ -189,11 +193,11 @@ def test_identical_bytes_produce_same_id(broker: SandboxBroker) -> None:
 def test_pdf_sets_unavailable_flag(broker: SandboxBroker) -> None:
     try:
         import pypdf  # noqa: F401
+
         pytest.skip("pypdf installed; flag not set")
     except ImportError:
         pass
-    doc = ingest_bytes(b"%PDF-1.4 minimal", content_type="application/pdf",
-                       broker=broker)
+    doc = ingest_bytes(b"%PDF-1.4 minimal", content_type="application/pdf", broker=broker)
     # %PDF header with no active content -> EICAR-only broker admits it.
     assert doc is not None
     assert doc.metadata.get(PDF_UNAVAILABLE_FLAG) is True
@@ -210,9 +214,11 @@ def test_oversized_text_is_truncated(broker: SandboxBroker) -> None:
 
 # --- ingest produces chunkable documents --------------------------------
 
+
 def test_document_is_chunkable(broker: SandboxBroker) -> None:
-    doc = ingest_bytes(b"One sentence. Two sentence. Three.",
-                       content_type="text/plain", broker=broker)
+    doc = ingest_bytes(
+        b"One sentence. Two sentence. Three.", content_type="text/plain", broker=broker
+    )
     assert doc is not None
     chunks = chunk_document(doc)
     assert chunks
@@ -220,6 +226,7 @@ def test_document_is_chunkable(broker: SandboxBroker) -> None:
 
 
 # --- ingest_file --------------------------------------------------------
+
 
 def test_ingest_file_reads_html(tmp_path: Path, broker: SandboxBroker) -> None:
     f = tmp_path / "doc.html"
@@ -238,11 +245,13 @@ def test_ingest_file_rejects_eicar(tmp_path: Path, broker: SandboxBroker) -> Non
 
 # --- fetch_and_ingest (mocked with respx) -------------------------------
 
+
 @respx.mock
 def test_fetch_and_ingest_html(broker: SandboxBroker) -> None:
     route = respx.get("https://example.test/page").mock(
         return_value=httpx.Response(
-            200, html="<html><body><p>remote text</p></body></html>",
+            200,
+            html="<html><body><p>remote text</p></body></html>",
             headers={"content-type": "text/html; charset=utf-8"},
         )
     )
@@ -256,17 +265,16 @@ def test_fetch_and_ingest_html(broker: SandboxBroker) -> None:
 @respx.mock
 def test_fetch_and_ingest_rejects_eicar(broker: SandboxBroker) -> None:
     respx.get("https://evil.test/x").mock(
-        return_value=httpx.Response(200, content=EICAR_SIGNATURE,
-                                    headers={"content-type": "text/plain"})
+        return_value=httpx.Response(
+            200, content=EICAR_SIGNATURE, headers={"content-type": "text/plain"}
+        )
     )
     assert fetch_and_ingest("https://evil.test/x", broker) is None
 
 
 @respx.mock
 def test_fetch_and_ingest_raises_on_http_error(broker: SandboxBroker) -> None:
-    respx.get("https://example.test/missing").mock(
-        return_value=httpx.Response(404)
-    )
+    respx.get("https://example.test/missing").mock(return_value=httpx.Response(404))
     with pytest.raises(httpx.HTTPStatusError):
         fetch_and_ingest("https://example.test/missing", broker)
 
@@ -274,8 +282,7 @@ def test_fetch_and_ingest_raises_on_http_error(broker: SandboxBroker) -> None:
 @respx.mock
 def test_fetch_and_ingest_uses_injected_client(broker: SandboxBroker) -> None:
     respx.get("https://example.test/inj").mock(
-        return_value=httpx.Response(200, text="injected",
-                                    headers={"content-type": "text/plain"})
+        return_value=httpx.Response(200, text="injected", headers={"content-type": "text/plain"})
     )
     with httpx.Client() as client:
         doc = fetch_and_ingest("https://example.test/inj", broker, client=client)
@@ -289,9 +296,31 @@ def test_fetch_and_ingest_follows_redirect(broker: SandboxBroker) -> None:
         return_value=httpx.Response(302, headers={"location": "/new"})
     )
     respx.get("https://example.test/new").mock(
-        return_value=httpx.Response(200, text="final",
-                                    headers={"content-type": "text/plain"})
+        return_value=httpx.Response(200, text="final", headers={"content-type": "text/plain"})
     )
     doc = fetch_and_ingest("https://example.test/old", broker)
     assert doc is not None
     assert doc.text == "final"
+
+
+def test_looks_like_image() -> None:
+    from lighthouse_ai.ingest import _looks_like_image
+
+    assert _looks_like_image(b"\x89PNG\r\n\x1a\n", None, None) is True
+    assert _looks_like_image(b"not image", "image/png", None) is True
+    assert _looks_like_image(b"not image", None, "file.jpg") is True
+    assert _looks_like_image(b"not image", None, "file.txt") is False
+
+
+def test_vlm_extraction_fallback_mocked(monkeypatch, broker) -> None:
+    from lighthouse_ai.ingest import ingest_bytes
+
+    monkeypatch.setattr(
+        "lighthouse_ai.ingest._extract_text_via_vlm", lambda pb, fn: "Decoded chart data: 42%"
+    )
+
+    payload = b"\x89PNG\r\n\x1a\n"
+    doc = ingest_bytes(payload, filename="chart.png", content_type="image/png", broker=broker)
+    assert doc is not None
+    assert doc.text == "Decoded chart data: 42%"
+    assert doc.metadata["multimodal_extracted"] is True

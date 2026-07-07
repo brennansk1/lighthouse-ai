@@ -22,6 +22,7 @@ from lighthouse_ai.persistence import open_db
 @dataclass
 class _FakeOllama:
     """Stub backend matching the OllamaBackend chat() signature."""
+
     fixed_text: str = "ollama-says-hi"
     prompt_tokens: int = 7
     completion_tokens: int = 4
@@ -39,7 +40,9 @@ class _FakeOllama:
         # These tests exercise *routing*, not the RAM guard — report every
         # model as already resident so enough-RAM never blocks the fake.
         class _All:
-            def __contains__(self, _x): return True
+            def __contains__(self, _x):
+                return True
+
         return _All()
 
     def chat(self, model: str, prompt: str, *, sampling=None, system=None) -> ChatResponse:
@@ -48,8 +51,10 @@ class _FakeOllama:
         if self.raise_on_chat:
             raise OllamaUnavailable("simulated")
         return ChatResponse(
-            text=self.fixed_text, prompt_tokens=self.prompt_tokens,
-            completion_tokens=self.completion_tokens, model=model,
+            text=self.fixed_text,
+            prompt_tokens=self.prompt_tokens,
+            completion_tokens=self.completion_tokens,
+            model=model,
         )
 
 
@@ -62,10 +67,15 @@ def stub_profile() -> HardwareProfile:
     Sprint 22.
     """
     return HardwareProfile(
-        platform="macos", arch="arm64", apple_silicon=True,
-        total_ram_gb=16.0, free_ram_gb=8.0,
-        cpu_cores_physical=8, cpu_cores_logical=8,
-        gpu=[], unified_memory=True,
+        platform="macos",
+        arch="arm64",
+        apple_silicon=True,
+        total_ram_gb=16.0,
+        free_ram_gb=8.0,
+        cpu_cores_physical=8,
+        cpu_cores_logical=8,
+        gpu=[],
+        unified_memory=True,
         available_backends=["cpu", "ollama"],
         suggested_tier="T1",
     )
@@ -73,8 +83,13 @@ def stub_profile() -> HardwareProfile:
 
 def _gateway_with_fake(migrated_paths, stub_profile, fake: _FakeOllama | None) -> Gateway:
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
-    return Gateway(g, migrated_paths.audit_db, profile=stub_profile,
-                   ollama=fake, prefer_real_backends=fake is not None)
+    return Gateway(
+        g,
+        migrated_paths.audit_db,
+        profile=stub_profile,
+        ollama=fake,
+        prefer_real_backends=fake is not None,
+    )
 
 
 def test_dispatch_routes_ollama_when_available(migrated_paths, stub_profile):
@@ -90,22 +105,33 @@ def test_dispatch_routes_ollama_when_available(migrated_paths, stub_profile):
 
 # --- live token streaming (token_sink) ------------------------------------
 
+
 @dataclass
 class _StreamingFakeOllama(_FakeOllama):
     """Fake whose chat() accepts on_token, like the real OllamaBackend."""
+
     chunks: tuple = ("Hel", "lo.")
 
-    def chat(self, model: str, prompt: str, *, sampling=None, system=None,
-             on_token=None) -> ChatResponse:
+    def chat(
+        self, model: str, prompt: str, *, sampling=None, system=None, on_token=None
+    ) -> ChatResponse:
         assert self.calls is not None
-        self.calls.append({"model": model, "prompt": prompt,
-                           "sampling": sampling, "streamed": on_token is not None})
+        self.calls.append(
+            {
+                "model": model,
+                "prompt": prompt,
+                "sampling": sampling,
+                "streamed": on_token is not None,
+            }
+        )
         if on_token is not None:
             for tok in self.chunks:
                 on_token(tok)
         return ChatResponse(
-            text="".join(self.chunks), prompt_tokens=self.prompt_tokens,
-            completion_tokens=self.completion_tokens, model=model,
+            text="".join(self.chunks),
+            prompt_tokens=self.prompt_tokens,
+            completion_tokens=self.completion_tokens,
+            model=model,
         )
 
 
@@ -113,13 +139,17 @@ def test_token_sink_receives_role_job_and_tokens(migrated_paths, stub_profile):
     fake = _StreamingFakeOllama()
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
     seen: list[tuple] = []
-    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile,
-                 ollama=fake, prefer_real_backends=True,
-                 token_sink=lambda role, job_id, tok: seen.append((role, job_id, tok)))
+    gw = Gateway(
+        g,
+        migrated_paths.audit_db,
+        profile=stub_profile,
+        ollama=fake,
+        prefer_real_backends=True,
+        token_sink=lambda role, job_id, tok: seen.append((role, job_id, tok)),
+    )
     resp = gw.complete("synthesizer", "weave it", job_id="j-stream")
     assert resp.text == "Hello."
-    assert seen == [("synthesizer", "j-stream", "Hel"),
-                    ("synthesizer", "j-stream", "lo.")]
+    assert seen == [("synthesizer", "j-stream", "Hel"), ("synthesizer", "j-stream", "lo.")]
     assert fake.calls[0]["streamed"] is True
 
 
@@ -139,8 +169,14 @@ def test_token_sink_errors_never_break_completion(migrated_paths, stub_profile):
     def _boom(_role, _job, _tok):
         raise RuntimeError("sink crashed")
 
-    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile,
-                 ollama=fake, prefer_real_backends=True, token_sink=_boom)
+    gw = Gateway(
+        g,
+        migrated_paths.audit_db,
+        profile=stub_profile,
+        ollama=fake,
+        prefer_real_backends=True,
+        token_sink=_boom,
+    )
     resp = gw.complete("synthesizer", "weave it", job_id="j1")
     assert resp.text == "Hello."
 
@@ -158,10 +194,15 @@ def test_dispatch_runs_real_moe_tag_under_tight_ram(migrated_paths, stub_profile
 
     fake = _NotResident(fixed_text="real-moe")
     gw = _gateway_with_fake(migrated_paths, stub_profile, fake)
-    gw = Gateway(Governor(migrated_paths.state_db, BUDGET_DEFAULTS),
-                 migrated_paths.audit_db, profile=stub_profile, ollama=fake,
-                 overrides={"planner": "qwen3:30b-a3b"})
+    gw = Gateway(
+        Governor(migrated_paths.state_db, BUDGET_DEFAULTS),
+        migrated_paths.audit_db,
+        profile=stub_profile,
+        ollama=fake,
+        overrides={"planner": "qwen3:30b-a3b"},
+    )
     from lighthouse_ai.governor.ollama_queue import AdmissionConfig
+
     # Refuse-now config + essentially no free RAM: a dense model would be denied,
     # but the paging MoE reserves nothing (need=0) and runs.
     gw._admission = AdmissionConfig(wait_timeout_s=0.0)
@@ -221,8 +262,9 @@ def test_dispatch_records_mock_fallback_in_audit(migrated_paths, stub_profile):
 def test_dispatch_no_real_backends_when_disabled(migrated_paths, stub_profile):
     """``prefer_real_backends=False`` keeps the old mock-only behavior."""
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
-    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile,
-                 ollama=None, prefer_real_backends=False)
+    gw = Gateway(
+        g, migrated_paths.audit_db, profile=stub_profile, ollama=None, prefer_real_backends=False
+    )
     resp = gw.complete("planner", "hello")
     assert "[mock" in resp.text
 
@@ -242,8 +284,7 @@ def test_dispatch_existing_mock_tests_still_pass(migrated_paths, stub_profile):
     g = Governor(migrated_paths.state_db, BUDGET_DEFAULTS)
     # No ollama= passed: the gateway will try OllamaBackend(), which will fail
     # available() if no daemon is up. We just confirm completion still works.
-    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile,
-                 prefer_real_backends=True)
+    gw = Gateway(g, migrated_paths.audit_db, profile=stub_profile, prefer_real_backends=True)
     resp = gw.complete("planner", "hello")
     assert resp.text
     # Either real (ollama-says-hi or actual Qwen output) or mock; both are valid.

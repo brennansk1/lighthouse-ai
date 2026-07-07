@@ -57,7 +57,9 @@ def _api_key(api_key: str | None) -> str:
     return api_key or os.environ.get("CENSUS_API_KEY", "")
 
 
-def _parse_census_response(data: list, dataset: str, variables: list[str], geography: str) -> list[Document]:
+def _parse_census_response(
+    data: list, dataset: str, variables: list[str], geography: str
+) -> list[Document]:
     """Parse Census API tabular response (list-of-lists) into Documents.
 
     The first row is always the column headers. Subsequent rows are data.
@@ -84,22 +86,28 @@ def _parse_census_response(data: list, dataset: str, variables: list[str], geogr
                 desc = _ACS_VARS.get(v, v)
                 var_lines.append(f"{desc}: {record[v]}")
 
-        text = f"{dataset} — {geo_label}: {'; '.join(var_lines)}" if var_lines else f"{dataset} — {geo_label}"
+        text = (
+            f"{dataset} — {geo_label}: {'; '.join(var_lines)}"
+            if var_lines
+            else f"{dataset} — {geo_label}"
+        )
         doc_id = f"census:{dataset}:{geo_label[:40]}"
-        out.append(Document(
-            id=doc_id,
-            text=text,
-            metadata={
-                "source": "census",
-                "url": "https://data.census.gov/",
-                "grade": "A",
-                "title": f"{dataset} — {geo_label}",
-                "dataset": dataset,
-                "geography": geography,
-                "geo_label": geo_label,
-                **{v: record.get(v, "") for v in variables},
-            },
-        ))
+        out.append(
+            Document(
+                id=doc_id,
+                text=text,
+                metadata={
+                    "source": "census",
+                    "url": "https://data.census.gov/",
+                    "grade": "A",
+                    "title": f"{dataset} — {geo_label}",
+                    "dataset": dataset,
+                    "geography": geography,
+                    "geo_label": geo_label,
+                    **{v: record.get(v, "") for v in variables},
+                },
+            )
+        )
     return out
 
 
@@ -138,23 +146,29 @@ def search_dataset(
             combined = f"{title} {desc}".lower()
             if q and not any(w in combined for w in q.split()):
                 continue
-            url = (ds.get("distribution") or [{}])[0].get("accessURL", "https://api.census.gov/data") if isinstance(ds.get("distribution"), list) else "https://api.census.gov/data"
+            url = (
+                (ds.get("distribution") or [{}])[0].get("accessURL", "https://api.census.gov/data")
+                if isinstance(ds.get("distribution"), list)
+                else "https://api.census.gov/data"
+            )
             vintage = str(ds.get("c_vintage") or "").strip()
-            dataset_id = (ds.get("c_dataset") or ds.get("identifier") or "")
+            dataset_id = ds.get("c_dataset") or ds.get("identifier") or ""
             if isinstance(dataset_id, list):
                 dataset_id = "/".join(dataset_id)
-            out.append(Document(
-                id=f"census:dataset:{title[:50]}",
-                text=f"{title}. {desc[:200]}" if desc else title,
-                metadata={
-                    "source": "census",
-                    "url": url,
-                    "grade": "A",
-                    "title": title,
-                    "dataset_id": str(dataset_id),
-                    "vintage": vintage,
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"census:dataset:{title[:50]}",
+                    text=f"{title}. {desc[:200]}" if desc else title,
+                    metadata={
+                        "source": "census",
+                        "url": url,
+                        "grade": "A",
+                        "title": title,
+                        "dataset_id": str(dataset_id),
+                        "vintage": vintage,
+                    },
+                )
+            )
             if len(out) >= max_results:
                 break
         return out
@@ -286,20 +300,22 @@ def query_geographic(
     for fips, geo_type, name, abbr in _GEO_CATALOG:
         if not q or any(w in name.lower() or w in abbr.lower() for w in q.split()):
             text = f"{name} ({abbr}) — FIPS {fips}, Census {geo_type}"
-            out.append(Document(
-                id=f"census:geo:{fips}",
-                text=text,
-                metadata={
-                    "source": "census",
-                    "url": "https://data.census.gov/",
-                    "grade": "A",
-                    "title": f"{name} ({abbr})",
-                    "fips": fips,
-                    "geo_type": geo_type,
-                    "state_name": name,
-                    "abbreviation": abbr,
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"census:geo:{fips}",
+                    text=text,
+                    metadata={
+                        "source": "census",
+                        "url": "https://data.census.gov/",
+                        "grade": "A",
+                        "title": f"{name} ({abbr})",
+                        "fips": fips,
+                        "geo_type": geo_type,
+                        "state_name": name,
+                        "abbreviation": abbr,
+                    },
+                )
+            )
         if len(out) >= max_results:
             break
     return out

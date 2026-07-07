@@ -38,8 +38,7 @@ class TestScaffoldSkill:
 
     def test_manifest_is_valid(self, tmp_path: Path) -> None:
         scaffold_skill("my_source", tmp_path, name="My Source", category="academic")
-        manifest = load_manifest(tmp_path / "my_source" / "manifest.toml",
-                                 expected_id="my_source")
+        manifest = load_manifest(tmp_path / "my_source" / "manifest.toml", expected_id="my_source")
         assert manifest.id == "my_source"
         assert manifest.name == "My Source"
         assert manifest.category == "academic"
@@ -74,14 +73,16 @@ class TestScaffoldSkill:
 
     def test_default_name_title_cases_id(self, tmp_path: Path) -> None:
         scaffold_skill("my_cool_source", tmp_path)
-        manifest = load_manifest(tmp_path / "my_cool_source" / "manifest.toml",
-                                 expected_id="my_cool_source")
+        manifest = load_manifest(
+            tmp_path / "my_cool_source" / "manifest.toml", expected_id="my_cool_source"
+        )
         assert manifest.name == "My Cool Source"
 
     def test_custom_tier(self, tmp_path: Path) -> None:
         scaffold_skill("tier_b_skill", tmp_path, tier="B")
-        manifest = load_manifest(tmp_path / "tier_b_skill" / "manifest.toml",
-                                 expected_id="tier_b_skill")
+        manifest = load_manifest(
+            tmp_path / "tier_b_skill" / "manifest.toml", expected_id="tier_b_skill"
+        )
         assert manifest.tier == "B"
 
     def test_existing_folder_raises(self, tmp_path: Path) -> None:
@@ -152,8 +153,7 @@ class TestImportGuardEnforcement:
         skill_py = tmp_path / "open_skill" / "skill.py"
         # Append a forbidden bare call
         skill_py.write_text(
-            skill_py.read_text(encoding="utf-8")
-            + "\ndef _bad():\n    open('/etc/passwd')\n",
+            skill_py.read_text(encoding="utf-8") + "\ndef _bad():\n    open('/etc/passwd')\n",
             encoding="utf-8",
         )
         with pytest.raises(SkillLoadError, match="forbidden"):
@@ -175,25 +175,38 @@ class TestSkillNewCli:
 
     def test_skill_new_with_name_and_category(self, tmp_path: Path) -> None:
         runner = CliRunner()
-        r = runner.invoke(app, [
-            "skill", "new", "cli_news",
-            "--dir", str(tmp_path),
-            "--name", "CLI News Source",
-            "--category", "news",
-        ])
+        r = runner.invoke(
+            app,
+            [
+                "skill",
+                "new",
+                "cli_news",
+                "--dir",
+                str(tmp_path),
+                "--name",
+                "CLI News Source",
+                "--category",
+                "news",
+            ],
+        )
         assert r.exit_code == 0, r.stdout
-        manifest = load_manifest(tmp_path / "cli_news" / "manifest.toml",
-                                 expected_id="cli_news")
+        manifest = load_manifest(tmp_path / "cli_news" / "manifest.toml", expected_id="cli_news")
         assert manifest.name == "CLI News Source"
         assert manifest.category == "news"
 
     def test_skill_new_watchable_flag(self, tmp_path: Path) -> None:
         runner = CliRunner()
-        r = runner.invoke(app, [
-            "skill", "new", "cli_watch",
-            "--dir", str(tmp_path),
-            "--watchable",
-        ])
+        r = runner.invoke(
+            app,
+            [
+                "skill",
+                "new",
+                "cli_watch",
+                "--dir",
+                str(tmp_path),
+                "--watchable",
+            ],
+        )
         assert r.exit_code == 0, r.stdout
         loaded = load_skill("cli_watch", library_dir=tmp_path)
         assert loaded.manifest.watchable is True
@@ -271,21 +284,18 @@ class TestSkillValidateCli:
 
     def test_validate_fails_for_unknown_skill(self, tmp_path: Path) -> None:
         runner = CliRunner()
-        r = runner.invoke(app, [
-            "skill", "validate", "no_such_skill", "--dir", str(tmp_path)
-        ])
+        r = runner.invoke(app, ["skill", "validate", "no_such_skill", "--dir", str(tmp_path)])
         assert r.exit_code != 0
 
     def test_validate_reports_broken_import(self, tmp_path: Path) -> None:
         """A skill with a forbidden import must report failure."""
         scaffold_skill("validate_broken", tmp_path)
         skill_py = tmp_path / "validate_broken" / "skill.py"
-        skill_py.write_text("import socket\n" + skill_py.read_text(encoding="utf-8"),
-                            encoding="utf-8")
+        skill_py.write_text(
+            "import socket\n" + skill_py.read_text(encoding="utf-8"), encoding="utf-8"
+        )
         runner = CliRunner()
-        r = runner.invoke(app, [
-            "skill", "validate", "validate_broken", "--dir", str(tmp_path)
-        ])
+        r = runner.invoke(app, ["skill", "validate", "validate_broken", "--dir", str(tmp_path)])
         assert r.exit_code != 0
         assert "error" in r.output.lower() or "forbidden" in r.output.lower()
 
@@ -295,10 +305,9 @@ class TestSkillValidateCli:
         manifest_path = tmp_path / "mf_broken" / "manifest.toml"
         # Corrupt: set tier to an invalid value
         original = manifest_path.read_text(encoding="utf-8")
-        manifest_path.write_text(original.replace('tier        = "A"', 'tier = "Z"'),
-                                 encoding="utf-8")
+        manifest_path.write_text(
+            original.replace('tier        = "A"', 'tier = "Z"'), encoding="utf-8"
+        )
         runner = CliRunner()
-        r = runner.invoke(app, [
-            "skill", "validate", "mf_broken", "--dir", str(tmp_path)
-        ])
+        r = runner.invoke(app, ["skill", "validate", "mf_broken", "--dir", str(tmp_path)])
         assert r.exit_code != 0

@@ -160,9 +160,7 @@ try:
 except ModuleNotFoundError:
     _PROTEGO_AVAILABLE = False
 
-pytestmark_protego = pytest.mark.skipif(
-    not _PROTEGO_AVAILABLE, reason="protego not installed"
-)
+pytestmark_protego = pytest.mark.skipif(not _PROTEGO_AVAILABLE, reason="protego not installed")
 
 
 @pytest.mark.skipif(not _PROTEGO_AVAILABLE, reason="protego not installed")
@@ -332,9 +330,7 @@ class TestCrawlDelayEnforcement:
         gate.check("https://example.com/b")
 
         assert slept, "expected at least one sleep call for crawl-delay enforcement"
-        assert slept[0] == pytest.approx(5.0, abs=0.1), (
-            f"expected sleep of 5.0s, got {slept[0]}"
-        )
+        assert slept[0] == pytest.approx(5.0, abs=0.1), f"expected sleep of 5.0s, got {slept[0]}"
 
     def test_no_crawl_delay_no_sleep(self) -> None:
         """When crawl_delay() returns 0.0 no sleep must occur."""
@@ -426,9 +422,7 @@ class TestPolitenessGateWithProtego:
         gate.check("https://example.com/public/page")  # must not raise
 
     def test_egress_blocked_reason_mentions_agent(self) -> None:
-        robots = RobotsPolicy(
-            fetcher=_fetcher_for(ROBOTS_DISALLOW_ALL), user_agent="MyBot"
-        )
+        robots = RobotsPolicy(fetcher=_fetcher_for(ROBOTS_DISALLOW_ALL), user_agent="MyBot")
         gate = PolitenessGate(robots=robots, user_agent="MyBot")
         with pytest.raises(EgressBlocked) as exc:
             gate.check("https://example.com/")
@@ -483,9 +477,7 @@ class TestEgressGuardedClientWithPoliteness:
     @respx.mock
     def test_robots_disallow_raises_egress_blocked_no_fetch(self) -> None:
         """robots.txt disallow must raise EgressBlocked; the network route must NOT be called."""
-        route = respx.get("https://arxiv.org/private/doc").mock(
-            return_value=httpx.Response(200)
-        )
+        route = respx.get("https://arxiv.org/private/doc").mock(return_value=httpx.Response(200))
         # Inject a robots.txt that disallows everything
         robots = RobotsPolicy(fetcher=_fetcher_for(ROBOTS_DISALLOW_ALL))
         gate = PolitenessGate(robots=robots)
@@ -502,9 +494,7 @@ class TestEgressGuardedClientWithPoliteness:
     @respx.mock
     def test_per_call_politeness_overrides_instance(self) -> None:
         """A per-call gate that disallows overrides a permissive instance gate."""
-        route = respx.get("https://arxiv.org/page").mock(
-            return_value=httpx.Response(200)
-        )
+        route = respx.get("https://arxiv.org/page").mock(return_value=httpx.Response(200))
         # Instance gate is permissive
         instance_gate = PolitenessGate()
         # Per-call gate disallows everything
@@ -526,9 +516,7 @@ class TestEgressGuardedClientWithPoliteness:
 class TestGuardedGetPoliteness:
     @respx.mock
     def test_guarded_get_politeness_none_unchanged(self) -> None:
-        route = respx.get("https://arxiv.org/abs/g").mock(
-            return_value=httpx.Response(200)
-        )
+        route = respx.get("https://arxiv.org/abs/g").mock(return_value=httpx.Response(200))
         resp = guarded_get("https://arxiv.org/abs/g", allowed_domains=ALLOWED)
         assert resp.status_code == 200
         assert route.called
@@ -541,9 +529,7 @@ class TestGuardedGetPoliteness:
     @pytest.mark.skipif(not _PROTEGO_AVAILABLE, reason="protego not installed")
     @respx.mock
     def test_guarded_get_with_blocking_gate(self) -> None:
-        route = respx.get("https://arxiv.org/blocked").mock(
-            return_value=httpx.Response(200)
-        )
+        route = respx.get("https://arxiv.org/blocked").mock(return_value=httpx.Response(200))
         robots = RobotsPolicy(fetcher=_fetcher_for(ROBOTS_DISALLOW_ALL))
         gate = PolitenessGate(robots=robots)
         with pytest.raises(EgressBlocked):
@@ -580,9 +566,7 @@ class TestNetPublicSignatureUnchanged:
     @respx.mock
     def test_get_original_signature_still_works(self) -> None:
         """get(url, *, privacy=...) still works exactly as before."""
-        respx.get("https://arxiv.org/abs/sig").mock(
-            return_value=httpx.Response(200)
-        )
+        respx.get("https://arxiv.org/abs/sig").mock(return_value=httpx.Response(200))
         client = EgressGuardedClient(allowed_domains=ALLOWED)
         resp = client.get("https://arxiv.org/abs/sig")
         assert resp.status_code == 200

@@ -133,6 +133,7 @@ def create_app(paths: Paths | None = None, *, started_at: float | None = None) -
     # The mount must happen after every API route is registered so the
     # StaticFiles catch-all doesn't shadow them.
     from .web import attach_web
+
     attach_web(app, p)
 
     return app

@@ -103,7 +103,9 @@ def test_tick_no_change_is_quiet(tmp_path):
         return "stable content that never changes"
 
     create_web_monitor(
-        db, url="https://stable.test", cadence_seconds=60,
+        db,
+        url="https://stable.test",
+        cadence_seconds=60,
         now="2026-05-29T00:00:00+00:00",
     )
     run_web_monitor_tick(db, fetch=fetch, now="2026-05-29T00:00:00+00:00")
@@ -143,16 +145,22 @@ def test_alert_sink_called_on_fire(tmp_path):
     received: list[dict] = []
 
     create_web_monitor(
-        db, url="https://sink.test", cadence_seconds=60,
+        db,
+        url="https://sink.test",
+        cadence_seconds=60,
         now="2026-05-29T00:00:00+00:00",
     )
     run_web_monitor_tick(
-        db, fetch=fetch, now="2026-05-29T00:00:00+00:00",
+        db,
+        fetch=fetch,
+        now="2026-05-29T00:00:00+00:00",
         alert_sink=received.append,
     )
     assert received == []  # baseline does not alert
     run_web_monitor_tick(
-        db, fetch=fetch, now="2026-05-29T00:05:00+00:00",
+        db,
+        fetch=fetch,
+        now="2026-05-29T00:05:00+00:00",
         alert_sink=received.append,
     )
     assert len(received) == 1
@@ -171,7 +179,9 @@ def test_tick_respects_cadence(tmp_path):
         return f"body-{len(calls)}"
 
     create_web_monitor(
-        db, url="https://cadence.test", cadence_seconds=600,
+        db,
+        url="https://cadence.test",
+        cadence_seconds=600,
         now="2026-05-29T00:00:00+00:00",
     )
 
@@ -196,7 +206,9 @@ def test_tick_fetch_error_skips_monitor(tmp_path):
         raise RuntimeError("network down")
 
     create_web_monitor(
-        db, url="https://broken.test", cadence_seconds=60,
+        db,
+        url="https://broken.test",
+        cadence_seconds=60,
         now="2026-05-29T00:00:00+00:00",
     )
     out = run_web_monitor_tick(db, fetch=fetch, now="2026-05-29T00:00:00+00:00")

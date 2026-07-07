@@ -1,10 +1,10 @@
 """Governor — the single cross-cutting runtime guardrail (design §24).
 
-  * Hierarchical token buckets (monthly→weekly→daily→per-job) — buckets.py
-  * Degradation tiers + trip/reset — buckets.py
-  * Loop detection (§24.6) — loop_detector.py
-  * Prompt-injection gate + spotlighting (§24.8) — injection_gate.py
-  * Egress proxy: allowlist + privacy tiers + connection log (§24.9) — egress_proxy.py
+* Hierarchical token buckets (monthly→weekly→daily→per-job) — buckets.py
+* Degradation tiers + trip/reset — buckets.py
+* Loop detection (§24.6) — loop_detector.py
+* Prompt-injection gate + spotlighting (§24.8) — injection_gate.py
+* Egress proxy: allowlist + privacy tiers + connection log (§24.9) — egress_proxy.py
 """
 
 from __future__ import annotations

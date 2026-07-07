@@ -95,8 +95,9 @@ def assert_pragmas(conn: sqlite3.Connection, spec: PragmaSpec = DEFAULTS) -> Non
         raise PragmaAssertionError(f"PRAGMA mismatch: {mismatches}")
 
 
-def open_db(path: str | Path, *, spec: PragmaSpec = DEFAULTS,
-            check_same_thread: bool = False) -> sqlite3.Connection:
+def open_db(
+    path: str | Path, *, spec: PragmaSpec = DEFAULTS, check_same_thread: bool = False
+) -> sqlite3.Connection:
     """Open a SQLite database, apply Lighthouse PRAGMAs, and verify them.
 
     Parameters

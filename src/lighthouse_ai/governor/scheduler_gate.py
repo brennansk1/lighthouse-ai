@@ -178,9 +178,7 @@ def sample_signals(cfg: SchedulerGateConfig | None = None) -> Signals:
     )
 
 
-def current_policy(
-    cfg: SchedulerGateConfig, sig: Signals
-) -> tuple[Policy, PauseReason | None]:
+def current_policy(cfg: SchedulerGateConfig, sig: Signals) -> tuple[Policy, PauseReason | None]:
     """Resolve host signals to a policy. Total function — never raises.
 
     Order: explicit user-off → server/aggressive → battery → cpu → normal.

@@ -17,8 +17,13 @@ from lighthouse_ai.modes.registry import (
 def test_seven_primary_modes_present():
     keys = {m.key for m in all_modes()}
     assert keys == {
-        "watch", "ask", "investigate", "survey",
-        "reconstruct", "decide", "adjudicate",
+        "watch",
+        "ask",
+        "investigate",
+        "survey",
+        "reconstruct",
+        "decide",
+        "adjudicate",
     }
 
 

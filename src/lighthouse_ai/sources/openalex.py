@@ -37,34 +37,54 @@ def _parse(data: dict) -> list[Document]:
         if not title:
             continue
         abstract = _reconstruct_abstract(w.get("abstract_inverted_index"))
-        out.append(Document(
-            id=w.get("id", f"openalex:{title[:40]}"),
-            text=f"{title}. {abstract}",
-            metadata={"source": "openalex", "url": w.get("id"), "grade": "A",
-                      "published_date": w.get("publication_date"),
-                      "cited_by": w.get("cited_by_count", 0), "title": title},
-        ))
+        out.append(
+            Document(
+                id=w.get("id", f"openalex:{title[:40]}"),
+                text=f"{title}. {abstract}",
+                metadata={
+                    "source": "openalex",
+                    "url": w.get("id"),
+                    "grade": "A",
+                    "published_date": w.get("publication_date"),
+                    "cited_by": w.get("cited_by_count", 0),
+                    "title": title,
+                },
+            )
+        )
     return out
 
 
-def search_openalex(query: str, *, max_results: int = 5,
-                    client: httpx.Client | None = None,
-                    timeout: float = 30.0, mailto: str | None = None) -> list[Document]:
+def search_openalex(
+    query: str,
+    *,
+    max_results: int = 5,
+    client: httpx.Client | None = None,
+    timeout: float = 30.0,
+    mailto: str | None = None,
+) -> list[Document]:
     """Search OpenAlex works. ``mailto`` joins the polite pool (recommended).
 
     Pass ``client`` to reuse a connection (and to make the call mockable in
     tests); otherwise a temporary client is used.
     """
-    params: dict[str, str | int] = {"search": query, "per_page": max_results,
-                                    "sort": "relevance_score:desc"}
+    params: dict[str, str | int] = {
+        "search": query,
+        "per_page": max_results,
+        "sort": "relevance_score:desc",
+    }
     if mailto:
         params["mailto"] = mailto
     owns_client = client is None
     if client is None:
         client = httpx.Client(timeout=timeout)
     try:
-        r = guarded_get(_API, allowed_domains=_ALLOWED_HOSTS, params=params,
-                        headers={"User-Agent": "Lighthouse/0.1"}, client=client)
+        r = guarded_get(
+            _API,
+            allowed_domains=_ALLOWED_HOSTS,
+            params=params,
+            headers={"User-Agent": "Lighthouse/0.1"},
+            client=client,
+        )
         r.raise_for_status()
         return _parse(r.json())
     finally:

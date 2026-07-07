@@ -50,6 +50,7 @@ class LogseqPage:
 
 # ── HTML fallback ───────────────────────────────────────────────────────────
 
+
 def _html_to_blocks(body_html: str) -> list[str]:
     """Very small HTML→markdown-block conversion for our own draft HTML."""
     text = body_html
@@ -59,12 +60,13 @@ def _html_to_blocks(body_html: str) -> list[str]:
     text = re.sub(r"<li[^>]*>(.*?)</li>", r"- \1", text, flags=re.S)
     text = re.sub(r"</?(ul|section|div)[^>]*>", "", text, flags=re.S)
     text = re.sub(r"<p[^>]*>(.*?)</p>", r"\1\n", text, flags=re.S)
-    text = re.sub(r"<[^>]+>", "", text)            # strip remaining tags
+    text = re.sub(r"<[^>]+>", "", text)  # strip remaining tags
     blocks = [b.strip() for b in text.splitlines() if b.strip()]
     return blocks
 
 
 # ── markdown helpers ─────────────────────────────────────────────────────────
+
 
 def _md_cell(value: Any) -> str:
     """Escape a value for use inside a markdown table cell.
@@ -107,6 +109,7 @@ def _prop(lines: list[str], depth: int, key: str, value: Any) -> None:
 # pre-indented Logseq lines; renderers nest under depth 1 (one level below the
 # heading block at depth 0).
 
+
 def _render_matrix(bj: dict) -> list[str]:
     """Decide → options × criteria table with totals, winner + crux blocks."""
     lines: list[str] = []
@@ -119,9 +122,11 @@ def _render_matrix(bj: dict) -> list[str]:
         cell_map[(c.get("option"), c.get("criterion"))] = c.get("score")
 
     crit_labels = [c.get("label", "") for c in criteria]
-    headers = ["Option", *[f"{lab} (w={c.get('weight')})"
-                           for lab, c in zip(crit_labels, criteria, strict=False)],
-               "Total"]
+    headers = [
+        "Option",
+        *[f"{lab} (w={c.get('weight')})" for lab, c in zip(crit_labels, criteria, strict=False)],
+        "Total",
+    ]
     rows = []
     for opt in options:
         row = [opt]
@@ -196,8 +201,10 @@ def _render_table(bj: dict) -> list[str]:
     out_rows = []
     for row in rows_in:
         cell_by_attr = {c.get("attribute"): c.get("value", "") for c in row.get("cells", [])}
-        out_rows.append([row.get("title") or row.get("doc_id", "")]
-                        + [cell_by_attr.get(a, "") for a in attributes])
+        out_rows.append(
+            [row.get("title") or row.get("doc_id", "")]
+            + [cell_by_attr.get(a, "") for a in attributes]
+        )
     _nested(lines, 1, "## Evidence table")
     for tline in _md_table(headers, out_rows):
         _nested(lines, 2, tline)
@@ -279,8 +286,7 @@ _RENDERERS = {
 }
 
 
-def _render_body(artifact_type: str | None, body_json: dict | None,
-                 body_html: str) -> list[str]:
+def _render_body(artifact_type: str | None, body_json: dict | None, body_html: str) -> list[str]:
     """Render the page's content blocks (below the heading).
 
     Dispatches to the typed renderer when a structured ``body_json`` and a
@@ -299,11 +305,19 @@ def _render_body(artifact_type: str | None, body_json: dict | None,
     return [f"  - {block}" for block in _html_to_blocks(body_html)]
 
 
-def export_draft(graph_dir: Path, *, draft_id: str, title: str, body_html: str,
-                 topic: str = "", wep_phrase: str | None = None,
-                 source_count: int = 0, tags: list[str] | None = None,
-                 body_json: dict | None = None,
-                 artifact_type: str | None = None) -> LogseqPage:
+def export_draft(
+    graph_dir: Path,
+    *,
+    draft_id: str,
+    title: str,
+    body_html: str,
+    topic: str = "",
+    wep_phrase: str | None = None,
+    source_count: int = 0,
+    tags: list[str] | None = None,
+    body_json: dict | None = None,
+    artifact_type: str | None = None,
+) -> LogseqPage:
     """Write/overwrite a Logseq page for the draft. Returns the page handle.
 
     ``body_json`` + ``artifact_type`` are optional: when supplied (and the type

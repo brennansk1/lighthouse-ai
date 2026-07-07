@@ -74,15 +74,18 @@ _BLANKLINES_RE = re.compile(r"\n\s*\n\s*\n+")
 
 # Characters that carry no readable meaning but can break hashing/embedding or
 # enable bidi/zero-width spoofing (§13.14). Stripped during normalization.
-_ZERO_WIDTH = dict.fromkeys(
-    ord(c) for c in "​‌‍⁠﻿‎‏‪‫"
-    "‬‭‮"
-)
+_ZERO_WIDTH = dict.fromkeys(ord(c) for c in "​‌‍⁠﻿‎‏‪‫‬‭‮")
 
 # Minimal HTML entity map for the stdlib fallback. ``html.unescape`` covers the
 # full set; this constant documents the common cases we care about most.
-_COMMON_ENTITIES = {"&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"',
-                    "&#39;": "'", "&nbsp;": " "}
+_COMMON_ENTITIES = {
+    "&amp;": "&",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&quot;": '"',
+    "&#39;": "'",
+    "&nbsp;": " ",
+}
 
 
 def _normalize(text: str) -> str:
@@ -95,18 +98,14 @@ def _normalize(text: str) -> str:
     text = unicodedata.normalize("NFC", text)
     text = text.translate(_ZERO_WIDTH)
     # Drop C0/C1 control characters except tab/newline which carry structure.
-    text = "".join(
-        ch for ch in text
-        if ch in ("\t", "\n") or unicodedata.category(ch) != "Cc"
-    )
+    text = "".join(ch for ch in text if ch in ("\t", "\n") or unicodedata.category(ch) != "Cc")
     # Collapse intra-line whitespace and excessive blank lines.
     text = _WS_RE.sub(" ", text)
     text = _BLANKLINES_RE.sub("\n\n", text)
     return text.strip()
 
 
-def _looks_like_html(payload: bytes, content_type: str | None,
-                     filename: str | None) -> bool:
+def _looks_like_html(payload: bytes, content_type: str | None, filename: str | None) -> bool:
     ct = (content_type or "").lower()
     if "html" in ct or "xml" in ct:
         return True
@@ -116,8 +115,7 @@ def _looks_like_html(payload: bytes, content_type: str | None,
     return head.startswith(b"<!doctype html") or b"<html" in head
 
 
-def _looks_like_pdf(payload: bytes, content_type: str | None,
-                    filename: str | None) -> bool:
+def _looks_like_pdf(payload: bytes, content_type: str | None, filename: str | None) -> bool:
     ct = (content_type or "").lower()
     if "pdf" in ct:
         return True
@@ -126,8 +124,7 @@ def _looks_like_pdf(payload: bytes, content_type: str | None,
     return payload[:5].startswith(b"%PDF")
 
 
-def _looks_like_office_doc(content_type: str | None,
-                            filename: str | None) -> bool:
+def _looks_like_office_doc(content_type: str | None, filename: str | None) -> bool:
     """Return True for office/complex document MIME types and extensions."""
     ct = (content_type or "").lower()
     _office_mime = {
@@ -142,13 +139,21 @@ def _looks_like_office_doc(content_type: str | None,
         return True
     if filename:
         return Path(filename).suffix.lower() in {
-            ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp"
+            ".docx",
+            ".doc",
+            ".pptx",
+            ".ppt",
+            ".xlsx",
+            ".xls",
+            ".odt",
+            ".odp",
         }
     return False
 
 
-def _html_to_text(payload: bytes, content_type: str | None = None,
-                  filename: str | None = None) -> str:
+def _html_to_text(
+    payload: bytes, content_type: str | None = None, filename: str | None = None
+) -> str:
     """HTML/office → readable text.
 
     Chain:
@@ -185,9 +190,7 @@ def _html_to_text(payload: bytes, content_type: str | None = None,
             converter = DocumentConverter()
             # docling 2.x convert() needs a DocumentStream (name carries the
             # format hint), not a raw BytesIO.
-            source = DocumentStream(
-                name=filename or "document.docx", stream=io.BytesIO(payload)
-            )
+            source = DocumentStream(name=filename or "document.docx", stream=io.BytesIO(payload))
             result = converter.convert(source)
             if result and result.document:
                 md = result.document.export_to_markdown()
@@ -203,11 +206,79 @@ def _html_to_text(payload: bytes, content_type: str | None = None,
     stripped = _SCRIPT_STYLE_RE.sub(" ", raw)
     stripped = _COMMENT_RE.sub(" ", stripped)
     # Insert breaks at block boundaries so words don't fuse across tags.
-    stripped = re.sub(r"<\s*(br|/p|/div|/li|/h[1-6])\b[^>]*>", "\n",
-                      stripped, flags=re.IGNORECASE)
+    stripped = re.sub(r"<\s*(br|/p|/div|/li|/h[1-6])\b[^>]*>", "\n", stripped, flags=re.IGNORECASE)
     stripped = _TAG_RE.sub(" ", stripped)
     text = html_mod.unescape(stripped)
     return text
+
+
+def _extract_text_via_vlm(image_bytes: bytes, filename: str) -> str:
+    """Use a local Ollama VLM (minicpm-v, llama3.2-vision, llava) to transcribe/reason about the image."""
+    import base64
+
+    from .backends.ollama import OllamaBackend
+
+    ollama = OllamaBackend()
+    if not ollama.available():
+        return ""
+
+    # 1. Resolve an installed vision model
+    try:
+        models = ollama.list_models()
+        installed_names = [m.name.lower() for m in models]
+    except Exception:
+        return ""
+
+    vlm_model = None
+    # Prioritized local VLMs
+    for pref in ["minicpm-v", "llama3.2-vision", "llava", "bakllava", "vision"]:
+        matched = next((t for t in installed_names if pref in t), None)
+        if matched:
+            vlm_model = matched
+            break
+
+    if not vlm_model:
+        return ""
+
+    # 2. Encode image to base64
+    img_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    # 3. Call Ollama VLM
+    prompt = (
+        "Extract all visible text and structure from this image. If it contains a table, "
+        "reconstruct the table in Markdown format. If it contains a chart or figure, "
+        "provide a detailed description of the data, variables, axes, and key trends. "
+        "Output only the extracted text and structured tables, no chat commentary."
+    )
+
+    try:
+        messages = [{"role": "user", "content": prompt, "images": [img_b64]}]
+        r = ollama._client.post(
+            "/api/chat", json={"model": vlm_model, "messages": messages, "stream": False}
+        )
+        if r.status_code == 200:
+            return r.json().get("message", {}).get("content", "").strip()
+    except Exception as exc:
+        log.warning("ingest.vlm_extraction_failed", error=str(exc))
+
+    return ""
+
+
+def _looks_like_image(payload: bytes, content_type: str | None, filename: str | None) -> bool:
+    ct = (content_type or "").lower()
+    if "image" in ct:
+        return True
+    if filename and filename.lower().endswith(
+        (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff")
+    ):
+        return True
+    if (
+        payload.startswith(b"\x89PNG\r\n\x1a\n")
+        or payload.startswith(b"\xff\xd8\xff")
+        or payload.startswith(b"GIF8")
+    ):
+        return True
+    return False
 
 
 def _pdf_to_text(payload: bytes) -> tuple[str, bool]:
@@ -230,7 +301,20 @@ def _pdf_to_text(payload: bytes) -> tuple[str, bool]:
         import pdfplumber  # type: ignore
 
         with pdfplumber.open(io.BytesIO(payload)) as pdf:
-            parts = [(page.extract_text() or "") for page in pdf.pages]
+            parts = []
+            for page in pdf.pages:
+                txt = page.extract_text() or ""
+                if not txt.strip():
+                    try:
+                        img = page.to_image(resolution=150)
+                        img_byte_arr = io.BytesIO()
+                        img.original.save(img_byte_arr, format="PNG")
+                        vlm_txt = _extract_text_via_vlm(img_byte_arr.getvalue(), "page.png")
+                        if vlm_txt:
+                            txt = vlm_txt
+                    except Exception as e:
+                        log.debug("ingest.pdfplumber_page_image_failed", error=str(e))
+                parts.append(txt)
         text = "\n\n".join(parts)
         log.debug("ingest.pdf_pdfplumber_ok", pages=len(parts))
         return text, True
@@ -271,7 +355,6 @@ def _pdf_to_text(payload: bytes) -> tuple[str, bool]:
         from docling.document_converter import DocumentConverter  # type: ignore
 
         converter = DocumentConverter()
-        # docling 2.x convert() needs a DocumentStream, not a raw BytesIO.
         source = DocumentStream(name="document.pdf", stream=io.BytesIO(payload))
         result = converter.convert(source)
         if result and result.document:
@@ -285,14 +368,24 @@ def _pdf_to_text(payload: bytes) -> tuple[str, bool]:
         log.warning("ingest.pdf_docling_failed", error=str(exc))
 
     # 5. PyMuPDF (fitz) — AGPL; only when explicitly opted in via env flag.
-    # Never used by default to avoid AGPL licence contamination in projects
-    # that link against Lighthouse under a permissive licence.
     if os.environ.get("LIGHTHOUSE_PDF_FAST", "").strip() == "1":
         try:
             import fitz  # type: ignore  # PyMuPDF
 
             doc = fitz.open(stream=payload, filetype="pdf")
-            parts = [page.get_text() for page in doc]
+            parts = []
+            for page in doc:
+                txt = page.get_text() or ""
+                if not txt.strip():
+                    try:
+                        pix = page.get_pixmap(dpi=150)
+                        png_bytes = pix.tobytes("png")
+                        vlm_txt = _extract_text_via_vlm(png_bytes, "page.png")
+                        if vlm_txt:
+                            txt = vlm_txt
+                    except Exception as e:
+                        log.debug("ingest.pymupdf_page_image_failed", error=str(e))
+                parts.append(txt)
             doc.close()
             text = "\n\n".join(parts)
             log.debug("ingest.pdf_pymupdf_ok", pages=len(parts))
@@ -306,8 +399,7 @@ def _pdf_to_text(payload: bytes) -> tuple[str, bool]:
     return "", False
 
 
-def extract_text(payload: bytes, content_type: str | None,
-                 filename: str | None) -> str:
+def extract_text(payload: bytes, content_type: str | None, filename: str | None) -> str:
     """Extract readable, normalized text from raw bytes.
 
     Dispatches on content-type/filename/sniffed magic: HTML is reduced to prose,
@@ -318,15 +410,24 @@ def extract_text(payload: bytes, content_type: str | None,
     if _looks_like_pdf(payload, content_type, filename):
         text, _ok = _pdf_to_text(payload)
         return _normalize(text)
+    if _looks_like_image(payload, content_type, filename):
+        text = _extract_text_via_vlm(payload, filename or "image.png")
+        return _normalize(text)
     if _looks_like_html(payload, content_type, filename):
         return _normalize(_html_to_text(payload, content_type, filename))
     # Plain text (or unknown binary decoded leniently).
     return _normalize(payload.decode("utf-8", errors="replace"))
 
 
-def _build_document(payload: bytes, *, text: str, source: str | None,
-                    content_type: str | None, sha256: str,
-                    extra_meta: dict | None = None) -> Document:
+def _build_document(
+    payload: bytes,
+    *,
+    text: str,
+    source: str | None,
+    content_type: str | None,
+    sha256: str,
+    extra_meta: dict | None = None,
+) -> Document:
     """Assemble a ``Document`` with provenance metadata (§13.14, §14.2).
 
     The id is derived from the content hash so identical bytes always yield the
@@ -344,10 +445,14 @@ def _build_document(payload: bytes, *, text: str, source: str | None,
     return Document(id=f"sha256:{sha256}", text=text, metadata=metadata)
 
 
-def ingest_bytes(payload: bytes, *, url: str | None = None,
-                 filename: str | None = None,
-                 content_type: str | None = None,
-                 broker: SandboxBroker) -> Document | None:
+def ingest_bytes(
+    payload: bytes,
+    *,
+    url: str | None = None,
+    filename: str | None = None,
+    content_type: str | None = None,
+    broker: SandboxBroker,
+) -> Document | None:
     """Run the sandbox, then extract text into a ``Document``.
 
     The broker is the *first* operation: we never parse bytes the sandbox would
@@ -356,31 +461,38 @@ def ingest_bytes(payload: bytes, *, url: str | None = None,
     quarantined content is still recorded and may be elevated later, and the
     design wants its text available for review.
     """
-    outcome = broker.admit(payload, url=url, filename=filename,
-                           content_type=content_type)
+    outcome = broker.admit(payload, url=url, filename=filename, content_type=content_type)
     if outcome.verdict is Verdict.REJECT:
         return None
 
     pdf = _looks_like_pdf(payload, content_type, filename)
+    image = _looks_like_image(payload, content_type, filename)
     if pdf:
         body, ok = _pdf_to_text(payload)
         text = _normalize(body)
         extra: dict = {"verdict": outcome.verdict.value}
         if not ok:
             extra[PDF_UNAVAILABLE_FLAG] = True
+    elif image:
+        body = _extract_text_via_vlm(payload, filename or "image.png")
+        text = _normalize(body)
+        extra = {"verdict": outcome.verdict.value, "multimodal_extracted": True}
     else:
         text = extract_text(payload, content_type, filename)
         extra = {"verdict": outcome.verdict.value}
 
     if len(text.encode("utf-8")) > DEFAULT_MAX_TEXT_BYTES:
         # Cap on a byte boundary that won't split a UTF-8 sequence.
-        text = text.encode("utf-8")[:DEFAULT_MAX_TEXT_BYTES].decode(
-            "utf-8", errors="ignore")
+        text = text.encode("utf-8")[:DEFAULT_MAX_TEXT_BYTES].decode("utf-8", errors="ignore")
         extra["truncated"] = True
 
     return _build_document(
-        payload, text=text, source=url or filename,
-        content_type=content_type, sha256=outcome.sha256, extra_meta=extra,
+        payload,
+        text=text,
+        source=url or filename,
+        content_type=content_type,
+        sha256=outcome.sha256,
+        extra_meta=extra,
     )
 
 
@@ -395,8 +507,9 @@ def ingest_file(path: str | Path, broker: SandboxBroker) -> Document | None:
     p = Path(path)
     payload = p.read_bytes()
     content_type, _ = mimetypes.guess_type(p.name)
-    return ingest_bytes(payload, url=p.as_uri(), filename=p.name,
-                        content_type=content_type, broker=broker)
+    return ingest_bytes(
+        payload, url=p.as_uri(), filename=p.name, content_type=content_type, broker=broker
+    )
 
 
 def fetch_and_ingest(
@@ -493,8 +606,7 @@ def fetch_and_ingest(
                     reason=f"redirect to disallowed host: {final_decision.reason}",
                 )
                 raise EgressBlocked(
-                    f"redirect to disallowed host {final_host!r}: "
-                    f"{final_decision.reason}"
+                    f"redirect to disallowed host {final_host!r}: {final_decision.reason}"
                 )
 
         resp.raise_for_status()
@@ -504,9 +616,7 @@ def fetch_and_ingest(
         # body was never buffered (e.g. mocked transports or streaming GET
         # requests). A GET body is always empty anyway, so 0 is correct.
         try:
-            request_bytes = (
-                len(resp.request.content) if resp.request is not None else 0
-            )
+            request_bytes = len(resp.request.content) if resp.request is not None else 0
         except Exception:
             request_bytes = 0
         active_proxy.log_connection(
@@ -522,8 +632,9 @@ def fetch_and_ingest(
 
         content_type = resp.headers.get("content-type")
         filename = Path(httpx.URL(url).path).name or None
-        return ingest_bytes(resp.content, url=url, filename=filename,
-                            content_type=content_type, broker=broker)
+        return ingest_bytes(
+            resp.content, url=url, filename=filename, content_type=content_type, broker=broker
+        )
     finally:
         if owns_client:
             client.close()

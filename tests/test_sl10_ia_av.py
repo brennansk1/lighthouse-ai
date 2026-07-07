@@ -57,85 +57,87 @@ from lighthouse_ai.sources import transcript as _transcript
 # Constants
 # ---------------------------------------------------------------------------
 
-_LIBRARY_DIR = (
-    Path(__file__).parent.parent
-    / "src" / "lighthouse_ai" / "skills" / "library"
-)
+_LIBRARY_DIR = Path(__file__).parent.parent / "src" / "lighthouse_ai" / "skills" / "library"
 
 # ---------------------------------------------------------------------------
 # Canned JSON fixtures
 # ---------------------------------------------------------------------------
 
-_CANNED_SEARCH_RESPONSE = json.dumps({
-    "response": {
-        "numFound": 2,
-        "start": 0,
-        "docs": [
-            {
-                "identifier": "NBC20010911",
-                "title": "NBC Nightly News 9/11 2001",
-                "description": "NBC evening news broadcast from September 11 2001.",
-                "mediatype": "movies",
-                "date": "2001-09-11",
-                "creator": "NBC",
-                "subject": ["9/11", "terrorism", "news"],
-                "collection": "tvarchive",
-            },
-            {
-                "identifier": "CBS20010911",
-                "title": "CBS News Special Report 9/11",
-                "description": "CBS coverage of the September 11 attacks.",
-                "mediatype": "movies",
-                "date": "2001-09-11",
-                "creator": "CBS",
-                "subject": ["9/11", "terrorism"],
-                "collection": "tvarchive",
-            },
+_CANNED_SEARCH_RESPONSE = json.dumps(
+    {
+        "response": {
+            "numFound": 2,
+            "start": 0,
+            "docs": [
+                {
+                    "identifier": "NBC20010911",
+                    "title": "NBC Nightly News 9/11 2001",
+                    "description": "NBC evening news broadcast from September 11 2001.",
+                    "mediatype": "movies",
+                    "date": "2001-09-11",
+                    "creator": "NBC",
+                    "subject": ["9/11", "terrorism", "news"],
+                    "collection": "tvarchive",
+                },
+                {
+                    "identifier": "CBS20010911",
+                    "title": "CBS News Special Report 9/11",
+                    "description": "CBS coverage of the September 11 attacks.",
+                    "mediatype": "movies",
+                    "date": "2001-09-11",
+                    "creator": "CBS",
+                    "subject": ["9/11", "terrorism"],
+                    "collection": "tvarchive",
+                },
+            ],
+        }
+    }
+).encode()
+
+_CANNED_METADATA_NBC = json.dumps(
+    {
+        "metadata": {
+            "identifier": "NBC20010911",
+            "title": "NBC Nightly News 9/11 2001",
+            "description": "NBC evening news broadcast from September 11 2001.",
+            "mediatype": "movies",
+            "date": "2001-09-11",
+            "creator": "NBC",
+            "collection": "tvarchive",
+        },
+        "files": [
+            {"name": "NBC20010911.mp4", "format": "h.264"},
+            {"name": "NBC20010911.cc5.txt", "format": "Closed Caption Text"},
         ],
     }
-}).encode()
+).encode()
 
-_CANNED_METADATA_NBC = json.dumps({
-    "metadata": {
-        "identifier": "NBC20010911",
-        "title": "NBC Nightly News 9/11 2001",
-        "description": "NBC evening news broadcast from September 11 2001.",
-        "mediatype": "movies",
-        "date": "2001-09-11",
-        "creator": "NBC",
-        "collection": "tvarchive",
-    },
-    "files": [
-        {"name": "NBC20010911.mp4", "format": "h.264"},
-        {"name": "NBC20010911.cc5.txt", "format": "Closed Caption Text"},
-    ],
-}).encode()
-
-_CANNED_METADATA_CBS = json.dumps({
-    "metadata": {
-        "identifier": "CBS20010911",
-        "title": "CBS News Special Report 9/11",
-        "description": "CBS coverage of the September 11 attacks.",
-        "mediatype": "movies",
-        "date": "2001-09-11",
-        "creator": "CBS",
-        "collection": "tvarchive",
-    },
-    "files": [
-        {"name": "CBS20010911.mp4", "format": "h.264"},
-    ],
-}).encode()
+_CANNED_METADATA_CBS = json.dumps(
+    {
+        "metadata": {
+            "identifier": "CBS20010911",
+            "title": "CBS News Special Report 9/11",
+            "description": "CBS coverage of the September 11 attacks.",
+            "mediatype": "movies",
+            "date": "2001-09-11",
+            "creator": "CBS",
+            "collection": "tvarchive",
+        },
+        "files": [
+            {"name": "CBS20010911.mp4", "format": "h.264"},
+        ],
+    }
+).encode()
 
 _CANNED_CAPTION_TEXT = b"ANNOUNCER: Breaking news. Two planes have struck the World Trade Center."
 
-_CANNED_EMPTY_SEARCH = json.dumps({
-    "response": {"numFound": 0, "start": 0, "docs": []}
-}).encode()
+_CANNED_EMPTY_SEARCH = json.dumps({"response": {"numFound": 0, "start": 0, "docs": []}}).encode()
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _fake_response(content: bytes, status: int = 200) -> httpx.Response:
     return httpx.Response(status, content=content)
@@ -153,8 +155,7 @@ def _make_ctx(broker, responses: dict[str, bytes]):
     ctx = SkillContext(
         skill_id="internet_archive_av",
         skill_version="0.1.0",
-        effective_domains=DEFAULT_ALLOWED_DOMAINS
-        | frozenset({"archive.org", "web.archive.org"}),
+        effective_domains=DEFAULT_ALLOWED_DOMAINS | frozenset({"archive.org", "web.archive.org"}),
         broker=broker,
         gateway=None,
         default_grade="B",
@@ -248,6 +249,7 @@ class TestSkillLoad:
     def test_import_guard_passes(self, ia_skill):
         """Import guard must not flag any forbidden modules."""
         from lighthouse_ai.skills.registry import _audit_skill_imports
+
         _audit_skill_imports(ia_skill.path)
 
 
@@ -261,10 +263,14 @@ class TestSearchAv:
 
     def test_returns_item_list(self, broker):
         """Returns a list of item dicts from a canned advancedsearch response."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import search_av
+
         results = search_av(ctx, "NBC 9/11 2001", max_results=5)
         assert len(results) == 2
         assert results[0]["identifier"] == "NBC20010911"
@@ -276,33 +282,46 @@ class TestSearchAv:
         """HTTP non-200 response returns empty list gracefully."""
         ctx = _make_ctx(broker, {})  # all URLs → 404
         from lighthouse_ai.skills.library.internet_archive_av.skill import search_av
+
         results = search_av(ctx, "anything", max_results=5)
         assert results == []
 
     def test_returns_empty_on_malformed_json(self, broker):
         """Malformed JSON returns empty list gracefully."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/advancedsearch.php": b"not json",
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/advancedsearch.php": b"not json",
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import search_av
+
         results = search_av(ctx, "test", max_results=5)
         assert results == []
 
     def test_respects_max_results(self, broker):
         """max_results caps the number of returned items."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import search_av
+
         results = search_av(ctx, "news", max_results=1)
         assert len(results) <= 1
 
     def test_returns_empty_on_no_docs(self, broker):
         """Empty docs array in response returns []."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/advancedsearch.php": _CANNED_EMPTY_SEARCH,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/advancedsearch.php": _CANNED_EMPTY_SEARCH,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import search_av
+
         results = search_av(ctx, "obscure query", max_results=5)
         assert results == []
 
@@ -317,10 +336,14 @@ class TestFetchMetadata:
 
     def test_returns_metadata_dict(self, broker):
         """Returns parsed metadata dict from a canned response."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import fetch_metadata
+
         meta = fetch_metadata(ctx, "NBC20010911")
         assert "metadata" in meta
         assert meta["metadata"]["identifier"] == "NBC20010911"
@@ -332,15 +355,20 @@ class TestFetchMetadata:
         """HTTP 404 returns empty dict gracefully."""
         ctx = _make_ctx(broker, {})
         from lighthouse_ai.skills.library.internet_archive_av.skill import fetch_metadata
+
         meta = fetch_metadata(ctx, "nonexistent_item")
         assert meta == {}
 
     def test_returns_empty_dict_on_malformed_json(self, broker):
         """Malformed JSON returns empty dict gracefully."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/metadata/": b"{{bad json}}",
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/metadata/": b"{{bad json}}",
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import fetch_metadata
+
         meta = fetch_metadata(ctx, "bad_item")
         assert meta == {}
 
@@ -355,10 +383,14 @@ class TestFetchTranscript:
 
     def test_returns_none_gracefully_no_provider_no_cache(self, broker):
         """Returns None when no ASR provider is registered and no cache/caption."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/metadata/": _CANNED_METADATA_CBS,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/metadata/": _CANNED_METADATA_CBS,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import fetch_transcript
+
         result = fetch_transcript(ctx, "CBS20010911")
         assert result is None
 
@@ -367,16 +399,21 @@ class TestFetchTranscript:
         _transcript.cache_transcript("NBC20010911", "Pre-cached transcript text.")
         ctx = _make_ctx(broker, {})  # no fetch should be needed
         from lighthouse_ai.skills.library.internet_archive_av.skill import fetch_transcript
+
         result = fetch_transcript(ctx, "NBC20010911")
         assert result == "Pre-cached transcript text."
 
     def test_fetches_caption_file_when_present(self, broker):
         """Fetches caption file via ctx.fetch when metadata has a caption entry."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
-            "https://archive.org/download/NBC20010911/": _CANNED_CAPTION_TEXT,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
+                "https://archive.org/download/NBC20010911/": _CANNED_CAPTION_TEXT,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import fetch_transcript
+
         result = fetch_transcript(ctx, "NBC20010911")
         # Caption text was found and returned.
         assert result is not None
@@ -384,11 +421,15 @@ class TestFetchTranscript:
 
     def test_caption_fetch_populates_transcript_cache(self, broker):
         """After fetching a caption file, the result is in transcript.py cache."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
-            "https://archive.org/download/NBC20010911/": _CANNED_CAPTION_TEXT,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
+                "https://archive.org/download/NBC20010911/": _CANNED_CAPTION_TEXT,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import fetch_transcript
+
         fetch_transcript(ctx, "NBC20010911")
         # Now the cache should be populated.
         assert "NBC20010911" in _transcript._CACHE
@@ -420,6 +461,7 @@ class TestFetchTranscript:
         ctx.fetch = _tracking_fetch  # type: ignore[method-assign]
 
         from lighthouse_ai.skills.library.internet_archive_av.skill import fetch_transcript
+
         result = fetch_transcript(ctx, "NBC20010911")
         assert result == "Already cached."
         # No fetch should have been called because the cache hit immediately.
@@ -427,16 +469,21 @@ class TestFetchTranscript:
 
     def test_returns_none_no_caption_file_in_metadata(self, broker):
         """Returns None when metadata has no caption file and no provider."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/metadata/CBS20010911": _CANNED_METADATA_CBS,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/metadata/CBS20010911": _CANNED_METADATA_CBS,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import fetch_transcript
+
         # CBS metadata has no caption file.
         result = fetch_transcript(ctx, "CBS20010911")
         assert result is None
 
     def test_registered_provider_is_used(self, broker):
         """A registered transcript provider is tried and its result returned."""
+
         def _mock_asr(audio_ref: str) -> str | None:
             if audio_ref == "test_audio_item":
                 return "Provider-generated transcript."
@@ -445,6 +492,7 @@ class TestFetchTranscript:
         _transcript.register_provider(_mock_asr)
         ctx = _make_ctx(broker, {})  # no caption URL needed
         from lighthouse_ai.skills.library.internet_archive_av.skill import fetch_transcript
+
         result = fetch_transcript(ctx, "test_audio_item")
         assert result == "Provider-generated transcript."
 
@@ -459,13 +507,17 @@ class TestRun:
 
     def test_run_returns_documents(self, broker):
         """run() returns Documents with correct source tag."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
-            "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
-            "https://archive.org/metadata/CBS20010911": _CANNED_METADATA_CBS,
-            "https://archive.org/download/NBC20010911/": _CANNED_CAPTION_TEXT,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
+                "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
+                "https://archive.org/metadata/CBS20010911": _CANNED_METADATA_CBS,
+                "https://archive.org/download/NBC20010911/": _CANNED_CAPTION_TEXT,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import run
+
         docs = run(ctx, "9/11 news broadcast", max_results=5)
         assert len(docs) >= 1
         for doc in docs:
@@ -474,44 +526,60 @@ class TestRun:
 
     def test_run_empty_search_returns_empty_list(self, broker):
         """Empty search result yields []."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/advancedsearch.php": _CANNED_EMPTY_SEARCH,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/advancedsearch.php": _CANNED_EMPTY_SEARCH,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import run
+
         docs = run(ctx, "very obscure query xyz", max_results=5)
         assert docs == []
 
     def test_run_max_results_respected(self, broker):
         """max_results limits the number of returned Documents."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
-            "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
+                "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import run
+
         docs = run(ctx, "news", max_results=1)
         assert len(docs) <= 1
 
     def test_run_doc_has_identifier(self, broker):
         """Returned Documents have identifier in metadata."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
-            "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
-            "https://archive.org/metadata/CBS20010911": _CANNED_METADATA_CBS,
-            "https://archive.org/download/NBC20010911/": _CANNED_CAPTION_TEXT,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
+                "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
+                "https://archive.org/metadata/CBS20010911": _CANNED_METADATA_CBS,
+                "https://archive.org/download/NBC20010911/": _CANNED_CAPTION_TEXT,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import run
+
         docs = run(ctx, "9/11", max_results=2)
         assert any(doc.metadata.get("identifier") == "NBC20010911" for doc in docs)
 
     def test_run_doc_with_transcript_uses_transcript_text(self, broker):
         """When a caption file is found, the Document text includes transcript content."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
-            "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
-            "https://archive.org/metadata/CBS20010911": _CANNED_METADATA_CBS,
-            "https://archive.org/download/NBC20010911/": _CANNED_CAPTION_TEXT,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
+                "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
+                "https://archive.org/metadata/CBS20010911": _CANNED_METADATA_CBS,
+                "https://archive.org/download/NBC20010911/": _CANNED_CAPTION_TEXT,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import run
+
         docs = run(ctx, "NBC 9/11", max_results=1)
         assert len(docs) >= 1
         nbc_doc = next((d for d in docs if d.metadata.get("identifier") == "NBC20010911"), None)
@@ -521,12 +589,16 @@ class TestRun:
 
     def test_run_doc_falls_back_to_description(self, broker):
         """Without a caption file, the Document text uses the description."""
-        ctx = _make_ctx(broker, {
-            "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
-            "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
-            "https://archive.org/metadata/CBS20010911": _CANNED_METADATA_CBS,
-        })
+        ctx = _make_ctx(
+            broker,
+            {
+                "https://archive.org/advancedsearch.php": _CANNED_SEARCH_RESPONSE,
+                "https://archive.org/metadata/NBC20010911": _CANNED_METADATA_NBC,
+                "https://archive.org/metadata/CBS20010911": _CANNED_METADATA_CBS,
+            },
+        )
         from lighthouse_ai.skills.library.internet_archive_av.skill import run
+
         docs = run(ctx, "CBS 9/11", max_results=2)
         cbs_doc = next((d for d in docs if d.metadata.get("identifier") == "CBS20010911"), None)
         if cbs_doc is not None:

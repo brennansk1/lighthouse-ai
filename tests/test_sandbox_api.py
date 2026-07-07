@@ -24,9 +24,14 @@ def _b64(s: bytes) -> str:
 
 
 def test_upload_admitted_then_listed(client):
-    r = client.post("/api/sandbox/upload", json={
-        "filename": "notes.txt", "content_base64": _b64(b"hello sandbox world"),
-        "content_type": "text/plain"})
+    r = client.post(
+        "/api/sandbox/upload",
+        json={
+            "filename": "notes.txt",
+            "content_base64": _b64(b"hello sandbox world"),
+            "content_type": "text/plain",
+        },
+    )
     assert r.status_code == 200, r.text
     item = r.json()
     assert item["zone"] == "uploads" and item["scan_verdict"] == "admit"
@@ -38,8 +43,7 @@ def test_upload_admitted_then_listed(client):
 
 
 def test_upload_eicar_rejected(client):
-    r = client.post("/api/sandbox/upload", json={
-        "filename": "x.com", "content_base64": EICAR})
+    r = client.post("/api/sandbox/upload", json={"filename": "x.com", "content_base64": EICAR})
     # REJECT → 422, never becomes a readable admitted upload.
     assert r.status_code == 422
     listing = client.get("/api/sandbox").json()
@@ -47,14 +51,16 @@ def test_upload_eicar_rejected(client):
 
 
 def test_bad_base64_400(client):
-    r = client.post("/api/sandbox/upload", json={
-        "filename": "x.txt", "content_base64": "!!!not base64!!!"})
+    r = client.post(
+        "/api/sandbox/upload", json={"filename": "x.txt", "content_base64": "!!!not base64!!!"}
+    )
     assert r.status_code == 400
 
 
 def test_pin_then_delete(client):
-    up = client.post("/api/sandbox/upload", json={
-        "filename": "a.txt", "content_base64": _b64(b"keep me")}).json()
+    up = client.post(
+        "/api/sandbox/upload", json={"filename": "a.txt", "content_base64": _b64(b"keep me")}
+    ).json()
     rid = up["id"]
     rp = client.post(f"/api/sandbox/{rid}/pin", json={"pinned": True})
     assert rp.status_code == 200 and rp.json()["pinned"] is True

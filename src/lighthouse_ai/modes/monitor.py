@@ -147,6 +147,7 @@ def make_gateway_salience(
                 resp = gateway.complete("aux_context", prompt, job_id=job_id)
             import json as _json
             import re as _re
+
             # Extract the first {...} from the response (tolerates trailing text).
             m = _re.search(r"\{[^}]+\}", resp.text)
             if m:
@@ -167,6 +168,7 @@ def make_gateway_salience(
 # --------------------------------------------------------------------------- #
 # Cross-source contradiction escalation (MODE_SKILL_INTEGRATION §6, Watch row)
 # --------------------------------------------------------------------------- #
+
 
 def _escalate_contradictions(
     classified: list[ClassifiedItem],
@@ -203,10 +205,7 @@ def _escalate_contradictions(
             self.text = title
             self.metadata = {"skill_id": source, "entailment_score": None}
 
-    chunks = [
-        _MinChunk(i, c.item.source, c.item.title)
-        for i, c in enumerate(classified)
-    ]
+    chunks = [_MinChunk(i, c.item.source, c.item.title) for i, c in enumerate(classified)]
 
     contradictions = detect(
         claims,
@@ -311,12 +310,12 @@ MAX_SEEN_TITLE_EMBEDDINGS = 512
 @dataclass
 class MonitorState:
     """In-memory dedup ledger; production persists to ``state.db``."""
+
     seen_keys: set[str] = field(default_factory=set)
     seen_titles: list[tuple[str, list[float]]] = field(default_factory=list)
 
 
-def _near_duplicate(emb: list[float], state: MonitorState,
-                    threshold: float = 0.97) -> bool:
+def _near_duplicate(emb: list[float], state: MonitorState, threshold: float = 0.97) -> bool:
     for _, prior in state.seen_titles:
         try:
             if cosine(emb, prior) >= threshold:
@@ -439,8 +438,9 @@ def run_monitor(
     classified: list[ClassifiedItem] = []
     for it, emb in deduped:
         salience, category = effective_salience(it)
-        classified.append(ClassifiedItem(item=it, salience=salience,
-                                         category=category, embedding=emb))
+        classified.append(
+            ClassifiedItem(item=it, salience=salience, category=category, embedding=emb)
+        )
 
     # 4. cross-source contradiction escalation (Zone S / §6 Watch row).
     #    Only runs when the caller supplies a fixed timestamp — avoids any

@@ -125,15 +125,18 @@ def _detect_nvidia_gpus() -> list[GPUInfo]:
     if _binary_exists("nvidia-smi"):
         try:
             out = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name,memory.total",
-                 "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=5, check=True,
+                ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=True,
             ).stdout
             gpus = []
             for line in out.strip().splitlines():
                 name, mem_mb = [s.strip() for s in line.split(",", 1)]
-                gpus.append(GPUInfo(name=name, vram_gb=round(int(mem_mb) / 1024, 2),
-                                    vendor="nvidia"))
+                gpus.append(
+                    GPUInfo(name=name, vram_gb=round(int(mem_mb) / 1024, 2), vendor="nvidia")
+                )
             return gpus
         except Exception:
             return []
@@ -146,7 +149,10 @@ def _detect_amd_gpus() -> list[GPUInfo]:
     try:
         out = subprocess.run(
             ["rocm-smi", "--showproductname", "--showmeminfo", "vram", "--json"],
-            capture_output=True, text=True, timeout=5, check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
         ).stdout
         data = json.loads(out)
         gpus = []
@@ -164,8 +170,13 @@ def _detect_apple_gpu(total_ram_gb: float) -> list[GPUInfo]:
     """Apple Silicon: GPU shares unified memory. Report the unified pool size."""
     chip = "Apple Silicon"
     try:
-        out = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
-                             capture_output=True, text=True, timeout=2, check=True).stdout
+        out = subprocess.run(
+            ["sysctl", "-n", "machdep.cpu.brand_string"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=True,
+        ).stdout
         if out.strip():
             chip = out.strip()
     except Exception:
@@ -179,12 +190,14 @@ def _detect_backends(plat: PlatformId, has_apple: bool, has_nvidia: bool) -> lis
         backends.append("ollama")
     try:
         import mlx.core  # type: ignore  # noqa: F401
+
         if has_apple:
             backends.extend(["mlx", "metal"])
     except ImportError:
         pass
     try:
         import llama_cpp  # type: ignore  # noqa: F401
+
         backends.append("llamacpp")
     except ImportError:
         pass
@@ -192,11 +205,13 @@ def _detect_backends(plat: PlatformId, has_apple: bool, has_nvidia: bool) -> lis
         backends.append("cuda")
         try:
             import vllm  # type: ignore  # noqa: F401
+
             backends.append("vllm")
         except ImportError:
             pass
         try:
             import sglang  # type: ignore  # noqa: F401
+
             backends.append("sglang")
         except ImportError:
             pass
@@ -263,7 +278,7 @@ def classify_tier(total_ram_gb: float, gpus: list[GPUInfo], unified: bool) -> Ti
 def probe() -> HardwareProfile:
     plat = _detect_platform()
     arch = _detect_arch()
-    apple_silicon = (plat == "macos" and arch == "arm64")
+    apple_silicon = plat == "macos" and arch == "arm64"
     vm = psutil.virtual_memory()
     total_ram_gb = _bytes_to_gb(vm.total)
     free_ram_gb = _bytes_to_gb(vm.available)

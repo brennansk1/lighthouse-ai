@@ -54,8 +54,7 @@ class _BackupRunner(Protocol):
     inside the loop thread.
     """
 
-    def init(self, repo: str, passphrase: str
-             ) -> subprocess.CompletedProcess[str]: ...
+    def init(self, repo: str, passphrase: str) -> subprocess.CompletedProcess[str]: ...
 
     def backup(
         self,
@@ -65,8 +64,9 @@ class _BackupRunner(Protocol):
         passphrase: str | None = None,
     ) -> subprocess.CompletedProcess[str]: ...
 
-    def check(self, repo: str, *, passphrase: str | None = None
-              ) -> subprocess.CompletedProcess[str]: ...
+    def check(
+        self, repo: str, *, passphrase: str | None = None
+    ) -> subprocess.CompletedProcess[str]: ...
 
 
 def _set_state(paths: Paths, status: str, pid: int | None) -> None:
@@ -101,9 +101,7 @@ def runtime_status(paths: Paths) -> str:
     except Exception:
         return "running"
     try:
-        row = conn.execute(
-            "SELECT status FROM supervisor_state WHERE id = 1"
-        ).fetchone()
+        row = conn.execute("SELECT status FROM supervisor_state WHERE id = 1").fetchone()
     except Exception:
         return "running"
     finally:
@@ -121,8 +119,7 @@ def set_runtime_status(paths: Paths, status: str) -> str:
     conn = open_db(paths.state_db)
     try:
         conn.execute(
-            "UPDATE supervisor_state SET status = ?, updated_at = datetime('now') "
-            "WHERE id = 1",
+            "UPDATE supervisor_state SET status = ?, updated_at = datetime('now') WHERE id = 1",
             (status,),
         )
     finally:
@@ -154,7 +151,8 @@ def _notify_web_alert(paths: Paths, alert: dict) -> None:
         name = alert.get("name") or alert.get("url") or "a website"
         reason = alert.get("reason") or alert.get("detail") or "changed"
         notify_monitor_alert(
-            f"Website changed: {name}", str(reason),
+            f"Website changed: {name}",
+            str(reason),
             bot_token=str(ui.get("telegram_bot_token", "")),
             chat_id=str(ui.get("telegram_chat_id", "")),
             enabled=True,
@@ -290,8 +288,9 @@ def _start_monitor_loop(paths: Paths, *, interval_s: float = 60.0) -> threading.
     return thread
 
 
-def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0,
-                         bus=None, offline: bool = False) -> threading.Thread:
+def _start_dispatch_loop(
+    paths: Paths, *, interval_s: float = 5.0, bus=None, offline: bool = False
+) -> threading.Thread:
     """Daemon thread that runs one queued job per tick.
 
     Mirrors the monitor loop: a single daemon thread, one job per tick, gated by
@@ -323,9 +322,10 @@ def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0,
     # ollama_slot). Falls back to None — offline-deterministic stubs — when
     # Ollama is unreachable, so a paused/absent backend never fails jobs.
     gateway = None if offline else build_runtime_gateway(paths)
-    log.info("dispatch.gateway",
-             backend="offline-forced" if offline
-             else ("ollama" if gateway is not None else "offline"))
+    log.info(
+        "dispatch.gateway",
+        backend="offline-forced" if offline else ("ollama" if gateway is not None else "offline"),
+    )
 
     try:
         requeued = reap_stuck_jobs(paths.state_db, paths=paths)
@@ -468,9 +468,7 @@ def _start_backup_loop(
                     passphrase: str | None = SecretStore(paths.data_dir).get("restic.passphrase")
                 except Exception:
                     passphrase = None
-                _backup_tick(
-                    paths, repo=repo, passphrase=passphrase, runner=resolved_runner
-                )
+                _backup_tick(paths, repo=repo, passphrase=passphrase, runner=resolved_runner)
             except Exception as exc:
                 log.warning("backup.loop.error", exc=str(exc))
 
@@ -506,10 +504,14 @@ def _start_resolver_loop(paths: Paths, *, interval_s: float = 3600.0) -> threadi
     retriever = None
     if gateway is not None:
         from .verification.evidence import build_evidence_retriever
+
         retriever = build_evidence_retriever(paths, gateway=gateway)
-    log.info("resolver.gateway", live=live,
-             backend="ollama" if gateway is not None else "offline",
-             retriever=retriever is not None)
+    log.info(
+        "resolver.gateway",
+        live=live,
+        backend="ollama" if gateway is not None else "offline",
+        retriever=retriever is not None,
+    )
 
     def _loop() -> None:
         while True:
@@ -520,8 +522,9 @@ def _start_resolver_loop(paths: Paths, *, interval_s: float = 3600.0) -> threadi
                 policy, _ = gate.policy()
                 if is_paused(paths) or policy is Policy.PAUSED:
                     continue
-                results = run_resolver_pass(paths.positions_db, gateway=gateway,
-                                            retriever=retriever)
+                results = run_resolver_pass(
+                    paths.positions_db, gateway=gateway, retriever=retriever
+                )
                 resolved = sum(1 for r in results if r.auto_resolved)
                 if results:
                     log.info("resolver.pass", attempted=len(results), resolved=resolved)
@@ -558,8 +561,9 @@ def _recover_orphaned_intents(paths: Paths) -> int:
         return 0
 
 
-def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
-          port: int = 8765, run: bool = True) -> uvicorn.Server:
+def serve(
+    paths: Paths | None = None, *, host: str = "127.0.0.1", port: int = 8765, run: bool = True
+) -> uvicorn.Server:
     """Boot the supervisor. ``run=False`` returns the Server for tests."""
     p = paths or make_paths()
     p.ensure()
@@ -571,6 +575,7 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
 
     # Ensure self-initialising side DBs exist
     from .compounding.hotness_store import EntityHotnessStore
+
     ReflectionStore(p.reflections_db)
     EntityHotnessStore(p.entity_hotness_db)
 
@@ -580,8 +585,9 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
     started_at = time.time()
 
     app = create_app(p, started_at=started_at)
-    config = uvicorn.Config(app, host=host, port=port, log_level="info",
-                            loop="asyncio", lifespan="on")
+    config = uvicorn.Config(
+        app, host=host, port=port, log_level="info", loop="asyncio", lifespan="on"
+    )
     server = uvicorn.Server(config)
 
     def _on_signal(signum: int, _frame: object) -> None:
@@ -611,8 +617,9 @@ def serve(paths: Paths | None = None, *, host: str = "127.0.0.1",
     return server
 
 
-def serve_in_thread(paths: Paths, *, host: str = "127.0.0.1", port: int = 0) -> tuple[
-        uvicorn.Server, threading.Thread, int]:
+def serve_in_thread(
+    paths: Paths, *, host: str = "127.0.0.1", port: int = 0
+) -> tuple[uvicorn.Server, threading.Thread, int]:
     """Helper used by integration tests: bind to ephemeral port, run in thread."""
     paths.ensure()
     migrate_all(kinds_for(paths))
@@ -620,8 +627,9 @@ def serve_in_thread(paths: Paths, *, host: str = "127.0.0.1", port: int = 0) -> 
     _write_pidfile(paths.pid_file, pid)
     _set_state(paths, "running", pid)
     app = create_app(paths, started_at=time.time())
-    config = uvicorn.Config(app, host=host, port=port, log_level="warning",
-                            loop="asyncio", lifespan="on")
+    config = uvicorn.Config(
+        app, host=host, port=port, log_level="warning", loop="asyncio", lifespan="on"
+    )
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -638,6 +646,7 @@ def serve_in_thread(paths: Paths, *, host: str = "127.0.0.1", port: int = 0) -> 
 def main() -> None:
     """Console-script entrypoint for `lighthouse-supervisor`."""
     from .paths import paths_from_env
+
     serve(paths_from_env())
 
 

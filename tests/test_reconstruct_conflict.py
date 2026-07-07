@@ -38,6 +38,7 @@ def _event_by_action_fragment(events: list[TimelineEvent], fragment: str) -> Tim
 # Disputed-date badge
 # ---------------------------------------------------------------------------
 
+
 class TestDisputedDateBadge:
     """certainty < 0.6 → disputed_date=True (§6.2)."""
 
@@ -114,6 +115,7 @@ class TestDisputedDateBadge:
 # Alternate dates retained
 # ---------------------------------------------------------------------------
 
+
 class TestAlternateDates:
     """Losing date clusters are preserved in alternate_dates for UI hover."""
 
@@ -155,6 +157,7 @@ class TestAlternateDates:
 # Source-grade-weighted vote
 # ---------------------------------------------------------------------------
 
+
 class TestSourceGradeWeightedVote:
     """Grade weights influence the winning date selection."""
 
@@ -166,9 +169,7 @@ class TestSourceGradeWeightedVote:
             Document("lo2", "LowGrade2", "In 2020 the agreement signed."),
         ]
         # hi gets weight 3.0; lo1/lo2 each get 1.0 → 2022 total=3.0 vs 2020 total=2.0
-        r = run_reconstruct(
-            "q", docs, source_grades={"hi": 3.0, "lo1": 1.0, "lo2": 1.0}
-        )
+        r = run_reconstruct("q", docs, source_grades={"hi": 3.0, "lo1": 1.0, "lo2": 1.0})
         ev = r.events[0]
         assert ev.date == "2022-01-01"
 
@@ -180,9 +181,7 @@ class TestSourceGradeWeightedVote:
             Document("d3", "C", "In 2019 the merger closed."),
         ]
         r_no_grade = run_reconstruct("q", docs)
-        r_uniform = run_reconstruct(
-            "q", docs, source_grades={"d1": 1.0, "d2": 1.0, "d3": 1.0}
-        )
+        r_uniform = run_reconstruct("q", docs, source_grades={"d1": 1.0, "d2": 1.0, "d3": 1.0})
         assert r_no_grade.events[0].date == r_uniform.events[0].date
         assert r_no_grade.events[0].certainty == r_uniform.events[0].certainty
 
@@ -193,9 +192,7 @@ class TestSourceGradeWeightedVote:
             Document("silenced", "B", "In 2019 the bill passed."),
         ]
         # silenced contributes nothing → 2020 wins with weight 1.0 vs 0.0
-        r = run_reconstruct(
-            "q", docs, source_grades={"trusted": 1.0, "silenced": 0.0}
-        )
+        r = run_reconstruct("q", docs, source_grades={"trusted": 1.0, "silenced": 0.0})
         ev = r.events[0]
         assert ev.date == "2020-01-01"
 
@@ -215,6 +212,7 @@ class TestSourceGradeWeightedVote:
 # Factual-split: different actor/action at same date
 # ---------------------------------------------------------------------------
 
+
 class TestFactualSplit:
     """Different actor/action at the same date → split into cross-referenced entries."""
 
@@ -222,11 +220,13 @@ class TestFactualSplit:
         """Two docs with the same date but clearly different events on that date."""
         return [
             Document(
-                "d1", "Source A",
+                "d1",
+                "Source A",
                 "On 2020-06-01 Parliament voted on the budget.",
             ),
             Document(
-                "d2", "Source B",
+                "d2",
+                "Source B",
                 "On 2020-06-01 Tesla announced a product.",
             ),
         ]
@@ -289,6 +289,7 @@ class TestFactualSplit:
 # ---------------------------------------------------------------------------
 # Synthesis notes (gap #20)
 # ---------------------------------------------------------------------------
+
 
 class TestSynthesisNotes:
     """synthesis_notes surface trends/patterns across events."""
@@ -354,6 +355,7 @@ class TestSynthesisNotes:
 # Backward-compatibility: existing fields must still work
 # ---------------------------------------------------------------------------
 
+
 class TestBackwardCompatibility:
     """Existing TimelineEvent and ReconstructReport fields remain stable."""
 
@@ -385,6 +387,7 @@ class TestBackwardCompatibility:
         import inspect
 
         from lighthouse_ai.modes.reconstruct import run_reconstruct as _rr
+
         sig = inspect.signature(_rr)
         params = list(sig.parameters)
         assert "question" in params

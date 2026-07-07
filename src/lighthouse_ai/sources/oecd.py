@@ -36,16 +36,56 @@ _HEADERS = {
 
 # Curated OECD dataset catalog for search
 _DATASET_CATALOG = [
-    ("OECD.SDD.NAD,DSD_NAMAIN1@DF_TABLE1_EXPENDITURE,1.0", "GDP by Expenditure — National Accounts", "gdp,expenditure,national accounts,economy"),
-    ("OECD.SDD.TPS,DSD_LFS@DF_IALFS_INDIC,1.0", "Labour Force Statistics — Employment and Unemployment", "employment,unemployment,labour,labor,jobs"),
-    ("OECD.SDD.TPS,DSD_PRICES@DF_PRICES_ALL,1.0", "Consumer and Producer Prices", "cpi,inflation,prices,consumer"),
-    ("OECD.SDD.NAD,DSD_NAMAIN1@DF_TABLE14A,1.0", "Productivity and ULC — National Accounts", "productivity,unit labour cost,ulc"),
-    ("OECD.WISE,DSD_BLI@BLI,3.0", "Better Life Index — Well-being Indicators", "well-being,wellbeing,better life,happiness"),
-    ("OECD.SDD.TPS,DSD_HEALTH_PROC@DF_HEALTH_PROC,1.0", "Health at a Glance — Health Expenditure", "health,expenditure,hospital"),
-    ("OECD.EDU,DSD_EAG_UOE@DF_UOE_ENRL_PART_RATIO,1.0", "Education at a Glance — Enrolment", "education,enrolment,school,university"),
-    ("OECD.SDD.TPS,DSD_TAX_STRUCTURES@DF_TABLE_I2_1,1.0", "Revenue Statistics — Tax Structures", "tax,revenue,taxation,fiscal"),
-    ("OECD.SDD.NAD,DSD_NAMAIN1@DF_TABLE2,1.0", "Population and GDP per Capita", "population,gdp per capita,income"),
-    ("OECD.SDD.TPS,DSD_POVERTY@DF_POVERTY,1.0", "Income Distribution and Poverty", "poverty,inequality,gini,distribution"),
+    (
+        "OECD.SDD.NAD,DSD_NAMAIN1@DF_TABLE1_EXPENDITURE,1.0",
+        "GDP by Expenditure — National Accounts",
+        "gdp,expenditure,national accounts,economy",
+    ),
+    (
+        "OECD.SDD.TPS,DSD_LFS@DF_IALFS_INDIC,1.0",
+        "Labour Force Statistics — Employment and Unemployment",
+        "employment,unemployment,labour,labor,jobs",
+    ),
+    (
+        "OECD.SDD.TPS,DSD_PRICES@DF_PRICES_ALL,1.0",
+        "Consumer and Producer Prices",
+        "cpi,inflation,prices,consumer",
+    ),
+    (
+        "OECD.SDD.NAD,DSD_NAMAIN1@DF_TABLE14A,1.0",
+        "Productivity and ULC — National Accounts",
+        "productivity,unit labour cost,ulc",
+    ),
+    (
+        "OECD.WISE,DSD_BLI@BLI,3.0",
+        "Better Life Index — Well-being Indicators",
+        "well-being,wellbeing,better life,happiness",
+    ),
+    (
+        "OECD.SDD.TPS,DSD_HEALTH_PROC@DF_HEALTH_PROC,1.0",
+        "Health at a Glance — Health Expenditure",
+        "health,expenditure,hospital",
+    ),
+    (
+        "OECD.EDU,DSD_EAG_UOE@DF_UOE_ENRL_PART_RATIO,1.0",
+        "Education at a Glance — Enrolment",
+        "education,enrolment,school,university",
+    ),
+    (
+        "OECD.SDD.TPS,DSD_TAX_STRUCTURES@DF_TABLE_I2_1,1.0",
+        "Revenue Statistics — Tax Structures",
+        "tax,revenue,taxation,fiscal",
+    ),
+    (
+        "OECD.SDD.NAD,DSD_NAMAIN1@DF_TABLE2,1.0",
+        "Population and GDP per Capita",
+        "population,gdp per capita,income",
+    ),
+    (
+        "OECD.SDD.TPS,DSD_POVERTY@DF_POVERTY,1.0",
+        "Income Distribution and Poverty",
+        "poverty,inequality,gini,distribution",
+    ),
 ]
 
 
@@ -105,32 +145,30 @@ def _parse_sdmx_data(data: dict, dataset_id: str) -> list[Document]:
             try:
                 return int(head)
             except (ValueError, TypeError):
-                return 10 ** 9
+                return 10**9
 
         obs_list = []
         for obs_key, obs_val in sorted(observations.items(), key=lambda x: _obs_index(x[0]))[-8:]:
             idx = _obs_index(obs_key)
-            time = (
-                time_labels[idx]
-                if time_labels and 0 <= idx < len(time_labels)
-                else obs_key
-            )
+            time = time_labels[idx] if time_labels and 0 <= idx < len(time_labels) else obs_key
             value = obs_val[0] if isinstance(obs_val, list) else obs_val
             obs_list.append(f"{time}: {value}")
 
         text = f"OECD {dataset_id} — {label}: {'; '.join(obs_list)}"
-        out.append(Document(
-            id=f"oecd:{dataset_id}:{key_str[:40]}",
-            text=text,
-            metadata={
-                "source": "oecd",
-                "url": "https://data.oecd.org/",
-                "grade": "A",
-                "title": f"OECD {dataset_id} — {label}",
-                "dataset_id": dataset_id,
-                "series_key": key_str,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"oecd:{dataset_id}:{key_str[:40]}",
+                text=text,
+                metadata={
+                    "source": "oecd",
+                    "url": "https://data.oecd.org/",
+                    "grade": "A",
+                    "title": f"OECD {dataset_id} — {label}",
+                    "dataset_id": dataset_id,
+                    "series_key": key_str,
+                },
+            )
+        )
     return out
 
 
@@ -154,17 +192,19 @@ def search_dataset(
         combined = f"{name} {tags}".lower()
         if not q or any(w in combined for w in q.split()):
             url = "https://data.oecd.org/"
-            out.append(Document(
-                id=f"oecd:dataset:{dataset_id[:40]}",
-                text=name,
-                metadata={
-                    "source": "oecd",
-                    "url": url,
-                    "grade": "A",
-                    "title": name,
-                    "dataset_id": dataset_id,
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"oecd:dataset:{dataset_id[:40]}",
+                    text=name,
+                    metadata={
+                        "source": "oecd",
+                        "url": url,
+                        "grade": "A",
+                        "title": name,
+                        "dataset_id": dataset_id,
+                    },
+                )
+            )
         if len(out) >= max_results:
             break
     return out
@@ -254,15 +294,17 @@ def list_recent_releases(
     """
     out = []
     for dataset_id, name, _tags in _DATASET_CATALOG[:max_results]:
-        out.append(Document(
-            id=f"oecd:dataset:{dataset_id[:40]}",
-            text=name,
-            metadata={
-                "source": "oecd",
-                "url": "https://data.oecd.org/",
-                "grade": "A",
-                "title": name,
-                "dataset_id": dataset_id,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"oecd:dataset:{dataset_id[:40]}",
+                text=name,
+                metadata={
+                    "source": "oecd",
+                    "url": "https://data.oecd.org/",
+                    "grade": "A",
+                    "title": name,
+                    "dataset_id": dataset_id,
+                },
+            )
+        )
     return out

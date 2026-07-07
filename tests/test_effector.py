@@ -25,8 +25,13 @@ def fresh_targets():
 
 def test_effector_drains_pending_intents(migrated_paths):
     for i in range(5):
-        write_intent(migrated_paths.intents_db, target="test_target", op="upsert",
-                     payload={"i": i}, idempotency_key=f"k{i}")
+        write_intent(
+            migrated_paths.intents_db,
+            target="test_target",
+            op="upsert",
+            payload={"i": i},
+            idempotency_key=f"k{i}",
+        )
     counts = Effector(migrated_paths.intents_db).run_until_empty()
     assert counts.get("applied") == 5
     assert outbox_depth(migrated_paths.intents_db) == 0
@@ -34,8 +39,13 @@ def test_effector_drains_pending_intents(migrated_paths):
 
 
 def test_unknown_target_does_not_dead_immediately(migrated_paths):
-    write_intent(migrated_paths.intents_db, target="never_registered", op="o",
-                 payload={}, idempotency_key="x")
+    write_intent(
+        migrated_paths.intents_db,
+        target="never_registered",
+        op="o",
+        payload={},
+        idempotency_key="x",
+    )
     eff = Effector(migrated_paths.intents_db)
     status = eff.tick()
     assert status == "unknown_target"
@@ -43,8 +53,13 @@ def test_unknown_target_does_not_dead_immediately(migrated_paths):
 
 def test_effector_retries_then_dies(migrated_paths):
     test_target.schedule_failures("flaky", 100)  # always fail
-    write_intent(migrated_paths.intents_db, target="test_target", op="upsert",
-                 payload={"id": "flaky"}, idempotency_key="flaky")
+    write_intent(
+        migrated_paths.intents_db,
+        target="test_target",
+        op="upsert",
+        payload={"id": "flaky"},
+        idempotency_key="flaky",
+    )
     eff = Effector(migrated_paths.intents_db)
     statuses: list[str] = []
     for _ in range(MAX_ATTEMPTS + 2):
@@ -59,8 +74,13 @@ def test_effector_retries_then_dies(migrated_paths):
 
 def test_effector_recovers_after_transient_failures(migrated_paths):
     test_target.schedule_failures("recover", 2)  # fail twice then succeed
-    write_intent(migrated_paths.intents_db, target="test_target", op="upsert",
-                 payload={"v": 1}, idempotency_key="recover")
+    write_intent(
+        migrated_paths.intents_db,
+        target="test_target",
+        op="upsert",
+        payload={"v": 1},
+        idempotency_key="recover",
+    )
     eff = Effector(migrated_paths.intents_db)
     seen: list[str] = []
     for _ in range(10):
@@ -78,11 +98,17 @@ def test_chaos_random_failures_no_duplicates_no_orphans(migrated_paths):
     Light-weight replacement for the 1000-intent chaos test in the design.
     """
     import random
+
     random.seed(7)
     n = 50
     for i in range(n):
-        write_intent(migrated_paths.intents_db, target="test_target", op="upsert",
-                     payload={"i": i}, idempotency_key=f"chaos-{i}")
+        write_intent(
+            migrated_paths.intents_db,
+            target="test_target",
+            op="upsert",
+            payload={"i": i},
+            idempotency_key=f"chaos-{i}",
+        )
         # 30% chance each intent fails up to 2 times before succeeding.
         if random.random() < 0.3:
             test_target.schedule_failures(f"chaos-{i}", random.randint(1, 2))
@@ -108,11 +134,17 @@ def test_chaos_1000_intents_mid_drain_restart_no_dupes_no_orphans(migrated_paths
     applied exactly once, outbox empty. Measured at ~2.4s live (2026-06-10).
     """
     import random
+
     random.seed(11)
     n = 1000
     for i in range(n):
-        write_intent(migrated_paths.intents_db, target="test_target", op="upsert",
-                     payload={"i": i}, idempotency_key=f"chaos-{i}")
+        write_intent(
+            migrated_paths.intents_db,
+            target="test_target",
+            op="upsert",
+            payload={"i": i},
+            idempotency_key=f"chaos-{i}",
+        )
         if random.random() < 0.3:
             test_target.schedule_failures(f"chaos-{i}", random.randint(1, 2))
 

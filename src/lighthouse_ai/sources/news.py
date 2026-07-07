@@ -58,6 +58,7 @@ if TYPE_CHECKING:
 try:
     from lighthouse_ai.net import EgressBlocked
 except ImportError:  # pragma: no cover — net module may not define this yet
+
     class EgressBlocked(Exception):  # type: ignore[no-redef]
         """Raised when the egress proxy denies a fetch."""
 
@@ -130,6 +131,7 @@ def fetch_outlet_feed(
             import httpx  # allowed in sources/ — not inside skill scan
 
             from lighthouse_ai.net import guarded_get
+
             with httpx.Client(timeout=30.0, follow_redirects=True) as hx:
                 r = guarded_get(
                     feed_url,
@@ -192,6 +194,7 @@ def search_outlet(
                 import httpx
 
                 from lighthouse_ai.net import guarded_get
+
                 with httpx.Client(timeout=30.0, follow_redirects=True) as hx:
                     r = guarded_get(
                         url,
@@ -231,21 +234,33 @@ def _extract_links_from_html(html: str, base_url: str) -> list[MonitorItem]:
         if not text or len(text) < 10:
             continue
         # Filter obvious nav links
-        skip_patterns = ("javascript:", "mailto:", "#", "login", "signup",
-                         "subscribe", "advertis", "cookie", "privacy", "terms")
+        skip_patterns = (
+            "javascript:",
+            "mailto:",
+            "#",
+            "login",
+            "signup",
+            "subscribe",
+            "advertis",
+            "cookie",
+            "privacy",
+            "terms",
+        )
         if any(p in href.lower() or p in text.lower() for p in skip_patterns):
             continue
         full_url = urljoin(base_url, href)
         if full_url in seen:
             continue
         seen.add(full_url)
-        items.append(MonitorItem(
-            source=base_url,
-            url=full_url,
-            title=text[:200],
-            body="",
-            published_at=None,
-        ))
+        items.append(
+            MonitorItem(
+                source=base_url,
+                url=full_url,
+                title=text[:200],
+                body="",
+                published_at=None,
+            )
+        )
     return items
 
 

@@ -40,8 +40,7 @@ def _ensure(state_db: Path) -> None:
         conn.close()
 
 
-def add_skill(state_db: Path, *, name: str, description: str | None,
-              body: dict) -> int:
+def add_skill(state_db: Path, *, name: str, description: str | None, body: dict) -> int:
     _ensure(state_db)
     conn = open_db(state_db)
     try:
@@ -67,8 +66,10 @@ def list_skills(state_db: Path) -> list[Skill]:
         ).fetchall()
     finally:
         conn.close()
-    return [Skill(id=r[0], name=r[1], description=r[2],
-                  body=json.loads(r[3]), use_count=r[4]) for r in rows]
+    return [
+        Skill(id=r[0], name=r[1], description=r[2], body=json.loads(r[3]), use_count=r[4])
+        for r in rows
+    ]
 
 
 def increment_use(state_db: Path, skill_id: int) -> None:
@@ -77,7 +78,8 @@ def increment_use(state_db: Path, skill_id: int) -> None:
     try:
         conn.execute(
             "UPDATE skills SET use_count = use_count + 1, "
-            "last_used_at = datetime('now') WHERE id = ?", (skill_id,),
+            "last_used_at = datetime('now') WHERE id = ?",
+            (skill_id,),
         )
     finally:
         conn.close()

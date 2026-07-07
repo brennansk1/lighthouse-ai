@@ -12,7 +12,9 @@ from collections.abc import Sequence
 
 
 def reciprocal_rank_fusion(
-    rankings: Sequence[Sequence[str]], *, k: int = 60,
+    rankings: Sequence[Sequence[str]],
+    *,
+    k: int = 60,
 ) -> list[tuple[str, float]]:
     """Fuse multiple ranked lists into one. Returns (id, score) sorted desc."""
     scores: dict[str, float] = {}

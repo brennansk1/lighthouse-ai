@@ -64,7 +64,77 @@ _CAP_PHRASE_RE = re.compile(r"\b(?:[A-Z][a-zA-Z0-9]+)(?:\s+[A-Z][a-zA-Z0-9]+){0,
 
 # Common English stopwords for the top-terms statistic (kept tiny + offline).
 _STOPWORDS = frozenset(
-    ["the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "for", "with", "at", "by", "from", "as", "is", "are", "was", "were", "be", "been", "being", "this", "that", "these", "those", "it", "its", "he", "she", "they", "we", "you", "i", "not", "no", "can", "will", "would", "could", "should", "may", "might", "must", "do", "does", "did", "have", "has", "had", "how", "what", "when", "which", "who", "whom", "whose", "than", "then", "there", "here", "their", "our", "your", "his", "her", "them", "us"]
+    [
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "but",
+        "of",
+        "to",
+        "in",
+        "on",
+        "for",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "he",
+        "she",
+        "they",
+        "we",
+        "you",
+        "i",
+        "not",
+        "no",
+        "can",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "must",
+        "do",
+        "does",
+        "did",
+        "have",
+        "has",
+        "had",
+        "how",
+        "what",
+        "when",
+        "which",
+        "who",
+        "whom",
+        "whose",
+        "than",
+        "then",
+        "there",
+        "here",
+        "their",
+        "our",
+        "your",
+        "his",
+        "her",
+        "them",
+        "us",
+    ]
 )
 
 
@@ -206,9 +276,7 @@ class SandboxAnalysisContext:
         self._emit("basic_stats", item_id=item_id)
         text = self._text(item_id)
         words = _WORD_RE.findall(text)
-        terms = Counter(
-            w.lower() for w in words if w.lower() not in _STOPWORDS and len(w) > 2
-        )
+        terms = Counter(w.lower() for w in words if w.lower() not in _STOPWORDS and len(w) > 2)
         return {
             "chars": len(text),
             "words": len(words),

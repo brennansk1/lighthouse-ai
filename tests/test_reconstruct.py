@@ -17,6 +17,7 @@ from lighthouse_ai.modes.reconstruct import (
 # Basic contract
 # ---------------------------------------------------------------------------
 
+
 def test_requires_documents():
     with pytest.raises(ValueError):
         run_reconstruct("q", documents=[])
@@ -24,8 +25,7 @@ def test_requires_documents():
 
 def test_extracts_and_sorts_events():
     docs = [
-        Document("d1", "A", "In 2020 the company launched. "
-                            "In 2022 it raised a round."),
+        Document("d1", "A", "In 2020 the company launched. In 2022 it raised a round."),
         Document("d2", "B", "In 2021 a competitor appeared."),
     ]
     r = run_reconstruct("History?", docs)
@@ -75,8 +75,7 @@ def test_deterministic():
     docs = [Document("d1", "A", "In 2020 x happened. In 2021 y happened.")]
     r1 = run_reconstruct("q", docs)
     r2 = run_reconstruct("q", docs)
-    assert [(e.event_id, e.date) for e in r1.events] == \
-           [(e.event_id, e.date) for e in r2.events]
+    assert [(e.event_id, e.date) for e in r1.events] == [(e.event_id, e.date) for e in r2.events]
 
 
 def test_dict_documents_coerced():
@@ -87,6 +86,7 @@ def test_dict_documents_coerced():
 # ---------------------------------------------------------------------------
 # Date parsing — written formats
 # ---------------------------------------------------------------------------
+
 
 def test_written_month_year():
     """'March 2019' should parse to 2019-03-01."""
@@ -160,6 +160,7 @@ def test_multiple_date_formats_in_same_corpus():
 # _find_date unit tests
 # ---------------------------------------------------------------------------
 
+
 def test_find_date_iso():
     assert _find_date("In 2021 something happened") == "2021-01-01"
 
@@ -212,6 +213,7 @@ def test_find_date_none():
 # _normalize_date unit tests
 # ---------------------------------------------------------------------------
 
+
 def test_normalize_year_only():
     assert _normalize_date("2019") == "2019-01-01"
 
@@ -228,29 +230,31 @@ def test_normalize_full():
 # _event_key dedup across date phrasings
 # ---------------------------------------------------------------------------
 
+
 def test_event_key_strips_iso_dates():
-    assert _event_key("In 2020 the merger closed.") == \
-           _event_key("In 2019 the merger closed.")
+    assert _event_key("In 2020 the merger closed.") == _event_key("In 2019 the merger closed.")
 
 
 def test_event_key_strips_written_dates():
-    assert _event_key("In March 2020 the merger closed.") == \
-           _event_key("In April 2019 the merger closed.")
+    assert _event_key("In March 2020 the merger closed.") == _event_key(
+        "In April 2019 the merger closed."
+    )
 
 
 def test_event_key_strips_mixed_date_formats():
-    assert _event_key("2024-05-01: the contract was signed.") == \
-           _event_key("March 3, 2023: the contract was signed.")
+    assert _event_key("2024-05-01: the contract was signed.") == _event_key(
+        "March 3, 2023: the contract was signed."
+    )
 
 
 def test_event_key_different_actions_differ():
-    assert _event_key("The company launched.") != \
-           _event_key("The company shut down.")
+    assert _event_key("The company launched.") != _event_key("The company shut down.")
 
 
 # ---------------------------------------------------------------------------
 # Certainty computation (source-count weighted)
 # ---------------------------------------------------------------------------
+
 
 def test_certainty_unanimous():
     """All sources agree → certainty == 1.0."""
@@ -319,6 +323,7 @@ def test_same_source_repeated_date_does_not_inflate_vote():
 # Deduplication across date variants
 # ---------------------------------------------------------------------------
 
+
 def test_dedup_written_vs_iso_same_event():
     """'March 2019' and '2019' in different docs → one deduplicated event."""
     docs = [
@@ -333,8 +338,7 @@ def test_dedup_written_vs_iso_same_event():
 
 def test_dedup_distinct_actions_not_collapsed():
     """Different actions must stay as separate events."""
-    docs = [Document("d1", "A",
-                     "In 2020 the company launched. In 2020 the merger closed.")]
+    docs = [Document("d1", "A", "In 2020 the company launched. In 2020 the merger closed.")]
     r = run_reconstruct("q", docs)
     assert len(r.events) == 2
 
@@ -342,6 +346,7 @@ def test_dedup_distinct_actions_not_collapsed():
 # ---------------------------------------------------------------------------
 # Actor extraction
 # ---------------------------------------------------------------------------
+
 
 def test_extract_actors_basic():
     actors = _extract_actors("John Smith signed the accord.")
@@ -361,6 +366,7 @@ def test_extract_actors_deduplicated():
 # ---------------------------------------------------------------------------
 # Report metadata
 # ---------------------------------------------------------------------------
+
 
 def test_report_doc_count():
     docs = [
@@ -382,6 +388,7 @@ def test_report_claims_mention_event_count():
 # ---------------------------------------------------------------------------
 # No dates found
 # ---------------------------------------------------------------------------
+
 
 def test_no_dates_produces_empty_events():
     """A document with no date tokens produces an empty events list."""

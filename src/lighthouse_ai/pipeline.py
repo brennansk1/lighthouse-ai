@@ -55,15 +55,18 @@ _log = structlog.get_logger(__name__)
 def _source_domain(source: str) -> str:
     """Extract a normalised domain key from a source URL or path (for hotness dedup)."""
     from urllib.parse import urlparse
+
     parsed = urlparse(source)
     return parsed.netloc or source.split("/")[0] or source
 
 
 # ── backend factories ──────────────────────────────────────────────────
 
+
 def _ollama_installed_tags() -> list[str]:
     try:
         from .backends.ollama import OllamaBackend
+
         b = OllamaBackend()
         if not b.available():
             return []
@@ -83,11 +86,13 @@ def make_embedder(*, offline: bool = False, installed: list[str] | None = None):
     installed = installed if installed is not None else _ollama_installed_tags()
     embed_tag = next((t for t in installed if t.split(":")[0] == "bge-m3"), None)
     if embed_tag is None:
-        embed_tag = next((t for t in installed
-                          if "embed" in t or t.split(":")[0] == "nomic-embed-text"), None)
+        embed_tag = next(
+            (t for t in installed if "embed" in t or t.split(":")[0] == "nomic-embed-text"), None
+        )
     if embed_tag:
         try:
             from .rag.ollama_embedder import OllamaEmbedder
+
             dim = 1024 if "bge-m3" in embed_tag else 768
             emb = OllamaEmbedder(model=embed_tag, dim=dim)
             if emb.available():
@@ -113,6 +118,7 @@ def make_vector_store(dim: int, *, offline: bool = False):
         return InMemoryStore(), "in-memory", warns
     try:
         from .rag.qdrant_store import QdrantStore
+
         store = QdrantStore(dim=dim, collection="lighthouse_corpus")
         if store.available():
             return store, "qdrant", warns
@@ -124,9 +130,14 @@ def make_vector_store(dim: int, *, offline: bool = False):
     return InMemoryStore(), "in-memory", warns
 
 
-def make_gateway(paths: Paths, profile: HardwareProfile, *,
-                 offline: bool = False, installed: list[str] | None = None,
-                 budget_gb: float | None = None) -> Gateway:
+def make_gateway(
+    paths: Paths,
+    profile: HardwareProfile,
+    *,
+    offline: bool = False,
+    installed: list[str] | None = None,
+    budget_gb: float | None = None,
+) -> Gateway:
     """Gateway with capability-classes resolved to real installed tags.
 
     ``offline=True`` forces the mock provider (no model load). Otherwise the
@@ -141,23 +152,26 @@ def make_gateway(paths: Paths, profile: HardwareProfile, *,
     if offline:
         return Gateway(gov, paths.audit_db, profile=profile, prefer_real_backends=False)
     installed = installed if installed is not None else _ollama_installed_tags()
-    overrides = (resolve_against_installed(profile, installed, budget_gb=budget_gb)
-                 if installed else {})
-    return Gateway(gov, paths.audit_db, profile=profile,
-                   prefer_real_backends=True, overrides=overrides)
+    overrides = (
+        resolve_against_installed(profile, installed, budget_gb=budget_gb) if installed else {}
+    )
+    return Gateway(
+        gov, paths.audit_db, profile=profile, prefer_real_backends=True, overrides=overrides
+    )
 
 
 # ── pipeline ────────────────────────────────────────────────────────────
 
+
 @dataclass
 class PipelineConfig:
     offline: bool = False
-    mode: str = "deep-dive"        # deep-dive | quc
-    max_rounds: int = 3            # TTD-DR iterates a few rounds; 3 is the floor
+    mode: str = "deep-dive"  # deep-dive | quc
+    max_rounds: int = 3  # TTD-DR iterates a few rounds; 3 is the floor
     top_k: int = 5
-    auto_fetch_sources: bool = True    # auto-fetch from arXiv/OpenAlex when corpus is empty
-    auto_fetch_max_results: int = 5    # max papers per source
-    depth: str = "standard"            # acquisition tier (quick disables the iterative loop)
+    auto_fetch_sources: bool = True  # auto-fetch from arXiv/OpenAlex when corpus is empty
+    auto_fetch_max_results: int = 5  # max papers per source
+    depth: str = "standard"  # acquisition tier (quick disables the iterative loop)
 
 
 @dataclass
@@ -177,32 +191,38 @@ class ResearchResult:
 class ResearchPipeline:
     """Assembles real-or-stub backends and runs a research job end-to-end."""
 
-    def __init__(self, paths: Paths, *, profile: HardwareProfile | None = None,
-                 config: PipelineConfig | None = None,
-                 gateway: Gateway | None = None):
+    def __init__(
+        self,
+        paths: Paths,
+        *,
+        profile: HardwareProfile | None = None,
+        config: PipelineConfig | None = None,
+        gateway: Gateway | None = None,
+    ):
         self.paths = paths
         self.profile = profile or probe()
         self.config = config or PipelineConfig()
         installed = [] if self.config.offline else _ollama_installed_tags()
-        self.embedder, emb_name, emb_warns = make_embedder(offline=self.config.offline,
-                                                            installed=installed)
-        self.store, store_name, store_warns = make_vector_store(self.embedder.dim,
-                                                                offline=self.config.offline)
+        self.embedder, emb_name, emb_warns = make_embedder(
+            offline=self.config.offline, installed=installed
+        )
+        self.store, store_name, store_warns = make_vector_store(
+            self.embedder.dim, offline=self.config.offline
+        )
         # Real cross-encoder (BAAI/bge-reranker-v2-m3) when FlagEmbedding is
         # installed AND not offline; otherwise a score-passthrough that preserves
         # fusion order. offline=True must stay hermetic (no real model load), so
         # we mirror the embedder/store/gateway and pass prefer_real=not offline —
         # otherwise an installed FlagEmbedding would load a heavy model even in
         # offline mode.
-        self.reranker = cast(
-            Reranker, make_reranker(prefer_real=not self.config.offline)
-        )
-        self.hybrid = HybridSearch(self.store, self.embedder, BM25Index(),
-                                   reranker=self.reranker)
+        self.reranker = cast(Reranker, make_reranker(prefer_real=not self.config.offline))
+        self.hybrid = HybridSearch(self.store, self.embedder, BM25Index(), reranker=self.reranker)
         self.gateway = gateway or make_gateway(
-            paths, self.profile, offline=self.config.offline, installed=installed)
+            paths, self.profile, offline=self.config.offline, installed=installed
+        )
         self.backends = {
-            "embedder": emb_name, "vector_store": store_name,
+            "embedder": emb_name,
+            "vector_store": store_name,
             "gateway": "mock" if self.config.offline else "ollama",
         }
         self._backend_warnings: list[str] = emb_warns + store_warns
@@ -210,6 +230,7 @@ class ResearchPipeline:
         self._blocked_chunks = 0
         self._compaction_saved_tokens = 0
         from .governor import InjectionGate
+
         self._injection_gate = InjectionGate()
         self.hotness_store = EntityHotnessStore(paths.data_dir / "entity_hotness.db")
         self._tracked_entities: set[str] = set()
@@ -217,6 +238,7 @@ class ResearchPipeline:
         # so throttling it is pointless (and would slow tests). The gate samples
         # power/CPU and serialises/sleeps when the host is busy or on battery.
         from .governor.scheduler_gate import SchedulerGate, SchedulerGateConfig
+
         self.scheduler_gate = (
             None
             if self.config.offline
@@ -246,10 +268,10 @@ class ResearchPipeline:
         meta = metadata or {}
         ct = str(meta.get("content_type", ""))
         if ct.startswith("text/html") or looks_like_html(text):
-            text, cstats = compact(text, source=str(meta.get("source", "")),
-                                   content_type=ct or "text/html")
-            self._compaction_saved_tokens += max(
-                0, cstats.orig_tokens - cstats.new_tokens)
+            text, cstats = compact(
+                text, source=str(meta.get("source", "")), content_type=ct or "text/html"
+            )
+            self._compaction_saved_tokens += max(0, cstats.orig_tokens - cstats.new_tokens)
 
         doc = Document(id=doc_id, text=text, metadata=meta)
         chunks = chunk_document(doc)
@@ -289,8 +311,7 @@ class ResearchPipeline:
 
     def ingest_path(self, path: Path) -> int:
         text = Path(path).read_text(errors="replace")
-        return self.ingest_text(Path(path).name, text,
-                                metadata={"source": str(path)})
+        return self.ingest_text(Path(path).name, text, metadata={"source": str(path)})
 
     def _auto_fetch(self, question: str) -> None:
         """Fetch from arXiv and OpenAlex when the corpus is empty.
@@ -302,8 +323,8 @@ class ResearchPipeline:
         n = self.config.auto_fetch_max_results
         fetched = 0
         for source_name, module_path, fn_name in [
-            ("arxiv",    "lighthouse_ai.sources.arxiv",    "search_arxiv"),
-            ("openalex", "lighthouse_ai.sources.openalex",  "search_openalex"),
+            ("arxiv", "lighthouse_ai.sources.arxiv", "search_arxiv"),
+            ("openalex", "lighthouse_ai.sources.openalex", "search_openalex"),
         ]:
             try:
                 mod = importlib.import_module(module_path)
@@ -341,9 +362,15 @@ class ResearchPipeline:
             broker = _build_broker(self.paths)
             if broker is None:
                 return None
-            return Acquirer(policy=policy, broker=broker, gateway=self.gateway,
-                            hybrid=self.hybrid, meta={"documents": []},
-                            mode="investigate", depth=self.config.depth)
+            return Acquirer(
+                policy=policy,
+                broker=broker,
+                gateway=self.gateway,
+                hybrid=self.hybrid,
+                meta={"documents": []},
+                mode="investigate",
+                depth=self.config.depth,
+            )
         except Exception:
             return None
 
@@ -352,14 +379,21 @@ class ResearchPipeline:
         job_id = job_id or uuid.uuid4().hex[:8]
         # Auto-fetch from academic sources when corpus is empty and not in offline mode.
         # The `not offline` gate is the test isolation guarantee — all tests use offline=True.
-        if (self._chunks_ingested == 0
-                and not self.config.offline
-                and self.config.auto_fetch_sources):
+        if (
+            self._chunks_ingested == 0
+            and not self.config.offline
+            and self.config.auto_fetch_sources
+        ):
             self._auto_fetch(question)
         if self.config.mode == "quc":
             session = QUCSession(id=job_id, topic=question)
-            turn = quc_ask(session, question, hybrid=self.hybrid,
-                           gateway=self.gateway, gate=self.scheduler_gate)
+            turn = quc_ask(
+                session,
+                question,
+                hybrid=self.hybrid,
+                gateway=self.gateway,
+                gate=self.scheduler_gate,
+            )
             synthesis = turn.text
             body_html = f"<p>{_escape(synthesis)}</p>"
             source_count = len(turn.citations)
@@ -377,11 +411,17 @@ class ResearchPipeline:
             # pull new web evidence for thin sub-questions mid-run. Offline
             # stays hermetic (no acquirer, no network, bit-identical output).
             acquirer = self._build_acquirer()
-            report = run_deepdive(question, hybrid=self.hybrid, gateway=self.gateway,
-                                  max_rounds=self.config.max_rounds,
-                                  top_k=dd_top_k, rerank_candidates=dd_candidates,
-                                  job_id=job_id, gate=self.scheduler_gate,
-                                  acquire_fn=acquirer.acquire if acquirer else None)
+            report = run_deepdive(
+                question,
+                hybrid=self.hybrid,
+                gateway=self.gateway,
+                max_rounds=self.config.max_rounds,
+                top_k=dd_top_k,
+                rerank_candidates=dd_candidates,
+                job_id=job_id,
+                gate=self.scheduler_gate,
+                acquire_fn=acquirer.acquire if acquirer else None,
+            )
             synthesis = "\n\n".join(s.body for s in report.sections)
             body_html = _report_to_html(report)
             source_count = len({c for s in report.sections for c in s.citations})
@@ -391,6 +431,7 @@ class ResearchPipeline:
         # --- quality discipline gate + calibration (§12, §22) ---
         from .verification.discipline import check as discipline_check
         from .verification.discipline import downgrade_wep
+
         # Citation integrity needs the run's evidence: a claim citing an [N]
         # outside 1..len(evidence) is fabricated and must be flagged (the
         # zero-fabricated-citations invariant). NB deepdive sections number
@@ -404,22 +445,30 @@ class ResearchPipeline:
         rep = discipline_check(synthesis, evidence_chunks=_evidence or None)
         # source diversity — how many independent source domains were cited
         from .verification.discipline import check_source_diversity as _check_div
+
         distinct_sources = _check_div(_evidence)
         # Stated confidence starts at "likely" (0.75); discipline downgrades it.
         band = downgrade_wep(0.75, rep)
         disc_summary = {
-            "claims": len(rep.claims), "sourced": rep.sourced,
-            "unsourced": rep.unsourced, "coverage": rep.citation_coverage,
-            "passed": rep.passed, "notes": rep.notes,
+            "claims": len(rep.claims),
+            "sourced": rep.sourced,
+            "unsourced": rep.unsourced,
+            "coverage": rep.citation_coverage,
+            "passed": rep.passed,
+            "notes": rep.notes,
             "distinct_sources": distinct_sources,
         }
         # Structured artifact body — mirrors the dispatcher's Investigate shape
         # so the dashboard's typed views + the frontier-parity grader can consume
         # a CLI-run draft the same as a dashboard-launched one.
-        _prov = {"backend": self.backends.get("gateway"),
-                 "metrics": {"citation_coverage": rep.citation_coverage,
-                             "distinct_sources": distinct_sources,
-                             "fabricated_citations": float(rep.fabricated_citations)}}
+        _prov = {
+            "backend": self.backends.get("gateway"),
+            "metrics": {
+                "citation_coverage": rep.citation_coverage,
+                "distinct_sources": distinct_sources,
+                "fabricated_citations": float(rep.fabricated_citations),
+            },
+        }
         if report is not None:
             body_json = {
                 "question": report.question,
@@ -427,40 +476,56 @@ class ResearchPipeline:
                 "depth": "standard",
                 "rounds_used": report.rounds_used,
                 "sections": [
-                    {"title": s.title, "sub_question": s.sub_question,
-                     "body": s.body, "citations": list(s.citations),
-                     "is_load_bearing": s.is_load_bearing}
-                    for s in report.sections],
+                    {
+                        "title": s.title,
+                        "sub_question": s.sub_question,
+                        "body": s.body,
+                        "citations": list(s.citations),
+                        "is_load_bearing": s.is_load_bearing,
+                    }
+                    for s in report.sections
+                ],
                 "open_questions": list(report.open_questions),
                 "ruled_out": list(getattr(report, "ruled_out", []) or []),
                 "citation_coverage": rep.citation_coverage,
                 "provenance": _prov,
             }
         else:  # QUC — a single grounded answer, no section tree
-            body_json = {"question": question, "depth": "standard",
-                         "answer": answer or "",
-                         "citation_coverage": rep.citation_coverage,
-                         "provenance": _prov}
+            body_json = {
+                "question": question,
+                "depth": "standard",
+                "answer": answer or "",
+                "citation_coverage": rep.citation_coverage,
+                "provenance": _prov,
+            }
         draft_id = self._persist_draft(
-            question=question, title=question, body_html=body_html,
-            source_count=source_count, job_id=job_id,
-            wep_phrase=band.label, wep_band=band.name,
+            question=question,
+            title=question,
+            body_html=body_html,
+            source_count=source_count,
+            job_id=job_id,
+            wep_phrase=band.label,
+            wep_band=band.name,
             confidence=round(0.75 * max(rep.citation_coverage, 0.1), 3),
-            body_json=body_json)
+            body_json=body_json,
+        )
         # Snapshot the artifact's evidence so a later chat with it stays grounded
         # in its own sources even when the live corpus is gone (in-memory store).
         try:
             ev = getattr(report, "evidence_chunks", None) if report is not None else None
             if ev:
                 from .modes.artifact_chat import snapshot_evidence
+
                 snapshot_evidence(self.paths.state_db, draft_id, ev)
         except Exception:
             pass
         # record each claim as a Position so the calibration loop has data
         n_positions = self._record_positions(rep, band)
 
-        self._audit("discipline.checked", {"draft_id": draft_id, **disc_summary,
-                                           "positions_recorded": n_positions})
+        self._audit(
+            "discipline.checked",
+            {"draft_id": draft_id, **disc_summary, "positions_recorded": n_positions},
+        )
 
         # Record query hits for tracked entities that appear in the answer/synthesis (§2).
         if self._tracked_entities and synthesis:
@@ -470,7 +535,7 @@ class ResearchPipeline:
                     self.hotness_store.record_query_hit(entity_id)
 
         # Emit SSE event for newly hot entities
-        if self._tracked_entities and hasattr(self, 'hotness_store'):
+        if self._tracked_entities and hasattr(self, "hotness_store"):
             try:
                 hot = self.hotness_store.hot_entities()
                 for entity_id, _score in hot:
@@ -479,11 +544,18 @@ class ResearchPipeline:
             except Exception:
                 pass  # non-fatal; hotness events are advisory
 
-        return ResearchResult(draft_id=draft_id, question=question,
-                              mode=self.config.mode, backends=self.backends,
-                              sections=sections, chunks_ingested=self._chunks_ingested,
-                              report=report, answer=answer, discipline=disc_summary,
-                              warnings=self._backend_warnings)
+        return ResearchResult(
+            draft_id=draft_id,
+            question=question,
+            mode=self.config.mode,
+            backends=self.backends,
+            sections=sections,
+            chunks_ingested=self._chunks_ingested,
+            report=report,
+            answer=answer,
+            discipline=disc_summary,
+            warnings=self._backend_warnings,
+        )
 
     def _record_positions(self, report, band) -> int:
         """Record each extracted claim as a Position (claim + WEP + resolve-by).
@@ -496,6 +568,7 @@ class ResearchPipeline:
         from .verification.calibration import probability_from_evidence
         from .verification.positions import record_position
         from .verification.resolver import default_criterion
+
         # report-level faithfulness signal applied to sourced claims (when measured)
         entailment = report.entailment_coverage if report.entailment_checked else None
         contradicted_texts = {t for pair in report.contradictions for t in pair}
@@ -510,23 +583,34 @@ class ResearchPipeline:
                 )
                 # Machine-resolvable claims carry a criterion so the resolver can
                 # decide them from fresh evidence; subjective ones defer to a human.
-                record_position(self.paths.positions_db, claim=claim.text,
-                                probability=prob,
-                                resolution_criterion=default_criterion(claim.text))
+                record_position(
+                    self.paths.positions_db,
+                    claim=claim.text,
+                    probability=prob,
+                    resolution_criterion=default_criterion(claim.text),
+                )
                 n += 1
             except Exception:
                 pass
         return n
 
     # --- persistence ---
-    def _persist_draft(self, *, question: str, title: str, body_html: str,
-                       source_count: int, job_id: str,
-                       wep_phrase: str | None = None,
-                       wep_band: str | None = None,
-                       confidence: float | None = None,
-                       body_json: dict | None = None) -> str:
+    def _persist_draft(
+        self,
+        *,
+        question: str,
+        title: str,
+        body_html: str,
+        source_count: int,
+        job_id: str,
+        wep_phrase: str | None = None,
+        wep_band: str | None = None,
+        confidence: float | None = None,
+        body_json: dict | None = None,
+    ) -> str:
         draft_id = "d-" + uuid.uuid4().hex[:6]
         from .modes.registry import canonical
+
         try:
             mode_key = canonical(self.config.mode)
         except KeyError:
@@ -537,8 +621,8 @@ class ResearchPipeline:
             conn.execute(
                 "INSERT OR IGNORE INTO jobs (id, mode, status, metadata_json) "
                 "VALUES (?, ?, 'review', ?)",
-                (job_id, mode_key, _json({"topic": question, "progress": 1.0,
-                                          "eta": "staged"})))
+                (job_id, mode_key, _json({"topic": question, "progress": 1.0, "eta": "staged"})),
+            )
             # body_json carries the structured artifact (sections, citations,
             # open questions, coverage) so a CLI-run draft renders in the
             # dashboard's typed views and is gradeable — parity with the
@@ -547,13 +631,24 @@ class ResearchPipeline:
                 "INSERT INTO drafts (id, job_id, topic, title, body_html, "
                 "body_json, wep_band, wep_phrase, confidence, source_count, status) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'staged')",
-                (draft_id, job_id, question[:60], title, body_html,
-                 _json(body_json) if body_json else None, wep_band,
-                 wep_phrase, confidence, source_count))
+                (
+                    draft_id,
+                    job_id,
+                    question[:60],
+                    title,
+                    body_html,
+                    _json(body_json) if body_json else None,
+                    wep_band,
+                    wep_phrase,
+                    confidence,
+                    source_count,
+                ),
+            )
         finally:
             conn.close()
-        self._audit("draft.staged", {"draft_id": draft_id, "question": question,
-                                     "backends": self.backends})
+        self._audit(
+            "draft.staged", {"draft_id": draft_id, "question": question, "backends": self.backends}
+        )
         # Emit PROV-O sidecar — best-effort (never fail the run).
         self._emit_prov_sidecar(
             draft_id=draft_id,
@@ -565,9 +660,16 @@ class ResearchPipeline:
         )
         return draft_id
 
-    def _emit_prov_sidecar(self, *, draft_id: str, job_id: str,
-                           question: str, mode: str,
-                           body_html: str, source_count: int) -> None:
+    def _emit_prov_sidecar(
+        self,
+        *,
+        draft_id: str,
+        job_id: str,
+        question: str,
+        mode: str,
+        body_html: str,
+        source_count: int,
+    ) -> None:
         """Write a PROV-O JSON sidecar next to the staging area. Best-effort."""
         try:
             from .provenance import build_run_sidecar, write_run_sidecar
@@ -595,8 +697,7 @@ class ResearchPipeline:
             )
             sidecar_path = self.paths.staging_dir / f"{draft_id}.prov.json"
             write_run_sidecar(sidecar_path, sidecar)
-            _log.info("prov_sidecar.written",
-                      draft_id=draft_id, path=str(sidecar_path))
+            _log.info("prov_sidecar.written", draft_id=draft_id, path=str(sidecar_path))
         except Exception as exc:
             _log.warning("prov_sidecar.failed", draft_id=draft_id, error=repr(exc))
 
@@ -605,37 +706,50 @@ class ResearchPipeline:
             return
         try:
             from .verification.audit_chain import append_event
-            append_event(self.paths.audit_db, actor="pipeline",
-                         event_type=event_type, payload=payload,
-                         data_dir=self.paths.data_dir)
+
+            append_event(
+                self.paths.audit_db,
+                actor="pipeline",
+                event_type=event_type,
+                payload=payload,
+                data_dir=self.paths.data_dir,
+            )
         except Exception:
             pass
 
 
 # ── helpers ──────────────────────────────────────────────────────────────
 
+
 def _escape(s: str) -> str:
     import html
+
     return html.escape(s or "")
 
 
 def _report_to_html(report: DraftReport) -> str:
-    parts = [f"<p class='meta'>{report.rounds_used} round(s) · "
-             f"{len(report.sections)} sections · framing: "
-             f"{report.framing.question_type.value}</p>"]
+    parts = [
+        f"<p class='meta'>{report.rounds_used} round(s) · "
+        f"{len(report.sections)} sections · framing: "
+        f"{report.framing.question_type.value}</p>"
+    ]
     for s in report.sections:
         parts.append(f"<h2>{_escape(s.title)}</h2>")
         parts.append(f"<p>{_escape(s.body)}</p>")
         if s.citations:
             parts.append(f"<p class='meta'>sources: {len(s.citations)}</p>")
     if report.open_questions:
-        parts.append("<h2>Open questions</h2><ul>"
-                     + "".join(f"<li>{_escape(q)}</li>" for q in report.open_questions)
-                     + "</ul>")
-    return render_html_document(title=report.question, subtitle="staged draft",
-                                body_html="".join(parts))
+        parts.append(
+            "<h2>Open questions</h2><ul>"
+            + "".join(f"<li>{_escape(q)}</li>" for q in report.open_questions)
+            + "</ul>"
+        )
+    return render_html_document(
+        title=report.question, subtitle="staged draft", body_html="".join(parts)
+    )
 
 
 def _json(obj: object) -> str:
     import json
+
     return json.dumps(obj, sort_keys=True, default=str)

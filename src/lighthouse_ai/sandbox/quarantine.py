@@ -75,8 +75,7 @@ class Quarantine:
         automatically after every successful :meth:`record` call.
     """
 
-    def __init__(self, db_path: Path, root: Path,
-                 max_bytes: int | None = None) -> None:
+    def __init__(self, db_path: Path, root: Path, max_bytes: int | None = None) -> None:
         self.db_path = db_path
         self.root = root
         self.max_bytes = max_bytes
@@ -93,11 +92,19 @@ class Quarantine:
     def hash_bytes(payload: bytes) -> str:
         return hashlib.sha256(payload).hexdigest()
 
-    def record(self, *, sha256: str, url: str | None, filename: str | None,
-               content_type: str | None, verdict: str,
-               reasons: list[dict], payload: bytes,
-               persist: bool = True,
-               worm: bool = False) -> QuarantineRecord:
+    def record(
+        self,
+        *,
+        sha256: str,
+        url: str | None,
+        filename: str | None,
+        content_type: str | None,
+        verdict: str,
+        reasons: list[dict],
+        payload: bytes,
+        persist: bool = True,
+        worm: bool = False,
+    ) -> QuarantineRecord:
         saved_path: str | None = None
         if persist and verdict != "reject":
             sub = self.root / verdict
@@ -121,8 +128,17 @@ class Quarantine:
                     worm = MAX(worm, excluded.worm),
                     evicted = 0
                 """,
-                (sha256, url, filename, content_type, verdict,
-                 json.dumps(reasons), len(payload), saved_path, int(worm)),
+                (
+                    sha256,
+                    url,
+                    filename,
+                    content_type,
+                    verdict,
+                    json.dumps(reasons),
+                    len(payload),
+                    saved_path,
+                    int(worm),
+                ),
             )
             row = conn.execute(
                 "SELECT seen_at, worm, evicted FROM quarantine WHERE sha256 = ?",
@@ -131,8 +147,13 @@ class Quarantine:
         finally:
             conn.close()
         rec = QuarantineRecord(
-            sha256=sha256, url=url, filename=filename, content_type=content_type,
-            verdict=verdict, reasons=reasons, bytes_size=len(payload),
+            sha256=sha256,
+            url=url,
+            filename=filename,
+            content_type=content_type,
+            verdict=verdict,
+            reasons=reasons,
+            bytes_size=len(payload),
             saved_path=saved_path,
             seen_at=row[0] if row else "",
             worm=bool(row[1]) if row else worm,
@@ -147,7 +168,8 @@ class Quarantine:
         conn = open_db(self.db_path)
         try:
             conn.execute(
-                "UPDATE quarantine SET worm = 1 WHERE sha256 = ?", (sha256,),
+                "UPDATE quarantine SET worm = 1 WHERE sha256 = ?",
+                (sha256,),
             )
         finally:
             conn.close()
@@ -201,8 +223,7 @@ class Quarantine:
             conn2 = open_db(self.db_path)
             try:
                 conn2.execute(
-                    "UPDATE quarantine SET evicted = 1, saved_path = NULL "
-                    "WHERE sha256 = ?",
+                    "UPDATE quarantine SET evicted = 1, saved_path = NULL WHERE sha256 = ?",
                     (sha256,),
                 )
             finally:
@@ -212,8 +233,7 @@ class Quarantine:
 
         return evicted_count
 
-    def list(self, *, verdict: str | None = None,
-             limit: int = 100) -> list[dict]:
+    def list(self, *, verdict: str | None = None, limit: int = 100) -> list[dict]:
         conn = open_db(self.db_path)
         try:
             if verdict:
@@ -221,25 +241,35 @@ class Quarantine:
                     "SELECT sha256, url, filename, content_type, verdict, "
                     "reasons_json, bytes_size, saved_path, seen_at, worm, evicted "
                     "FROM quarantine WHERE verdict = ? "
-                    "ORDER BY seen_at DESC LIMIT ?", (verdict, limit),
+                    "ORDER BY seen_at DESC LIMIT ?",
+                    (verdict, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
                     "SELECT sha256, url, filename, content_type, verdict, "
                     "reasons_json, bytes_size, saved_path, seen_at, worm, evicted "
-                    "FROM quarantine ORDER BY seen_at DESC LIMIT ?", (limit,),
+                    "FROM quarantine ORDER BY seen_at DESC LIMIT ?",
+                    (limit,),
                 ).fetchall()
         finally:
             conn.close()
         out = []
         for r in rows:
-            out.append({
-                "sha256": r[0], "url": r[1], "filename": r[2],
-                "content_type": r[3], "verdict": r[4],
-                "reasons": json.loads(r[5]) if r[5] else [],
-                "bytes_size": r[6], "saved_path": r[7], "seen_at": r[8],
-                "worm": bool(r[9]), "evicted": bool(r[10]),
-            })
+            out.append(
+                {
+                    "sha256": r[0],
+                    "url": r[1],
+                    "filename": r[2],
+                    "content_type": r[3],
+                    "verdict": r[4],
+                    "reasons": json.loads(r[5]) if r[5] else [],
+                    "bytes_size": r[6],
+                    "saved_path": r[7],
+                    "seen_at": r[8],
+                    "worm": bool(r[9]),
+                    "evicted": bool(r[10]),
+                }
+            )
         return out
 
     def restore(self, sha256: str, dest: Path) -> Path:
@@ -247,7 +277,8 @@ class Quarantine:
         conn = open_db(self.db_path)
         try:
             row = conn.execute(
-                "SELECT saved_path FROM quarantine WHERE sha256 = ?", (sha256,),
+                "SELECT saved_path FROM quarantine WHERE sha256 = ?",
+                (sha256,),
             ).fetchone()
         finally:
             conn.close()
@@ -279,26 +310,25 @@ class Quarantine:
 # Schema helpers — idempotent ALTER TABLE for in-place DB upgrades
 # ---------------------------------------------------------------------------
 
+
 def _ensure_worm_column(conn: object) -> None:  # type: ignore[type-arg]
     """Add the ``worm`` column to an existing DB that predates it."""
     import sqlite3 as _sqlite3
+
     assert isinstance(conn, _sqlite3.Connection)
     cols = {row[1] for row in conn.execute("PRAGMA table_info(quarantine)")}
     if "worm" not in cols:
-        conn.execute(
-            "ALTER TABLE quarantine ADD COLUMN worm INTEGER NOT NULL DEFAULT 0"
-        )
+        conn.execute("ALTER TABLE quarantine ADD COLUMN worm INTEGER NOT NULL DEFAULT 0")
 
 
 def _ensure_evicted_column(conn: object) -> None:  # type: ignore[type-arg]
     """Add the ``evicted`` column to an existing DB that predates it."""
     import sqlite3 as _sqlite3
+
     assert isinstance(conn, _sqlite3.Connection)
     cols = {row[1] for row in conn.execute("PRAGMA table_info(quarantine)")}
     if "evicted" not in cols:
-        conn.execute(
-            "ALTER TABLE quarantine ADD COLUMN evicted INTEGER NOT NULL DEFAULT 0"
-        )
+        conn.execute("ALTER TABLE quarantine ADD COLUMN evicted INTEGER NOT NULL DEFAULT 0")
 
 
 def _ext_for(filename: str | None, content_type: str | None) -> str:

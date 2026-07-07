@@ -91,6 +91,7 @@ def run(
 
 # ---- helpers ---------------------------------------------------------------
 
+
 def _extract_target_urls(question: str) -> list[str]:
     """Return non-Wayback http(s) URLs found in ``question``."""
     matches = _URL_RE.findall(question)

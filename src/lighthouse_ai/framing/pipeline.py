@@ -69,14 +69,16 @@ class FramedQuestion:
 
 _TYPE_KEYWORDS: list[tuple[QuestionType, list[str]]] = [
     # Order matters: more specific rules come first.
-    (QuestionType.DECISION_SUPPORT,      ["should i", "should we", "best choice", "what to do"]),
-    (QuestionType.CONTROVERSY_RESOLUTION,["disputed", "controversial", "alleged", "true?"]),
-    (QuestionType.METHODOLOGY_EVALUATION,["method", "approach", "technique", "good for"]),
-    (QuestionType.EXPLORATORY_SURVEY,    ["what's going on", "what is happening",
-                                           "landscape", "overview", "state of"]),
-    (QuestionType.COMPARATIVE,           ["vs", "versus", "compare", "better than"]),
-    (QuestionType.CAUSAL_EXPLANATION,    ["why", "cause", "led to", "because"]),
-    (QuestionType.PREDICTIVE_FORECAST,   ["will", "forecast", "predict", "future", "by 20"]),
+    (QuestionType.DECISION_SUPPORT, ["should i", "should we", "best choice", "what to do"]),
+    (QuestionType.CONTROVERSY_RESOLUTION, ["disputed", "controversial", "alleged", "true?"]),
+    (QuestionType.METHODOLOGY_EVALUATION, ["method", "approach", "technique", "good for"]),
+    (
+        QuestionType.EXPLORATORY_SURVEY,
+        ["what's going on", "what is happening", "landscape", "overview", "state of"],
+    ),
+    (QuestionType.COMPARATIVE, ["vs", "versus", "compare", "better than"]),
+    (QuestionType.CAUSAL_EXPLANATION, ["why", "cause", "led to", "because"]),
+    (QuestionType.PREDICTIVE_FORECAST, ["will", "forecast", "predict", "future", "by 20"]),
 ]
 
 
@@ -180,13 +182,17 @@ def critique_question(q: str) -> QuestionCritique:
 
     well_formed = not (is_compound or is_under)
     return QuestionCritique(
-        well_formed=well_formed, is_compound=is_compound,
-        has_presupposition=has_pre, is_underspecified=is_under,
-        implicit_utility=implicit, notes=notes,
+        well_formed=well_formed,
+        is_compound=is_compound,
+        has_presupposition=has_pre,
+        is_underspecified=is_under,
+        implicit_utility=implicit,
+        notes=notes,
     )
 
 
 # --- Frame multiplication ----------------------------------------
+
 
 def multiply_frames(q: str, qtype: QuestionType) -> list[Framing]:
     """Return 3-5 alternative framings.
@@ -206,7 +212,9 @@ def multiply_frames(q: str, qtype: QuestionType) -> list[Framing]:
     elif qtype is QuestionType.COMPARATIVE:
         frames = [
             Framing("F1-criteria", f"On what criteria do the options in '{base}' differ?"),
-            Framing("F2-stakes", f"What are the stakes / failure modes of each option in '{base}'?"),
+            Framing(
+                "F2-stakes", f"What are the stakes / failure modes of each option in '{base}'?"
+            ),
             Framing("F3-evidence", f"What evidence is decisive vs marginal for '{base}'?"),
         ]
     elif qtype is QuestionType.PREDICTIVE_FORECAST:
@@ -234,11 +242,11 @@ def frame_question(framings: list[Framing], qtype: QuestionType) -> Framing:
     if not framings:
         raise ValueError("no framings to choose from")
     first = framings[0]
-    return Framing(first.label, first.statement,
-                   rationale=f"default selection for {qtype.value}")
+    return Framing(first.label, first.statement, rationale=f"default selection for {qtype.value}")
 
 
 # --- Decomposition + validation ---------------------------------
+
 
 def decompose(question: str, qtype: QuestionType) -> list[str]:
     """Produce 2-5 sub-questions whose union answers the parent."""
@@ -277,11 +285,11 @@ def decompose(question: str, qtype: QuestionType) -> list[str]:
 def load_bearing_subquestions(subs: list[str]) -> list[str]:
     """Heuristic: questions containing 'evidence', 'cause', 'change', or 'driver'
     are usually load-bearing because their answers can flip the parent."""
-    return [s for s in subs
-            if re.search(r"\b(evidence|cause|change|drivers?)\b", s.lower())]
+    return [s for s in subs if re.search(r"\b(evidence|cause|change|drivers?)\b", s.lower())]
 
 
 # --- Top-level driver -------------------------------------------
+
 
 def _run_framing_deterministic(question: str) -> FramedQuestion:
     """Deterministic keyword/template baseline — the framing FALLBACK.
@@ -295,9 +303,13 @@ def _run_framing_deterministic(question: str) -> FramedQuestion:
     chosen = frame_question(framings, qtype)
     subs = decompose(chosen.statement, qtype)
     return FramedQuestion(
-        original=question, question_type=qtype, critique=critique,
-        framings=framings, chosen=chosen,
-        sub_questions=subs, load_bearing=load_bearing_subquestions(subs),
+        original=question,
+        question_type=qtype,
+        critique=critique,
+        framings=framings,
+        chosen=chosen,
+        sub_questions=subs,
+        load_bearing=load_bearing_subquestions(subs),
     )
 
 
@@ -336,7 +348,7 @@ def _run_framing_llm(question: str, *, gateway, job_id: str | None) -> FramedQue
         "respond with ONLY valid JSON (no markdown, no commentary) matching this schema:\n\n"
         "{\n"
         '  "question_type": "factual_lookup | comparative | causal_explanation | '
-        'predictive_forecast | decision_support | exploratory_survey | '
+        "predictive_forecast | decision_support | exploratory_survey | "
         'controversy_resolution | methodology_evaluation",\n'
         '  "critique": {\n'
         '    "well_formed": true,\n'
@@ -345,10 +357,10 @@ def _run_framing_llm(question: str, *, gateway, job_id: str | None) -> FramedQue
         '    "is_underspecified": false,\n'
         '    "implicit_utility": false,\n'
         '    "notes": []\n'
-        '  },\n'
+        "  },\n"
         '  "framings": [\n'
         '    {"label": "F1-label", "statement": "reframed question", "rationale": "why"}\n'
-        '  ],\n'
+        "  ],\n"
         '  "chosen_label": "F1-label",\n'
         '  "sub_questions": ["sub-question 1", "sub-question 2"],\n'
         '  "load_bearing": ["the sub-questions whose answer could flip the parent"]\n'
@@ -402,7 +414,11 @@ def _run_framing_llm(question: str, *, gateway, job_id: str | None) -> FramedQue
     if not load_bearing:
         load_bearing = load_bearing_subquestions(subs)
     return FramedQuestion(
-        original=question, question_type=qtype, critique=critique,
-        framings=framings, chosen=chosen,
-        sub_questions=subs, load_bearing=load_bearing,
+        original=question,
+        question_type=qtype,
+        critique=critique,
+        framings=framings,
+        chosen=chosen,
+        sub_questions=subs,
+        load_bearing=load_bearing,
     )

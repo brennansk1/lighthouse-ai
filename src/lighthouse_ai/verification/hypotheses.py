@@ -44,7 +44,8 @@ def list_hypotheses(db: Path, *, status: str | None = None) -> list[Hypothesis]:
         if status:
             rows = conn.execute(
                 "SELECT id, statement, status, created_at FROM hypotheses "
-                "WHERE status = ? ORDER BY id", (status,),
+                "WHERE status = ? ORDER BY id",
+                (status,),
             ).fetchall()
         else:
             rows = conn.execute(

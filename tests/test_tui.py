@@ -18,94 +18,186 @@ pytestmark = pytest.mark.asyncio
 
 # ──────────────────────────── fixtures ────────────────────────────
 def _fake() -> FakeClient:
-    return FakeClient({
-        "/api/dashboard": {
-            "greeting": "Good morning", "date": "Wed 27 May",
-            "calibration": {"brier": 0.183, "history": [0.2, 0.19, 0.18, 0.183]},
-            "jobs": [{"id": "7f2a", "status": "running", "mode": "Deep-Dive",
-                      "metadata": {"topic": "EU AI Act", "progress": 0.6}},
-                     {"id": "a91d", "status": "review", "mode": "QUC",
-                      "metadata": {"topic": "ARM errata", "progress": 1.0}}],
-            "alerts": [{"kind": "budget", "text": "Cloud at 71%"}],
-            "digest": [{"topic": "EU AI Act", "delta": "New text published"}],
-            "lead": {"title": "A lead finding", "wep": {"phrase": "likely"}},
-        },
-        "/api/jobs": {"jobs": [
-            {"id": "7f2a", "status": "running", "mode": "Deep-Dive",
-             "metadata": {"topic": "EU AI Act", "progress": 0.6}},
-            {"id": "a91d", "status": "review", "mode": "QUC",
-             "metadata": {"topic": "ARM errata", "progress": 1.0}}]},
-        "/api/jobs/7f2a": {
-            "id": "7f2a", "status": "running", "mode": "Deep-Dive",
-            "metadata": {"topic": "EU AI Act", "progress": 0.6,
-                         "trace": ["framing", "planner"],
-                         "evidence": ["chunk-1", "chunk-2"],
-                         "intents": [{"target": "logseq", "status": "queued"}]},
-            "model_calls": [{"seq": 4, "ts": "now", "model": "qwen3:8b",
-                             "tokens": 1200}]},
-        "/api/drafts": {"drafts": [
-            {"id": "d1", "title": "Holography draft", "status": "staged"}]},
-        "/api/drafts/d1": {"id": "d1", "title": "Holography draft",
-                           "status": "staged", "wep_phrase": "very likely",
-                           "wep_band": "0.85-0.95", "source_count": 23,
-                           "body_html": "<p>body text</p>"},
-        "/api/topics": {"topics": [
-            {"id": "t1", "name": "Quantum", "mode": "Monitor",
-             "source_count": 2, "status": "active"}]},
-        "/api/topics/t1": {"id": "t1", "name": "Quantum", "mode": "Monitor",
-                           "cadence": "continuous", "status": "active",
-                           "sources": [{"id": 1, "grade": "A",
-                                        "url": "https://x/feed"}]},
-        "/api/positions": {"positions": [
-            {"id": 1, "claim": "X happens", "wep_band": "likely",
-             "confidence": 0.8, "outcome": None}]},
-        "/api/positions?overdue=true": {"positions": [
-            {"id": 1, "claim": "X happens", "wep_band": "likely",
-             "confidence": 0.8, "outcome": None}]},
-        "/api/calibration": {"n": 1, "mean_brier": 0.04,
-                             "mean_probability": 0.8, "mean_outcome_rate": 1.0,
-                             "calibration_error": 0.2,
-                             "bins": [{"observed": 0.1}, {"observed": 0.9}]},
-        "/api/hypotheses": {"hypotheses": [
-            {"id": 1, "statement": "Quantum supremacy holds", "status": "open"}]},
-        "/api/health": {
-            "overall": "green", "checked_at": "now",
-            "hardware": {"platform": "macos", "arch": "arm64",
-                         "total_ram_gb": 64, "tier": "T3"},
-            "databases": {"state": "ok", "audit": "ok"},
-            "external": {"ollama": True, "qdrant": False},
-            "budget": {"tier": "green", "usd": {"used": 32, "cap": 50},
-                       "tokens": {"used": 800000, "cap": 8000000},
-                       "tool_calls": {"used": 1500, "cap": 5000}},
-            "storage": {"disk_total_gb": 500, "disk_free_gb": 312,
-                        "subdirs_bytes": {"corpus": 2.1e9}, "replicas": []},
-            "outbox_depth": 0, "audit_chain_ok": True,
-        },
-        "/api/audit": {"events": [
-            {"seq": 1, "ts": "now", "actor": "gateway",
-             "event_type": "model_call"}]},
-        "/api/settings": {"config": {"lighthouse": {"version": "0.2.0"},
-                                     "hardware": {"detected_tier": "T3"}}},
-        "/api/skills": {"skills": [{"name": "extract_table", "use_count": 3}]},
-        "/api/perspectives": {"perspectives": [
-            {"name": "steelman", "stance": "best case"}]},
-        "/api/secrets": {"secrets": {"audit.chain": "***"}},
-        "/api/reflections": {"reflections": [
-            {"id": "r1", "kind": "stale_position",
-             "body": "Position P1 may be stale after new data.",
-             "proposed_action": "Re-run verification job",
-             "source_refs": ["src-A", "src-B"],
-             "created_at": "2026-05-28T10:00:00+00:00"},
-        ]},
-        "/api/escalations": {"escalations": [
-            {"id": "e1", "kind": "stale_position", "priority": "high",
-             "status": "open",
-             "body": "Position P1 depends on retracted source.",
-             "source_refs": ["src-A"],
-             "created_at": "2026-05-28T10:01:00+00:00",
-             "updated_at": "2026-05-28T10:01:00+00:00"},
-        ]},
-    })
+    return FakeClient(
+        {
+            "/api/dashboard": {
+                "greeting": "Good morning",
+                "date": "Wed 27 May",
+                "calibration": {"brier": 0.183, "history": [0.2, 0.19, 0.18, 0.183]},
+                "jobs": [
+                    {
+                        "id": "7f2a",
+                        "status": "running",
+                        "mode": "Deep-Dive",
+                        "metadata": {"topic": "EU AI Act", "progress": 0.6},
+                    },
+                    {
+                        "id": "a91d",
+                        "status": "review",
+                        "mode": "QUC",
+                        "metadata": {"topic": "ARM errata", "progress": 1.0},
+                    },
+                ],
+                "alerts": [{"kind": "budget", "text": "Cloud at 71%"}],
+                "digest": [{"topic": "EU AI Act", "delta": "New text published"}],
+                "lead": {"title": "A lead finding", "wep": {"phrase": "likely"}},
+            },
+            "/api/jobs": {
+                "jobs": [
+                    {
+                        "id": "7f2a",
+                        "status": "running",
+                        "mode": "Deep-Dive",
+                        "metadata": {"topic": "EU AI Act", "progress": 0.6},
+                    },
+                    {
+                        "id": "a91d",
+                        "status": "review",
+                        "mode": "QUC",
+                        "metadata": {"topic": "ARM errata", "progress": 1.0},
+                    },
+                ]
+            },
+            "/api/jobs/7f2a": {
+                "id": "7f2a",
+                "status": "running",
+                "mode": "Deep-Dive",
+                "metadata": {
+                    "topic": "EU AI Act",
+                    "progress": 0.6,
+                    "trace": ["framing", "planner"],
+                    "evidence": ["chunk-1", "chunk-2"],
+                    "intents": [{"target": "logseq", "status": "queued"}],
+                },
+                "model_calls": [{"seq": 4, "ts": "now", "model": "qwen3:8b", "tokens": 1200}],
+            },
+            "/api/drafts": {
+                "drafts": [{"id": "d1", "title": "Holography draft", "status": "staged"}]
+            },
+            "/api/drafts/d1": {
+                "id": "d1",
+                "title": "Holography draft",
+                "status": "staged",
+                "wep_phrase": "very likely",
+                "wep_band": "0.85-0.95",
+                "source_count": 23,
+                "body_html": "<p>body text</p>",
+            },
+            "/api/topics": {
+                "topics": [
+                    {
+                        "id": "t1",
+                        "name": "Quantum",
+                        "mode": "Monitor",
+                        "source_count": 2,
+                        "status": "active",
+                    }
+                ]
+            },
+            "/api/topics/t1": {
+                "id": "t1",
+                "name": "Quantum",
+                "mode": "Monitor",
+                "cadence": "continuous",
+                "status": "active",
+                "sources": [{"id": 1, "grade": "A", "url": "https://x/feed"}],
+            },
+            "/api/positions": {
+                "positions": [
+                    {
+                        "id": 1,
+                        "claim": "X happens",
+                        "wep_band": "likely",
+                        "confidence": 0.8,
+                        "outcome": None,
+                    }
+                ]
+            },
+            "/api/positions?overdue=true": {
+                "positions": [
+                    {
+                        "id": 1,
+                        "claim": "X happens",
+                        "wep_band": "likely",
+                        "confidence": 0.8,
+                        "outcome": None,
+                    }
+                ]
+            },
+            "/api/calibration": {
+                "n": 1,
+                "mean_brier": 0.04,
+                "mean_probability": 0.8,
+                "mean_outcome_rate": 1.0,
+                "calibration_error": 0.2,
+                "bins": [{"observed": 0.1}, {"observed": 0.9}],
+            },
+            "/api/hypotheses": {
+                "hypotheses": [{"id": 1, "statement": "Quantum supremacy holds", "status": "open"}]
+            },
+            "/api/health": {
+                "overall": "green",
+                "checked_at": "now",
+                "hardware": {
+                    "platform": "macos",
+                    "arch": "arm64",
+                    "total_ram_gb": 64,
+                    "tier": "T3",
+                },
+                "databases": {"state": "ok", "audit": "ok"},
+                "external": {"ollama": True, "qdrant": False},
+                "budget": {
+                    "tier": "green",
+                    "usd": {"used": 32, "cap": 50},
+                    "tokens": {"used": 800000, "cap": 8000000},
+                    "tool_calls": {"used": 1500, "cap": 5000},
+                },
+                "storage": {
+                    "disk_total_gb": 500,
+                    "disk_free_gb": 312,
+                    "subdirs_bytes": {"corpus": 2.1e9},
+                    "replicas": [],
+                },
+                "outbox_depth": 0,
+                "audit_chain_ok": True,
+            },
+            "/api/audit": {
+                "events": [{"seq": 1, "ts": "now", "actor": "gateway", "event_type": "model_call"}]
+            },
+            "/api/settings": {
+                "config": {"lighthouse": {"version": "0.2.0"}, "hardware": {"detected_tier": "T3"}}
+            },
+            "/api/skills": {"skills": [{"name": "extract_table", "use_count": 3}]},
+            "/api/perspectives": {"perspectives": [{"name": "steelman", "stance": "best case"}]},
+            "/api/secrets": {"secrets": {"audit.chain": "***"}},
+            "/api/reflections": {
+                "reflections": [
+                    {
+                        "id": "r1",
+                        "kind": "stale_position",
+                        "body": "Position P1 may be stale after new data.",
+                        "proposed_action": "Re-run verification job",
+                        "source_refs": ["src-A", "src-B"],
+                        "created_at": "2026-05-28T10:00:00+00:00",
+                    },
+                ]
+            },
+            "/api/escalations": {
+                "escalations": [
+                    {
+                        "id": "e1",
+                        "kind": "stale_position",
+                        "priority": "high",
+                        "status": "open",
+                        "body": "Position P1 depends on retracted source.",
+                        "source_refs": ["src-A"],
+                        "created_at": "2026-05-28T10:01:00+00:00",
+                        "updated_at": "2026-05-28T10:01:00+00:00",
+                    },
+                ]
+            },
+        }
+    )
 
 
 class _Offline:
@@ -181,10 +273,16 @@ async def test_home_shows_alert_and_digest():
 async def test_digit_keys_switch_all_eight_pages():
     app = LighthouseTUI(client=_fake())
     async with app.run_test() as pilot:
-        for key, page in [("2", "jobs"), ("3", "drafts"), ("4", "topics"),
-                          ("5", "positions"), ("6", "health"),
-                          ("7", "settings"), ("8", "intelligence"),
-                          ("1", "home")]:
+        for key, page in [
+            ("2", "jobs"),
+            ("3", "drafts"),
+            ("4", "topics"),
+            ("5", "positions"),
+            ("6", "health"),
+            ("7", "settings"),
+            ("8", "intelligence"),
+            ("1", "home"),
+        ]:
             await pilot.press(key)
             await pilot.pause()
             assert app.query_one("#main").current == page
@@ -202,6 +300,7 @@ async def test_sidebar_nav_click_switches_page():
     app = LighthouseTUI(client=_fake())
     async with app.run_test() as pilot:
         from lighthouse_ai.tui.widgets import Sidebar
+
         app.query_one(Sidebar).post_message(Sidebar.NavSelected("health"))
         await pilot.pause()
         assert app.query_one("#main").current == "health"
@@ -214,6 +313,7 @@ async def test_jobs_table_populated():
         await pilot.press("2")
         await pilot.pause()
         from textual.widgets import DataTable
+
         assert app.query_one("#jobs-table", DataTable).row_count == 2
 
 
@@ -223,6 +323,7 @@ async def test_drafts_list_populated():
         await pilot.press("3")
         await pilot.pause()
         from textual.widgets import ListView
+
         assert len(app.query_one("#drafts-list", ListView).children) == 1
 
 
@@ -232,6 +333,7 @@ async def test_topics_table_populated():
         await pilot.press("4")
         await pilot.pause()
         from textual.widgets import DataTable
+
         t = app.query_one("#topics-table", DataTable)
         assert t.row_count == 1
 
@@ -285,6 +387,7 @@ async def test_health_audit_table():
         await pilot.press("6")
         await pilot.pause()
         from textual.widgets import DataTable
+
         assert app.query_one("#audit-table", DataTable).row_count == 1
 
 
@@ -326,6 +429,7 @@ async def test_sidebar_counters_set():
     async with app.run_test() as pilot:
         await pilot.pause()
         from lighthouse_ai.tui.widgets import Sidebar
+
         # jobs running=1, drafts(review)=1, positions overdue=1
         assert app.query_one(Sidebar)._counters["jobs"] == 1
         assert app.query_one(Sidebar)._counters["positions"] == 1
@@ -367,6 +471,7 @@ async def test_reject_modal_posts_reason():
         await pilot.press("3")
         await pilot.pause()
         from lighthouse_ai.tui.screens import DraftsPage
+
         # select the draft then open reject modal
         app.query_one("#drafts", DraftsPage)._selected = "d1"
         await pilot.press("r")
@@ -384,6 +489,7 @@ async def test_drafts_approve_posts():
         await pilot.press("3")
         await pilot.pause()
         from lighthouse_ai.tui.screens import DraftsPage
+
         app.query_one("#drafts", DraftsPage)._selected = "d1"
         await pilot.press("a")
         await pilot.pause()
@@ -396,6 +502,7 @@ async def test_help_overlay_opens():
         await pilot.press("question_mark")
         await pilot.pause()
         from lighthouse_ai.tui.screens import HelpModal
+
         assert isinstance(app.screen, HelpModal)
 
 
@@ -405,6 +512,7 @@ async def test_job_detail_screen_tabs():
         await pilot.press("2")
         await pilot.pause()
         from lighthouse_ai.tui.screens import JobDetailScreen, JobsPage
+
         app.query_one("#jobs", JobsPage).action_open_detail()
         await pilot.pause()
         assert isinstance(app.screen, JobDetailScreen)
@@ -445,6 +553,7 @@ async def test_intelligence_reflections_table_populated():
         await pilot.press("8")
         await pilot.pause()
         from textual.widgets import DataTable
+
         t = app.query_one("#intel-refl-table", DataTable)
         assert t.row_count == 1
 
@@ -455,6 +564,7 @@ async def test_intelligence_escalations_table_populated():
         await pilot.press("8")
         await pilot.pause()
         from textual.widgets import DataTable
+
         t = app.query_one("#intel-esc-table", DataTable)
         assert t.row_count == 1
 
@@ -464,6 +574,7 @@ async def test_intelligence_sidebar_counter_open_escalations():
     async with app.run_test() as pilot:
         await pilot.pause()
         from lighthouse_ai.tui.widgets import Sidebar
+
         assert app.query_one(Sidebar)._counters.get("intelligence", 0) == 1
 
 
@@ -473,6 +584,7 @@ async def test_intelligence_offline_degrades_gracefully():
         await pilot.press("8")
         await pilot.pause()
         from textual.widgets import DataTable
+
         # Tables should still render (with a placeholder row), no crash.
         assert app.query_one("#intel-refl-table", DataTable) is not None
         assert app.query_one("#intel-esc-table", DataTable) is not None

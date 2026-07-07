@@ -47,7 +47,7 @@ def _build_params(api_key: str | None, extra: dict) -> dict:
 
 def _parse_search_results(data: dict) -> list[Document]:
     """Parse a /search response into Documents."""
-    packages = (data.get("packages") or [])
+    packages = data.get("packages") or []
     out: list[Document] = []
     for pkg in packages:
         title = " ".join((pkg.get("title") or "").split())
@@ -59,20 +59,22 @@ def _parse_search_results(data: dict) -> list[Document]:
         gov_url = (pkg.get("packageLink") or "").strip()
         doc_class = (pkg.get("docClass") or "").strip()
 
-        out.append(Document(
-            id=f"govinfo:{package_id}" if package_id else f"govinfo:{title[:40]}",
-            text=title,
-            metadata={
-                "source": "govinfo",
-                "url": gov_url,
-                "grade": "A",
-                "title": title,
-                "package_id": package_id,
-                "collection_code": collection_code,
-                "date_issued": date_issued,
-                "doc_class": doc_class,
-            },
-        ))
+        out.append(
+            Document(
+                id=f"govinfo:{package_id}" if package_id else f"govinfo:{title[:40]}",
+                text=title,
+                metadata={
+                    "source": "govinfo",
+                    "url": gov_url,
+                    "grade": "A",
+                    "title": title,
+                    "package_id": package_id,
+                    "collection_code": collection_code,
+                    "date_issued": date_issued,
+                    "doc_class": doc_class,
+                },
+            )
+        )
     return out
 
 
@@ -150,20 +152,22 @@ def fetch_document(
         date_issued = (data.get("dateIssued") or "").strip()
         gov_url = (data.get("packageLink") or "").strip()
         doc_class = (data.get("docClass") or "").strip()
-        return [Document(
-            id=f"govinfo:{package_id}",
-            text=title,
-            metadata={
-                "source": "govinfo",
-                "url": gov_url,
-                "grade": "A",
-                "title": title,
-                "package_id": package_id,
-                "collection_code": collection_code,
-                "date_issued": date_issued,
-                "doc_class": doc_class,
-            },
-        )]
+        return [
+            Document(
+                id=f"govinfo:{package_id}",
+                text=title,
+                metadata={
+                    "source": "govinfo",
+                    "url": gov_url,
+                    "grade": "A",
+                    "title": title,
+                    "package_id": package_id,
+                    "collection_code": collection_code,
+                    "date_issued": date_issued,
+                    "doc_class": doc_class,
+                },
+            )
+        ]
     finally:
         if owns_client:
             client.close()
@@ -198,12 +202,15 @@ def get_cfr_section(
             f"{_BASE}/search",
             allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
-            params=_build_params(api_key, {
-                "query": query,
-                "collection": "CFR",
-                "pageSize": 5,
-                "offsetMark": "*",
-            }),
+            params=_build_params(
+                api_key,
+                {
+                    "query": query,
+                    "collection": "CFR",
+                    "pageSize": 5,
+                    "offsetMark": "*",
+                },
+            ),
             client=client,
         )
         resp.raise_for_status()
@@ -237,12 +244,15 @@ def get_uscode_section(
             f"{_BASE}/search",
             allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
-            params=_build_params(api_key, {
-                "query": query,
-                "collection": "USCODE",
-                "pageSize": 5,
-                "offsetMark": "*",
-            }),
+            params=_build_params(
+                api_key,
+                {
+                    "query": query,
+                    "collection": "USCODE",
+                    "pageSize": 5,
+                    "offsetMark": "*",
+                },
+            ),
             client=client,
         )
         resp.raise_for_status()
@@ -279,10 +289,13 @@ def list_recent_in_collection(
             f"{_BASE}/collections/{collection}",
             allowed_domains=_ALLOWED_HOSTS,
             headers=_HEADERS,
-            params=_build_params(api_key, {
-                "pageSize": max_results,
-                "offsetMark": "*",
-            }),
+            params=_build_params(
+                api_key,
+                {
+                    "pageSize": max_results,
+                    "offsetMark": "*",
+                },
+            ),
             client=client,
         )
         resp.raise_for_status()
@@ -298,20 +311,22 @@ def list_recent_in_collection(
             date_issued = (pkg.get("dateIssued") or "").strip()
             gov_url = (pkg.get("packageLink") or "").strip()
             doc_class = (pkg.get("docClass") or "").strip()
-            out.append(Document(
-                id=f"govinfo:{package_id}" if package_id else f"govinfo:{title[:40]}",
-                text=title,
-                metadata={
-                    "source": "govinfo",
-                    "url": gov_url,
-                    "grade": "A",
-                    "title": title,
-                    "package_id": package_id,
-                    "collection_code": collection,
-                    "date_issued": date_issued,
-                    "doc_class": doc_class,
-                },
-            ))
+            out.append(
+                Document(
+                    id=f"govinfo:{package_id}" if package_id else f"govinfo:{title[:40]}",
+                    text=title,
+                    metadata={
+                        "source": "govinfo",
+                        "url": gov_url,
+                        "grade": "A",
+                        "title": title,
+                        "package_id": package_id,
+                        "collection_code": collection,
+                        "date_issued": date_issued,
+                        "doc_class": doc_class,
+                    },
+                )
+            )
         return out
     finally:
         if owns_client:

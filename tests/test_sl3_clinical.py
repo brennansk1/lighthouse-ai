@@ -205,12 +205,11 @@ def test_ct_run_empty_result_is_thin(monkeypatch, ct_skill, broker):
 
 def test_ct_run_swallows_exception(monkeypatch, ct_skill, broker):
     """Any exception from search_trials is caught; skill returns []."""
+
     def _raise(*a, **kw):
         raise RuntimeError("network error")
 
-    monkeypatch.setattr(
-        "lighthouse_ai.sources.clinicaltrials.search_trials", _raise
-    )
+    monkeypatch.setattr("lighthouse_ai.sources.clinicaltrials.search_trials", _raise)
     result = run_skill(ct_skill, "diabetes", broker=broker)
     assert result.documents == []
 
@@ -222,9 +221,7 @@ def test_ct_run_degrades_on_egress_block(monkeypatch, ct_skill, broker):
     def _blocked(*a, **kw):
         raise EgressBlocked("host 'clinicaltrials.gov' not in egress allowlist")
 
-    monkeypatch.setattr(
-        "lighthouse_ai.sources.clinicaltrials.search_trials", _blocked
-    )
+    monkeypatch.setattr("lighthouse_ai.sources.clinicaltrials.search_trials", _blocked)
     result = run_skill(ct_skill, "diabetes", broker=broker)
     assert result.documents == []
     assert result.ok  # runner sees no error; skill returned []
@@ -281,12 +278,11 @@ def test_ct_watchable_documents_tagged(monkeypatch, ct_skill, broker):
 
 def test_ct_watchable_swallows_exception(monkeypatch, ct_skill, broker):
     """A failing search_trials in run_watchable must not propagate."""
+
     def _raise(*a, **kw):
         raise ConnectionError("timeout")
 
-    monkeypatch.setattr(
-        "lighthouse_ai.sources.clinicaltrials.search_trials", _raise
-    )
+    monkeypatch.setattr("lighthouse_ai.sources.clinicaltrials.search_trials", _raise)
     result = run_watchable(ct_skill, "diabetes", since=None, broker=broker)
     assert result.documents == []
 
@@ -298,9 +294,7 @@ def test_ct_watchable_degrades_on_egress_block(monkeypatch, ct_skill, broker):
     def _blocked(*a, **kw):
         raise EgressBlocked("host 'clinicaltrials.gov' not in egress allowlist")
 
-    monkeypatch.setattr(
-        "lighthouse_ai.sources.clinicaltrials.search_trials", _blocked
-    )
+    monkeypatch.setattr("lighthouse_ai.sources.clinicaltrials.search_trials", _blocked)
     result = run_watchable(ct_skill, "diabetes", since=None, broker=broker)
     assert result.documents == []
 
@@ -388,6 +382,7 @@ def test_who_run_empty_result_is_thin(monkeypatch, who_skill, broker):
 
 def test_who_run_swallows_exception(monkeypatch, who_skill, broker):
     """Any exception from search_who is caught; skill returns []."""
+
     def _raise(*a, **kw):
         raise RuntimeError("network error")
 
@@ -451,6 +446,7 @@ def test_who_watchable_documents_tagged(monkeypatch, who_skill, broker):
 
 def test_who_watchable_swallows_exception(monkeypatch, who_skill, broker):
     """A failing search_who in run_watchable must not propagate."""
+
     def _raise(*a, **kw):
         raise ConnectionError("timeout")
 
@@ -479,6 +475,7 @@ def test_who_watchable_degrades_on_egress_block(monkeypatch, who_skill, broker):
 def test_ct_import_guard_passes(ct_skill):
     """The registry import guard must not flag any forbidden imports in clinicaltrials."""
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     # If this raises SkillLoadError the test fails
     _audit_skill_imports(ct_skill.path)
 
@@ -486,6 +483,7 @@ def test_ct_import_guard_passes(ct_skill):
 def test_who_import_guard_passes(who_skill):
     """The registry import guard must not flag any forbidden imports in who."""
     from lighthouse_ai.skills.registry import _audit_skill_imports
+
     _audit_skill_imports(who_skill.path)
 
 

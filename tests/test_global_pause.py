@@ -38,6 +38,7 @@ def test_is_paused_missing_db_is_running(tmp_path):
     if p is None:
         # Fallback: just assert the helper tolerates a non-existent db path.
         from types import SimpleNamespace
+
         fake = SimpleNamespace(state_db=tmp_path / "nope.db")
         assert is_paused(fake) is False  # type: ignore[arg-type]
     else:

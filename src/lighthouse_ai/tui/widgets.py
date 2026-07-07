@@ -76,8 +76,7 @@ class Sparkline(Static):
 class WepBadge(Static):
     """A colored confidence (Words-of-Estimative-Probability) badge."""
 
-    def __init__(self, phrase: str | None = None, band: str | None = None,
-                 **kw) -> None:
+    def __init__(self, phrase: str | None = None, band: str | None = None, **kw) -> None:
         super().__init__("", **kw)
         self.set_wep(phrase, band)
 
@@ -132,9 +131,7 @@ class StatusBar(Static):
                 if used is not None and cap is not None:
                     budget_chip = f"  ·  ${used} of ${cap}"
 
-        self.update(
-            f"tier {tier}{budget_chip}  ·  {job_bits}  ·  ? help"
-        )
+        self.update(f"tier {tier}{budget_chip}  ·  {job_bits}  ·  ? help")
 
 
 class Sidebar(Container):

@@ -22,8 +22,16 @@ def test_make_paths_honours_override(tmp_path: Path):
 def test_ensure_creates_all_subdirs(tmp_path: Path):
     p = make_paths(tmp_path / "lh", tmp_path / "rep")
     p.ensure()
-    for d in (p.corpus_dir, p.staging_dir, p.quarantine_dir, p.worm_dir,
-              p.skills_dir, p.logs_dir, p.run_dir, p.replicas_dir):
+    for d in (
+        p.corpus_dir,
+        p.staging_dir,
+        p.quarantine_dir,
+        p.worm_dir,
+        p.skills_dir,
+        p.logs_dir,
+        p.run_dir,
+        p.replicas_dir,
+    ):
         assert d.is_dir(), d
 
 
@@ -39,12 +47,14 @@ def test_all_dbs_returns_expected_paths(tmp_path: Path):
 def test_paths_from_env_honors_env(tmp_path, monkeypatch):
     """Supervisor, CLI, and pipeline must all resolve the same data dir."""
     from lighthouse_ai.paths import paths_from_env
+
     monkeypatch.setenv("LIGHTHOUSE_DATA_DIR", str(tmp_path / "shared"))
     assert paths_from_env().data_dir == (tmp_path / "shared").resolve()
 
 
 def test_paths_from_env_defaults_without_env(monkeypatch):
     from lighthouse_ai.paths import paths_from_env
+
     monkeypatch.delenv("LIGHTHOUSE_DATA_DIR", raising=False)
     assert paths_from_env().data_dir.name == ".lighthouse"
 
@@ -52,6 +62,7 @@ def test_paths_from_env_defaults_without_env(monkeypatch):
 def test_default_replicas_dir_platform_specific():
     d = default_replicas_dir()
     import sys
+
     if sys.platform == "darwin":
         assert "Library/Application Support/Lighthouse" in str(d)
     elif sys.platform.startswith("linux"):

@@ -26,7 +26,8 @@ def _insert_job(state_db, jid: str, mode: str, meta: dict, status="queued"):
     try:
         conn.execute(
             "INSERT INTO jobs (id, mode, status, metadata_json) VALUES (?, ?, ?, ?)",
-            (jid, mode, status, json.dumps(meta)))
+            (jid, mode, status, json.dumps(meta)),
+        )
     finally:
         conn.close()
 
@@ -43,6 +44,7 @@ class _FakeBus:
 
 # ── (a) ProgressEmitter primitives ──────────────────────────────────────────
 
+
 def test_emitter_writes_ordered_rows_and_updates_progress(migrated_paths):
     _insert_job(migrated_paths.state_db, "j1", "investigate", {"topic": "X"})
     bus = _FakeBus()
@@ -56,9 +58,9 @@ def test_emitter_writes_ordered_rows_and_updates_progress(migrated_paths):
     try:
         rows = conn.execute(
             "SELECT seq, phase, kind, pct, payload_json FROM job_events "
-            "WHERE job_id='j1' ORDER BY seq").fetchall()
-        meta_json = conn.execute(
-            "SELECT metadata_json FROM jobs WHERE id='j1'").fetchone()[0]
+            "WHERE job_id='j1' ORDER BY seq"
+        ).fetchall()
+        meta_json = conn.execute("SELECT metadata_json FROM jobs WHERE id='j1'").fetchone()[0]
     finally:
         conn.close()
 
@@ -87,8 +89,7 @@ def test_emitter_is_best_effort_on_bad_state(migrated_paths, tmp_path):
     em.emit("framing", "start", "Framing", 5.0)
     conn = open_db(migrated_paths.state_db)
     try:
-        n = conn.execute(
-            "SELECT COUNT(*) FROM job_events WHERE job_id='missing'").fetchone()[0]
+        n = conn.execute("SELECT COUNT(*) FROM job_events WHERE job_id='missing'").fetchone()[0]
     finally:
         conn.close()
     assert n == 1
@@ -100,8 +101,7 @@ def test_emitter_no_bus_still_persists(migrated_paths):
     em.emit("framing", "start", "Framing", 10.0)
     conn = open_db(migrated_paths.state_db)
     try:
-        row = conn.execute(
-            "SELECT metadata_json FROM jobs WHERE id='j2'").fetchone()
+        row = conn.execute("SELECT metadata_json FROM jobs WHERE id='j2'").fetchone()
     finally:
         conn.close()
     assert json.loads(row[0])["progress"] == pytest.approx(0.1)
@@ -109,17 +109,17 @@ def test_emitter_no_bus_still_persists(migrated_paths):
 
 # ── (b) offline dispatch produces a multi-event trace ───────────────────────
 
+
 def test_dispatch_investigate_produces_advancing_trace(migrated_paths):
-    _insert_job(migrated_paths.state_db, "inv1", "investigate",
-                {"topic": "Why did Y happen?"})
+    _insert_job(migrated_paths.state_db, "inv1", "investigate", {"topic": "Why did Y happen?"})
     draft_id = dispatch_once(migrated_paths)  # gateway=None → offline
     assert draft_id is not None
 
     conn = open_db(migrated_paths.state_db)
     try:
         rows = conn.execute(
-            "SELECT seq, phase, kind, pct FROM job_events "
-            "WHERE job_id='inv1' ORDER BY seq").fetchall()
+            "SELECT seq, phase, kind, pct FROM job_events WHERE job_id='inv1' ORDER BY seq"
+        ).fetchall()
     finally:
         conn.close()
 
@@ -145,9 +145,12 @@ def test_dispatch_simple_mode_has_min_trace(migrated_paths):
     assert draft_id is not None
     conn = open_db(migrated_paths.state_db)
     try:
-        phases = [r[0] for r in conn.execute(
-            "SELECT phase FROM job_events WHERE job_id='ask1' ORDER BY seq"
-        ).fetchall()]
+        phases = [
+            r[0]
+            for r in conn.execute(
+                "SELECT phase FROM job_events WHERE job_id='ask1' ORDER BY seq"
+            ).fetchall()
+        ]
     finally:
         conn.close()
     assert phases[0] == "framing"
@@ -157,10 +160,10 @@ def test_dispatch_simple_mode_has_min_trace(migrated_paths):
 
 # ── (c) the trace endpoint ──────────────────────────────────────────────────
 
+
 def test_trace_endpoint_returns_events(migrated_paths):
     client = TestClient(create_app(migrated_paths))
-    client.post("/api/jobs", json={"mode": "investigate",
-                                   "topic": "Why did Y happen?"})
+    client.post("/api/jobs", json={"mode": "investigate", "topic": "Why did Y happen?"})
     draft_id = dispatch_once(migrated_paths)
     assert draft_id is not None
     # Find the job id (the only job).

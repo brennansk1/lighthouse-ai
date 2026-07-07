@@ -45,22 +45,29 @@ def _strip_tags(s: str | None) -> str:
 
 
 def _parse_atom(root: ET.Element) -> list[MonitorItem]:
-    feed_title = (root.findtext("atom:title", default="", namespaces=_NS) or "")
+    feed_title = root.findtext("atom:title", default="", namespaces=_NS) or ""
     out: list[MonitorItem] = []
     for entry in root.findall("atom:entry", _NS):
         title = entry.findtext("atom:title", default="", namespaces=_NS) or ""
-        body = (entry.findtext("atom:summary", default="", namespaces=_NS)
-                or entry.findtext("atom:content", default="", namespaces=_NS) or "")
+        body = (
+            entry.findtext("atom:summary", default="", namespaces=_NS)
+            or entry.findtext("atom:content", default="", namespaces=_NS)
+            or ""
+        )
         link_el = entry.find("atom:link", _NS)
         url = (link_el.get("href") if link_el is not None else "") or ""
         published = entry.findtext("atom:updated", default="", namespaces=_NS) or None
         if not url:
             continue
-        out.append(MonitorItem(
-            source=feed_title or "atom",
-            url=url, title=title.strip(), body=_strip_tags(body),
-            published_at=published,
-        ))
+        out.append(
+            MonitorItem(
+                source=feed_title or "atom",
+                url=url,
+                title=title.strip(),
+                body=_strip_tags(body),
+                published_at=published,
+            )
+        )
     return out
 
 
@@ -82,11 +89,15 @@ def _parse_rss(root: ET.Element) -> list[MonitorItem]:
         published = item.findtext("pubDate", default="") or None
         if not url:
             continue
-        out.append(MonitorItem(
-            source=feed_title or "rss",
-            url=url, title=title.strip(), body=_strip_tags(body),
-            published_at=published,
-        ))
+        out.append(
+            MonitorItem(
+                source=feed_title or "rss",
+                url=url,
+                title=title.strip(),
+                body=_strip_tags(body),
+                published_at=published,
+            )
+        )
     return out
 
 
@@ -107,9 +118,13 @@ def parse_feed_bytes(payload: bytes) -> list[MonitorItem]:
     return []
 
 
-def fetch_feed(url: str, *, broker: SandboxBroker | None = None,
-               client: httpx.Client | None = None,
-               timeout: float = 30.0) -> list[MonitorItem]:
+def fetch_feed(
+    url: str,
+    *,
+    broker: SandboxBroker | None = None,
+    client: httpx.Client | None = None,
+    timeout: float = 30.0,
+) -> list[MonitorItem]:
     """Fetch ``url`` and return parsed items. Sandbox-admits the body first.
 
     The fetch is routed through the egress guard (``guarded_get``), which
@@ -133,8 +148,12 @@ def fetch_feed(url: str, *, broker: SandboxBroker | None = None,
     r.raise_for_status()
     payload = r.content
     if broker is not None:
-        outcome = broker.admit(payload, url=url, filename=url.rsplit("/", 1)[-1],
-                               content_type=r.headers.get("content-type"))
+        outcome = broker.admit(
+            payload,
+            url=url,
+            filename=url.rsplit("/", 1)[-1],
+            content_type=r.headers.get("content-type"),
+        )
         if outcome.verdict is Verdict.REJECT:
             return []
     return parse_feed_bytes(payload)

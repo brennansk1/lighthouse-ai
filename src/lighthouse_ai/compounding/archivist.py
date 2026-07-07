@@ -145,13 +145,18 @@ def archive_report(
 
         body_html = "".join(f"<p>{line}</p>" for line in markdown.splitlines() if line)
         page = export_draft(
-            Path(logseq_dir), draft_id=cid, title=str(head),
-            body_html=body_html, source_count=0, tags=["lighthouse", "archive"],
+            Path(logseq_dir),
+            draft_id=cid,
+            title=str(head),
+            body_html=body_html,
+            source_count=0,
+            tags=["lighthouse", "archive"],
         )
         logseq_path = page.path
 
-    return ArchiveOutcome(markdown=markdown, content_id=cid,
-                          corpus_path=corpus_path, logseq_path=logseq_path)
+    return ArchiveOutcome(
+        markdown=markdown, content_id=cid, corpus_path=corpus_path, logseq_path=logseq_path
+    )
 
 
 def archive_conversation(

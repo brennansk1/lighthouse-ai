@@ -25,10 +25,7 @@ from lighthouse_ai.skills import load_skill, run_skill, run_watchable
 # Helpers
 # ---------------------------------------------------------------------------
 
-_LIBRARY_DIR = (
-    Path(__file__).parent.parent
-    / "src" / "lighthouse_ai" / "skills" / "library"
-)
+_LIBRARY_DIR = Path(__file__).parent.parent / "src" / "lighthouse_ai" / "skills" / "library"
 
 # Minimal canned Document list the monkeypatch returns.
 _CANNED_DOCS = [
@@ -155,6 +152,7 @@ None.
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def skill():
     return load_skill("sec_edgar", library_dir=_LIBRARY_DIR)
@@ -173,6 +171,7 @@ def patched_skill(monkeypatch):
 # ---------------------------------------------------------------------------
 # 1. Skill loads + import guard
 # ---------------------------------------------------------------------------
+
 
 def test_skill_loads(skill):
     """sec_edgar skill loads without import-guard violation."""
@@ -203,6 +202,7 @@ def test_skill_no_forbidden_imports(skill):
 # ---------------------------------------------------------------------------
 # 2. run() returns tagged Documents
 # ---------------------------------------------------------------------------
+
 
 def test_run_returns_documents(patched_skill, broker):
     result = run_skill(patched_skill, "Apple 10-K risk factors", broker=broker)
@@ -255,6 +255,7 @@ def test_run_swallows_adapter_errors(monkeypatch, broker):
 # ---------------------------------------------------------------------------
 # 3. run_watchable() filters by since
 # ---------------------------------------------------------------------------
+
 
 def test_run_watchable_returns_documents(patched_skill, broker):
     result = run_watchable(patched_skill, "0000320193", since=None, broker=broker)
@@ -328,6 +329,7 @@ def test_parse_10k_item_1a_html_input():
 # 5. parse_10k_item_7 unit tests
 # ---------------------------------------------------------------------------
 
+
 def test_parse_10k_item_7_extracts_mda():
     result = parse_10k_item_7(_SYNTHETIC_10K)
     assert result != ""
@@ -369,9 +371,11 @@ def test_parse_10k_item_7_html_input():
 # 6. load_skill("sec_edgar") resolves from real library
 # ---------------------------------------------------------------------------
 
+
 def test_load_skill_sec_edgar_resolves():
     """Confirm the real library scan picks up sec_edgar."""
     from lighthouse_ai.skills import discover_skills
+
     manifests = discover_skills(_LIBRARY_DIR)
     assert "sec_edgar" in manifests, (
         f"sec_edgar not found in discovered skills: {list(manifests.keys())}"

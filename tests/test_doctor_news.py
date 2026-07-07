@@ -62,13 +62,11 @@ def test_doctor_news_shows_seed_outlets_offline(offline_env):
         "Associated",  # "Associated Press" may wrap
         "BBC News",
         "NPR",
-        "Guardian",    # "The Guardian" may wrap
+        "Guardian",  # "The Guardian" may wrap
         "ProPublica",
     ]
     for substr in expected_substrings:
-        assert substr in output, (
-            f"Expected '{substr}' in output.\nFull output:\n{output}"
-        )
+        assert substr in output, f"Expected '{substr}' in output.\nFull output:\n{output}"
 
 
 def test_doctor_news_shows_offline_marker(offline_env):

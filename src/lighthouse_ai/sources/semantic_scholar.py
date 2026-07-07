@@ -42,18 +42,20 @@ def _parse(data: dict) -> list[Document]:
         )
         year = item.get("year")
         published_date = str(year) if year else ""
-        out.append(Document(
-            id=f"s2:{paper_id}" if paper_id else f"s2:{title[:40]}",
-            text=f"{title}. {abstract}" if abstract else title,
-            metadata={
-                "source": "semantic_scholar",
-                "url": url,
-                "grade": "A",
-                "published_date": published_date,
-                "title": title,
-                "citation_count": item.get("citationCount", 0),
-            },
-        ))
+        out.append(
+            Document(
+                id=f"s2:{paper_id}" if paper_id else f"s2:{title[:40]}",
+                text=f"{title}. {abstract}" if abstract else title,
+                metadata={
+                    "source": "semantic_scholar",
+                    "url": url,
+                    "grade": "A",
+                    "published_date": published_date,
+                    "title": title,
+                    "citation_count": item.get("citationCount", 0),
+                },
+            )
+        )
     return out
 
 

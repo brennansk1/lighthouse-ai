@@ -142,10 +142,7 @@ class FlagReranker:
         scorer = self._get_scorer()
         scores = list(scorer(query, [c.text for c in chunks_list]))
         if len(scores) != len(chunks_list):
-            raise ValueError(
-                f"scorer returned {len(scores)} scores for "
-                f"{len(chunks_list)} chunks"
-            )
+            raise ValueError(f"scorer returned {len(scores)} scores for {len(chunks_list)} chunks")
         scored = [(c, float(s)) for c, s in zip(chunks_list, scores)]
         scored.sort(key=lambda t: t[1], reverse=True)
         return scored[:top_k] if top_k else scored

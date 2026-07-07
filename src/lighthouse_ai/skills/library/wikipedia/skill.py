@@ -129,6 +129,7 @@ def run_watchable(
 
 # ---- helpers ---------------------------------------------------------------
 
+
 def _slugify(text: str) -> str:
     """Return a URL-safe slug for a title (used in doc_id only)."""
     return text.lower().replace(" ", "_").replace("/", "-")

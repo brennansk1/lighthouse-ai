@@ -53,14 +53,10 @@ _AV_MEDIATYPE_FILTER = "mediatype:(movies OR audio)"
 # URL helpers (stdlib only — no httpx/urllib)
 # ---------------------------------------------------------------------------
 
+
 def _pct_encode(s: str) -> str:
     """Percent-encode a string for use in a URL query value (stdlib only)."""
-    safe = (
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789"
-        "-_.~"
-    )
+    safe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"
     out: list[str] = []
     for ch in s.encode("utf-8"):
         c = chr(ch)
@@ -82,7 +78,9 @@ def _build_search_url(
     """Build an advancedsearch.php URL for AV items."""
     # Combine the user query with the AV mediatype filter.
     if collection:
-        full_query = f"({query}) AND collection:({_pct_encode(collection)}) AND {_AV_MEDIATYPE_FILTER}"
+        full_query = (
+            f"({query}) AND collection:({_pct_encode(collection)}) AND {_AV_MEDIATYPE_FILTER}"
+        )
     else:
         full_query = f"({query}) AND {_AV_MEDIATYPE_FILTER}"
     if extra_filter:
@@ -109,6 +107,7 @@ def _build_search_url(
 # ---------------------------------------------------------------------------
 # Tool: search_av
 # ---------------------------------------------------------------------------
+
 
 def search_av(
     ctx: SkillContext,
@@ -156,23 +155,26 @@ def search_av(
     for item in docs_raw:
         if not isinstance(item, dict):
             continue
-        results.append({
-            "identifier": item.get("identifier", ""),
-            "title": item.get("title", ""),
-            "description": item.get("description", ""),
-            "mediatype": item.get("mediatype", ""),
-            "date": item.get("date", ""),
-            "creator": item.get("creator", ""),
-            "subject": item.get("subject", ""),
-            "collection": item.get("collection", ""),
-            "url": _DETAILS_URL.format(identifier=item.get("identifier", "")),
-        })
+        results.append(
+            {
+                "identifier": item.get("identifier", ""),
+                "title": item.get("title", ""),
+                "description": item.get("description", ""),
+                "mediatype": item.get("mediatype", ""),
+                "date": item.get("date", ""),
+                "creator": item.get("creator", ""),
+                "subject": item.get("subject", ""),
+                "collection": item.get("collection", ""),
+                "url": _DETAILS_URL.format(identifier=item.get("identifier", "")),
+            }
+        )
     return results[:max_results]
 
 
 # ---------------------------------------------------------------------------
 # Tool: fetch_metadata
 # ---------------------------------------------------------------------------
+
 
 def fetch_metadata(
     ctx: SkillContext,
@@ -213,6 +215,7 @@ def fetch_metadata(
 # ---------------------------------------------------------------------------
 # Tool: fetch_transcript
 # ---------------------------------------------------------------------------
+
 
 def fetch_transcript(
     ctx: SkillContext,
@@ -312,6 +315,7 @@ def _find_caption_file(files: list[dict]) -> dict | None:
 # Tool: get_collection_listing
 # ---------------------------------------------------------------------------
 
+
 def get_collection_listing(
     ctx: SkillContext,
     collection: str,
@@ -341,6 +345,7 @@ def get_collection_listing(
 # ---------------------------------------------------------------------------
 # run() — primary entrypoint
 # ---------------------------------------------------------------------------
+
 
 def run(
     ctx: SkillContext,

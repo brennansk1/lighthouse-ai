@@ -173,10 +173,14 @@ def _read_rule_dir(directory: Path) -> list[CompactionRule]:
             continue
         for entry in data if isinstance(data, list) else [data]:
             try:
-                rules.append(CompactionRule(
-                    id=entry["id"], match=entry.get("match", "*"),
-                    transform=entry["transform"], params=entry.get("params", {}),
-                ))
+                rules.append(
+                    CompactionRule(
+                        id=entry["id"],
+                        match=entry.get("match", "*"),
+                        transform=entry["transform"],
+                        params=entry.get("params", {}),
+                    )
+                )
             except (KeyError, TypeError):
                 continue
     return rules
@@ -187,9 +191,11 @@ def load_rules(
 ) -> list[CompactionRule]:
     """Merge builtin < user < project rules; same-``id`` higher layer wins."""
     if user_dir is None:
-        user_dir = Path(
-            os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
-        ) / "lighthouse" / "compaction"
+        user_dir = (
+            Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+            / "lighthouse"
+            / "compaction"
+        )
     if project_dir is None:
         project_dir = Path.cwd() / ".lighthouse" / "compaction"
 
@@ -221,9 +227,9 @@ def compact(
     orig = estimate_tokens(payload)
     text = payload
     for rule in rules:
-        if not (rule.match == "*"
-                or fnmatch(source, rule.match)
-                or fnmatch(content_type, rule.match)):
+        if not (
+            rule.match == "*" or fnmatch(source, rule.match) or fnmatch(content_type, rule.match)
+        ):
             continue
         fn = _TRANSFORMS.get(rule.transform)
         if fn is None:

@@ -22,12 +22,12 @@ def make_applier(audit_db_path: Path):
         conn = open_db(audit_db_path)
         try:
             conn.execute(
-                "INSERT INTO audit_events (actor, event_type, payload_json) "
-                "VALUES (?, ?, ?)",
+                "INSERT INTO audit_events (actor, event_type, payload_json) VALUES (?, ?, ?)",
                 (intent.target, intent.op, json.dumps(intent.payload, sort_keys=True)),
             )
         finally:
             conn.close()
+
     return applier
 
 
@@ -36,12 +36,12 @@ def make_compensator(audit_db_path: Path):
         conn = open_db(audit_db_path)
         try:
             conn.execute(
-                "INSERT INTO audit_events (actor, event_type, payload_json) "
-                "VALUES (?, 'void', ?)",
+                "INSERT INTO audit_events (actor, event_type, payload_json) VALUES (?, 'void', ?)",
                 (intent.target, json.dumps({"void_of": intent.idempotency_key})),
             )
         finally:
             conn.close()
+
     return compensator
 
 

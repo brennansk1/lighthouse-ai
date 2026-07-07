@@ -79,14 +79,14 @@ class SkillManifest:
     # --- Mode↔Skill integration scoring surface (read by the recommender) ---
     # The recommender consumes these; it never branches on a skill by name. See
     # MODE_SKILL_INTEGRATION.md §2.2 for how each mode weights them.
-    modes_natural_fit: tuple[str, ...] = ()   # mode keys this skill suits well
-    modes_weak_fit: tuple[str, ...] = ()      # mode keys it serves poorly
-    output_shape: str = "lookup"              # lookup | enumerable | graph | stream
-    temporal_tools: bool = False              # exposes time-ordered queries (Reconstruct)
-    perspective_lens: str = ""                # primary|regulatory|reproducibility|popular|... (Adjudicate)
-    authority: str = ""                       # e.g. peer_reviewed (independence + diversity)
+    modes_natural_fit: tuple[str, ...] = ()  # mode keys this skill suits well
+    modes_weak_fit: tuple[str, ...] = ()  # mode keys it serves poorly
+    output_shape: str = "lookup"  # lookup | enumerable | graph | stream
+    temporal_tools: bool = False  # exposes time-ordered queries (Reconstruct)
+    perspective_lens: str = ""  # primary|regulatory|reproducibility|popular|... (Adjudicate)
+    authority: str = ""  # e.g. peer_reviewed (independence + diversity)
     # --- Watch (Pattern 2) ---
-    watchable: bool = False                   # has ≥1 watchable tool (since= incremental)
+    watchable: bool = False  # has ≥1 watchable tool (since= incremental)
     watchable_tools: tuple[str, ...] = ()
     # --- Auth (mandatory keys) ---
     # Environment variable(s) that MUST be set for this source to fetch at all.
@@ -100,9 +100,7 @@ class SkillManifest:
         if not self.id:
             raise SkillManifestError("manifest is missing 'id'")
         if self.tier not in VALID_TIERS:
-            raise SkillManifestError(
-                f"skill {self.id!r}: tier {self.tier!r} not in {VALID_TIERS}"
-            )
+            raise SkillManifestError(f"skill {self.id!r}: tier {self.tier!r} not in {VALID_TIERS}")
         if self.default_grade not in VALID_GRADES:
             raise SkillManifestError(
                 f"skill {self.id!r}: default_grade {self.default_grade!r} invalid"
@@ -179,9 +177,7 @@ def manifest_from_dict(data: dict, *, expected_id: str | None = None) -> SkillMa
     """
     skill_id = str(data.get("id", expected_id or ""))
     if expected_id is not None and skill_id and skill_id != expected_id:
-        raise SkillManifestError(
-            f"manifest id {skill_id!r} does not match folder {expected_id!r}"
-        )
+        raise SkillManifestError(f"manifest id {skill_id!r} does not match folder {expected_id!r}")
     if not skill_id:
         skill_id = expected_id or ""
 
@@ -238,5 +234,6 @@ def load_manifest(path: Path | str, *, expected_id: str | None = None) -> SkillM
 # Field names a manifest.toml may contain. Re-exported so tooling/tests can
 # validate authored manifests without instantiating the dataclass.
 MANIFEST_FIELDS: frozenset[str] = frozenset(
-    f.name for f in SkillManifest.__dataclass_fields__.values()  # type: ignore[attr-defined]
+    f.name
+    for f in SkillManifest.__dataclass_fields__.values()  # type: ignore[attr-defined]
 ) | {"tierc_reason"}

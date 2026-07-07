@@ -14,6 +14,7 @@ from lighthouse_ai.verification.discipline import (
 
 # --- triangulation, fabricated-citation guard, contradictions (#47) ---
 
+
 class _Chunk:
     def __init__(self, text, source):
         self.text = text
@@ -23,8 +24,12 @@ class _Chunk:
 def test_fabricated_citation_flagged_and_fails_high_stakes():
     # Two evidence chunks exist (ids 1,2) but the claim cites [5] → fabricated.
     ev = [_Chunk("a", "doc-a"), _Chunk("b", "doc-b")]
-    rep = check("The trial showed a strong effect [5].", evidence_chunks=ev,
-                high_stakes=True, min_coverage=0.0)
+    rep = check(
+        "The trial showed a strong effect [5].",
+        evidence_chunks=ev,
+        high_stakes=True,
+        min_coverage=0.0,
+    )
     assert rep.fabricated_citations == 1
     assert rep.passed is False
     assert any("fabricated" in n for n in rep.notes)
@@ -33,8 +38,7 @@ def test_fabricated_citation_flagged_and_fails_high_stakes():
 def test_triangulation_counts_independent_sources():
     # [1] and [2] are distinct documents → triangulated; [1],[1] would not be.
     ev = [_Chunk("a", "doc-a"), _Chunk("b", "doc-b")]
-    rep = check("The finding replicates across labs [1,2].", evidence_chunks=ev,
-                min_coverage=0.0)
+    rep = check("The finding replicates across labs [1,2].", evidence_chunks=ev, min_coverage=0.0)
     assert rep.triangulated == 1
     assert rep.fabricated_citations == 0
 
@@ -42,25 +46,29 @@ def test_triangulation_counts_independent_sources():
 def test_single_document_two_chunks_not_triangulated():
     # Two chunks, SAME source → citing [1,2] is not independent triangulation.
     ev = [_Chunk("a", "same-doc"), _Chunk("b", "same-doc")]
-    rep = check("Claim with two same-source cites [1,2].", evidence_chunks=ev,
-                min_coverage=0.0)
+    rep = check("Claim with two same-source cites [1,2].", evidence_chunks=ev, min_coverage=0.0)
     assert rep.triangulated == 0
 
 
 def test_detect_contradictions_antonym():
     from lighthouse_ai.verification.discipline import extract_claims as _ex
-    claims = _ex("Remote work increases team productivity [1]. "
-                 "Remote work decreases team productivity [2].")
+
+    claims = _ex(
+        "Remote work increases team productivity [1]. Remote work decreases team productivity [2]."
+    )
     pairs = detect_contradictions(claims)
     assert len(pairs) >= 1
 
 
 def test_no_false_contradiction_on_unrelated_claims():
     from lighthouse_ai.verification.discipline import extract_claims as _ex
+
     claims = _ex("The sky is blue today [1]. Quarterly revenue grew sharply [2].")
     assert detect_contradictions(claims) == []
 
+
 # --- claim extraction ---
+
 
 def test_extract_claims_captures_citations():
     text = "Decoherence is the central challenge [1]. Error correction helps [1,2]."
@@ -80,18 +88,23 @@ def test_extract_skips_questions_and_fragments():
 
 # --- discipline gate ---
 
+
 def test_check_passes_when_well_sourced():
-    text = ("The sky appears blue due to Rayleigh scattering [1]. "
-            "Shorter wavelengths scatter more strongly [2]. "
-            "This effect is wavelength dependent [1].")
+    text = (
+        "The sky appears blue due to Rayleigh scattering [1]. "
+        "Shorter wavelengths scatter more strongly [2]. "
+        "This effect is wavelength dependent [1]."
+    )
     rep = check(text, min_coverage=0.6)
     assert rep.passed
     assert rep.citation_coverage == 1.0
 
 
 def test_check_flags_unsourced():
-    text = ("The market will crash next week. Interest rates drive everything. "
-            "Only this final claim has a source [1].")
+    text = (
+        "The market will crash next week. Interest rates drive everything. "
+        "Only this final claim has a source [1]."
+    )
     rep = check(text, min_coverage=0.6)
     assert not rep.passed
     assert rep.unsourced >= 2
@@ -112,6 +125,7 @@ def test_check_empty_text():
 
 # --- WEP downgrade ---
 
+
 def test_downgrade_lowers_band_for_poor_sourcing():
     poor = check("Unsourced claim one here. Unsourced claim two here.")
     good = check("Sourced claim one here [1]. Sourced claim two here [2].")
@@ -124,11 +138,19 @@ def test_downgrade_lowers_band_for_poor_sourcing():
 
 # --- Logseq export ---
 
+
 def test_logseq_export_writes_page(tmp_path):
     from lighthouse_ai.targets.logseq import export_draft
-    page = export_draft(tmp_path / "graph", draft_id="d-1",
-                        title="Quantum challenge", body_html="<h2>Finding</h2><p>Body text here.</p>",
-                        topic="physics", wep_phrase="likely", source_count=3)
+
+    page = export_draft(
+        tmp_path / "graph",
+        draft_id="d-1",
+        title="Quantum challenge",
+        body_html="<h2>Finding</h2><p>Body text here.</p>",
+        topic="physics",
+        wep_phrase="likely",
+        source_count=3,
+    )
     assert page.path.exists()
     md = page.path.read_text()
     assert "title:: Quantum challenge" in md
@@ -139,21 +161,25 @@ def test_logseq_export_writes_page(tmp_path):
 
 def test_logseq_export_strips_style_and_script(tmp_path):
     from lighthouse_ai.targets.logseq import export_draft
-    html = ("<style>:root { --bg:#fff; } body { color: red; }</style>"
-            "<h2>Real Heading</h2><p>Actual content.</p>"
-            "<script>alert(1)</script>")
+
+    html = (
+        "<style>:root { --bg:#fff; } body { color: red; }</style>"
+        "<h2>Real Heading</h2><p>Actual content.</p>"
+        "<script>alert(1)</script>"
+    )
     page = export_draft(tmp_path / "g", draft_id="d-9", title="T", body_html=html)
     md = page.path.read_text()
     assert "Real Heading" in md and "Actual content" in md
-    assert "--bg" not in md and "alert(1)" not in md   # no CSS/JS leaked
+    assert "--bg" not in md and "alert(1)" not in md  # no CSS/JS leaked
 
 
 def test_logseq_export_idempotent_uuid(tmp_path):
     from lighthouse_ai.targets.logseq import export_draft
+
     a = export_draft(tmp_path / "g", draft_id="d-1", title="T", body_html="<p>x</p>")
     b = export_draft(tmp_path / "g", draft_id="d-1", title="T", body_html="<p>y</p>")
-    assert a.uuid == b.uuid          # same draft → same block id
-    assert a.path == b.path          # overwrites, no duplicate
+    assert a.uuid == b.uuid  # same draft → same block id
+    assert a.path == b.path  # overwrites, no duplicate
 
 
 # --- arXiv adapter ---
@@ -172,8 +198,10 @@ ARXIV_XML = b"""<?xml version="1.0"?>
 @respx.mock
 def test_arxiv_search_parses():
     from lighthouse_ai.sources.arxiv import search_arxiv
+
     respx.get("https://export.arxiv.org/api/query").mock(
-        return_value=httpx.Response(200, content=ARXIV_XML))
+        return_value=httpx.Response(200, content=ARXIV_XML)
+    )
     docs = search_arxiv("quantum error correction", max_results=1)
     assert len(docs) == 1
     assert "Quantum Error Correction" in docs[0].text
@@ -184,19 +212,26 @@ def test_arxiv_search_parses():
 # --- OpenAlex adapter ---
 
 OPENALEX_JSON = {
-    "results": [{
-        "id": "https://openalex.org/W123",
-        "title": "Topological Qubits Review",
-        "publication_date": "2025-03-01",
-        "cited_by_count": 42,
-        "abstract_inverted_index": {"Topological": [0], "qubits": [1], "resist": [2],
-                                    "errors": [3]},
-    }]
+    "results": [
+        {
+            "id": "https://openalex.org/W123",
+            "title": "Topological Qubits Review",
+            "publication_date": "2025-03-01",
+            "cited_by_count": 42,
+            "abstract_inverted_index": {
+                "Topological": [0],
+                "qubits": [1],
+                "resist": [2],
+                "errors": [3],
+            },
+        }
+    ]
 }
 
 
 class _SkillChunk:
     """Minimal chunk stub carrying skill_id metadata for independence tests."""
+
     def __init__(self, text: str, source: str, skill_id: str | None = None):
         self.text = text
         self.metadata: dict = {"source": source}
@@ -247,21 +282,32 @@ def test_check_source_diversity_counts_distinct_domains():
     from lighthouse_ai.rag.chunker import Chunk
     from lighthouse_ai.rag.hybrid import HybridResult
     from lighthouse_ai.verification.discipline import check_source_diversity
+
     def _hr(doc_id, source):
-        c = Chunk(id=f"{doc_id}:0", document_id=doc_id, text="text",
-                  position=0, metadata={"source": source})
+        c = Chunk(
+            id=f"{doc_id}:0",
+            document_id=doc_id,
+            text="text",
+            position=0,
+            metadata={"source": source},
+        )
         return HybridResult(chunk=c, score=1.0, dense_rank=1, sparse_rank=1)
+
     results = [_hr("a1", "arxiv"), _hr("a2", "arxiv"), _hr("p1", "pubmed")]
     assert check_source_diversity(results) == 2
 
+
 def test_check_source_diversity_empty():
     from lighthouse_ai.verification.discipline import check_source_diversity
+
     assert check_source_diversity([]) == 0
+
 
 def test_check_source_diversity_falls_back_to_document_id():
     from lighthouse_ai.rag.chunker import Chunk
     from lighthouse_ai.rag.hybrid import HybridResult
     from lighthouse_ai.verification.discipline import check_source_diversity
+
     c = Chunk(id="d:0", document_id="my_doc", text="x", position=0, metadata={})
     r = HybridResult(chunk=c, score=1.0, dense_rank=1, sparse_rank=1)
     assert check_source_diversity([r]) == 1
@@ -270,8 +316,10 @@ def test_check_source_diversity_falls_back_to_document_id():
 @respx.mock
 def test_openalex_search_reconstructs_abstract():
     from lighthouse_ai.sources.openalex import search_openalex
+
     respx.get("https://api.openalex.org/works").mock(
-        return_value=httpx.Response(200, json=OPENALEX_JSON))
+        return_value=httpx.Response(200, json=OPENALEX_JSON)
+    )
     docs = search_openalex("topological qubits", max_results=1)
     assert len(docs) == 1
     assert "Topological qubits resist errors" in docs[0].text
@@ -279,6 +327,7 @@ def test_openalex_search_reconstructs_abstract():
 
 
 # --- entailment gate (Sprint 30) ---
+
 
 def test_discipline_report_has_entailment_fields():
     rep = check("The sky is blue [1]. Grass is green [2].")
@@ -311,8 +360,7 @@ def test_entailment_skips_claims_with_only_fabricated_citations(monkeypatch):
     monkeypatch.setattr(ent, "score_claim", _fake_score)
 
     ev = [_Chunk("the real evidence text", "doc-a")]
-    rep = check("Grounded claim [1]. Fabricated claim [9].",
-                evidence_chunks=ev, min_coverage=0.0)
+    rep = check("Grounded claim [1]. Fabricated claim [9].", evidence_chunks=ev, min_coverage=0.0)
     # Only the resolvable claim was ever graded…
     assert graded == ["the real evidence text"]
     # …and the fabricated one drags coverage down instead of inflating it.

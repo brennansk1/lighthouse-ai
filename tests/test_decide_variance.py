@@ -33,7 +33,9 @@ def _controlled_run(
     _mod._stub_score = fake_stub
     try:
         return run_decide(
-            "test question", options=opts, criteria=criteria,
+            "test question",
+            options=opts,
+            criteria=criteria,
             evidence_variance=evidence_variance,
         )
     finally:
@@ -44,11 +46,14 @@ def _controlled_run(
 # New fields exist with safe defaults
 # ---------------------------------------------------------------------------
 
+
 def test_new_fields_default_when_no_variance():
     crits = [Criterion("c1", 1.0), Criterion("c2", 1.0)]
     scores = {
-        ("A", "c1"): 0.9, ("A", "c2"): 0.9,
-        ("B", "c1"): 0.1, ("B", "c2"): 0.1,
+        ("A", "c1"): 0.9,
+        ("A", "c2"): 0.9,
+        ("B", "c1"): 0.1,
+        ("B", "c2"): 0.1,
     }
     r = _controlled_run(scores=scores, criteria=crits)
     assert r.robust_to_weights is True
@@ -62,11 +67,14 @@ def test_new_fields_default_when_no_variance():
 def test_cell_variance_propagates_from_argument():
     crits = [Criterion("c1", 1.0), Criterion("c2", 1.0)]
     scores = {
-        ("A", "c1"): 0.6, ("A", "c2"): 0.6,
-        ("B", "c1"): 0.4, ("B", "c2"): 0.4,
+        ("A", "c1"): 0.6,
+        ("A", "c2"): 0.6,
+        ("B", "c1"): 0.4,
+        ("B", "c2"): 0.4,
     }
     r = _controlled_run(
-        scores=scores, criteria=crits,
+        scores=scores,
+        criteria=crits,
         evidence_variance={("A", "c1"): 0.3},
     )
     cell = next(c for c in r.cells if c.option == "A" and c.criterion == "c1")
@@ -79,20 +87,24 @@ def test_cell_variance_propagates_from_argument():
 # Evidence perturbation narrows / flips an otherwise weight-robust winner
 # ---------------------------------------------------------------------------
 
+
 def test_contested_evidence_breaks_weight_robust_winner():
     """A wins on both criteria under every weighting (weight-robust), but the
     evidence on (A, c1) is contested: the worst-case corner flips the winner to
     B. So robust_to_weights stays True while robust_to_evidence becomes False."""
     crits = [Criterion("c1", 1.0), Criterion("c2", 1.0)]
     scores = {
-        ("A", "c1"): 0.6, ("A", "c2"): 0.55,
-        ("B", "c1"): 0.4, ("B", "c2"): 0.45,
+        ("A", "c1"): 0.6,
+        ("A", "c2"): 0.55,
+        ("B", "c1"): 0.4,
+        ("B", "c2"): 0.45,
     }
     # Baseline: A=0.575, B=0.425. Dropping either criterion still leaves A
     # ahead → no weight-flip. A 0.5 band on (A,c1) drives A's c1 to 0.1, making
     # A=0.325 < B=0.425 in the pessimistic corner.
     r = _controlled_run(
-        scores=scores, criteria=crits,
+        scores=scores,
+        criteria=crits,
         evidence_variance={("A", "c1"): 0.5},
     )
     assert r.winner == "A"
@@ -105,11 +117,14 @@ def test_robust_to_evidence_true_when_band_too_small_to_flip():
     robust on BOTH axes."""
     crits = [Criterion("c1", 1.0), Criterion("c2", 1.0)]
     scores = {
-        ("A", "c1"): 0.9, ("A", "c2"): 0.9,
-        ("B", "c1"): 0.1, ("B", "c2"): 0.1,
+        ("A", "c1"): 0.9,
+        ("A", "c2"): 0.9,
+        ("B", "c1"): 0.1,
+        ("B", "c2"): 0.1,
     }
     r = _controlled_run(
-        scores=scores, criteria=crits,
+        scores=scores,
+        criteria=crits,
         evidence_variance={("A", "c1"): 0.1},
     )
     assert r.winner == "A"
@@ -122,16 +137,20 @@ def test_robust_to_evidence_true_when_band_too_small_to_flip():
 # Crux names contested evidence on a decisive criterion
 # ---------------------------------------------------------------------------
 
+
 def test_crux_mentions_contested_evidence_on_decisive_criterion():
     """The decisive criterion ('key') is ALSO contested → the crux must say the
     decision rests on disputed evidence."""
     crits = [Criterion("key", weight=4.0), Criterion("minor", weight=1.0)]
     scores = {
-        ("A", "key"): 0.95, ("A", "minor"): 0.1,
-        ("B", "key"): 0.1, ("B", "minor"): 0.95,
+        ("A", "key"): 0.95,
+        ("A", "minor"): 0.1,
+        ("B", "key"): 0.1,
+        ("B", "minor"): 0.95,
     }
     r = _controlled_run(
-        scores=scores, criteria=crits,
+        scores=scores,
+        criteria=crits,
         evidence_variance={("A", "key"): 0.2, ("B", "key"): 0.2},
     )
     assert r.winner == "A"
@@ -150,11 +169,14 @@ def test_crux_robust_but_contested_evidence_flips_is_named():
     should acknowledge the contested evidence rather than overclaim robustness."""
     crits = [Criterion("c1", 1.0), Criterion("c2", 1.0)]
     scores = {
-        ("A", "c1"): 0.6, ("A", "c2"): 0.55,
-        ("B", "c1"): 0.4, ("B", "c2"): 0.45,
+        ("A", "c1"): 0.6,
+        ("A", "c2"): 0.55,
+        ("B", "c1"): 0.4,
+        ("B", "c2"): 0.45,
     }
     r = _controlled_run(
-        scores=scores, criteria=crits,
+        scores=scores,
+        criteria=crits,
         evidence_variance={("A", "c1"): 0.5},
     )
     assert r.robust_to_weights is True
@@ -170,8 +192,10 @@ def test_uncontested_decisive_crux_does_not_mention_contested():
     (no spurious 'contested' wording)."""
     crits = [Criterion("key", weight=4.0), Criterion("minor", weight=1.0)]
     scores = {
-        ("A", "key"): 0.95, ("A", "minor"): 0.1,
-        ("B", "key"): 0.1, ("B", "minor"): 0.95,
+        ("A", "key"): 0.95,
+        ("A", "minor"): 0.1,
+        ("B", "key"): 0.1,
+        ("B", "minor"): 0.95,
     }
     r = _controlled_run(scores=scores, criteria=crits)
     assert "contested" not in r.crux.lower()
@@ -181,6 +205,7 @@ def test_uncontested_decisive_crux_does_not_mention_contested():
 # ---------------------------------------------------------------------------
 # Position confidence is discounted when the winner is not evidence-robust
 # ---------------------------------------------------------------------------
+
 
 def test_position_probability_discounted_when_not_evidence_robust():
     recorded = {}
@@ -192,19 +217,25 @@ def test_position_probability_discounted_when_not_evidence_robust():
 
     crits = [Criterion("c1", 1.0), Criterion("c2", 1.0)]
     scores = {
-        ("A", "c1"): 0.6, ("A", "c2"): 0.55,
-        ("B", "c1"): 0.4, ("B", "c2"): 0.45,
+        ("A", "c1"): 0.6,
+        ("A", "c2"): 0.55,
+        ("B", "c1"): 0.4,
+        ("B", "c2"): 0.45,
     }
     orig = positions.record_position
     positions.record_position = lambda db, *, claim, probability: recorded.update(
-        claim=claim, probability=probability)
+        claim=claim, probability=probability
+    )
     try:
         import lighthouse_ai.modes.decide as _mod
+
         original_stub = _mod._stub_score
         _mod._stub_score = lambda o, c: scores.get((o, c), 0.5)
         try:
             run_decide(
-                "q", options=["A", "B"], criteria=crits,
+                "q",
+                options=["A", "B"],
+                criteria=crits,
                 positions_db=FakeDB(),
                 evidence_variance={("A", "c1"): 0.5},
             )

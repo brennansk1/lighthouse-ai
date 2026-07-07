@@ -22,13 +22,13 @@ if TYPE_CHECKING:
 
 # Topic → feed URL mapping for Reuters public RSS feeds
 _TOPIC_FEEDS: dict[str, str] = {
-    "world":      "https://feeds.reuters.com/reuters/topNews",
-    "business":   "https://feeds.reuters.com/reuters/businessNews",
+    "world": "https://feeds.reuters.com/reuters/topNews",
+    "business": "https://feeds.reuters.com/reuters/businessNews",
     "technology": "https://feeds.reuters.com/reuters/technologyNews",
-    "science":    "https://feeds.reuters.com/reuters/scienceNews",
-    "markets":    "https://feeds.reuters.com/reuters/marketsNews",
-    "politics":   "https://feeds.reuters.com/reuters/politicsNews",
-    "health":     "https://feeds.reuters.com/reuters/healthNews",
+    "science": "https://feeds.reuters.com/reuters/scienceNews",
+    "markets": "https://feeds.reuters.com/reuters/marketsNews",
+    "politics": "https://feeds.reuters.com/reuters/politicsNews",
+    "health": "https://feeds.reuters.com/reuters/healthNews",
 }
 _DEFAULT_FEED = _TOPIC_FEEDS["world"]
 
@@ -167,9 +167,7 @@ def run_watchable(
     for feed_url in feeds:
         if len(docs) >= max_results:
             break
-        topic = next(
-            (k for k, v in _TOPIC_FEEDS.items() if v == feed_url), "world"
-        )
+        topic = next((k for k, v in _TOPIC_FEEDS.items() if v == feed_url), "world")
         try:
             new_docs = list_recent_in_topic(
                 ctx, topic, since=since, max_results=max_results - len(docs)
@@ -180,5 +178,3 @@ def run_watchable(
             continue
         docs.extend(new_docs)
     return docs[:max_results]
-
-

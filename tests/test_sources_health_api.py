@@ -24,6 +24,7 @@ def client(migrated_paths):
 
 # ──────────────────────────── shape invariants ───────────────────────────────
 
+
 def test_sources_health_returns_200(client):
     r = client.get("/api/sources/health")
     assert r.status_code == 200
@@ -62,9 +63,7 @@ def test_sources_health_source_row_shape(client):
     for src in sources:
         for key in required:
             assert key in src, f"source row missing '{key}': {src}"
-        assert src["status"] in valid_statuses, (
-            f"unexpected status {src['status']!r} in {src}"
-        )
+        assert src["status"] in valid_statuses, f"unexpected status {src['status']!r} in {src}"
 
 
 def test_sources_health_total_matches_all_skills(client):
@@ -79,8 +78,10 @@ def test_sources_health_total_matches_all_skills(client):
 
 # ─────────────────────── status-logic assertions ─────────────────────────────
 
+
 def test_ready_sources_have_trusted_domains(client):
     """Every 'ready' source's declared domains are on the platform allowlist."""
+
     def _trusted(domain: str) -> bool:
         d = domain.lower().rstrip(".")
         if d in DEFAULT_ALLOWED_DOMAINS:
@@ -101,13 +102,13 @@ def test_ready_sources_have_trusted_domains(client):
             continue
         for domain in m.allowed_domains:
             assert _trusted(domain), (
-                f"skill {src['id']!r} marked ready but domain {domain!r} "
-                "is not trusted"
+                f"skill {src['id']!r} marked ready but domain {domain!r} is not trusted"
             )
 
 
 def test_needs_trust_has_untrusted_domain(client):
     """Any 'needs_trust' source has at least one domain not on the allowlist."""
+
     def _trusted(domain: str) -> bool:
         d = domain.lower().rstrip(".")
         if d in DEFAULT_ALLOWED_DOMAINS:
@@ -128,8 +129,7 @@ def test_needs_trust_has_untrusted_domain(client):
             continue
         untrusted = [d for d in m.allowed_domains if not _trusted(d)]
         assert untrusted, (
-            f"skill {src['id']!r} marked needs_trust but all its domains "
-            "are already trusted"
+            f"skill {src['id']!r} marked needs_trust but all its domains are already trusted"
         )
 
 
@@ -153,8 +153,7 @@ def test_needs_key_source_has_no_secret_configured(client, migrated_paths):
 
     # Build catalogued key names so we can check without importing _SOURCE_KEY_CATALOGUE.
     key_catalogue = {
-        s["source_id"]: s["key_name"]
-        for s in client.get("/api/sources/keys").json()["sources"]
+        s["source_id"]: s["key_name"] for s in client.get("/api/sources/keys").json()["sources"]
     }
 
     def _trusted(domain: str) -> bool:
@@ -173,9 +172,7 @@ def test_needs_key_source_has_no_secret_configured(client, migrated_paths):
             continue
         sid = src["id"]
         # Must be in the key catalogue.
-        assert sid in key_catalogue, (
-            f"{sid!r} has status needs_key but is not in /api/sources/keys"
-        )
+        assert sid in key_catalogue, f"{sid!r} has status needs_key but is not in /api/sources/keys"
         # All its domains must be trusted (else it would be needs_trust).
         m = manifests.get(sid)
         if m and m.allowed_domains:

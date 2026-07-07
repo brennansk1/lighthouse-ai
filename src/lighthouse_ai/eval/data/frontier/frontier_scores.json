@@ -1,0 +1,42 @@
+{
+  "What is the current scientific consensus on whether moderate coffee consumption affects cardiovascular disease risk, and where do studies disagree?": {
+    "breadth": 5,
+    "grounding": 3,
+    "citation_verifiability": 2,
+    "contradiction_honesty": 3,
+    "open_question_honesty": 2,
+    "model": "claude-3.5-sonnet-reference"
+  },
+  "How did the 2023-2024 large-language-model context-window race unfold, and what techniques made million-token contexts feasible?": {
+    "breadth": 5,
+    "grounding": 3,
+    "citation_verifiability": 2,
+    "contradiction_honesty": 3,
+    "open_question_honesty": 2,
+    "model": "claude-3.5-sonnet-reference"
+  },
+  "What were the principal causes of the 2008 financial crisis, and which explanations remain contested among economists?": {
+    "breadth": 5,
+    "grounding": 3,
+    "citation_verifiability": 2,
+    "contradiction_honesty": 3,
+    "open_question_honesty": 2,
+    "model": "claude-3.5-sonnet-reference"
+  },
+  "What is the evidence for and against time-restricted eating (intermittent fasting) improving metabolic health in humans?": {
+    "breadth": 5,
+    "grounding": 3,
+    "citation_verifiability": 2,
+    "contradiction_honesty": 3,
+    "open_question_honesty": 2,
+    "model": "claude-3.5-sonnet-reference"
+  },
+  "What are the leading hypotheses for the Fermi paradox, and how do researchers weigh them against each other?": {
+    "breadth": 5,
+    "grounding": 3,
+    "citation_verifiability": 2,
+    "contradiction_honesty": 3,
+    "open_question_honesty": 2,
+    "model": "claude-3.5-sonnet-reference"
+  }
+}

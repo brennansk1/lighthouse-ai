@@ -70,12 +70,7 @@ def extract_infobox(ctx: SkillContext, title: str) -> dict[str, str]:
 
 
 def _url_encode(text: str) -> str:
-    safe = (
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789"
-        "-_.~:@!$&'()*+,;="
-    )
+    safe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~:@!$&'()*+,;="
     encoded = []
     for ch in text.encode("utf-8"):
         c = chr(ch)

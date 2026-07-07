@@ -44,8 +44,7 @@ def test_reflection_has_no_side_effect_fields() -> None:
 
 
 def test_escalation_always_carries_status_and_priority() -> None:
-    e = Escalation(kind=ReflectionKind.STALE_POSITION, body="x",
-                   priority=EscalationPriority.HIGH)
+    e = Escalation(kind=ReflectionKind.STALE_POSITION, body="x", priority=EscalationPriority.HIGH)
     assert e.status is EscalationStatus.OPEN  # defaults to open
     assert e.priority is EscalationPriority.HIGH
 
@@ -82,9 +81,12 @@ def test_apply_cap_preserves_order_without_score() -> None:
 
 def test_store_reflection_round_trip(migrated_paths) -> None:
     store = _store(migrated_paths)
-    r = _refl("found something", proposed_action="dig deeper",
-              source_refs=["doc:1"],
-              source_chunks=[ChunkSnapshot("c1", "snippet", "arxiv.org")])
+    r = _refl(
+        "found something",
+        proposed_action="dig deeper",
+        source_refs=["doc:1"],
+        source_chunks=[ChunkSnapshot("c1", "snippet", "arxiv.org")],
+    )
     store.add_reflection(r)
     got = store.list_reflections()
     assert len(got) == 1
@@ -95,8 +97,11 @@ def test_store_reflection_round_trip(migrated_paths) -> None:
 
 def test_store_escalation_status_filter_and_update(migrated_paths) -> None:
     store = _store(migrated_paths)
-    e = store.add_escalation(Escalation(kind=ReflectionKind.STALE_POSITION,
-                                        body="re-verify", priority=EscalationPriority.HIGH))
+    e = store.add_escalation(
+        Escalation(
+            kind=ReflectionKind.STALE_POSITION, body="re-verify", priority=EscalationPriority.HIGH
+        )
+    )
     assert len(store.list_escalations(status=EscalationStatus.OPEN)) == 1
     assert store.update_escalation_status(e.id, EscalationStatus.RESOLVED) is True
     assert store.list_escalations(status=EscalationStatus.OPEN) == []
@@ -132,8 +137,7 @@ def test_tick_superseded_discards(migrated_paths) -> None:
 
 def test_stale_position_producer_emits_escalation(migrated_paths) -> None:
     db = kinds_for(migrated_paths)["positions"]
-    record_position(db, claim="Was X approved by 2020?", probability=0.7,
-                    resolve_by=PAST)
+    record_position(db, claim="Was X approved by 2020?", probability=0.7, resolve_by=PAST)
     record_position(db, claim="future claim", probability=0.6)  # not due
     escalations = stale_position_escalations(db)
     assert len(escalations) == 1

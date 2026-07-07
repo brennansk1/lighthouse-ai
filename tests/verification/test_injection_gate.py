@@ -93,7 +93,7 @@ def test_empty_string_is_not_blocked():
 
 def test_very_long_clean_string_is_not_blocked():
     gate = InjectionGate()
-    long_text = ("The quick brown fox jumps over the lazy dog. " * 500)
+    long_text = "The quick brown fox jumps over the lazy dog. " * 500
     verdict = gate.score(long_text)
     assert verdict.blocked is False
 

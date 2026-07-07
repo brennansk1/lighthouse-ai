@@ -18,6 +18,7 @@ network noise, and a 24 h `--load` run must not hammer live feeds once a minute.
 For a production-faithful soak run the actual `lighthouse-supervisor` and point a
 process monitor at its PID; this harness is the turnkey, dependency-light version.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,19 +39,24 @@ from lighthouse_ai.supervisor import serve_in_thread
 
 def _enqueue_trivial_job(state_db, n: int) -> None:
     """Insert a tiny offline 'decide' job so the dispatch path stays exercised."""
-    meta = {"topic": f"soak option pick {n}", "options": ["A", "B"],
-            "criteria": [{"label": "cost", "weight": 1.0}]}
+    meta = {
+        "topic": f"soak option pick {n}",
+        "options": ["A", "B"],
+        "criteria": [{"label": "cost", "weight": 1.0}],
+    }
     conn = open_db(state_db)
     try:
         conn.execute(
             "INSERT INTO jobs (id, mode, status, metadata_json) VALUES (?, ?, 'queued', ?)",
-            (f"soak-{n}", "decide", json.dumps(meta)))
+            (f"soak-{n}", "decide", json.dumps(meta)),
+        )
     finally:
         conn.close()
 
 
-def _is_monotonic_growth(series: list[float], *, min_frac: float,
-                         min_abs: float = 0.0, warmup_frac: float = 0.2) -> bool:
+def _is_monotonic_growth(
+    series: list[float], *, min_frac: float, min_abs: float = 0.0, warmup_frac: float = 0.2
+) -> bool:
     """True if the series rises by > min_frac end-over-start AND mostly monotonically.
 
     A genuine leak grows steadily; transient bumps (GC, caches warming) are not
@@ -62,7 +68,7 @@ def _is_monotonic_growth(series: list[float], *, min_frac: float,
     plateau). ``min_abs`` additionally requires the post-warmup rise to be big
     enough to matter — e.g. a 4-fd drift is noise, a 20-fd rise is a leak.
     """
-    s = series[int(len(series) * warmup_frac):]
+    s = series[int(len(series) * warmup_frac) :]
     if len(s) < 4 or s[0] <= 0:
         return False
     net = s[-1] - s[0]
@@ -91,8 +97,10 @@ def main() -> int:
         S._start_backup_loop(paths),
     ]
     proc = psutil.Process()
-    print(f"soak: {duration}s, sampling every {args.sample_every}s, "
-          f"{len(loops)} loops, load={args.load} (data={tmp})")
+    print(
+        f"soak: {duration}s, sampling every {args.sample_every}s, "
+        f"{len(loops)} loops, load={args.load} (data={tmp})"
+    )
 
     rss: list[float] = []
     fds: list[float] = []
@@ -118,11 +126,14 @@ def main() -> int:
         threads.append(float(proc.num_threads()))
         alive = sum(1 for t in loops if t.is_alive())
         if alive < len(loops):
-            findings.append(f"loop(s) died at t={elapsed:.0f}s: "
-                            f"{[t.name for t in loops if not t.is_alive()]}")
+            findings.append(
+                f"loop(s) died at t={elapsed:.0f}s: {[t.name for t in loops if not t.is_alive()]}"
+            )
         if len(rss) % 6 == 1:
-            print(f"  t={elapsed:6.0f}s  rss={rss[-1]:6.0f}MB  fds={fds[-1]:.0f}  "
-                  f"threads={threads[-1]:.0f}  loops={alive}/5  jobs={jobs}")
+            print(
+                f"  t={elapsed:6.0f}s  rss={rss[-1]:6.0f}MB  fds={fds[-1]:.0f}  "
+                f"threads={threads[-1]:.0f}  loops={alive}/5  jobs={jobs}"
+            )
         time.sleep(args.sample_every)
 
     server.should_exit = True
@@ -132,15 +143,19 @@ def main() -> int:
 
     def _report(name: str, s: list[float], unit: str) -> None:
         if s:
-            print(f"  {name:8} min={min(s):.0f}{unit} max={max(s):.0f}{unit} "
-                  f"start={s[0]:.0f} end={s[-1]:.0f}")
+            print(
+                f"  {name:8} min={min(s):.0f}{unit} max={max(s):.0f}{unit} "
+                f"start={s[0]:.0f} end={s[-1]:.0f}"
+            )
 
     print("\n=== SOAK SUMMARY ===")
     _report("rss", rss, "MB")
     _report("fds", fds, "")
     _report("threads", threads, "")
     if _is_monotonic_growth(rss, min_frac=0.5, min_abs=50.0):
-        findings.append(f"possible MEMORY leak: RSS rose {rss[0]:.0f}→{rss[-1]:.0f}MB monotonically")
+        findings.append(
+            f"possible MEMORY leak: RSS rose {rss[0]:.0f}→{rss[-1]:.0f}MB monotonically"
+        )
     if _is_monotonic_growth(fds, min_frac=0.5, min_abs=20.0):
         findings.append(f"possible FD leak: fds rose {fds[0]:.0f}→{fds[-1]:.0f} monotonically")
     if _is_monotonic_growth(threads, min_frac=0.5, min_abs=4.0):

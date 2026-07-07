@@ -27,8 +27,9 @@ def _hmac(secret: bytes, *parts: bytes) -> str:
     return h.hexdigest()
 
 
-def _row_to_bytes(seq: int, ts: str, actor: str, event_type: str,
-                  payload_json: str, prev_hmac: str | None) -> tuple[bytes, ...]:
+def _row_to_bytes(
+    seq: int, ts: str, actor: str, event_type: str, payload_json: str, prev_hmac: str | None
+) -> tuple[bytes, ...]:
     return (
         (prev_hmac or "").encode(),
         str(seq).encode(),
@@ -61,14 +62,21 @@ def resolve_secret(secret: bytes | None, *, data_dir: Path | None = None) -> byt
     if data_dir is None:
         raise ValueError("secret=None requires data_dir to locate SecretStore")
     from ..secrets import AUDIT_CHAIN_KEY, SecretStore
+
     s = SecretStore(data_dir)
     hex_secret = s.get_or_create(AUDIT_CHAIN_KEY, nbytes=32)
     return bytes.fromhex(hex_secret)
 
 
-def append_event(audit_db: Path, *, actor: str, event_type: str,
-                 payload: dict, secret: bytes | None = None,
-                 data_dir: Path | None = None) -> int:
+def append_event(
+    audit_db: Path,
+    *,
+    actor: str,
+    event_type: str,
+    payload: dict,
+    secret: bytes | None = None,
+    data_dir: Path | None = None,
+) -> int:
     """Insert a new audit event and seal it into the HMAC chain.
 
     ``secret`` may be ``None`` if ``data_dir`` is given — in that case the
@@ -80,9 +88,7 @@ def append_event(audit_db: Path, *, actor: str, event_type: str,
     try:
         conn.execute("BEGIN IMMEDIATE")
         try:
-            row = conn.execute(
-                "SELECT hmac FROM audit_events ORDER BY seq DESC LIMIT 1"
-            ).fetchone()
+            row = conn.execute("SELECT hmac FROM audit_events ORDER BY seq DESC LIMIT 1").fetchone()
             prev = row[0] if row else None
             cur = conn.execute(
                 "INSERT INTO audit_events (actor, event_type, payload_json, prev_hmac) "
@@ -90,11 +96,18 @@ def append_event(audit_db: Path, *, actor: str, event_type: str,
                 (actor, event_type, payload_json, prev),
             )
             seq, ts = cur.fetchone()
-            new_hmac = _hmac(secret, *_row_to_bytes(
-                seq, ts, actor, event_type, payload_json, prev,
-            ))
-            conn.execute("UPDATE audit_events SET hmac = ? WHERE seq = ?",
-                         (new_hmac, seq))
+            new_hmac = _hmac(
+                secret,
+                *_row_to_bytes(
+                    seq,
+                    ts,
+                    actor,
+                    event_type,
+                    payload_json,
+                    prev,
+                ),
+            )
+            conn.execute("UPDATE audit_events SET hmac = ? WHERE seq = ?", (new_hmac, seq))
             conn.execute("COMMIT")
             return seq
         except Exception:
@@ -120,8 +133,7 @@ def seal_event_chain(audit_db: Path, *, secret: bytes) -> int:
         for seq, ts, actor, et, pj, recorded_prev, existing in rows:
             # Honor any pre-existing chain: take prev from the row when set.
             effective_prev = recorded_prev if recorded_prev is not None else prev
-            new_hmac = _hmac(secret, *_row_to_bytes(seq, ts, actor, et, pj,
-                                                    effective_prev))
+            new_hmac = _hmac(secret, *_row_to_bytes(seq, ts, actor, et, pj, effective_prev))
             if existing != new_hmac:
                 conn.execute(
                     "UPDATE audit_events SET prev_hmac = ?, hmac = ? WHERE seq = ?",

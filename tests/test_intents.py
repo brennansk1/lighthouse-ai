@@ -22,24 +22,28 @@ from lighthouse_ai.persistence import open_db
 
 
 def test_write_intent_returns_row_id(migrated_paths):
-    rid = write_intent(migrated_paths.intents_db, target="t", op="o",
-                       payload={"v": 1}, idempotency_key="k1")
+    rid = write_intent(
+        migrated_paths.intents_db, target="t", op="o", payload={"v": 1}, idempotency_key="k1"
+    )
     assert isinstance(rid, int)
     assert rid >= 1
 
 
 def test_write_intent_is_idempotent_by_key(migrated_paths):
-    a = write_intent(migrated_paths.intents_db, target="t", op="o",
-                     payload={"v": 1}, idempotency_key="k-dup")
-    b = write_intent(migrated_paths.intents_db, target="t", op="o",
-                     payload={"v": 2}, idempotency_key="k-dup")
+    a = write_intent(
+        migrated_paths.intents_db, target="t", op="o", payload={"v": 1}, idempotency_key="k-dup"
+    )
+    b = write_intent(
+        migrated_paths.intents_db, target="t", op="o", payload={"v": 2}, idempotency_key="k-dup"
+    )
     assert a == b
     assert outbox_depth(migrated_paths.intents_db) == 1
 
 
 def test_claim_one_marks_in_flight_and_returns_payload(migrated_paths):
-    write_intent(migrated_paths.intents_db, target="t", op="o",
-                 payload={"v": 7}, idempotency_key="kclaim")
+    write_intent(
+        migrated_paths.intents_db, target="t", op="o", payload={"v": 7}, idempotency_key="kclaim"
+    )
     intent = claim_one(migrated_paths.intents_db)
     assert intent is not None
     assert intent.payload == {"v": 7}
@@ -56,8 +60,9 @@ def test_requeue_stuck_reclaims_orphaned_in_flight(migrated_paths):
     ``requeue_stuck`` must reset such an intent back to 'pending' so the
     effector picks it up again.
     """
-    write_intent(migrated_paths.intents_db, target="t", op="o",
-                 payload={"v": 1}, idempotency_key="orphan")
+    write_intent(
+        migrated_paths.intents_db, target="t", op="o", payload={"v": 1}, idempotency_key="orphan"
+    )
     intent = claim_one(migrated_paths.intents_db)  # now in_flight, simulating crash
     assert intent is not None
 
@@ -81,8 +86,7 @@ def test_requeue_stuck_reclaims_orphaned_in_flight(migrated_paths):
 
 def test_requeue_stuck_leaves_fresh_in_flight_alone(migrated_paths):
     """A just-claimed intent (effector still working it) must NOT be requeued."""
-    write_intent(migrated_paths.intents_db, target="t", op="o",
-                 payload={}, idempotency_key="fresh")
+    write_intent(migrated_paths.intents_db, target="t", op="o", payload={}, idempotency_key="fresh")
     intent = claim_one(migrated_paths.intents_db)
     assert intent is not None
     n = requeue_stuck(migrated_paths.intents_db, older_than_seconds=3600)
@@ -92,18 +96,17 @@ def test_requeue_stuck_leaves_fresh_in_flight_alone(migrated_paths):
 
 
 def test_claim_one_respects_target_filter(migrated_paths):
-    write_intent(migrated_paths.intents_db, target="A", op="o", payload={},
-                 idempotency_key="a1")
-    write_intent(migrated_paths.intents_db, target="B", op="o", payload={},
-                 idempotency_key="b1")
+    write_intent(migrated_paths.intents_db, target="A", op="o", payload={}, idempotency_key="a1")
+    write_intent(migrated_paths.intents_db, target="B", op="o", payload={}, idempotency_key="b1")
     b = claim_one(migrated_paths.intents_db, target="B")
     assert b is not None
     assert b.target == "B"
 
 
 def test_mark_applied_clears_from_outbox_depth(migrated_paths):
-    write_intent(migrated_paths.intents_db, target="t", op="o", payload={},
-                 idempotency_key="k-applied")
+    write_intent(
+        migrated_paths.intents_db, target="t", op="o", payload={}, idempotency_key="k-applied"
+    )
     intent = claim_one(migrated_paths.intents_db)
     assert intent
     mark_applied(migrated_paths.intents_db, intent.id)
@@ -111,8 +114,9 @@ def test_mark_applied_clears_from_outbox_depth(migrated_paths):
 
 
 def test_mark_failed_requeues_by_default(migrated_paths):
-    write_intent(migrated_paths.intents_db, target="t", op="o", payload={},
-                 idempotency_key="k-fail")
+    write_intent(
+        migrated_paths.intents_db, target="t", op="o", payload={}, idempotency_key="k-fail"
+    )
     intent = claim_one(migrated_paths.intents_db)
     mark_failed(migrated_paths.intents_db, intent.id, "nope")
     # Re-queued → claimable again.
@@ -123,8 +127,9 @@ def test_mark_failed_requeues_by_default(migrated_paths):
 
 
 def test_mark_failed_dead_moves_to_dead_intents(migrated_paths):
-    write_intent(migrated_paths.intents_db, target="t", op="o", payload={"x": 1},
-                 idempotency_key="k-dead")
+    write_intent(
+        migrated_paths.intents_db, target="t", op="o", payload={"x": 1}, idempotency_key="k-dead"
+    )
     intent = claim_one(migrated_paths.intents_db)
     mark_failed(migrated_paths.intents_db, intent.id, "fatal", dead=True)
     deads = list_dead(migrated_paths.intents_db)
@@ -142,8 +147,13 @@ def test_mark_failed_dead_is_not_duplicated_on_retry(migrated_paths):
     the effector exhausted its retries once more), the dead_intents table must
     hold exactly one record for it, not one per dead-letter call.
     """
-    write_intent(migrated_paths.intents_db, target="t", op="o", payload={"x": 1},
-                 idempotency_key="k-dead-twice")
+    write_intent(
+        migrated_paths.intents_db,
+        target="t",
+        op="o",
+        payload={"x": 1},
+        idempotency_key="k-dead-twice",
+    )
     intent = claim_one(migrated_paths.intents_db)
     assert intent
     mark_failed(migrated_paths.intents_db, intent.id, "fatal", dead=True)
@@ -176,13 +186,13 @@ def test_property_writing_n_unique_keys_produces_n_rows(keys):
 
     from lighthouse_ai.paths import make_paths
     from lighthouse_ai.schema import kinds_for, migrate_all
+
     with tempfile.TemporaryDirectory() as td:
         paths = make_paths(td)
         paths.ensure()
         migrate_all(kinds_for(paths))
         for k in keys:
-            write_intent(paths.intents_db, target="t", op="o",
-                         payload={}, idempotency_key=k)
+            write_intent(paths.intents_db, target="t", op="o", payload={}, idempotency_key=k)
         assert outbox_depth(paths.intents_db) == len(keys)
 
 
@@ -193,11 +203,16 @@ def test_property_writing_same_key_n_times_yields_one_row(key, n):
 
     from lighthouse_ai.paths import make_paths
     from lighthouse_ai.schema import kinds_for, migrate_all
+
     with tempfile.TemporaryDirectory() as td:
         paths = make_paths(td)
         paths.ensure()
         migrate_all(kinds_for(paths))
-        ids = [write_intent(paths.intents_db, target="t", op="o",
-                            payload={"i": i}, idempotency_key=key) for i in range(n)]
+        ids = [
+            write_intent(
+                paths.intents_db, target="t", op="o", payload={"i": i}, idempotency_key=key
+            )
+            for i in range(n)
+        ]
         assert len(set(ids)) == 1
         assert outbox_depth(paths.intents_db) == 1

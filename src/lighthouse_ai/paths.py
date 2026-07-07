@@ -73,8 +73,10 @@ def default_replicas_dir() -> Path:
     return Path("/var/lighthouse/replicas")
 
 
-def make_paths(data_dir: str | os.PathLike[str] | None = None,
-               replicas_dir: str | os.PathLike[str] | None = None) -> Paths:
+def make_paths(
+    data_dir: str | os.PathLike[str] | None = None,
+    replicas_dir: str | os.PathLike[str] | None = None,
+) -> Paths:
     base = _expand(data_dir) if data_dir else _expand("~/.lighthouse")
     replicas = _expand(replicas_dir) if replicas_dir else default_replicas_dir()
     return Paths(

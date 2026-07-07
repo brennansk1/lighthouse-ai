@@ -2270,8 +2270,15 @@ function ArtifactChat({ draftId, artifact }) {
   const [suggestions, setSuggestions] = React.useState([]);
   const [input, setInput] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  const [liveText, setLiveText] = React.useState('');
   const [error, setError] = React.useState(null);
   const endRef = React.useRef(null);
+
+  useEvents((name, data) => {
+    if (name === 'chat.token' && data && data.draft_id === draftId && data.token) {
+      setLiveText((prev) => prev + data.token);
+    }
+  });
 
   React.useEffect(() => {
     let ok = true;
@@ -2291,6 +2298,7 @@ function ArtifactChat({ draftId, artifact }) {
     const msg = (text != null ? text : input).trim();
     if (!msg || busy) return;
     setBusy(true); setError(null); setInput('');
+    setLiveText('');
     setTurns((t) => [...t, { role: 'user', text: msg }]);
     try {
       const r = await fetch(`/api/artifacts/${draftId}/chat`, {
@@ -2331,7 +2339,7 @@ function ArtifactChat({ draftId, artifact }) {
         {turns.map((t, i) => (
           <div key={i} style={{ display: 'flex',
             justifyContent: t.role === 'user' ? 'flex-end' : 'flex-start' }}>
-            <div style={{ maxWidth: '85%',
+            <div className="lh-bubble-in" style={{ maxWidth: '85%',
               background: t.role === 'user' ? 'var(--primary)' : 'var(--card)',
               color: t.role === 'user' ? '#fff' : 'var(--ink)',
               border: t.role === 'user' ? 'none' : '1px solid var(--rule)',
@@ -2355,9 +2363,13 @@ function ArtifactChat({ draftId, artifact }) {
         ))}
         {busy && (
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-            <div style={{ background: 'var(--card)', border: '1px solid var(--rule)',
-              borderRadius: 14, padding: '11px 15px', fontSize: 13, color: 'var(--muted)' }}>
-              thinking…</div>
+            <div className="lh-bubble-in" style={{ maxWidth: '85%', background: 'var(--card)', border: '1px solid var(--rule)',
+              borderRadius: 14, padding: '11px 15px', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.55,
+              boxShadow: 'var(--shadow-sm)' }}>
+              <div style={{ whiteSpace: 'pre-wrap' }}>
+                {liveText || <span style={{ color: 'var(--muted)' }}>thinking…</span>}
+              </div>
+            </div>
           </div>)}
         <div ref={endRef} />
       </div>
@@ -2619,6 +2631,7 @@ function LibraryPage({ toast }) {
           <div>
             {artifacts.map((a) => (
               <button key={a.id} onClick={() => setSelId(a.id)}
+                className="lh-row-hover"
                 style={{ ...card, display: 'block', width: '100%', textAlign: 'left',
                   padding: '12px 14px', marginBottom: 8, cursor: 'pointer',
                   border: a.id === selId ? '2px solid var(--primary)' : '1px solid var(--rule)' }}>

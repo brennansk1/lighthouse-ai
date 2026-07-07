@@ -30,6 +30,7 @@ def _fake_runner(returncode: int = 0, record: list | None = None):
         if record is not None:
             record.append((argv, kwargs))
         return subprocess.CompletedProcess(argv, returncode, b"", b"")
+
     return run
 
 
@@ -108,6 +109,7 @@ def test_desktop_send_false_on_nonzero_exit():
 def test_desktop_send_false_on_oserror():
     def boom(argv, **kwargs):
         raise OSError("exec failed")
+
     ch = DesktopChannel(which=_which_for("notify-send"), runner=boom)
     assert ch.send("t", "b") is False
 
@@ -274,9 +276,7 @@ def test_email_send_false_on_smtp_exception():
 def test_channels_satisfy_protocol():
     assert isinstance(DesktopChannel(), Channel)
     assert isinstance(DiscordChannel(webhook_url=WEBHOOK), Channel)
-    assert isinstance(
-        EmailChannel(smtp_host="h", from_addr="f", to_addrs=["t"]), Channel
-    )
+    assert isinstance(EmailChannel(smtp_host="h", from_addr="f", to_addrs=["t"]), Channel)
 
 
 # --- Notifier dispatcher -----------------------------------------------------

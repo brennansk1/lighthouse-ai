@@ -43,9 +43,7 @@ def _records(tmp_path: Path) -> list[dict]:
 
 @respx.mock
 def test_allowed_domain_fetches(tmp_path: Path) -> None:
-    route = respx.get("https://arxiv.org/abs/1").mock(
-        return_value=httpx.Response(200, text="ok")
-    )
+    route = respx.get("https://arxiv.org/abs/1").mock(return_value=httpx.Response(200, text="ok"))
     client = EgressGuardedClient(_proxy(tmp_path))
     resp = client.get("https://arxiv.org/abs/1")
     assert resp.status_code == 200
@@ -55,9 +53,7 @@ def test_allowed_domain_fetches(tmp_path: Path) -> None:
 
 @respx.mock
 def test_allowed_subdomain_fetches(tmp_path: Path) -> None:
-    route = respx.get("https://export.arxiv.org/api").mock(
-        return_value=httpx.Response(200)
-    )
+    route = respx.get("https://export.arxiv.org/api").mock(return_value=httpx.Response(200))
     client = EgressGuardedClient(_proxy(tmp_path))
     client.get("https://export.arxiv.org/api")
     assert route.called
@@ -65,9 +61,7 @@ def test_allowed_subdomain_fetches(tmp_path: Path) -> None:
 
 @respx.mock
 def test_allowed_fetch_writes_connection_log(tmp_path: Path) -> None:
-    respx.get("https://arxiv.org/x").mock(
-        return_value=httpx.Response(200, text="hello")
-    )
+    respx.get("https://arxiv.org/x").mock(return_value=httpx.Response(200, text="hello"))
     EgressGuardedClient(_proxy(tmp_path)).get("https://arxiv.org/x")
     recs = _records(tmp_path)
     assert len(recs) == 1
@@ -111,9 +105,7 @@ def test_non_200_status_still_logged(tmp_path: Path) -> None:
 
 @respx.mock
 def test_non_allowlisted_domain_blocked(tmp_path: Path) -> None:
-    route = respx.get("https://evil.example.com/").mock(
-        return_value=httpx.Response(200)
-    )
+    route = respx.get("https://evil.example.com/").mock(return_value=httpx.Response(200))
     client = EgressGuardedClient(_proxy(tmp_path))
     with pytest.raises(EgressBlocked):
         client.get("https://evil.example.com/")
@@ -147,9 +139,7 @@ def test_blocked_reason_propagated(tmp_path: Path) -> None:
 
 @respx.mock
 def test_private_tier_blocks_even_allowlisted_host(tmp_path: Path) -> None:
-    route = respx.get("https://arxiv.org/secret").mock(
-        return_value=httpx.Response(200)
-    )
+    route = respx.get("https://arxiv.org/secret").mock(return_value=httpx.Response(200))
     client = EgressGuardedClient(_proxy(tmp_path))
     with pytest.raises(EgressBlocked):
         client.get("https://arxiv.org/secret", privacy=PrivacyTier.PRIVATE)
@@ -216,9 +206,7 @@ def test_guarded_get_allows_allowlisted(tmp_path: Path) -> None:
 
 @respx.mock
 def test_guarded_get_blocks_non_allowlisted(tmp_path: Path) -> None:
-    route = respx.get("https://evil.example.com/").mock(
-        return_value=httpx.Response(200)
-    )
+    route = respx.get("https://evil.example.com/").mock(return_value=httpx.Response(200))
     with pytest.raises(EgressBlocked):
         guarded_get("https://evil.example.com/", allowed_domains=ALLOWED)
     assert not route.called
@@ -251,9 +239,7 @@ def test_redirect_to_disallowed_host_blocked(tmp_path: Path) -> None:
     respx.get("https://arxiv.org/r").mock(
         return_value=httpx.Response(302, headers={"location": "https://evil.example.com/x"})
     )
-    respx.get("https://evil.example.com/x").mock(
-        return_value=httpx.Response(200, text="LEAKED")
-    )
+    respx.get("https://evil.example.com/x").mock(return_value=httpx.Response(200, text="LEAKED"))
     redir_client = httpx.Client(follow_redirects=True)
     client = EgressGuardedClient(_proxy(tmp_path), client=redir_client)
     with pytest.raises(EgressBlocked) as exc:
@@ -274,13 +260,13 @@ def test_redirect_to_allowed_host_succeeds_without_crash(tmp_path: Path) -> None
     body is never buffered, so naively reading ``response.request.content``
     would raise after the fetch already completed.
     """
-    proxy = EgressProxy(frozenset({"arxiv.org", "export.arxiv.org"}), log_path=tmp_path / "egress.jsonl")
+    proxy = EgressProxy(
+        frozenset({"arxiv.org", "export.arxiv.org"}), log_path=tmp_path / "egress.jsonl"
+    )
     respx.get("https://arxiv.org/a").mock(
         return_value=httpx.Response(302, headers={"location": "https://export.arxiv.org/b"})
     )
-    respx.get("https://export.arxiv.org/b").mock(
-        return_value=httpx.Response(200, text="final")
-    )
+    respx.get("https://export.arxiv.org/b").mock(return_value=httpx.Response(200, text="final"))
     redir_client = httpx.Client(follow_redirects=True)
     client = EgressGuardedClient(proxy, client=redir_client)
     resp = client.get("https://arxiv.org/a")

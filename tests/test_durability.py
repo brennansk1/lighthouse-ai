@@ -42,8 +42,7 @@ class FakeRunner:
     def __call__(self, argv, env=None):  # type: ignore[no-untyped-def]
         self.calls.append(list(argv))
         self.envs.append(env)
-        return subprocess.CompletedProcess(
-            list(argv), self.returncode, self.stdout, self.stderr)
+        return subprocess.CompletedProcess(list(argv), self.returncode, self.stdout, self.stderr)
 
 
 class FakeProcess:
@@ -120,8 +119,12 @@ def test_snapshots_argv_is_json():
 
 def test_passphrase_never_appears_in_argv():
     rb = ResticBackup(runner=FakeRunner())
-    for argv in (rb.init_argv("/r"), rb.backup_argv("/r", ["/x"]),
-                 rb.check_argv("/r"), rb.snapshots_argv("/r")):
+    for argv in (
+        rb.init_argv("/r"),
+        rb.backup_argv("/r", ["/x"]),
+        rb.check_argv("/r"),
+        rb.snapshots_argv("/r"),
+    ):
         assert "hunter2" not in " ".join(argv)
 
 
@@ -174,8 +177,7 @@ def test_passphrase_reaches_restic_via_env(monkeypatch):
     assert fake.envs[-1] is not None and fake.envs[-1]["RESTIC_PASSWORD"] == "callpw"
 
     # ...and the secret still never appears on the argv
-    assert all("hunter2" not in " ".join(c) and "callpw" not in " ".join(c)
-               for c in fake.calls)
+    assert all("hunter2" not in " ".join(c) and "callpw" not in " ".join(c) for c in fake.calls)
 
 
 def test_no_passphrase_calls_runner_without_env(monkeypatch):
@@ -266,6 +268,7 @@ def test_integrity_report_stale_replica_not_ok(tmp_paths):
     f.write_text("x")
     old = time.time() - (MAX_REPLICA_LAG_SECONDS + 120)
     import os
+
     os.utime(f, (old, old))
     report = integrity_report(tmp_paths)
     assert not report.replicas[0].ok
