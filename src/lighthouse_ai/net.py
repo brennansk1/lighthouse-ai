@@ -20,7 +20,10 @@ user's ``egress.jsonl`` audit trail reflects exactly what went upstream.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import os
+import socket
 import time
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
@@ -66,6 +69,59 @@ class EgressBlocked(RuntimeError):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+def _reject_non_public_host(url: str) -> None:
+    """SSRF / DNS-rebinding guard: refuse a URL whose host resolves to a
+    non-public IP, before any socket opens.
+
+    The egress allowlist is hostname-only and never pins IPs, so an allowlisted
+    domain whose DNS points at loopback / link-local / private space (a
+    compromised CDN, a rebinding attack, or the cloud metadata endpoint
+    169.254.169.254) would otherwise be fetched and could exfiltrate or SSRF.
+    Resolving here and rejecting non-public targets closes that gap. Set
+    ``LIGHTHOUSE_ALLOW_PRIVATE_EGRESS=1`` to opt out (local/dev fixtures that
+    legitimately fetch 127.0.0.1).
+    """
+    if os.environ.get("LIGHTHOUSE_ALLOW_PRIVATE_EGRESS", "").strip().lower() in (
+            "1", "true", "yes", "on"):
+        return
+    host = urlsplit(url).hostname
+    if not host:
+        return
+    # A literal IP target is an explicit choice by the caller — local/LAN
+    # services (SearXNG, Qdrant on 127.0.0.1 / 192.168.x) are legitimate and not
+    # a DNS-rebinding vector (that needs a *name*). Allow loopback/private, but
+    # NEVER link-local/reserved/multicast — 169.254.169.254 (cloud metadata) and
+    # friends are never a legitimate fetch target.
+    try:
+        literal = ipaddress.ip_address(host)
+        if literal.is_link_local or literal.is_reserved or literal.is_multicast:
+            raise EgressBlocked(
+                f"refusing link-local/reserved address {host} (SSRF guard)")
+        return
+    except ValueError:
+        pass  # not a literal IP → a hostname
+    # localhost / *.local are intentional local targets.
+    if host == "localhost" or host.endswith(".local"):
+        return
+    # A public NAME must not resolve into internal space — that is the
+    # DNS-rebinding / SSRF-to-internal attack the hostname-only allowlist misses.
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return  # unresolvable → let the real request raise a connection error
+    for info in infos:
+        ip = info[4][0]
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if (addr.is_private or addr.is_loopback or addr.is_link_local
+                or addr.is_reserved or addr.is_multicast or addr.is_unspecified):
+            raise EgressBlocked(
+                f"host {host!r} resolves to non-public address {ip} — refusing "
+                f"(SSRF / DNS-rebinding guard)")
 
 
 def _default_port(url: str) -> int:
@@ -184,6 +240,10 @@ class EgressGuardedClient:
         if not decision.allowed:
             # Refuse BEFORE fetching: egress is a one-way door (§15.11).
             raise EgressBlocked(decision.reason)
+
+        # Even an allowlisted host must not resolve to a private/loopback IP —
+        # the allowlist is hostname-only. Refuse before the socket opens.
+        _reject_non_public_host(url)
 
         # Politeness gate: prefer per-call override, fall back to instance gate.
         active_politeness = politeness if politeness is not None else self._politeness

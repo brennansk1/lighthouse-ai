@@ -10,6 +10,8 @@ import sys
 import types
 import warnings
 
+import pytest
+
 
 # --- C3: no pynvml deprecation warning on macOS ------------------------------
 
@@ -128,3 +130,43 @@ def test_sse_overflow_enqueues_reconnect_sentinel():
     bus.publish("job.step", {"n": 1})  # fills the depth-1 queue
     bus.publish("job.step", {"n": 2})  # overflow → drop oldest, enqueue sentinel
     assert q.get_nowait() is _OVERFLOW
+
+
+# --- Phase E: SSRF / DNS-rebinding egress guard -----------------------------
+
+def test_egress_blocks_link_local_metadata_endpoint():
+    """The cloud-metadata endpoint (link-local) is never a legitimate target,
+    even as a literal IP."""
+    from lighthouse_ai.net import EgressBlocked, _reject_non_public_host
+
+    with pytest.raises(EgressBlocked):
+        _reject_non_public_host("http://169.254.169.254/latest/meta-data")
+
+
+def test_egress_blocks_public_name_resolving_to_private(monkeypatch):
+    """A public hostname that resolves into internal space is the DNS-rebinding
+    attack the hostname-only allowlist misses — it must be refused."""
+    from lighthouse_ai import net
+    monkeypatch.setattr(net.socket, "getaddrinfo",
+                        lambda *a, **k: [(2, 1, 6, "", ("10.0.0.5", 0))])
+    with pytest.raises(net.EgressBlocked):
+        net._reject_non_public_host("http://evil.example.com/x")
+
+
+def test_egress_allows_intentional_local_services():
+    """Literal loopback/LAN IPs and localhost are legitimate local targets
+    (SearXNG, Qdrant) — the guard must not block them."""
+    from lighthouse_ai.net import _reject_non_public_host
+    # None of these raise.
+    _reject_non_public_host("http://127.0.0.1:8888/search")
+    _reject_non_public_host("http://192.168.1.10:6333/collections")
+    _reject_non_public_host("http://localhost:8765/")
+    _reject_non_public_host("http://8.8.8.8/x")  # public literal IP
+
+
+def test_egress_private_guard_opt_out(monkeypatch):
+    from lighthouse_ai import net
+    monkeypatch.setenv("LIGHTHOUSE_ALLOW_PRIVATE_EGRESS", "1")
+    monkeypatch.setattr(net.socket, "getaddrinfo",
+                        lambda *a, **k: [(2, 1, 6, "", ("10.0.0.5", 0))])
+    net._reject_non_public_host("http://evil.example.com/x")  # opted out → no raise
