@@ -413,11 +413,40 @@ class ResearchPipeline:
             "passed": rep.passed, "notes": rep.notes,
             "distinct_sources": distinct_sources,
         }
+        # Structured artifact body — mirrors the dispatcher's Investigate shape
+        # so the dashboard's typed views + the frontier-parity grader can consume
+        # a CLI-run draft the same as a dashboard-launched one.
+        _prov = {"backend": self.backends.get("gateway"),
+                 "metrics": {"citation_coverage": rep.citation_coverage,
+                             "distinct_sources": distinct_sources,
+                             "fabricated_citations": float(rep.fabricated_citations)}}
+        if report is not None:
+            body_json = {
+                "question": report.question,
+                "question_type": report.framing.question_type.value,
+                "depth": "standard",
+                "rounds_used": report.rounds_used,
+                "sections": [
+                    {"title": s.title, "sub_question": s.sub_question,
+                     "body": s.body, "citations": list(s.citations),
+                     "is_load_bearing": s.is_load_bearing}
+                    for s in report.sections],
+                "open_questions": list(report.open_questions),
+                "ruled_out": list(getattr(report, "ruled_out", []) or []),
+                "citation_coverage": rep.citation_coverage,
+                "provenance": _prov,
+            }
+        else:  # QUC — a single grounded answer, no section tree
+            body_json = {"question": question, "depth": "standard",
+                         "answer": answer or "",
+                         "citation_coverage": rep.citation_coverage,
+                         "provenance": _prov}
         draft_id = self._persist_draft(
             question=question, title=question, body_html=body_html,
             source_count=source_count, job_id=job_id,
             wep_phrase=band.label, wep_band=band.name,
-            confidence=round(0.75 * max(rep.citation_coverage, 0.1), 3))
+            confidence=round(0.75 * max(rep.citation_coverage, 0.1), 3),
+            body_json=body_json)
         # record each claim as a Position so the calibration loop has data
         n_positions = self._record_positions(rep, band)
 
@@ -485,7 +514,8 @@ class ResearchPipeline:
                        source_count: int, job_id: str,
                        wep_phrase: str | None = None,
                        wep_band: str | None = None,
-                       confidence: float | None = None) -> str:
+                       confidence: float | None = None,
+                       body_json: dict | None = None) -> str:
         draft_id = "d-" + uuid.uuid4().hex[:6]
         from .modes.registry import canonical
         try:
@@ -500,11 +530,16 @@ class ResearchPipeline:
                 "VALUES (?, ?, 'review', ?)",
                 (job_id, mode_key, _json({"topic": question, "progress": 1.0,
                                           "eta": "staged"})))
+            # body_json carries the structured artifact (sections, citations,
+            # open questions, coverage) so a CLI-run draft renders in the
+            # dashboard's typed views and is gradeable — parity with the
+            # dispatcher/dashboard path, which always populates it.
             conn.execute(
-                "INSERT INTO drafts (id, job_id, topic, title, body_html, wep_band, "
-                "wep_phrase, confidence, source_count, status) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'staged')",
-                (draft_id, job_id, question[:60], title, body_html, wep_band,
+                "INSERT INTO drafts (id, job_id, topic, title, body_html, "
+                "body_json, wep_band, wep_phrase, confidence, source_count, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'staged')",
+                (draft_id, job_id, question[:60], title, body_html,
+                 _json(body_json) if body_json else None, wep_band,
                  wep_phrase, confidence, source_count))
         finally:
             conn.close()
