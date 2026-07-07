@@ -177,6 +177,83 @@ def test_run_job_backend_stall_surfaces_loudly(migrated_paths, monkeypatch):
     assert "stalled" in kinds
 
 
+def test_deep_job_resumes_from_checkpoint_end_to_end(migrated_paths, monkeypatch):
+    """Crash → reap → requeue → resume, driven through the REAL dispatcher
+    lifecycle (reap_stuck_jobs → claim → run_job), offline. Proves resume is now
+    an observable, checkpoint-consuming operation and not a silent side-effect:
+    a `job.requeued` audit notes the surviving checkpoint, a `job.resumed` audit
+    + kind="resumed" trace step fire, `meta.resumed` lands on the job, and the
+    checkpoint is deleted on completion."""
+    import lighthouse_ai.modes.deepdive as deepdive
+    from lighthouse_ai.dispatcher import _checkpoint_path, _write_checkpoint
+    from lighthouse_ai.modes.exhaustive import run_exhaustive
+
+    # Offline deepdive stub — deterministic grounded section, no LLM.
+    class _Sec:
+        def __init__(self, q):
+            self.body, self.citations = f"finding {q}", [1]
+
+    class _Rep:
+        def __init__(self, q):
+            self.sections = [_Sec(q)]
+
+    monkeypatch.setattr(deepdive, "run_deepdive",
+                        lambda q, **kw: _Rep(q), raising=True)
+
+    topic = "Compare A versus B on the evidence"
+    # Build a GENUINE mid-run checkpoint by capturing the first on_checkpoint
+    # state from a real engine run (done ≥ 1, frontier still pending).
+    captured: dict = {}
+    run_exhaustive(topic, research_fn=lambda q: (f"body {q}", [1], True),
+                   max_nodes=10, max_depth=2,
+                   on_checkpoint=lambda s: captured.setdefault("state", s))
+    _write_checkpoint(migrated_paths, "deep-e2e", captured["state"])
+    assert _checkpoint_path(migrated_paths, "deep-e2e").exists()
+
+    # A deep investigate job left 'running' by a crashed process.
+    _insert_job(migrated_paths.state_db, "deep-e2e", "investigate",
+                {"topic": topic, "depth": "deep", "budget": "30m"},
+                status="running")
+
+    # Reaper (with paths) requeues it and audits the requeue + surviving ckpt.
+    requeued = reap_stuck_jobs(migrated_paths.state_db, paths=migrated_paths)
+    assert "deep-e2e" in requeued
+
+    # Dispatch: claim → run_job → resume from checkpoint → complete to review.
+    draft_id = dispatch_once(migrated_paths)
+    assert draft_id is not None
+    assert _job_status(migrated_paths.state_db, "deep-e2e") == "review"
+    # Checkpoint consumed on completion.
+    assert not _checkpoint_path(migrated_paths, "deep-e2e").exists()
+
+    # Audit trail: job.requeued (checkpoint=True) and job.resumed (counts).
+    conn = open_db(migrated_paths.audit_db)
+    try:
+        resumed = conn.execute(
+            "SELECT payload_json FROM audit_events "
+            "WHERE event_type='job.resumed' ORDER BY seq DESC LIMIT 1").fetchone()
+        requeued_ev = conn.execute(
+            "SELECT payload_json FROM audit_events "
+            "WHERE event_type='job.requeued' ORDER BY seq DESC LIMIT 1").fetchone()
+    finally:
+        conn.close()
+    assert resumed is not None, "no job.resumed audit event"
+    assert json.loads(resumed[0])["nodes_done"] >= 1
+    assert json.loads(requeued_ev[0])["checkpoint"] is True
+
+    # kind="resumed" trace step + meta.resumed persisted on the job.
+    conn = open_db(migrated_paths.state_db)
+    try:
+        kinds = [r[0] for r in conn.execute(
+            "SELECT kind FROM job_events WHERE job_id='deep-e2e'").fetchall()]
+        meta_json = conn.execute(
+            "SELECT metadata_json FROM jobs WHERE id='deep-e2e'").fetchone()[0]
+    finally:
+        conn.close()
+    assert "resumed" in kinds
+    assert "resumed" in json.loads(meta_json)
+
+
 def test_dispatch_once_end_to_end(migrated_paths):
     _insert_job(migrated_paths.state_db, "j1", "decide", _decide_meta())
     draft_id = dispatch_once(migrated_paths)

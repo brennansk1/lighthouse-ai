@@ -328,7 +328,7 @@ def _start_dispatch_loop(paths: Paths, *, interval_s: float = 5.0,
              else ("ollama" if gateway is not None else "offline"))
 
     try:
-        requeued = reap_stuck_jobs(paths.state_db)
+        requeued = reap_stuck_jobs(paths.state_db, paths=paths)
         if requeued:
             log.info("dispatch.reaped", jobs=requeued)
     except Exception as exc:

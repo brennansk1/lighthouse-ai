@@ -117,11 +117,17 @@ def claim_one_job(state_db) -> ClaimedJob | None:
     return ClaimedJob(id=jid, mode=mode, meta=meta)
 
 
-def reap_stuck_jobs(state_db) -> list[str]:
+def reap_stuck_jobs(state_db, *, paths: Paths | None = None) -> list[str]:
     """Re-queue jobs left ``running`` by a previous (crashed) process.
 
     Called at startup before the dispatch loop begins, so an interrupted job is
     retried rather than stranded. Returns the ids that were re-queued.
+
+    When ``paths`` is supplied, each requeue is audited (``job.requeued``) with
+    whether a Deep-tier checkpoint survived on disk — so a crash-and-resume is
+    traceable in the audit log, not just an emergent side-effect of generic
+    requeueing. ``paths`` is optional to keep the bare ``reap_stuck_jobs(db)``
+    call working for callers that don't have (or need) audit context.
     """
     conn = open_db(state_db)
     try:
@@ -132,9 +138,14 @@ def reap_stuck_jobs(state_db) -> list[str]:
             conn.execute(
                 "UPDATE jobs SET status = 'queued', updated_at = datetime('now') "
                 "WHERE status = 'running'")
-        return ids
     finally:
         conn.close()
+    if paths is not None:
+        for jid in ids:
+            has_ckpt = _checkpoint_path(paths, jid).exists()
+            _audit(paths, "job.requeued",
+                   {"job_id": jid, "checkpoint": has_ckpt})
+    return ids
 
 
 def _set_status(state_db, job_id: str, status: str,
@@ -733,8 +744,23 @@ def _adapt_investigate_deep(meta, knobs, *, gateway, gate, job_id) -> dict:
     if paths is not None and job_id:
         resume_state = _load_checkpoint(paths, job_id)
         if resume_state is not None:
+            nodes_done = int(resume_state.get("done", 0))
+            pending = len(resume_state.get("pending_paths", []))
             _log.info("dispatcher.checkpoint.resume", job_id=job_id,
-                      done=resume_state.get("done"))
+                      done=nodes_done, pending=pending)
+            # Make resume an OBSERVABLE lifecycle event, not the silent
+            # side-effect it was (deployment gap #8): audit it, put it in the
+            # job trace, and mark the persisted meta so the dashboard/status
+            # can show "resumed from checkpoint" instead of a fresh run.
+            _audit(paths, "job.resumed",
+                   {"job_id": job_id, "nodes_done": nodes_done,
+                    "pending": pending})
+            if emitter is not None:
+                emitter.emit("framing", "resumed",
+                             f"Resumed from checkpoint — {nodes_done} done, "
+                             f"{pending} pending", 5.0,
+                             {"nodes_done": nodes_done, "pending": pending})
+            meta["resumed"] = {"nodes_done": nodes_done, "pending": pending}
 
     # Wire the progress trace: a node step per researched node and a checkpoint
     # heartbeat. Both are best-effort (the emitter swallows its own errors).
