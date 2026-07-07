@@ -447,6 +447,15 @@ class ResearchPipeline:
             wep_phrase=band.label, wep_band=band.name,
             confidence=round(0.75 * max(rep.citation_coverage, 0.1), 3),
             body_json=body_json)
+        # Snapshot the artifact's evidence so a later chat with it stays grounded
+        # in its own sources even when the live corpus is gone (in-memory store).
+        try:
+            ev = getattr(report, "evidence_chunks", None) if report is not None else None
+            if ev:
+                from .modes.artifact_chat import snapshot_evidence
+                snapshot_evidence(self.paths.state_db, draft_id, ev)
+        except Exception:
+            pass
         # record each claim as a Position so the calibration loop has data
         n_positions = self._record_positions(rep, band)
 

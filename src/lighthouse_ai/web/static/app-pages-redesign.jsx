@@ -2237,6 +2237,147 @@ function ReportView({ sections }) {
   );
 }
 
+// ── Artifact Chat ────────────────────────────────────────────────────────
+// Talk to a finished artifact: ask questions, probe findings, challenge a claim.
+// Grounded in the artifact's own evidence; escalates to fresh research when the
+// evidence is thin; every answer states its backend honestly. See
+// docs/ARTIFACT_CHAT_DESIGN.md.
+function ChatBackendBadge({ backend }) {
+  if (!backend || backend === 'ollama') return null;
+  const label = backend === 'offline'
+    ? 'offline — no model bound'
+    : `⚠ generated without the local model (${backend}) — treat as unreliable`;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: 10.5, fontWeight: 600, color: '#c62828',
+      background: 'rgba(198,40,40,0.08)', border: '1px solid #e2b4a0',
+      borderRadius: 999, padding: '2px 8px', marginBottom: 6 }}>{label}</span>
+  );
+}
+
+function ChatCitation({ c }) {
+  return (
+    <span title={c.snippet || ''}
+      style={{ fontSize: 10.5, color: 'var(--primary-dark)', background: 'var(--sky-soft)',
+        borderRadius: 999, padding: '1px 8px', cursor: 'help', whiteSpace: 'nowrap' }}>
+      {c.source || c.id}
+    </span>
+  );
+}
+
+function ArtifactChat({ draftId, artifact }) {
+  const [turns, setTurns] = React.useState([]);
+  const [suggestions, setSuggestions] = React.useState([]);
+  const [input, setInput] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const endRef = React.useRef(null);
+
+  React.useEffect(() => {
+    let ok = true;
+    fetch(`/api/artifacts/${draftId}/chat`).then((r) => r.json()).then((d) => {
+      if (!ok) return;
+      setTurns(d.turns || []);
+      setSuggestions(d.suggestions || []);
+    }).catch(() => {});
+    return () => { ok = false; };
+  }, [draftId]);
+
+  React.useEffect(() => {
+    if (endRef.current) endRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [turns, busy]);
+
+  async function send(text) {
+    const msg = (text != null ? text : input).trim();
+    if (!msg || busy) return;
+    setBusy(true); setError(null); setInput('');
+    setTurns((t) => [...t, { role: 'user', text: msg }]);
+    try {
+      const r = await fetch(`/api/artifacts/${draftId}/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg }) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      setTurns((t) => [...t, { role: 'assistant', ...d.turn }]);
+    } catch (e) {
+      setError('Chat failed — make sure the supervisor is running.');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{ marginTop: 40, paddingTop: 24, borderTop: '1px solid var(--rule)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <span style={{ fontFamily: 'var(--serif)', fontSize: 18, fontWeight: 700,
+          color: 'var(--ink)' }}>Chat with this artifact</span>
+      </div>
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 16, lineHeight: 1.5 }}>
+        Ask about the findings, sources, or anything it didn't cover. Answers are
+        grounded in this artifact's evidence; if it's thin, Lighthouse searches for
+        more. Every answer cites its sources and states honestly what produced it.
+      </div>
+
+      {turns.length === 0 && suggestions.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+          {suggestions.map((s, i) => (
+            <button key={i} onClick={() => send(s)} className="lh-row-hover"
+              style={{ fontSize: 12.5, color: 'var(--ink)', background: 'var(--card)',
+                border: '1px solid var(--rule)', borderRadius: 999, padding: '6px 14px',
+                cursor: 'pointer', fontFamily: 'var(--sans)' }}>{s}</button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 16 }}>
+        {turns.map((t, i) => (
+          <div key={i} style={{ display: 'flex',
+            justifyContent: t.role === 'user' ? 'flex-end' : 'flex-start' }}>
+            <div style={{ maxWidth: '85%',
+              background: t.role === 'user' ? 'var(--primary)' : 'var(--card)',
+              color: t.role === 'user' ? '#fff' : 'var(--ink)',
+              border: t.role === 'user' ? 'none' : '1px solid var(--rule)',
+              borderRadius: 14, padding: '11px 15px', fontSize: 13.5, lineHeight: 1.55,
+              boxShadow: 'var(--shadow-sm)' }}>
+              {t.role === 'assistant' && <ChatBackendBadge backend={t.backend} />}
+              <div style={{ whiteSpace: 'pre-wrap' }}>{t.text}</div>
+              {t.role === 'assistant' && t.researched && (
+                <div style={{ fontSize: 11, color: 'var(--green-dark, #2e7d32)', marginTop: 8 }}>
+                  🔎 {t.research_note || 'searched for more sources'}</div>)}
+              {t.role === 'assistant' && t.citations && t.citations.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                  {t.citations.map((c, j) => <ChatCitation key={j} c={c} />)}
+                </div>)}
+              {t.role === 'assistant' && t.wep_band && (
+                <div style={{ marginTop: 8 }}>
+                  <span style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase',
+                    letterSpacing: '0.04em' }}>confidence: {t.wep_band}</span></div>)}
+            </div>
+          </div>
+        ))}
+        {busy && (
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <div style={{ background: 'var(--card)', border: '1px solid var(--rule)',
+              borderRadius: 14, padding: '11px 15px', fontSize: 13, color: 'var(--muted)' }}>
+              thinking…</div>
+          </div>)}
+        <div ref={endRef} />
+      </div>
+
+      {error && <div style={{ fontSize: 12, color: '#c62828', marginBottom: 10 }}>{error}</div>}
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        <textarea value={input} onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          placeholder="Ask about this artifact…" rows={2} disabled={busy}
+          style={{ flex: 1, resize: 'vertical', fontFamily: 'var(--sans)', fontSize: 13.5,
+            padding: '10px 12px', borderRadius: 10, border: '1px solid var(--rule)',
+            background: 'var(--card)', color: 'var(--ink)', lineHeight: 1.5 }} />
+        <Btn kind="primary" onClick={() => send()} loading={busy}
+          disabled={!input.trim()}>Send</Btn>
+      </div>
+    </div>
+  );
+}
+
 function ArtifactBody({ artifact }) {
   const t = artifact.artifact_type;
   const body = artifact.body;
@@ -2602,6 +2743,7 @@ function LibraryPage({ toast }) {
                     ['matrix', 'table', 'timeline'].includes(detail.artifact_type)
                       ? '100%' : READ_WIDTH }}>
                     <ArtifactBody artifact={detail} />
+                    <ArtifactChat draftId={detail.id} artifact={detail.body || {}} />
                   </div>
                 </div>
               </div>

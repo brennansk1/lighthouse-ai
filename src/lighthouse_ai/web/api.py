@@ -89,6 +89,10 @@ class RejectBody(BaseModel):
     reason: str
 
 
+class ChatBody(BaseModel):
+    message: str
+
+
 class SecretBody(BaseModel):
     key: str
     value: str
@@ -256,6 +260,25 @@ def _rows(conn, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
     cur = conn.execute(sql, params)
     cols = [c[0] for c in cur.description]
     return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def _audit_chat(paths: Paths, draft_id: str, message: str, result: Any) -> None:
+    """Append a chat.turn event to the tamper-evident chain — a chat is as
+    auditable as a research run. Best-effort; never fails the turn."""
+    if not paths.audit_db.exists():
+        return
+    import hashlib
+    try:
+        from ..verification.audit_chain import append_event
+        append_event(
+            paths.audit_db, actor="chat", event_type="chat.turn",
+            payload={"draft_id": draft_id,
+                     "question_sha": hashlib.sha256(message.encode()).hexdigest()[:16],
+                     "backend": result.backend, "researched": result.researched,
+                     "citations": len(result.citations)},
+            data_dir=paths.data_dir)
+    except Exception:
+        pass
 
 
 def _json_field(d: dict[str, Any], key: str) -> dict[str, Any]:
@@ -478,6 +501,101 @@ def register_api(app: FastAPI, paths: Paths, bus: EventBus) -> None:
         if not rows:
             raise HTTPException(404, f"draft {draft_id} not found")
         return rows[0]
+
+    # ---- artifact chat (docs/ARTIFACT_CHAT_DESIGN.md) --------------------
+    # A live gateway is built once, lazily, on first chat use (probing shells
+    # out to Ollama — never per turn) and cached for the process lifetime.
+    _chat_gw: dict[str, Any] = {}
+
+    def _chat_gateway():
+        if "gw" not in _chat_gw:
+            try:
+                from ..dispatcher import build_runtime_gateway
+                _chat_gw["gw"] = build_runtime_gateway(paths)
+            except Exception:
+                _chat_gw["gw"] = None
+        return _chat_gw["gw"]
+
+    def _artifact_body(draft_id: str) -> dict[str, Any]:
+        conn = open_db(paths.state_db)
+        try:
+            rows = _rows(conn, "SELECT body_json FROM drafts WHERE id=?",
+                         (draft_id,))
+        finally:
+            conn.close()
+        if not rows:
+            raise HTTPException(404, f"artifact {draft_id} not found")
+        return _json_field(dict(rows[0]), "body_json")
+
+    def _chat_acquire_fn(gateway):
+        """Bounded escalation: fetch a couple of fresh sources for a thin
+        question via arXiv (keyless, egress-guarded) and chunk them. Returns
+        None when a gateway isn't available (offline → no escalation)."""
+        if gateway is None:
+            return None
+
+        def _acquire(query: str):
+            try:
+                from ..rag.chunker import Document, chunk_document
+                from ..sources.arxiv import search_arxiv
+                docs = search_arxiv(query, max_results=2)
+                chunks = []
+                for d in docs:
+                    for c in chunk_document(Document(id=d.id, text=d.text,
+                                                     metadata=d.metadata)):
+                        chunks.append(c)
+                return chunks[:8]
+            except Exception:
+                return []
+        return _acquire
+
+    @app.get("/api/artifacts/{draft_id}/chat", tags=["chat"])
+    def get_artifact_chat(draft_id: str) -> dict[str, Any]:
+        from ..modes.artifact_chat import session_id_for, suggestions_for
+        from ..modes.ask_store import load_session
+        body = _artifact_body(draft_id)
+        session = load_session(paths.state_db, session_id_for(draft_id))
+        turns = []
+        if session is not None:
+            for t in session.history:
+                turns.append({"role": t.role, "text": t.text,
+                              "citations": list(t.citations)})
+        return {"session_id": session_id_for(draft_id), "turns": turns,
+                "suggestions": suggestions_for(body)}
+
+    @app.post("/api/artifacts/{draft_id}/chat", tags=["chat"])
+    def post_artifact_chat(draft_id: str, body: ChatBody) -> dict[str, Any]:
+        from ..modes.artifact_chat import (
+            chat_turn,
+            load_evidence_chunks,
+            session_id_for,
+        )
+        from ..modes.ask_store import load_session, save_session
+        from ..modes.quc import QUCSession
+        msg = (body.message or "").strip()
+        if not msg:
+            raise HTTPException(400, "empty message")
+        sid = session_id_for(draft_id)
+        session = load_session(paths.state_db, sid) or QUCSession(id=sid, topic="")
+        chunks = load_evidence_chunks(paths.state_db, draft_id)
+        gateway = _chat_gateway()
+        # Stream tokens to the dashboard as the answer is written.
+        if gateway is not None:
+            gateway.token_sink = lambda _role, _job, tok: bus.publish(
+                "chat.token", {"draft_id": draft_id, "token": tok})
+        try:
+            result = chat_turn(session, msg, chunks, gateway=gateway,
+                               acquire_fn=_chat_acquire_fn(gateway))
+        finally:
+            if gateway is not None:
+                gateway.token_sink = None
+        save_session(paths.state_db, session, job_id=None)
+        _audit_chat(paths, draft_id, msg, result)
+        payload = {"session_id": sid, "turn": result.as_dict()}
+        bus.publish("chat.turn", {"draft_id": draft_id,
+                                  "backend": result.backend,
+                                  "researched": result.researched})
+        return payload
 
     @app.post("/api/drafts/{draft_id}/approve", tags=["drafts"])
     def approve_draft(draft_id: str) -> dict[str, Any]:

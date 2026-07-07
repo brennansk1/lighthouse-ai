@@ -206,6 +206,24 @@ STATE_MIGRATIONS: list[Migration] = [
         CREATE INDEX idx_job_events_job_seq ON job_events (job_id, seq);
         """,
     ),
+    Migration(
+        "0006_artifact_evidence",
+        """
+        -- Snapshot of the evidence chunks an artifact was built on, so a chat
+        -- with that artifact stays grounded in its own sources even when the
+        -- live corpus (in-memory store) is gone after the run. One row per cited
+        -- chunk, keyed by the draft it belongs to.
+        CREATE TABLE artifact_evidence (
+            draft_id TEXT NOT NULL,
+            chunk_id TEXT NOT NULL,
+            text TEXT NOT NULL,
+            source TEXT,
+            metadata_json TEXT,
+            PRIMARY KEY (draft_id, chunk_id)
+        );
+        CREATE INDEX idx_artifact_evidence_draft ON artifact_evidence (draft_id);
+        """,
+    ),
 ]
 
 # --- audit.db: append-only audit spine; HMAC chain in later sprint ---
